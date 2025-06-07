@@ -7,7 +7,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 from utils.config_manager import load_config
-from forms.dismissal_form import DismissalReportButton, send_dismissal_button_message
+from forms.dismissal_form import DismissalReportButton, DismissalApprovalView, send_dismissal_button_message
 from forms.audit_form import PersonnelAuditButton, send_audit_button_message
 from forms.blacklist_form import BlacklistButton, send_blacklist_button_message
 
@@ -41,11 +41,14 @@ async def on_ready():
     print(f'Dismissal channel: {config.get("dismissal_channel", "Not set")}')
     print(f'Audit channel: {config.get("audit_channel", "Not set")}')
     print(f'Blacklist channel: {config.get("blacklist_channel", "Not set")}')
-    
-    # Create persistent button views
+      # Create persistent button views
     bot.add_view(DismissalReportButton())
     bot.add_view(PersonnelAuditButton())
     bot.add_view(BlacklistButton())
+    
+    # Note: DismissalApprovalView is created dynamically with user_id when needed
+    # and becomes persistent through timeout=None in the class constructor
+    
     print('Persistent views added to bot')
     
     # Check channels and restore messages if needed

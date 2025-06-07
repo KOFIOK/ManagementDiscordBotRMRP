@@ -81,12 +81,14 @@ class DismissalReportModal(ui.Modal, title="Рапорт на увольнени
             embed.add_field(name="Статус", value="⏳ Рассматривается", inline=False)
             
             embed.set_footer(text=f"Отправлено: {interaction.user.name}")
-            
             if interaction.user.avatar:
                 embed.set_thumbnail(url=interaction.user.avatar.url)
             
+            # Create view with approval/rejection buttons
+            approval_view = DismissalApprovalView(interaction.user.id)
+            
             # Send the report to the dismissal channel
-            await channel.send(embed=embed)
+            await channel.send(embed=embed, view=approval_view)
             
             await interaction.response.send_message(
                 "Ваш рапорт на увольнение был успешно отправлен и будет рассмотрен.", 
@@ -106,6 +108,131 @@ class DismissalReportModal(ui.Modal, title="Рапорт на увольнени
             "Произошла ошибка при обработке формы. Пожалуйста, попробуйте еще раз или обратитесь к администратору.",
             ephemeral=True
         )
+
+# Approval/Rejection view for dismissal reports
+class DismissalApprovalView(ui.View):
+    def __init__(self, user_id):
+        super().__init__(timeout=None)
+        self.user_id = user_id
+    
+    @discord.ui.button(label="✅ Одобрить", style=discord.ButtonStyle.green, custom_id="approve_dismissal")
+    async def approve_dismissal(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            # Get the user who submitted the report
+            target_user = interaction.guild.get_member(self.user_id)
+            
+            if not target_user:
+                await interaction.response.send_message(
+                    "Ошибка: пользователь не найден на сервере.", 
+                    ephemeral=True
+                )
+                return
+              # Remove all roles from the user (except @everyone)
+            roles_to_remove = [role for role in target_user.roles if role.name != "@everyone"]
+            if roles_to_remove:
+                await target_user.remove_roles(*roles_to_remove, reason="Рапорт на увольнение одобрен")
+            
+            # Change nickname to "Уволен | Имя Фамилия"
+            try:
+                # Extract name from current nickname or username
+                current_name = target_user.display_name
+                if " | " in current_name:
+                    # Extract name part after " | "
+                    name_part = current_name.split(" | ", 1)[1]
+                else:
+                    # Use username if no proper nickname format
+                    name_part = target_user.display_name
+                
+                new_nickname = f"Уволен | {name_part}"
+                await target_user.edit(nick=new_nickname, reason="Рапорт на увольнение одобрен")
+                
+            except discord.Forbidden:
+                # Bot doesn't have permission to change nickname
+                print(f"Cannot change nickname for {target_user.name} - insufficient permissions")
+            except Exception as e:
+                print(f"Error changing nickname for {target_user.name}: {e}")
+            
+            # Update the embed
+            embed = interaction.message.embeds[0]
+            embed.color = discord.Color.green()
+            
+            # Update status field
+            for i, field in enumerate(embed.fields):
+                if field.name == "Статус":
+                    embed.set_field_at(i, name="Статус", value="✅ Одобрено", inline=False)
+                    break
+            
+            embed.add_field(
+                name="Обработано", 
+                value=f"Сотрудник: {interaction.user.mention}\nВремя: {discord.utils.format_dt(discord.utils.utcnow(), 'F')}", 
+                inline=False
+            )
+            
+            # Create new view with only "Approved" button (disabled)
+            approved_view = ui.View(timeout=None)
+            approved_button = ui.Button(label="✅ Одобрено", style=discord.ButtonStyle.green, disabled=True)
+            approved_view.add_item(approved_button)
+            
+            await interaction.response.edit_message(embed=embed, view=approved_view)
+              # Send DM to the user
+            try:
+                await target_user.send(
+                    f"Ваш рапорт на увольнение был **одобрен** сотрудником {interaction.user.mention}."
+                )
+            except discord.Forbidden:
+                pass  # User has DMs disabled
+                
+        except Exception as e:
+            print(f"Error in dismissal approval: {e}")
+            await interaction.response.send_message(
+                f"Произошла ошибка при обработке одобрения: {e}", 
+                ephemeral=True
+            )
+    
+    @discord.ui.button(label="❌ Отказать", style=discord.ButtonStyle.red, custom_id="reject_dismissal")
+    async def reject_dismissal(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            # Get the user who submitted the report
+            target_user = interaction.guild.get_member(self.user_id)
+            
+            # Update the embed
+            embed = interaction.message.embeds[0]
+            embed.color = discord.Color.red()
+            
+            # Update status field
+            for i, field in enumerate(embed.fields):
+                if field.name == "Статус":
+                    embed.set_field_at(i, name="Статус", value="❌ Отказано", inline=False)
+                    break
+            
+            embed.add_field(
+                name="Обработано", 
+                value=f"Сотрудник: {interaction.user.mention}\nВремя: {discord.utils.format_dt(discord.utils.utcnow(), 'F')}", 
+                inline=False
+            )
+            
+            # Create new view with only "Rejected" button (disabled)
+            rejected_view = ui.View(timeout=None)
+            rejected_button = ui.Button(label="❌ Отказано", style=discord.ButtonStyle.red, disabled=True)
+            rejected_view.add_item(rejected_button)
+            
+            await interaction.response.edit_message(embed=embed, view=rejected_view)
+            
+            # Send DM to the user if they're still on the server
+            if target_user:
+                try:
+                    await target_user.send(
+                        f"Ваш рапорт на увольнение был **отклонён** сотрудником {interaction.user.mention}."
+                    )
+                except discord.Forbidden:
+                    pass  # User has DMs disabled
+                    
+        except Exception as e:
+            print(f"Error in dismissal rejection: {e}")
+            await interaction.response.send_message(
+                f"Произошла ошибка при обработке отказа: {e}", 
+                ephemeral=True
+            )
 
 # Button for dismissal report
 class DismissalReportButton(ui.View):

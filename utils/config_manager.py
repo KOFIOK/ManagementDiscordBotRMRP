@@ -8,7 +8,9 @@ CONFIG_FILE = 'data/config.json'
 default_config = {
     'dismissal_channel': None,
     'audit_channel': None,
-    'blacklist_channel': None
+    'blacklist_channel': None,
+    'excluded_roles': [],
+    'ping_settings': {}
 }
 
 # Load configuration

@@ -7,9 +7,10 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 from utils.config_manager import load_config
-from forms.dismissal_form import DismissalReportButton, DismissalApprovalView, send_dismissal_button_message
+from forms.dismissal_form import DismissalReportButton, DismissalApprovalView, send_dismissal_button_message, restore_dismissal_approval_views
 from forms.audit_form import PersonnelAuditButton, send_audit_button_message
 from forms.blacklist_form import BlacklistButton, send_blacklist_button_message
+from forms.settings_form import SettingsView
 
 # Load environment variables from .env file
 load_dotenv()
@@ -40,14 +41,14 @@ async def on_ready():
     print('Configuration loaded successfully')
     print(f'Dismissal channel: {config.get("dismissal_channel", "Not set")}')
     print(f'Audit channel: {config.get("audit_channel", "Not set")}')
-    print(f'Blacklist channel: {config.get("blacklist_channel", "Not set")}')
-      # Create persistent button views
+    print(f'Blacklist channel: {config.get("blacklist_channel", "Not set")}')    # Create persistent button views
     bot.add_view(DismissalReportButton())
     bot.add_view(PersonnelAuditButton())
     bot.add_view(BlacklistButton())
+    bot.add_view(SettingsView())
     
-    # Note: DismissalApprovalView is created dynamically with user_id when needed
-    # and becomes persistent through timeout=None in the class constructor
+    # Add a generic DismissalApprovalView for persistent approval buttons
+    bot.add_view(DismissalApprovalView())
     
     print('Persistent views added to bot')
     
@@ -56,8 +57,7 @@ async def on_ready():
 
 async def restore_channel_messages(config):
     """Check and restore button messages for all configured channels."""
-    
-    # Restore dismissal channel message
+      # Restore dismissal channel message
     dismissal_channel_id = config.get('dismissal_channel')
     if dismissal_channel_id:
         channel = bot.get_channel(dismissal_channel_id)
@@ -65,6 +65,10 @@ async def restore_channel_messages(config):
             if not await check_for_button_message(channel, "Рапорты на увольнение"):
                 print(f"Sending dismissal button message to channel {channel.name}")
                 await send_dismissal_button_message(channel)
+            
+            # Restore approval views for existing dismissal reports
+            print(f"Restoring approval views for dismissal reports in {channel.name}")
+            await restore_dismissal_approval_views(bot, channel)
     
     # Restore audit channel message
     audit_channel_id = config.get('audit_channel')

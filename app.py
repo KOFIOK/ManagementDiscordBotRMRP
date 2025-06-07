@@ -1,5 +1,7 @@
 import os
 import asyncio
+import signal
+import sys
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -33,18 +35,18 @@ async def on_ready():
         synced = await bot.tree.sync()
         print(f'Synced {len(synced)} command(s)')
     except Exception as e:
-        print(f'Failed to sync commands: {e}')
-
-    # Load configuration on startup
+        print(f'Failed to sync commands: {e}')    # Load configuration on startup
     config = load_config()
     print('Configuration loaded successfully')
-    print(f'Dismissal channel: {config["dismissal_channel"]}')
-    print(f'Audit channel: {config["audit_channel"]}')
-    print(f'Blacklist channel: {config["blacklist_channel"]}')
-      # Create persistent button views
+    print(f'Dismissal channel: {config.get("dismissal_channel", "Not set")}')
+    print(f'Audit channel: {config.get("audit_channel", "Not set")}')
+    print(f'Blacklist channel: {config.get("blacklist_channel", "Not set")}')
+    
+    # Create persistent button views
     bot.add_view(DismissalReportButton())
     bot.add_view(PersonnelAuditButton())
     bot.add_view(BlacklistButton())
+    print('Persistent views added to bot')
     
     # Check channels and restore messages if needed
     await restore_channel_messages(config)
@@ -102,8 +104,51 @@ async def load_extensions():
             except Exception as e:
                 print(f'Failed to load extension {filename[:-3]}: {e}')
 
+async def shutdown_handler():
+    """Gracefully shutdown the bot."""
+    print("\n⚠️  Получен сигнал завершения...")
+    print("🔄 Завершение работы бота...")
+    
+    try:
+        # Закрываем соединение с Discord
+        await bot.close()
+        print("✅ Соединение с Discord закрыто")
+    except Exception as e:
+        print(f"❌ Ошибка при закрытии соединения: {e}")
+    
+    print("✅ Бот успешно завершил работу")
+
+def signal_handler(sig, frame):
+    """Handle shutdown signals."""
+    print(f"\n⚠️  Получен сигнал {sig}")
+    
+    # Создаем новый event loop если его нет
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    
+    # Запускаем graceful shutdown
+    if not loop.is_closed():
+        task = loop.create_task(shutdown_handler())
+        loop.run_until_complete(task)
+        loop.close()
+    
+    sys.exit(0)
+
+# Register signal handlers for graceful shutdown
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
+
 # Run the bot
 if __name__ == '__main__':
+    print("🤖 Запуск Army Discord Bot...")
+    print("💡 Для остановки нажмите Ctrl+C")
+    
     # Check for token - first from environment, then try to read from .env file
     token = os.environ.get('DISCORD_TOKEN')
     if not token:
@@ -127,6 +172,9 @@ if __name__ == '__main__':
     
     try:
         asyncio.run(bot.start(token))
+    except KeyboardInterrupt:
+        # Этот блок теперь просто для красоты, основная обработка в signal_handler
+        pass
     except Exception as e:
-        print(f"Произошла ошибка при запуске бота: {e}")
+        print(f"❌ Произошла ошибка при запуске бота: {e}")
         input("Нажмите Enter для выхода...")

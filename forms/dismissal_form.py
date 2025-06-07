@@ -7,8 +7,8 @@ from utils.config_manager import load_config
 class DismissalReportModal(ui.Modal, title="Рапорт на увольнение"):
     name = ui.TextInput(
         label="Имя Фамилия",
-        placeholder="Введите ваше полное имя",
-        min_length=2,
+        placeholder="Введите имя и фамилию через пробел",
+        min_length=3,
         max_length=50,
         required=True
     )
@@ -16,7 +16,7 @@ class DismissalReportModal(ui.Modal, title="Рапорт на увольнени
     static = ui.TextInput(
         label="Статик (6 цифр, 123-456)",
         placeholder="Формат: 123-456",
-        min_length=7,
+        min_length=6,
         max_length=7,
         required=True
     )
@@ -25,15 +25,24 @@ class DismissalReportModal(ui.Modal, title="Рапорт на увольнени
         label="Причина увольнения",
         placeholder="Укажите причину увольнения...",
         style=discord.TextStyle.paragraph,
-        min_length=5,
+        min_length=3,
         max_length=1000,
         required=True
     )
     
     async def on_submit(self, interaction: discord.Interaction):
         try:
-            # Validate static format
-            if not re.match(r'^\d{3}-\d{3}$', self.static.value):
+            # Validate name format (должно быть 2 слова)
+            name_parts = self.name.value.strip().split()
+            if len(name_parts) != 2:
+                await interaction.response.send_message(
+                    "Ошибка: Имя и фамилия должны состоять из 2 слов, разделенных пробелом.", 
+                    ephemeral=True
+                )
+                return
+            
+            # Validate static format (5 цифр: 12-345)
+            if not re.match(r'^\d{2}-\d{3}$|^\d{3}-\d{3}$', self.static.value):
                 await interaction.response.send_message(
                     "Ошибка: Статик должен быть в формате 123-456 (3 цифры, тире, 3 цифры).", 
                     ephemeral=True
@@ -118,6 +127,12 @@ async def send_dismissal_button_message(channel):
     embed.add_field(
         name="Инструкция", 
         value="1. Нажмите на кнопку\n2. Заполните открывшуюся форму\n3. Нажмите 'Submit'", 
+        inline=False
+    )
+    
+    embed.add_field(
+        name="Требования",
+        value="• Имя и фамилия - 2 слова через пробел\n• Статик в формате 12-345\n• Причина увольнения (мин. 3 символа)",
         inline=False
     )
     

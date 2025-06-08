@@ -281,8 +281,69 @@ class DismissalApprovalView(ui.View):
             approved_view = ui.View(timeout=None)
             approved_button = ui.Button(label="✅ Одобрено", style=discord.ButtonStyle.green, disabled=True)
             approved_view.add_item(approved_button)
-            
             await interaction.followup.edit_message(interaction.message.id, embed=embed, view=approved_view)
+            
+            # Send notification to audit channel
+            try:
+                config = load_config()
+                audit_channel_id = config.get('audit_channel')
+                if audit_channel_id:
+                    audit_channel = interaction.guild.get_channel(audit_channel_id)
+                    if audit_channel:
+                        # Create audit notification embed
+                        audit_embed = discord.Embed(
+                            title="🔄 Кадровый аудит - Увольнение одобрено",
+                            color=discord.Color.green(),
+                            timestamp=discord.utils.utcnow()
+                        )
+                        
+                        # Get user rank from roles (before they were removed, we need to reconstruct)
+                        user_rank = "Неизвестно"
+                        if roles_to_remove:
+                            # Find rank-like role (usually contains военные звания)
+                            for role in roles_to_remove:
+                                if any(rank_word in role.name.lower() for rank_word in 
+                                      ["рядовой", "ефрейтор", "младший", "сержант", "старший", "старшина", 
+                                       "прапорщик", "старший прапорщик", "лейтенант", "старший лейтенант", 
+                                       "капитан", "майор", "подполковник", "полковник", "генерал"]):
+                                    user_rank = role.name
+                                    break
+                        
+                        # Get unit from roles (department/unit)
+                        user_unit = "Неизвестно"
+                        if roles_to_remove:
+                            # Find unit-like role (usually the longest non-rank role)
+                            for role in roles_to_remove:
+                                if not any(rank_word in role.name.lower() for rank_word in 
+                                          ["рядовой", "ефрейтор", "младший", "сержант", "старший", "старшина", 
+                                           "прапорщик", "старший прапорщик", "лейтенант", "старший лейтенант", 
+                                           "капитан", "майор", "подполковник", "полковник", "генерал"]):
+                                    if len(role.name) > len(user_unit) or user_unit == "Неизвестно":
+                                        user_unit = role.name
+                        
+                        # Set fields for audit notification
+                        audit_embed.add_field(name="Подписал", value=interaction.user.mention, inline=True)
+                        audit_embed.add_field(name="Полный тег", value=f"{target_user.mention} ({target_user})", inline=True)
+                        audit_embed.add_field(name="Действие", value="Увольнение", inline=True)
+                        audit_embed.add_field(name="Причина", value=form_data.get('reason', 'Не указана'), inline=False)
+                        audit_embed.add_field(name="Дата действия", value=discord.utils.format_dt(discord.utils.utcnow(), 'F'), inline=True)
+                        audit_embed.add_field(name="Подразделение", value=user_unit, inline=True)
+                        audit_embed.add_field(name="Звание", value=user_rank, inline=True)
+                        
+                        # Set thumbnail to user's avatar
+                        audit_embed.set_thumbnail(url=target_user.display_avatar.url)
+                        
+                        # Set footer
+                        audit_embed.set_footer(text="Система кадрового аудита ВС РФ")
+                        
+                        await audit_channel.send(embed=audit_embed)
+                        print(f"Sent audit notification for dismissal of {target_user.display_name}")
+                    else:
+                        print(f"Audit channel not found: {audit_channel_id}")
+                else:
+                    print("Audit channel ID not configured")
+            except Exception as e:
+                print(f"Error sending audit notification: {e}")
             
             # Send DM to the user
             try:

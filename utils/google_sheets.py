@@ -237,7 +237,7 @@ class GoogleSheetsManager:
                 f"{real_name} | {static_from_form}" if static_from_form else str(real_name),  # Имя Фамилия | статик
                 str(real_name),  # ИмяФамилия
                 str(static_from_form) if static_from_form else "",  # Статик
-                "Увольнение",  # Действие
+                "Уволен со службы",  # Действиея
                 str(dismissal_time.strftime('%d.%m.%Y')),  # Дата Действия
                 str(department),  # Подразделение
                 "",  # Должность (пустое)
@@ -261,6 +261,200 @@ class GoogleSheetsManager:
             
         except Exception as e:
             print(f"❌ Error adding dismissal record to Google Sheets: {e}")
+            # Print more detailed error information
+            if hasattr(e, 'response'):
+                print(f"Response status: {e.response.status_code}")
+                print(f"Response text: {e.response.text}")
+            return False
+        
+    async def send_to_blacklist(self, guild, form_data, days_difference):
+        """Send a message to blacklist channel about early dismissal penalty."""
+        try:
+            from utils.config_manager import load_config
+            
+            config = load_config()
+            blacklist_channel_id = config.get('blacklist_channel')
+            
+            if not blacklist_channel_id:
+                print("Blacklist channel not configured")
+                return False
+            
+            blacklist_channel = guild.get_channel(blacklist_channel_id)
+            if not blacklist_channel:
+                print(f"Blacklist channel not found: {blacklist_channel_id}")
+                return False
+            
+            # Create blacklist embed
+            embed = discord.Embed(
+                title="⚠️ Неустойка за досрочное увольнение",
+                color=0xFF0000,  # Red color
+                timestamp=discord.utils.utcnow()
+            )
+            
+            name = form_data.get('name', 'Неизвестно')
+            static = form_data.get('static', 'Неизвестно')
+            
+            embed.add_field(name="Имя Фамилия", value=name, inline=False)
+            embed.add_field(name="Статик", value=static, inline=False)
+            embed.add_field(name="Причина внесения в чёрный список", 
+                          value=f"Досрочное увольнение (менее 5 дней службы - {days_difference} дн.)", 
+                          inline=False)
+            embed.add_field(name="Тип нарушения", value="Неустойка", inline=False)
+            
+            embed.set_footer(text="Автоматическое внесение в чёрный список")
+            
+            await blacklist_channel.send(embed=embed)
+            print(f"Successfully sent blacklist message for {name} ({static})")
+            return True
+        
+        except Exception as e:
+            print(f"Error sending message to blacklist: {e}")
+            return False
+
+    async def get_latest_hiring_record_by_static(self, static):
+        """Search for the latest 'Принят на службу' record by static in 'Общий Кадровый' sheet."""
+        try:
+            # Ensure connection
+            if not self._ensure_connection():
+                return None
+            
+            # Get all records from the worksheet
+            all_records = self.worksheet.get_all_records()
+              # Filter records by static and action
+            hiring_records = []
+            for record in all_records:
+                # Check if static matches (column 4 - Статик)
+                record_static = str(record.get('Статик', '')).strip()
+                # Check if action is "Принят на службу" (column 5 - Действие)
+                record_action = str(record.get('Действие', '')).strip()
+                
+                if record_static == static and record_action == "Принят на службу":
+                    hiring_records.append(record)
+            
+            if not hiring_records:
+                return None
+                
+            # Find the latest record by date (column 6 - Дата Действия)
+            latest_record = None
+            latest_date = None
+            
+            for record in hiring_records:
+                date_str = str(record.get('Дата Действия', '')).strip()
+                if date_str:
+                    try:
+                        # Parse date - handle both with and without time
+                        record_date = None
+                        
+                        # If date contains time, extract date part
+                        if ' ' in date_str:
+                            date_part = date_str.split(' ')[0]
+                        else:
+                            date_part = date_str
+                        
+                        # Try different date formats
+                        try:
+                            record_date = datetime.strptime(date_part, '%d.%m.%Y')
+                        except ValueError:
+                            try:
+                                record_date = datetime.strptime(date_part, '%d-%m-%Y')
+                            except ValueError:
+                                # Try full datetime format
+                                try:
+                                    record_date = datetime.strptime(date_str, '%d.%m.%Y %H:%M:%S')
+                                except ValueError:
+                                    record_date = datetime.strptime(date_str, '%d-%m-%Y %H:%M:%S')
+                        
+                        if record_date and (latest_date is None or record_date > latest_date):
+                            latest_date = record_date
+                            latest_record = record
+                            
+                    except ValueError:
+                        print(f"Could not parse date: {date_str}")
+                        continue
+            
+            return latest_record
+        
+        except Exception as e:
+            print(f"Error searching for hiring record by static: {e}")
+            return None
+
+    async def add_blacklist_record(self, form_data, dismissed_user, approving_user, dismissal_time, days_difference):
+        """Add a blacklist penalty record to the 'Отправлено (НЕ РЕДАКТИРОВАТЬ)' sheet."""
+        try:
+            # Ensure connection
+            if not self._ensure_connection():
+                print("Failed to establish Google Sheets connection for blacklist record")
+                return False
+            
+            # Get the 'Отправлено (НЕ РЕДАКТИРОВАТЬ)' worksheet
+            blacklist_worksheet = None
+            for worksheet in self.spreadsheet.worksheets():
+                if worksheet.title == "Отправлено (НЕ РЕДАКТИРОВАТЬ)":
+                    blacklist_worksheet = worksheet
+                    break
+            
+            if not blacklist_worksheet:
+                print("'Отправлено (НЕ РЕДАКТИРОВАТЬ)' sheet not found")
+                return False
+            
+            # Extract data
+            name_from_form = form_data.get('name', '')
+            static_from_form = form_data.get('static', '')
+            
+            # Use name from form as primary
+            real_name = name_from_form or self.extract_name_from_nickname(dismissed_user.display_name)
+            
+            # Get approving user info for "Кем внесён" field using the same system as dismissal records
+            approved_by_clean_name = self.extract_name_from_nickname(approving_user.display_name)
+            approved_by_info = approving_user.display_name  # Default fallback
+            
+            if approved_by_clean_name:
+                # Extract surname (last word)
+                name_parts = approved_by_clean_name.strip().split()
+                if len(name_parts) >= 2:
+                    surname = name_parts[-1]  # Last word as surname
+                    # Search in 'Пользователи' sheet
+                    full_user_info = await self.get_user_info_from_users_sheet(surname)
+                    if full_user_info:
+                        approved_by_info = full_user_info
+                    else:
+                        approved_by_info = approved_by_clean_name
+            
+            # Format dates
+            from datetime import timedelta
+            current_date = dismissal_time.strftime('%d.%m.%Y')
+            # Calculate enforcement date (current date + 14 days)
+            enforcement_date = (dismissal_time + timedelta(days=14)).strftime('%d.%m.%Y')            # Prepare row data according to blacklist sheet structure:
+            # Column A: Срок (продолжительность неустойки)
+            # Column B: Имя Фамилия | Статик
+            # Column C: Причина
+            # Column D: Дата внесения 
+            # Column E: Дата вынесения
+            # Column F: Кем внесён
+            # Column G: Сообщение
+            row_data = [
+                "14 дней",  # Срок - 14 дней неустойки
+                f"{real_name} | {static_from_form}" if static_from_form else str(real_name),  # Имя Фамилия | Статик
+                "Неустойка",  # Причина - всегда "Неустойка"
+                current_date,  # Дата внесения
+                enforcement_date,  # Дата вынесения (дата внесения + 14 дней)
+                approved_by_info,  # Кем внесён - из листа "Пользователи"
+                '="1. " & B3 & СИМВОЛ(10) & "2. " & C3 & СИМВОЛ(10) & "3. " & ТЕКСТ(D3;"dd.mm.yyyy") & СИМВОЛ(10) & "4. " & ТЕКСТ(E3;"dd.mm.yyyy") & СИМВОЛ(10) & "5. " & F3 & СИМВОЛ(10)'  # Сообщение
+            ]
+            
+            # Insert record at the beginning (after headers)
+            result = blacklist_worksheet.insert_row(row_data, index=2)
+            
+            # Check if insert was successful
+            if result:
+                print(f"✅ Successfully added blacklist penalty record for {real_name}")
+                return True
+            else:
+                print(f"❌ Failed to add blacklist penalty record for {real_name}")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Error adding blacklist penalty record to Google Sheets: {e}")
             # Print more detailed error information
             if hasattr(e, 'response'):
                 print(f"Response status: {e.response.status_code}")

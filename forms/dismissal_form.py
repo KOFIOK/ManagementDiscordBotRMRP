@@ -1,6 +1,7 @@
 import discord
 from discord import ui
 import re
+from datetime import datetime
 from utils.config_manager import load_config
 from utils.google_sheets import sheets_manager
 
@@ -212,8 +213,7 @@ class DismissalApprovalView(ui.View):
             # Get user data BEFORE removing roles (for audit notification)
             user_rank_for_audit = sheets_manager.get_rank_from_roles(target_user)
             user_unit_for_audit = sheets_manager.get_department_from_roles(target_user, ping_settings)
-            
-            # Log to Google Sheets BEFORE removing roles (to capture rank and department correctly)
+              # Log to Google Sheets BEFORE removing roles (to capture rank and department correctly)
             try:
                 current_time = discord.utils.utcnow()
                 success = await sheets_manager.add_dismissal_record(
@@ -229,6 +229,72 @@ class DismissalApprovalView(ui.View):
                     print(f"Failed to log dismissal to Google Sheets for {target_user.display_name}")
             except Exception as e:
                 print(f"Error logging to Google Sheets: {e}")
+              # Check for early dismissal penalty (less than 5 days of service)
+            try:
+                static = form_data.get('static', '')
+                if static:
+                    hiring_record = await sheets_manager.get_latest_hiring_record_by_static(static)
+                    if hiring_record:
+                        hire_date_str = str(hiring_record.get('Дата Действия', '')).strip()
+                        if hire_date_str:
+                            try:
+                                # Parse hire date
+                                hire_date = None
+                                
+                                # If date contains time, extract date part
+                                if ' ' in hire_date_str:
+                                    date_part = hire_date_str.split(' ')[0]
+                                else:
+                                    date_part = hire_date_str
+                                
+                                # Try different date formats
+                                try:
+                                    hire_date = datetime.strptime(date_part, '%d.%m.%Y')
+                                except ValueError:
+                                    try:
+                                        hire_date = datetime.strptime(date_part, '%d-%m-%Y')
+                                    except ValueError:
+                                        # Try full datetime format
+                                        try:
+                                            hire_date = datetime.strptime(hire_date_str, '%d.%m.%Y %H:%M:%S')
+                                        except ValueError:
+                                            hire_date = datetime.strptime(hire_date_str, '%d-%m-%Y %H:%M:%S')
+                                  # Calculate days difference
+                                dismissal_date = current_time.replace(tzinfo=None)
+                                days_difference = (dismissal_date - hire_date).days
+                                
+                                if days_difference < 5:
+                                    print(f"Early dismissal detected: {days_difference} days of service for {form_data.get('name', 'Unknown')}")
+                                    # Send to blacklist channel
+                                    await sheets_manager.send_to_blacklist(
+                                        guild=interaction.guild,
+                                        form_data=form_data,
+                                        days_difference=days_difference
+                                    )
+                                    # Log penalty to "Отправлено (НЕ РЕДАКТИРОВАТЬ)" sheet
+                                    try:
+                                        penalty_logged = await sheets_manager.add_blacklist_record(
+                                            form_data=form_data,
+                                            dismissed_user=target_user,
+                                            approving_user=interaction.user,
+                                            dismissal_time=current_time,
+                                            days_difference=days_difference
+                                        )
+                                        if penalty_logged:
+                                            print(f"Successfully logged early dismissal penalty for {form_data.get('name', 'Unknown')}")
+                                        else:
+                                            print(f"Failed to log early dismissal penalty for {form_data.get('name', 'Unknown')}")
+                                    except Exception as penalty_error:
+                                        print(f"Error logging penalty to blacklist sheet: {penalty_error}")
+                                else:
+                                    print(f"Normal dismissal: {days_difference} days of service")
+                            
+                            except ValueError as date_error:
+                                print(f"Error parsing hire date '{hire_date_str}': {date_error}")
+                    else:
+                        print(f"No hiring record found for static {static}")
+            except Exception as e:
+                print(f"Error checking for early dismissal: {e}")
             
             # Remove all roles from the user (except @everyone and excluded roles)
             roles_to_remove = []

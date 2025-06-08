@@ -2,7 +2,7 @@ import discord
 from discord import ui
 import re
 from datetime import datetime
-from utils.config_manager import load_config
+from utils.config_manager import load_config, is_moderator, can_moderate_user
 from utils.google_sheets import sheets_manager
 
 # Define the dismissal report form
@@ -146,6 +146,15 @@ class DismissalApprovalView(ui.View):
     @discord.ui.button(label="✅ Одобрить", style=discord.ButtonStyle.green, custom_id="approve_dismissal")
     async def approve_dismissal(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
+            # Check if user has moderator permissions
+            config = load_config()
+            if not is_moderator(interaction.user, config):
+                await interaction.response.send_message(
+                    "❌ У вас нет прав для одобрения рапортов на увольнение. Только модераторы могут выполнять это действие.",
+                    ephemeral=True
+                )
+                return
+            
             # First, quickly respond to avoid timeout
             await interaction.response.defer()
             
@@ -185,19 +194,39 @@ class DismissalApprovalView(ui.View):
                     value=f"Сотрудник: {interaction.user.mention}\nВремя: {discord.utils.format_dt(discord.utils.utcnow(), 'F')}\n⚠️ Пользователь не найден - роли не сняты", 
                     inline=False
                 )
-                  # Create new view with only "Approved" button (disabled)
+                # Create new view with only "Approved" button (disabled)
                 approved_view = ui.View(timeout=None)
                 approved_button = ui.Button(label="✅ Одобрено", style=discord.ButtonStyle.green, disabled=True)
                 approved_view.add_item(approved_button)
                 
                 await interaction.followup.edit_message(interaction.message.id, content="", embed=embed, view=approved_view)
                 return
+              # Check hierarchical moderation permissions
+            if not can_moderate_user(interaction.user, target_user, config):
+                # Restore original buttons since permission check failed
+                original_view = DismissalApprovalView(self.user_id)
+                await interaction.followup.edit_message(interaction.message.id, embed=embed, view=original_view)
+                
+                # Determine the reason for denial
+                if interaction.user.id == target_user.id:
+                    reason = "Вы не можете одобрить свой собственный рапорт на увольнение."
+                elif is_moderator(target_user, config):
+                    reason = "Вы не можете одобрить рапорт модератора того же или более высокого уровня."
+                else:
+                    reason = "У вас недостаточно прав для одобрения этого рапорта."
+                
+                await interaction.followup.send(
+                    f"❌ {reason}",
+                    ephemeral=True
+                )
+                return
             
             # Load configuration to get excluded roles and ping settings
             config = load_config()
             excluded_roles_ids = config.get('excluded_roles', [])
             ping_settings = config.get('ping_settings', {})
-              # Extract form data from embed fields
+            
+            # Extract form data from embed fields
             embed = interaction.message.embeds[0]
             form_data = {}
             
@@ -208,7 +237,8 @@ class DismissalApprovalView(ui.View):
                     form_data['static'] = field.value
                 elif field.name == "Причина":
                     form_data['reason'] = field.value
-              # Get user data BEFORE removing roles (for audit notification)
+            
+            # Get user data BEFORE removing roles (for audit notification)
             user_rank_for_audit = sheets_manager.get_rank_from_roles(target_user)
             user_unit_for_audit = sheets_manager.get_department_from_roles(target_user, ping_settings)
             
@@ -278,7 +308,8 @@ class DismissalApprovalView(ui.View):
                 value=f"Сотрудник: {interaction.user.mention}\nВремя: {discord.utils.format_dt(discord.utils.utcnow(), 'F')}", 
                 inline=False
             )
-              # Create new view with only "Approved" button (disabled)
+            
+            # Create new view with only "Approved" button (disabled)
             approved_view = ui.View(timeout=None)
             approved_button = ui.Button(label="✅ Одобрено", style=discord.ButtonStyle.green, disabled=True)
             approved_view.add_item(approved_button)
@@ -340,7 +371,8 @@ class DismissalApprovalView(ui.View):
                         audit_embed.add_field(name="Дата Действия", value=action_date, inline=False)
                         audit_embed.add_field(name="Подразделение", value=user_unit, inline=False)
                         audit_embed.add_field(name="Воинское звание", value=user_rank, inline=False)
-                          # Set thumbnail to default image as in template
+                        
+                        # Set thumbnail to default image as in template
                         audit_embed.set_thumbnail(url="https://i.imgur.com/07MRSyl.png")
                         
                         # Send notification with user mention (the user who was dismissed)
@@ -447,13 +479,23 @@ class DismissalApprovalView(ui.View):
                 try:
                     await interaction.response.send_message(
                         f"Произошла ошибка при обработке одобрения: {e}", 
-                        ephemeral=True                    )
+                        ephemeral=True
+                    )
                 except:
                     pass
     
     @discord.ui.button(label="❌ Отказать", style=discord.ButtonStyle.red, custom_id="reject_dismissal")
     async def reject_dismissal(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
+            # Check if user has moderator permissions
+            config = load_config()
+            if not is_moderator(interaction.user, config):
+                await interaction.response.send_message(
+                    "❌ У вас нет прав для отказа рапортов на увольнение. Только модераторы могут выполнять это действие.",
+                    ephemeral=True
+                )
+                return
+            
             # First, quickly respond to avoid timeout
             await interaction.response.defer()
             
@@ -483,6 +525,26 @@ class DismissalApprovalView(ui.View):
                             if member.name == username or member.display_name == username:
                                 target_user = member
                                 break
+              # Check hierarchical moderation permissions
+            if target_user and not can_moderate_user(interaction.user, target_user, config):
+                # Restore original buttons since permission check failed
+                original_view = DismissalApprovalView(self.user_id)
+                embed = interaction.message.embeds[0]  # Get current embed
+                await interaction.followup.edit_message(interaction.message.id, embed=embed, view=original_view)
+                
+                # Determine the reason for denial
+                if interaction.user.id == target_user.id:
+                    reason = "Вы не можете отклонить свой собственный рапорт на увольнение."
+                elif is_moderator(target_user, config):
+                    reason = "Вы не можете отклонить рапорт модератора того же или более высокого уровня."
+                else:
+                    reason = "У вас недостаточно прав для отклонения этого рапорта."
+                
+                await interaction.followup.send(
+                    f"❌ {reason}",
+                    ephemeral=True
+                )
+                return
             
             # Update the embed
             embed = interaction.message.embeds[0]
@@ -493,7 +555,8 @@ class DismissalApprovalView(ui.View):
                 value=f"Сотрудник: {interaction.user.mention}\nВремя: {discord.utils.format_dt(discord.utils.utcnow(), 'F')}", 
                 inline=False
             )
-              # Create new view with only "Rejected" button (disabled)
+            
+            # Create new view with only "Rejected" button (disabled)
             rejected_view = ui.View(timeout=None)
             rejected_button = ui.Button(label="❌ Отказано", style=discord.ButtonStyle.red, disabled=True)
             rejected_view.add_item(rejected_button)
@@ -545,7 +608,7 @@ async def send_dismissal_button_message(channel):
     
     embed.add_field(
         name="Инструкция", 
-        value="1. Нажмите на кнопку и заполните открывшуюся форму\n2. Нажмите 'Отправить'\n3.Ваш рапорт будет рассматриваться в течении __24 часов__.", 
+        value="1. Нажмите на кнопку и заполните открывшуюся форму\n2. Нажмите 'Отправить'\n3. Ваш рапорт будет рассматриваться в течении __24 часов__.", 
         inline=False
     )
     

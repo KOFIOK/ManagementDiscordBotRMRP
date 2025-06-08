@@ -29,13 +29,14 @@ async def on_ready():
     
     # Load all extension cogs
     await load_extensions()
-    
-    # Sync commands with Discord
+      # Sync commands with Discord
     try:
         synced = await bot.tree.sync()
         print(f'Synced {len(synced)} command(s)')
     except Exception as e:
-        print(f'Failed to sync commands: {e}')    # Load configuration on startup
+        print(f'Failed to sync commands: {e}')
+    
+    # Load configuration on startup
     config = load_config()
     print('Configuration loaded successfully')
     print(f'Dismissal channel: {config.get("dismissal_channel", "Not set")}')

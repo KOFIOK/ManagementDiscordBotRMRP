@@ -148,6 +148,15 @@ class DismissalApprovalView(ui.View):
             # First, quickly respond to avoid timeout
             await interaction.response.defer()
             
+            # Immediately show "Processing..." state to give user feedback
+            processing_view = ui.View(timeout=None)
+            processing_button = ui.Button(label="⏳ Обрабатывается...", style=discord.ButtonStyle.gray, disabled=True)
+            processing_view.add_item(processing_button)
+            
+            # Update the message to show processing state
+            embed = interaction.message.embeds[0]
+            await interaction.followup.edit_message(interaction.message.id, embed=embed, view=processing_view)
+            
             # Try to get user_id from the view, or extract from embed footer
             target_user = None
             
@@ -295,8 +304,7 @@ class DismissalApprovalView(ui.View):
                 try:
                     await interaction.response.send_message(
                         f"Произошла ошибка при обработке одобрения: {e}", 
-                        ephemeral=True
-                    )
+                        ephemeral=True                    )
                 except:
                     pass
     
@@ -305,6 +313,15 @@ class DismissalApprovalView(ui.View):
         try:
             # First, quickly respond to avoid timeout
             await interaction.response.defer()
+            
+            # Immediately show "Processing..." state to give user feedback
+            processing_view = ui.View(timeout=None)
+            processing_button = ui.Button(label="⏳ Обрабатывается...", style=discord.ButtonStyle.gray, disabled=True)
+            processing_view.add_item(processing_button)
+            
+            # Update the message to show processing state
+            embed = interaction.message.embeds[0]
+            await interaction.followup.edit_message(interaction.message.id, embed=embed, view=processing_view)
             
             # Try to get user_id from the view, or extract from embed footer
             target_user = None

@@ -8,8 +8,6 @@ from dotenv import load_dotenv
 
 from utils.config_manager import load_config
 from forms.dismissal_form import DismissalReportButton, DismissalApprovalView, send_dismissal_button_message, restore_dismissal_approval_views
-from forms.audit_form import PersonnelAuditButton, send_audit_button_message
-from forms.blacklist_form import BlacklistButton, send_blacklist_button_message
 from forms.settings_form import SettingsView
 
 # Load environment variables from .env file
@@ -43,8 +41,6 @@ async def on_ready():
     print(f'Audit channel: {config.get("audit_channel", "Not set")}')
     print(f'Blacklist channel: {config.get("blacklist_channel", "Not set")}')    # Create persistent button views
     bot.add_view(DismissalReportButton())
-    bot.add_view(PersonnelAuditButton())
-    bot.add_view(BlacklistButton())
     bot.add_view(SettingsView())
     
     # Add a generic DismissalApprovalView for persistent approval buttons
@@ -74,19 +70,11 @@ async def restore_channel_messages(config):
     audit_channel_id = config.get('audit_channel')
     if audit_channel_id:
         channel = bot.get_channel(audit_channel_id)
-        if channel:
-            if not await check_for_button_message(channel, "Кадровый аудит"):
-                print(f"Sending audit button message to channel {channel.name}")
-                await send_audit_button_message(channel)
     
     # Restore blacklist channel message
     blacklist_channel_id = config.get('blacklist_channel')
     if blacklist_channel_id:
         channel = bot.get_channel(blacklist_channel_id)
-        if channel:
-            if not await check_for_button_message(channel, "Чёрный список"):
-                print(f"Sending blacklist button message to channel {channel.name}")
-                await send_blacklist_button_message(channel)
 
 async def check_for_button_message(channel, title_keyword):
     """Check if a channel already has a button message with the specified title."""

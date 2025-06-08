@@ -62,15 +62,13 @@ class DismissalReportModal(ui.Modal, title="Рапорт на увольнени
             
             channel = interaction.client.get_channel(channel_id)
             if not channel:
-                await interaction.response.send_message(
-                    "Ошибка: не удалось найти канал для рапортов. Обратитесь к администратору.",
-                    ephemeral=True
+                await interaction.response.send_message(                    "Ошибка: не удалось найти канал для рапортов. Обратитесь к администратору.",                ephemeral=True
                 )
                 return
             
             # Create an embed for the report
             embed = discord.Embed(
-                title="Новый рапорт на увольнение",
+                description=f"## {interaction.user.mention} подал рапорт на увольнение!",
                 color=discord.Color.red(),
                 timestamp=discord.utils.utcnow()
             )
@@ -78,12 +76,12 @@ class DismissalReportModal(ui.Modal, title="Рапорт на увольнени
             embed.add_field(name="Имя Фамилия", value=self.name.value, inline=False)
             embed.add_field(name="Статик", value=self.static.value, inline=False)
             embed.add_field(name="Причина", value=self.reason.value, inline=False)
-            embed.add_field(name="Статус", value="⏳ Рассматривается", inline=False)
             
             embed.set_footer(text=f"Отправлено: {interaction.user.name}")
             if interaction.user.avatar:
                 embed.set_thumbnail(url=interaction.user.avatar.url)
-              # Create view with approval/rejection buttons
+            
+            # Create view with approval/rejection buttons
             approval_view = DismissalApprovalView(interaction.user.id)
             
             # Check for ping settings and add mentions
@@ -168,8 +166,7 @@ class DismissalApprovalView(ui.View):
                 # Load configuration to get excluded roles
                 config = load_config()
                 excluded_roles_ids = config.get('excluded_roles', [])
-                
-                # Remove all roles from the user (except @everyone and excluded roles)
+                  # Remove all roles from the user (except @everyone and excluded roles)
                 roles_to_remove = []
                 for role in target_user.roles:
                     if role.name != "@everyone" and role.id not in excluded_roles_ids:
@@ -177,16 +174,36 @@ class DismissalApprovalView(ui.View):
                         
                 if roles_to_remove:
                     await target_user.remove_roles(*roles_to_remove, reason="Рапорт на увольнение одобрен")
-                
-                # Change nickname to "Уволен | Имя Фамилия"
+                  # Change nickname to "Уволен | Имя Фамилия"
+                # Поддерживаемые форматы никнеймов:
+                # 1. "{Подразделение} | Имя Фамилия" - стандартный формат подразделения
+                # 2. "[Должность] Имя Фамилия" - формат должности
+                # 3. "!![Должность] Имя Фамилия" - формат должности с восклицательными знаками
+                # 4. "![Должность] Имя Фамилия" - формат должности с одним восклицательным знаком
+                # 5. "[Должность]Имя Фамилия" - формат должности без пробела после скобки
+                # 6. "!![Должность]Имя Фамилия" - формат с восклицательными знаками без пробела
                 try:
                     # Extract name from current nickname or username
                     current_name = target_user.display_name
+                    
+                    # Extract name part based on different nickname formats
+                    name_part = None
+                    
+                    # Format 1: "{Подразделение} | Имя Фамилия"
                     if " | " in current_name:
-                        # Extract name part after " | "
                         name_part = current_name.split(" | ", 1)[1]
-                    else:
-                        # Use username if no proper nickname format
+                    # Format 2: "[Должность] Имя Фамилия" or "!![Должность] Имя Фамилия" or "![Должность] Имя Фамилия"
+                    elif "]" in current_name:
+                        # Find the last occurrence of "]" to handle nested brackets
+                        bracket_end = current_name.rfind("]")
+                        if bracket_end != -1:
+                            # Extract everything after "]", removing leading exclamation marks and spaces
+                            after_bracket = current_name[bracket_end + 1:]
+                            # Remove leading exclamation marks and spaces
+                            name_part = re.sub(r'^[!\s]+', '', after_bracket).strip()
+                    
+                    # If no specific format found, use the display name as is
+                    if not name_part or not name_part.strip():
                         name_part = target_user.display_name
                     
                     new_nickname = f"Уволен | {name_part}"
@@ -197,16 +214,9 @@ class DismissalApprovalView(ui.View):
                     print(f"Cannot change nickname for {target_user.name} - insufficient permissions")
                 except Exception as e:
                     print(f"Error changing nickname for {target_user.name}: {e}")
-            
-            # Update the embed
+              # Update the embed
             embed = interaction.message.embeds[0]
             embed.color = discord.Color.green()
-            
-            # Update status field
-            for i, field in enumerate(embed.fields):
-                if field.name == "Статус":
-                    embed.set_field_at(i, name="Статус", value="✅ Одобрено", inline=False)
-                    break
             
             embed.add_field(
                 name="Обработано", 
@@ -257,16 +267,9 @@ class DismissalApprovalView(ui.View):
                             if member.name == username or member.display_name == username:
                                 target_user = member
                                 break
-            
-            # Update the embed
+              # Update the embed
             embed = interaction.message.embeds[0]
             embed.color = discord.Color.red()
-            
-            # Update status field
-            for i, field in enumerate(embed.fields):
-                if field.name == "Статус":
-                    embed.set_field_at(i, name="Статус", value="❌ Отказано", inline=False)
-                    break
             
             embed.add_field(
                 name="Обработано", 
@@ -311,8 +314,7 @@ async def send_dismissal_button_message(channel):
     embed = discord.Embed(
         title="Рапорты на увольнение",
         description="Нажмите на кнопку ниже, чтобы отправить рапорт на увольнение.",
-        color=discord.Color.blue()
-    )
+        color=discord.Color.blue()    )
     
     embed.add_field(
         name="Инструкция", 
@@ -330,16 +332,17 @@ async def restore_dismissal_approval_views(bot, channel):
         async for message in channel.history(limit=50):
             # Check if message is from bot and has dismissal report embed
             if (message.author == bot.user and 
-                message.embeds and 
-                message.embeds[0].title == "Новый рапорт на увольнение"):
-                
+                message.embeds and
+                message.embeds[0].description and
+                "подал рапорт на увольнение!" in message.embeds[0].description):                
                 embed = message.embeds[0]
                 
                 # Check if report is still pending (not approved/rejected)
-                status_pending = False
+                # We check if there's no "Обработано" field, which means it's still pending
+                status_pending = True
                 for field in embed.fields:
-                    if field.name == "Статус" and "Рассматривается" in field.value:
-                        status_pending = True
+                    if field.name == "Обработано":
+                        status_pending = False
                         break
                 
                 if status_pending:

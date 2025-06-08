@@ -24,8 +24,6 @@ def test_complete_setup():
     print("\n2. Testing form modules...")
     try:
         from forms.dismissal_form import send_dismissal_button_message
-        from forms.audit_form import send_audit_button_message  
-        from forms.blacklist_form import send_blacklist_button_message
         print("   ✓ All form modules imported successfully")
     except ImportError as e:
         print(f"   ✗ Form import failed: {e}")

@@ -1,9 +1,8 @@
 import discord
+import re
 from discord import ui
 from utils.config_manager import load_config, save_config
 from forms.dismissal_form import send_dismissal_button_message
-from forms.audit_form import send_audit_button_message
-from forms.blacklist_form import send_blacklist_button_message
 
 class MainSettingsSelect(ui.Select):
     def __init__(self):
@@ -309,9 +308,88 @@ class ChannelSelectionModal(ui.Modal):
             placeholder="Например: #канал-увольнений или 1234567890123456789",
             min_length=1,
             max_length=100,
-            required=True
-        )
+            required=True        )
         self.add_item(self.channel_input)
+    
+    def _normalize_channel_name(self, channel_name, is_text_channel=True):
+        """
+        Normalize channel name by removing cosmetic elements and # prefix.
+        For text channels, spaces are converted to hyphens.
+        For voice channels, spaces remain as spaces.
+        
+        Examples:
+        - "#├「🚨」название канала" -> "название-канала" (text channel)
+        - "#├「🚨」название канала" -> "название канала" (voice channel)
+        - "#название-канала" -> "название-канала"
+        - "├「🚨」название" -> "название"
+        """
+        import re
+        
+        # Remove # prefix if present
+        if channel_name.startswith('#'):
+            channel_name = channel_name[1:]
+        
+        # Remove common cosmetic patterns at the beginning
+        # Pattern matches: ├「emoji」, ├, 「emoji」, └, ┬, ┴, etc.
+        cosmetic_patterns = [
+            r'^[├└┬┴│┌┐┘┤┼─┴┬]+[「『【\[].*?[」』】\]][^a-zA-Zа-яё0-9\-_\s]*',  # ├「🚨」
+            r'^[├└┬┴│┌┐┘┤┼─┴┬]+[^a-zA-Zа-яё0-9\-_\s]*',  # ├
+            r'^[「『【\[].*?[」』】\]][^a-zA-Zа-яё0-9\-_\s]*',  # 「🚨」
+            r'^[^\w\-а-яё\s]*',  # any other non-word characters at start
+        ]
+        
+        for pattern in cosmetic_patterns:
+            channel_name = re.sub(pattern, '', channel_name, flags=re.UNICODE)
+        
+        # Remove trailing non-word characters (but keep spaces for now)
+        channel_name = re.sub(r'[^\w\-а-яё\s]*$', '', channel_name, flags=re.UNICODE)
+        
+        # Convert spaces to hyphens for text channels
+        if is_text_channel:
+            channel_name = channel_name.replace(' ', '-')
+        
+        return channel_name.strip()
+    
+    def _find_channel_by_name(self, guild, search_name):
+        """
+        Smart channel search that ignores cosmetic elements.
+        Searches both text and voice channels, with proper space/hyphen handling.
+        """
+        # First, try to find text channels (spaces converted to hyphens)
+        normalized_search_text = self._normalize_channel_name(search_name, is_text_channel=True).lower()
+        
+        # If the normalized search is not empty, search text channels
+        if normalized_search_text:
+            # First, try exact match with normalized names in text channels
+            for channel in guild.text_channels:
+                normalized_channel_name = self._normalize_channel_name(channel.name, is_text_channel=True).lower()
+                if normalized_channel_name == normalized_search_text:
+                    return channel
+            
+            # If no exact match, try partial match in text channels
+            for channel in guild.text_channels:
+                normalized_channel_name = self._normalize_channel_name(channel.name, is_text_channel=True).lower()
+                if normalized_search_text in normalized_channel_name or normalized_channel_name in normalized_search_text:
+                    return channel
+        
+        # Then, try to find voice channels (spaces preserved)
+        normalized_search_voice = self._normalize_channel_name(search_name, is_text_channel=False).lower()
+        
+        if normalized_search_voice:
+            # First, try exact match with normalized names in voice channels
+            for channel in guild.voice_channels:
+                normalized_channel_name = self._normalize_channel_name(channel.name, is_text_channel=False).lower()
+                if normalized_channel_name == normalized_search_voice:
+                    return channel
+            
+            # If no exact match, try partial match in voice channels
+            for channel in guild.voice_channels:
+                normalized_channel_name = self._normalize_channel_name(channel.name, is_text_channel=False).lower()
+                if normalized_search_voice in normalized_channel_name or normalized_channel_name in normalized_search_voice:
+                    return channel
+        
+        # If still no match, try original Discord search as fallback (text channels only for compatibility)
+        return discord.utils.get(guild.text_channels, name=search_name)
     
     async def on_submit(self, interaction: discord.Interaction):
         try:
@@ -330,8 +408,8 @@ class ChannelSelectionModal(ui.Modal):
                     channel_id = int(channel_text)
                     channel = interaction.guild.get_channel(channel_id)
                 except ValueError:
-                    # Try to find by name
-                    channel = discord.utils.get(interaction.guild.text_channels, name=channel_text)
+                    # Try to find by name using smart search
+                    channel = self._find_channel_by_name(interaction.guild, channel_text)
             
             if not channel:
                 await interaction.response.send_message(
@@ -346,22 +424,24 @@ class ChannelSelectionModal(ui.Modal):
                     ephemeral=True
                 )
                 return
-            
-            # Save configuration
+              # Save configuration
             config = load_config()
             config[f'{self.config_type}_channel'] = channel.id
             save_config(config)
             
+            # Define type names and handle button messages
+            type_names = {
+                "dismissal": "рапортов на увольнение",
+                "audit": "кадрового аудита",
+                "blacklist": "чёрного списка"
+            }
+            type_name = type_names.get(self.config_type, self.config_type)
+            
             # Send appropriate button message to the channel
+            button_message_added = False
             if self.config_type == "dismissal":
                 await send_dismissal_button_message(channel)
-                type_name = "рапортов на увольнение"
-            elif self.config_type == "audit":
-                await send_audit_button_message(channel)
-                type_name = "кадрового аудита"
-            elif self.config_type == "blacklist":
-                await send_blacklist_button_message(channel)
-                type_name = "чёрного списка"
+                button_message_added = True
             
             embed = discord.Embed(
                 title="✅ Канал настроен успешно",
@@ -370,11 +450,19 @@ class ChannelSelectionModal(ui.Modal):
                 timestamp=discord.utils.utcnow()
             )
             
-            embed.add_field(
-                name="Что было сделано:",
-                value=f"• Канал {channel.mention} настроен для {type_name}\n• Сообщение с кнопкой добавлено в канал",
-                inline=False
-            )
+            # Customize the description based on whether button was added
+            if button_message_added:
+                embed.add_field(
+                    name="Что было сделано:",
+                    value=f"• Канал {channel.mention} настроен для {type_name}\n• Сообщение с кнопкой добавлено в канал",
+                    inline=False
+                )
+            else:
+                embed.add_field(
+                    name="Что было сделано:",
+                    value=f"• Канал {channel.mention} настроен для {type_name}",
+                    inline=False
+                )
             
             await interaction.response.send_message(embed=embed, ephemeral=True)
             

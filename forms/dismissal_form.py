@@ -197,8 +197,7 @@ class DismissalApprovalView(ui.View):
             config = load_config()
             excluded_roles_ids = config.get('excluded_roles', [])
             ping_settings = config.get('ping_settings', {})
-            
-            # Extract form data from embed fields
+              # Extract form data from embed fields
             embed = interaction.message.embeds[0]
             form_data = {}
             
@@ -209,6 +208,10 @@ class DismissalApprovalView(ui.View):
                     form_data['static'] = field.value
                 elif field.name == "Причина":
                     form_data['reason'] = field.value
+            
+            # Get user data BEFORE removing roles (for audit notification)
+            user_rank_for_audit = sheets_manager.get_rank_from_roles(target_user)
+            user_unit_for_audit = sheets_manager.get_department_from_roles(target_user, ping_settings)
             
             # Log to Google Sheets BEFORE removing roles (to capture rank and department correctly)
             try:
@@ -290,53 +293,61 @@ class DismissalApprovalView(ui.View):
                 if audit_channel_id:
                     audit_channel = interaction.guild.get_channel(audit_channel_id)
                     if audit_channel:
-                        # Create audit notification embed
+                        # Use rank and department data captured before roles were removed
+                        user_rank = user_rank_for_audit
+                        user_unit = user_unit_for_audit
+                        
+                        # Get approving user info from Google Sheets
+                        signed_by_name = interaction.user.display_name  # Default fallback
+                        try:
+                            # Extract clean name from approving user's nickname
+                            approved_by_clean_name = sheets_manager.extract_name_from_nickname(interaction.user.display_name)
+                            if approved_by_clean_name:
+                                # Extract surname (last word)
+                                name_parts = approved_by_clean_name.strip().split()
+                                if len(name_parts) >= 2:
+                                    surname = name_parts[-1]  # Last word as surname
+                                    # Search in 'Пользователи' sheet
+                                    full_user_info = await sheets_manager.get_user_info_from_users_sheet(surname)
+                                    if full_user_info:
+                                        signed_by_name = full_user_info
+                                    else:
+                                        signed_by_name = approved_by_clean_name
+                        except Exception as e:
+                            print(f"Error getting approving user info from Google Sheets: {e}")
+                        
+                        # Create audit notification embed with correct template
                         audit_embed = discord.Embed(
-                            title="🔄 Кадровый аудит - Увольнение одобрено",
-                            color=discord.Color.green(),
+                            title="Кадровый аудит ВС РФ",
+                            color=0x055000,  # Green color as in template
                             timestamp=discord.utils.utcnow()
                         )
                         
-                        # Get user rank from roles (before they were removed, we need to reconstruct)
-                        user_rank = "Неизвестно"
-                        if roles_to_remove:
-                            # Find rank-like role (usually contains военные звания)
-                            for role in roles_to_remove:
-                                if any(rank_word in role.name.lower() for rank_word in 
-                                      ["рядовой", "ефрейтор", "младший", "сержант", "старший", "старшина", 
-                                       "прапорщик", "старший прапорщик", "лейтенант", "старший лейтенант", 
-                                       "капитан", "майор", "подполковник", "полковник", "генерал"]):
-                                    user_rank = role.name
-                                    break
+                        # Format date as dd-MM-yyyy
+                        action_date = discord.utils.utcnow().strftime('%d-%m-%Y')
                         
-                        # Get unit from roles (department/unit)
-                        user_unit = "Неизвестно"
-                        if roles_to_remove:
-                            # Find unit-like role (usually the longest non-rank role)
-                            for role in roles_to_remove:
-                                if not any(rank_word in role.name.lower() for rank_word in 
-                                          ["рядовой", "ефрейтор", "младший", "сержант", "старший", "старшина", 
-                                           "прапорщик", "старший прапорщик", "лейтенант", "старший лейтенант", 
-                                           "капитан", "майор", "подполковник", "полковник", "генерал"]):
-                                    if len(role.name) > len(user_unit) or user_unit == "Неизвестно":
-                                        user_unit = role.name
+                        # Combine name and static for "Имя Фамилия | Статик" field
+                        name_with_static = f"{form_data.get('name', 'Неизвестно')} | {form_data.get('static', '')}"
                         
-                        # Set fields for audit notification
-                        audit_embed.add_field(name="Подписал", value=interaction.user.mention, inline=True)
-                        audit_embed.add_field(name="Полный тег", value=f"{target_user.mention} ({target_user})", inline=True)
-                        audit_embed.add_field(name="Действие", value="Увольнение", inline=True)
-                        audit_embed.add_field(name="Причина", value=form_data.get('reason', 'Не указана'), inline=False)
-                        audit_embed.add_field(name="Дата действия", value=discord.utils.format_dt(discord.utils.utcnow(), 'F'), inline=True)
-                        audit_embed.add_field(name="Подразделение", value=user_unit, inline=True)
-                        audit_embed.add_field(name="Звание", value=user_rank, inline=True)
+                        # Set fields according to template
+                        audit_embed.add_field(name="Кадровую отписал", value=signed_by_name, inline=False)
+                        audit_embed.add_field(name="Имя Фамилия | 6 цифр статика", value=name_with_static, inline=False)
+                        audit_embed.add_field(name="Действие", value="Уволен со службы", inline=False)
                         
-                        # Set thumbnail to user's avatar
-                        audit_embed.set_thumbnail(url=target_user.display_avatar.url)
+                        # Add reason field only if reason exists
+                        reason = form_data.get('reason', '')
+                        if reason:
+                            audit_embed.add_field(name="Причина увольнения", value=reason, inline=False)
                         
-                        # Set footer
-                        audit_embed.set_footer(text="Система кадрового аудита ВС РФ")
+                        audit_embed.add_field(name="Дата Действия", value=action_date, inline=False)
+                        audit_embed.add_field(name="Подразделение", value=user_unit, inline=False)
+                        audit_embed.add_field(name="Воинское звание", value=user_rank, inline=False)
                         
-                        await audit_channel.send(embed=audit_embed)
+                        # Set thumbnail to default image as in template
+                        audit_embed.set_thumbnail(url="https://i.imgur.com/07MRSyl.png")
+                        
+                        # Send notification with user mention (the user who was dismissed)
+                        await audit_channel.send(content=f"<@{target_user.id}>", embed=audit_embed)
                         print(f"Sent audit notification for dismissal of {target_user.display_name}")
                     else:
                         print(f"Audit channel not found: {audit_channel_id}")

@@ -7,6 +7,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 from utils.config_manager import load_config
+from utils.google_sheets import sheets_manager
 from forms.dismissal_form import DismissalReportButton, DismissalApprovalView, send_dismissal_button_message, restore_dismissal_approval_views
 from forms.settings_form import SettingsView
 
@@ -39,7 +40,16 @@ async def on_ready():
     print('Configuration loaded successfully')
     print(f'Dismissal channel: {config.get("dismissal_channel", "Not set")}')
     print(f'Audit channel: {config.get("audit_channel", "Not set")}')
-    print(f'Blacklist channel: {config.get("blacklist_channel", "Not set")}')    # Create persistent button views
+    print(f'Blacklist channel: {config.get("blacklist_channel", "Not set")}')
+      # Initialize Google Sheets
+    print('Initializing Google Sheets...')
+    sheets_success = sheets_manager.initialize()
+    if sheets_success:
+        print('✅ Google Sheets initialized successfully')
+    else:
+        print('⚠️ Google Sheets initialization failed - dismissal logging will not work')
+    
+    # Create persistent button views
     bot.add_view(DismissalReportButton())
     bot.add_view(SettingsView())
     

@@ -250,15 +250,14 @@ class GoogleSheetsManager:
             
             # Insert record at the beginning (after headers)
             result = self.worksheet.insert_row(row_data, index=2)
-            
-            # Check if insert was successful
+              # Check if insert was successful
             if result:
                 print(f"✅ Successfully added dismissal record for {real_name}")
                 return True
             else:
                 print(f"❌ Failed to add dismissal record for {real_name}")
                 return False
-            
+                
         except Exception as e:
             print(f"❌ Error adding dismissal record to Google Sheets: {e}")
             # Print more detailed error information
@@ -267,7 +266,7 @@ class GoogleSheetsManager:
                 print(f"Response text: {e.response.text}")
             return False
         
-    async def send_to_blacklist(self, guild, form_data, days_difference):
+    async def send_to_blacklist(self, guild, form_data, days_difference, audit_message_url=None, approving_user=None):
         """Send a message to blacklist channel about early dismissal penalty."""
         try:
             from utils.config_manager import load_config
@@ -284,26 +283,71 @@ class GoogleSheetsManager:
                 print(f"Blacklist channel not found: {blacklist_channel_id}")
                 return False
             
-            # Create blacklist embed
-            embed = discord.Embed(
-                title="⚠️ Неустойка за досрочное увольнение",
-                color=0xFF0000,  # Red color
-                timestamp=discord.utils.utcnow()
-            )
+            # Get approving user info
+            approving_user_name = "Система"
+            if approving_user:
+                # Extract clean name and lookup in Users sheet
+                approved_by_clean_name = self.extract_name_from_nickname(approving_user.display_name)
+                if approved_by_clean_name:
+                    name_parts = approved_by_clean_name.strip().split()
+                    if len(name_parts) >= 2:
+                        surname = name_parts[-1]
+                        full_user_info = await self.get_user_info_from_users_sheet(surname)
+                        if full_user_info:
+                            approving_user_name = full_user_info
+                        else:
+                            approving_user_name = approved_by_clean_name
+                else:
+                    approving_user_name = approving_user.display_name
             
             name = form_data.get('name', 'Неизвестно')
             static = form_data.get('static', 'Неизвестно')
             
-            embed.add_field(name="Имя Фамилия", value=name, inline=False)
-            embed.add_field(name="Статик", value=static, inline=False)
-            embed.add_field(name="Причина внесения в чёрный список", 
-                          value=f"Досрочное увольнение (менее 5 дней службы - {days_difference} дн.)", 
-                          inline=False)
-            embed.add_field(name="Тип нарушения", value="Неустойка", inline=False)
+            # Format dates (current date + 14 days)
+            from datetime import datetime, timedelta
+            current_date = datetime.now()
+            enforcement_date = current_date + timedelta(days=14)
             
-            embed.set_footer(text="Автоматическое внесение в чёрный список")
+            def format_date(date):
+                return date.strftime('%d.%m.%Y')
             
-            await blacklist_channel.send(embed=embed)
+            # Create embed fields in the required format
+            fields = [
+                {"name": "1. Кто выдаёт", "value": approving_user_name, "inline": False},
+                {"name": "2. Кому", "value": f"{name} | {static}", "inline": False},
+                {"name": "3. Причина", "value": "Неустойка", "inline": False},
+                {"name": "4. Дата начала", "value": format_date(current_date), "inline": True},
+                {"name": "5. Дата окончания", "value": format_date(enforcement_date), "inline": True},
+                {"name": "6. Доказательства", "value": audit_message_url if audit_message_url else "—", "inline": False}
+            ]
+            
+            # Create blacklist embed
+            embed = discord.Embed(
+                title="📋 Новое дело",
+                color=0xe74c3c,  # Red color (15158332 in decimal)
+                timestamp=discord.utils.utcnow()
+            )
+            
+            # Add fields to embed
+            for field in fields:
+                embed.add_field(
+                    name=field["name"], 
+                    value=field["value"], 
+                    inline=field["inline"]
+                )
+            
+            # Set thumbnail
+            embed.set_thumbnail(url="https://i.imgur.com/07MRSyl.png")
+            
+            # Send message with role pings
+            # Note: You may need to configure these role IDs in your config
+            role_mentions = config.get('blacklist_role_mentions', [])
+            content = ""
+            if role_mentions:
+                mentions = [f"<@&{role_id}>" for role_id in role_mentions]
+                content = f"-# {' '.join(mentions)}"
+            
+            await blacklist_channel.send(content=content, embed=embed)
             print(f"Successfully sent blacklist message for {name} ({static})")
             return True
         
@@ -438,8 +482,8 @@ class GoogleSheetsManager:
                 "Неустойка",  # Причина - всегда "Неустойка"
                 current_date,  # Дата внесения
                 enforcement_date,  # Дата вынесения (дата внесения + 14 дней)
-                approved_by_info,  # Кем внесён - из листа "Пользователи"
-                '="1. " & B3 & СИМВОЛ(10) & "2. " & C3 & СИМВОЛ(10) & "3. " & ТЕКСТ(D3;"dd.mm.yyyy") & СИМВОЛ(10) & "4. " & ТЕКСТ(E3;"dd.mm.yyyy") & СИМВОЛ(10) & "5. " & F3 & СИМВОЛ(10)'  # Сообщение
+                approved_by_info,  # Кем внесён
+                ""  # Сообщение
             ]
             
             # Insert record at the beginning (after headers)

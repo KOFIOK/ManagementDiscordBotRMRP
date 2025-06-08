@@ -185,13 +185,12 @@ class DismissalApprovalView(ui.View):
                     value=f"Сотрудник: {interaction.user.mention}\nВремя: {discord.utils.format_dt(discord.utils.utcnow(), 'F')}\n⚠️ Пользователь не найден - роли не сняты", 
                     inline=False
                 )
-                
-                # Create new view with only "Approved" button (disabled)
+                  # Create new view with only "Approved" button (disabled)
                 approved_view = ui.View(timeout=None)
                 approved_button = ui.Button(label="✅ Одобрено", style=discord.ButtonStyle.green, disabled=True)
                 approved_view.add_item(approved_button)
                 
-                await interaction.followup.edit_message(interaction.message.id, embed=embed, view=approved_view)
+                await interaction.followup.edit_message(interaction.message.id, content="", embed=embed, view=approved_view)
                 return
             
             # Load configuration to get excluded roles and ping settings
@@ -209,11 +208,11 @@ class DismissalApprovalView(ui.View):
                     form_data['static'] = field.value
                 elif field.name == "Причина":
                     form_data['reason'] = field.value
-            
-            # Get user data BEFORE removing roles (for audit notification)
+              # Get user data BEFORE removing roles (for audit notification)
             user_rank_for_audit = sheets_manager.get_rank_from_roles(target_user)
             user_unit_for_audit = sheets_manager.get_department_from_roles(target_user, ping_settings)
-              # Log to Google Sheets BEFORE removing roles (to capture rank and department correctly)
+            
+            # Log to Google Sheets BEFORE removing roles (to capture rank and department correctly)
             try:
                 current_time = discord.utils.utcnow()
                 success = await sheets_manager.add_dismissal_record(
@@ -229,72 +228,6 @@ class DismissalApprovalView(ui.View):
                     print(f"Failed to log dismissal to Google Sheets for {target_user.display_name}")
             except Exception as e:
                 print(f"Error logging to Google Sheets: {e}")
-              # Check for early dismissal penalty (less than 5 days of service)
-            try:
-                static = form_data.get('static', '')
-                if static:
-                    hiring_record = await sheets_manager.get_latest_hiring_record_by_static(static)
-                    if hiring_record:
-                        hire_date_str = str(hiring_record.get('Дата Действия', '')).strip()
-                        if hire_date_str:
-                            try:
-                                # Parse hire date
-                                hire_date = None
-                                
-                                # If date contains time, extract date part
-                                if ' ' in hire_date_str:
-                                    date_part = hire_date_str.split(' ')[0]
-                                else:
-                                    date_part = hire_date_str
-                                
-                                # Try different date formats
-                                try:
-                                    hire_date = datetime.strptime(date_part, '%d.%m.%Y')
-                                except ValueError:
-                                    try:
-                                        hire_date = datetime.strptime(date_part, '%d-%m-%Y')
-                                    except ValueError:
-                                        # Try full datetime format
-                                        try:
-                                            hire_date = datetime.strptime(hire_date_str, '%d.%m.%Y %H:%M:%S')
-                                        except ValueError:
-                                            hire_date = datetime.strptime(hire_date_str, '%d-%m-%Y %H:%M:%S')
-                                  # Calculate days difference
-                                dismissal_date = current_time.replace(tzinfo=None)
-                                days_difference = (dismissal_date - hire_date).days
-                                
-                                if days_difference < 5:
-                                    print(f"Early dismissal detected: {days_difference} days of service for {form_data.get('name', 'Unknown')}")
-                                    # Send to blacklist channel
-                                    await sheets_manager.send_to_blacklist(
-                                        guild=interaction.guild,
-                                        form_data=form_data,
-                                        days_difference=days_difference
-                                    )
-                                    # Log penalty to "Отправлено (НЕ РЕДАКТИРОВАТЬ)" sheet
-                                    try:
-                                        penalty_logged = await sheets_manager.add_blacklist_record(
-                                            form_data=form_data,
-                                            dismissed_user=target_user,
-                                            approving_user=interaction.user,
-                                            dismissal_time=current_time,
-                                            days_difference=days_difference
-                                        )
-                                        if penalty_logged:
-                                            print(f"Successfully logged early dismissal penalty for {form_data.get('name', 'Unknown')}")
-                                        else:
-                                            print(f"Failed to log early dismissal penalty for {form_data.get('name', 'Unknown')}")
-                                    except Exception as penalty_error:
-                                        print(f"Error logging penalty to blacklist sheet: {penalty_error}")
-                                else:
-                                    print(f"Normal dismissal: {days_difference} days of service")
-                            
-                            except ValueError as date_error:
-                                print(f"Error parsing hire date '{hire_date_str}': {date_error}")
-                    else:
-                        print(f"No hiring record found for static {static}")
-            except Exception as e:
-                print(f"Error checking for early dismissal: {e}")
             
             # Remove all roles from the user (except @everyone and excluded roles)
             roles_to_remove = []
@@ -345,12 +278,11 @@ class DismissalApprovalView(ui.View):
                 value=f"Сотрудник: {interaction.user.mention}\nВремя: {discord.utils.format_dt(discord.utils.utcnow(), 'F')}", 
                 inline=False
             )
-            
-            # Create new view with only "Approved" button (disabled)
+              # Create new view with only "Approved" button (disabled)
             approved_view = ui.View(timeout=None)
             approved_button = ui.Button(label="✅ Одобрено", style=discord.ButtonStyle.green, disabled=True)
             approved_view.add_item(approved_button)
-            await interaction.followup.edit_message(interaction.message.id, embed=embed, view=approved_view)
+            await interaction.followup.edit_message(interaction.message.id, content="", embed=embed, view=approved_view)
             
             # Send notification to audit channel
             try:
@@ -408,19 +340,92 @@ class DismissalApprovalView(ui.View):
                         audit_embed.add_field(name="Дата Действия", value=action_date, inline=False)
                         audit_embed.add_field(name="Подразделение", value=user_unit, inline=False)
                         audit_embed.add_field(name="Воинское звание", value=user_rank, inline=False)
-                        
-                        # Set thumbnail to default image as in template
+                          # Set thumbnail to default image as in template
                         audit_embed.set_thumbnail(url="https://i.imgur.com/07MRSyl.png")
                         
                         # Send notification with user mention (the user who was dismissed)
-                        await audit_channel.send(content=f"<@{target_user.id}>", embed=audit_embed)
+                        audit_message = await audit_channel.send(content=f"<@{target_user.id}>", embed=audit_embed)
+                        audit_message_url = audit_message.jump_url
                         print(f"Sent audit notification for dismissal of {target_user.display_name}")
                     else:
+                        audit_message_url = None
                         print(f"Audit channel not found: {audit_channel_id}")
                 else:
+                    audit_message_url = None
                     print("Audit channel ID not configured")
             except Exception as e:
                 print(f"Error sending audit notification: {e}")
+                audit_message_url = None
+            
+            # Check for early dismissal penalty (less than 5 days of service)
+            try:
+                static = form_data.get('static', '')
+                if static:
+                    hiring_record = await sheets_manager.get_latest_hiring_record_by_static(static)
+                    if hiring_record:
+                        hire_date_str = str(hiring_record.get('Дата Действия', '')).strip()
+                        if hire_date_str:
+                            try:
+                                # Parse hire date
+                                hire_date = None
+                                
+                                # If date contains time, extract date part
+                                if ' ' in hire_date_str:
+                                    date_part = hire_date_str.split(' ')[0]
+                                else:
+                                    date_part = hire_date_str
+                                
+                                # Try different date formats
+                                try:
+                                    hire_date = datetime.strptime(date_part, '%d.%m.%Y')
+                                except ValueError:
+                                    try:
+                                        hire_date = datetime.strptime(date_part, '%d-%m-%Y')
+                                    except ValueError:
+                                        # Try full datetime format
+                                        try:
+                                            hire_date = datetime.strptime(hire_date_str, '%d.%m.%Y %H:%M:%S')
+                                        except ValueError:
+                                            hire_date = datetime.strptime(hire_date_str, '%d-%m-%Y %H:%M:%S')
+                                
+                                # Calculate days difference
+                                dismissal_date = current_time.replace(tzinfo=None)
+                                days_difference = (dismissal_date - hire_date).days
+                                
+                                if days_difference < 5:
+                                    print(f"Early dismissal detected: {days_difference} days of service for {form_data.get('name', 'Unknown')}")
+                                    # Send to blacklist channel with audit message URL and approving user
+                                    await sheets_manager.send_to_blacklist(
+                                        guild=interaction.guild,
+                                        form_data=form_data,
+                                        days_difference=days_difference,
+                                        audit_message_url=audit_message_url,
+                                        approving_user=interaction.user
+                                    )
+                                    # Log penalty to "Отправлено (НЕ РЕДАКТИРОВАТЬ)" sheet
+                                    try:
+                                        penalty_logged = await sheets_manager.add_blacklist_record(
+                                            form_data=form_data,
+                                            dismissed_user=target_user,
+                                            approving_user=interaction.user,
+                                            dismissal_time=current_time,
+                                            days_difference=days_difference
+                                        )
+                                        if penalty_logged:
+                                            print(f"Successfully logged early dismissal penalty for {form_data.get('name', 'Unknown')}")
+                                        else:
+                                            print(f"Failed to log early dismissal penalty for {form_data.get('name', 'Unknown')}")
+                                    except Exception as penalty_error:
+                                        print(f"Error logging penalty to blacklist sheet: {penalty_error}")
+                                else:
+                                    print(f"Normal dismissal: {days_difference} days of service")
+                            
+                            except ValueError as date_error:
+                                print(f"Error parsing hire date '{hire_date_str}': {date_error}")
+                    else:
+                        print(f"No hiring record found for static {static}")
+            except Exception as e:
+                print(f"Error checking for early dismissal: {e}")
             
             # Send DM to the user
             try:
@@ -488,13 +493,12 @@ class DismissalApprovalView(ui.View):
                 value=f"Сотрудник: {interaction.user.mention}\nВремя: {discord.utils.format_dt(discord.utils.utcnow(), 'F')}", 
                 inline=False
             )
-            
-            # Create new view with only "Rejected" button (disabled)
+              # Create new view with only "Rejected" button (disabled)
             rejected_view = ui.View(timeout=None)
             rejected_button = ui.Button(label="❌ Отказано", style=discord.ButtonStyle.red, disabled=True)
             rejected_view.add_item(rejected_button)
             
-            await interaction.followup.edit_message(interaction.message.id, embed=embed, view=rejected_view)
+            await interaction.followup.edit_message(interaction.message.id, content="", embed=embed, view=rejected_view)
             
             # Send DM to the user if they're still on the server
             if target_user:
@@ -541,7 +545,7 @@ async def send_dismissal_button_message(channel):
     
     embed.add_field(
         name="Инструкция", 
-        value="1. Нажмите на кнопку\n2. Заполните открывшуюся форму\n3. Нажмите 'Отправить'", 
+        value="1. Нажмите на кнопку и заполните открывшуюся форму\n2. Нажмите 'Отправить'\n3.Ваш рапорт будет рассматриваться в течении __24 часов__.", 
         inline=False
     )
     

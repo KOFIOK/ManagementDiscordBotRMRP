@@ -23,18 +23,18 @@ jobs:
         password: ${{ secrets.SERVER_PASSWORD }}
         script: |
           set -e  # Exit on any error
-          
-          echo "🚀 Starting deployment process..."
+            echo "🚀 Starting deployment process..."
           echo "Repository: ${{ github.repository }}"
           echo "SHA: ${{ github.sha }}"
-          echo "Branch: ${{ github.ref_name }}"            # Configure Git credentials globally first
+          echo "Branch: ${{ github.ref_name }}"
+          
+          # Configure Git credentials globally first
           echo "Configuring Git credentials..."
           git config --global credential.helper store
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
           
           # Create credentials file for GitHub authentication
-          mkdir -p ~/.git-credentials
           echo "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com" > ~/.git-credentials
           chmod 600 ~/.git-credentials
           
@@ -50,13 +50,13 @@ jobs:
           else
             echo "Updating existing project..."
             cd /opt/army-discord-bot
-            
-            # Ensure we're in a git repository
+              # Ensure we're in a git repository
             if [ ! -d ".git" ]; then
               echo "Initializing git repository..."
               rm -rf * .[^.]* 2>/dev/null || true
               echo "Cloning repository..."
-              git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git .            else
+              git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git .
+            else
               # Set remote URL with token for authentication
               echo "Setting remote URL with authentication..."
               git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git

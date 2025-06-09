@@ -94,4 +94,5 @@ tmp/
 *.sqlite3
 
 # Config backups
-config*.json.backup
+config.json
+data/

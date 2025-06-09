@@ -25,6 +25,15 @@ jobs:
           echo "Repository: ${{ github.repository }}"
           echo "SHA: ${{ github.sha }}"
           echo "Branch: ${{ github.ref_name }}"
+            # Configure Git credentials globally first
+          echo "Configuring Git credentials..."
+          git config --global credential.helper store
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          
+          # Create credentials file for GitHub authentication
+          mkdir -p ~/.git
+          echo "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com" > ~/.git-credentials
           
           # Navigate to project directory or create it
           if [ ! -d "/opt/army-discord-bot" ]; then
@@ -34,10 +43,7 @@ jobs:
             
             # Clone repository with token authentication
             echo "Cloning repository..."
-            if ! git clone https://${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git .; then
-              echo "❌ Failed to clone repository with token, trying without token for public repos..."
-              git clone https://github.com/${{ github.repository }}.git .
-            fi
+            git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git .
           else
             echo "Updating existing project..."
             cd /opt/army-discord-bot
@@ -47,16 +53,8 @@ jobs:
               echo "Initializing git repository..."
               rm -rf * .[^.]* 2>/dev/null || true
               echo "Cloning repository..."
-              if ! git clone https://${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git .; then
-                echo "❌ Failed to clone repository with token, trying without token for public repos..."
-                git clone https://github.com/${{ github.repository }}.git .
-              fi
+              git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git .
             else
-              # Configure git credentials for this session
-              echo "Configuring git credentials..."
-              git config --global credential.helper store
-              echo "https://${{ secrets.GITHUB_TOKEN }}@github.com" > ~/.git-credentials
-              
               # Pull latest changes
               echo "Pulling latest changes..."
               git fetch origin

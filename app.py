@@ -10,7 +10,7 @@ from utils.config_manager import load_config
 from utils.google_sheets import sheets_manager
 from forms.dismissal_form import DismissalReportButton, DismissalApprovalView, send_dismissal_button_message, restore_dismissal_approval_views
 from forms.settings_form import SettingsView
-from forms.role_assignment_form import RoleAssignmentView, send_role_assignment_message, restore_role_assignment_views
+from forms.role_assignment_form import RoleAssignmentView, send_role_assignment_message, restore_role_assignment_views, restore_approval_views
 
 # Load environment variables from .env file
 load_dotenv()
@@ -88,10 +88,13 @@ async def restore_channel_messages(config):
             if not await check_for_button_message(channel, "Выбор роли"):
                 print(f"Sending role assignment message to channel {channel.name}")
                 await send_role_assignment_message(channel)
-            
-            # Restore role assignment views
+              # Restore role assignment views
             print(f"Restoring role assignment views in {channel.name}")
             await restore_role_assignment_views(bot, channel)
+            
+            # Restore approval views for existing applications
+            print(f"Restoring approval views for role applications in {channel.name}")
+            await restore_approval_views(bot, channel)
     
     # Restore audit channel message
     audit_channel_id = config.get('audit_channel')

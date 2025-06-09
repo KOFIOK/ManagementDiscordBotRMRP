@@ -1,4 +1,5 @@
 import discord
+import re
 from discord import ui
 from utils.config_manager import load_config, save_config
 
@@ -94,7 +95,6 @@ class MilitaryApplicationModal(ui.Modal):
     
     def _validate_static(self, static):
         """Validate static format (123-456 or 12345)"""
-        import re
         # Allow 5-6 digits with optional dash
         pattern = r'^\d{2,3}-?\d{3}$'
         return bool(re.match(pattern, static))
@@ -135,7 +135,8 @@ class MilitaryApplicationModal(ui.Modal):
             
             # Create approval view
             approval_view = RoleApplicationApprovalView(application_data)
-              # Get ping roles for notifications (military applications)
+            
+            # Get ping roles for notifications (military applications)
             ping_role_ids = config.get('military_role_assignment_ping_roles', [])
             ping_content = ""
             if ping_role_ids:
@@ -247,13 +248,11 @@ class CivilianApplicationModal(ui.Modal):
     
     def _validate_static(self, static):
         """Validate static format (123-456 or 12345)"""
-        import re
         pattern = r'^\d{2,3}-?\d{3}$'
         return bool(re.match(pattern, static))
     
     def _validate_url(self, url):
         """Basic URL validation"""
-        import re
         url_pattern = r'https?://[^\s/$.?#].[^\s]*'
         return bool(re.match(url_pattern, url))
     
@@ -294,7 +293,8 @@ class CivilianApplicationModal(ui.Modal):
             
             # Create approval view
             approval_view = RoleApplicationApprovalView(application_data)
-              # Get ping roles for notifications (civilian applications)
+            
+            # Get ping roles for notifications (civilian applications)
             ping_role_ids = config.get('civilian_role_assignment_ping_roles', [])
             ping_content = ""
             if ping_role_ids:
@@ -364,53 +364,55 @@ class RoleApplicationApprovalView(ui.View):
                 role_ids = config.get('civilian_roles', [])
                 role_type = "гражданского"
             
-            if not role_ids:
-                await interaction.response.send_message(
-                    f"❌ Роли {role_type} не настроены в конфигурации.",
-                    ephemeral=True
-                )
-                return
-            
-            # Get roles from guild
-            roles_to_assign = []
-            for role_id in role_ids:
-                role = guild.get_role(role_id)
-                if role:
-                    roles_to_assign.append(role)
-                else:
-                    print(f"Warning: Role {role_id} not found in guild")
-            
-            if not roles_to_assign:
-                await interaction.response.send_message(
-                    f"❌ Роли {role_type} не найдены на сервере.",
-                    ephemeral=True
-                )
-                return
-            
             # Remove opposite roles if they exist
             opposite_role_ids = config.get('civilian_roles' if self.application_data["type"] == "military" else 'military_roles', [])
             for opposite_role_id in opposite_role_ids:
                 opposite_role = guild.get_role(opposite_role_id)
                 if opposite_role and opposite_role in user.roles:
-                    await user.remove_roles(opposite_role, reason=f"Получение роли {role_type}")
+                    try:
+                        await user.remove_roles(opposite_role, reason=f"Получение роли {role_type}")
+                    except discord.Forbidden:
+                        print(f"No permission to remove role {opposite_role.name} from {user}")
+                    except Exception as e:
+                        print(f"Error removing role {opposite_role.name}: {e}")
             
-            # Add all configured roles
+            # Add configured roles if any exist
             assigned_roles = []
-            for role in roles_to_assign:
-                try:
-                    await user.add_roles(role, reason=f"Одобрение заявки на роль {role_type}")
-                    assigned_roles.append(role.mention)
-                except discord.Forbidden:
-                    print(f"No permission to assign role {role.name} to {user}")
-                except Exception as e:
-                    print(f"Error assigning role {role.name}: {e}")
+            if role_ids:
+                # Get roles from guild
+                roles_to_assign = []
+                for role_id in role_ids:
+                    role = guild.get_role(role_id)
+                    if role:
+                        roles_to_assign.append(role)
+                    else:
+                        print(f"Warning: Role {role_id} not found in guild")
+                
+                # Add all found roles
+                for role in roles_to_assign:
+                    try:
+                        await user.add_roles(role, reason=f"Одобрение заявки на роль {role_type}")
+                        assigned_roles.append(role.mention)
+                    except discord.Forbidden:
+                        print(f"No permission to assign role {role.name} to {user}")
+                    except Exception as e:
+                        print(f"Error assigning role {role.name}: {e}")
+            else:
+                print(f"Warning: No roles configured for {role_type}")
             
             # Update embed to show approval
             original_embed = interaction.message.embeds[0]
             original_embed.color = discord.Color.green()
+            
+            status_message = f"Одобрено модератором {interaction.user.mention}"
+            if not role_ids:
+                status_message += "\n⚠️ Роли не настроены - выдача ролей пропущена"
+            elif not assigned_roles:
+                status_message += "\n⚠️ Роли не найдены на сервере"
+            
             original_embed.add_field(
                 name="✅ Статус",
-                value=f"Одобрено модератором {interaction.user.mention}",
+                value=status_message,
                 inline=False
             )
             
@@ -421,29 +423,30 @@ class RoleApplicationApprovalView(ui.View):
             approved_view = ApprovedApplicationView()
             
             await interaction.response.edit_message(embed=original_embed, view=approved_view)
-              # Send notification to user with instructions
+            
+            # Send notification to user with instructions
             try:
                 if self.application_data["type"] == "military":
                     # Military instructions
                     instructions = (
                         "✅ **Ваша заявка на получение роли военнослужащего была одобрена!**\n\n"
                         "📋 **Полезная информация:**\n"
-                        "• **Канал общения:** [Будет заполнено]\n"
-                        "• **Расписание занятий (необходимых для повышения):** [Будет заполнено]\n"
-                        "• **Следите за оповещениями обучения:** [Будет заполнено]\n"
-                        "• **Ознакомьтесь с сайтом Вооружённых Сил РФ:** [Будет заполнено]\n"
-                        "• **Следите за последними приказами:** [Будет заполнено]\n"
-                        "• **Уже были в ВС РФ? Попробуйте восстановиться:** [Будет заполнено]\n"
-                        "• **Решили, что служба не для вас? Напишите рапорт на увольнение:** [Будет заполнено]"
+                        "> • **Канал общения:** <#1246126422251278597>\n"
+                        "> • **Расписание занятий (необходимых для повышения):** <#1336337899309895722>\n"
+                        "> • **Следите за оповещениями обучения:** <#1337434149274779738>\n"
+                        "> • **Ознакомьтесь с сайтом Вооружённых Сил РФ:** <#1326022450307137659>\n"
+                        "> • **Следите за последними приказами:** <#1251166871064019015>\n"
+                        "> • **Уже были в ВС РФ? Попробуйте восстановиться:** <#1317830537724952626>\n"
+                        "> • **Решили, что служба не для вас? Напишите рапорт на увольнение:** <#1246119825487564981>"
                     )
                 else:
                     # Civilian instructions
                     instructions = (
                         "✅ **Ваша заявка на получение роли гражданского была одобрена!**\n\n"
                         "📋 **Полезная информация:**\n"
-                        "• **Канал общения:** [Будет заполнено]\n"
-                        "• **Доступные каналы и ресурсы:** [Будет заполнено]\n"
-                        "• **Правила взаимодействия:** [Будет заполнено]"
+                        "> • **Канал общения:** <#1246125346152251393>\n"
+                        "> • **Запросить поставку:** <#1246119051726553099>\n"
+                        "> • **Запросить допуск на территорию ВС РФ:** <#1246119269784354888>"
                     )
                 
                 await user.send(instructions)
@@ -636,3 +639,85 @@ async def restore_role_assignment_views(bot, channel):
                     
     except Exception as e:
         print(f"Error restoring role assignment views: {e}")
+
+# Function to restore approval views for existing application messages
+async def restore_approval_views(bot, channel):
+    """Restore approval views for existing application messages."""
+    try:
+        async for message in channel.history(limit=100):
+            # Check if message is from bot and has application embed
+            if (message.author == bot.user and 
+                message.embeds and
+                len(message.embeds) > 0):
+                
+                embed = message.embeds[0]
+                if not embed.title:
+                    continue
+                    
+                # Check for application embeds that are still pending (no status field)
+                if ("Заявка на получение роли" in embed.title and 
+                    not any(field.name in ["✅ Статус", "❌ Статус"] for field in embed.fields)):
+                    
+                    # Extract application data from embed
+                    try:
+                        application_data = {}
+                        
+                        # Determine type from title
+                        if "военнослужащего" in embed.title:
+                            application_data["type"] = "military"
+                        elif "гражданского" in embed.title:
+                            application_data["type"] = "civilian"
+                        else:
+                            continue
+                        
+                        # Extract user ID from user mention in first field
+                        for field in embed.fields:
+                            if field.name == "👤 Заявитель":
+                                user_mention = field.value
+                                # Extract user ID from mention format <@!123456789> or <@123456789>
+                                import re
+                                match = re.search(r'<@!?(\d+)>', user_mention)
+                                if match:
+                                    application_data["user_id"] = int(match.group(1))
+                                    application_data["user_mention"] = user_mention
+                                break
+                        
+                        # Extract name from embed fields
+                        for field in embed.fields:
+                            if field.name == "📝 Имя Фамилия":
+                                application_data["name"] = field.value
+                                break
+                        
+                        if "user_id" in application_data and "name" in application_data:
+                            # Create and add the approval view
+                            view = RoleApplicationApprovalView(application_data)
+                            await message.edit(view=view)
+                            print(f"Restored approval view for application message {message.id}")
+                        
+                    except Exception as e:
+                        print(f"Error parsing application data from message {message.id}: {e}")
+                        continue
+                        
+                # Check for approved/rejected applications
+                elif ("Заявка на получение роли" in embed.title and 
+                      any(field.name == "✅ Статус" for field in embed.fields)):
+                    # Approved application
+                    view = ApprovedApplicationView()
+                    try:
+                        await message.edit(view=view)
+                        print(f"Restored approved view for message {message.id}")
+                    except Exception as e:
+                        print(f"Error restoring approved view for message {message.id}: {e}")
+                        
+                elif ("Заявка на получение роли" in embed.title and 
+                      any(field.name == "❌ Статус" for field in embed.fields)):
+                    # Rejected application
+                    view = RejectedApplicationView()
+                    try:
+                        await message.edit(view=view)
+                        print(f"Restored rejected view for message {message.id}")
+                    except Exception as e:
+                        print(f"Error restoring rejected view for message {message.id}: {e}")
+                    
+    except Exception as e:
+        print(f"Error restoring approval views: {e}")

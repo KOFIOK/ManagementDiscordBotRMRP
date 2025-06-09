@@ -135,14 +135,17 @@ class MilitaryApplicationModal(ui.Modal):
             
             # Create approval view
             approval_view = RoleApplicationApprovalView(application_data)
-            
-            # Get ping role for notifications
-            ping_role_id = config.get('role_assignment_ping_role')
+              # Get ping roles for notifications (military applications)
+            ping_role_ids = config.get('military_role_assignment_ping_roles', [])
             ping_content = ""
-            if ping_role_id:
-                ping_role = moderation_channel.guild.get_role(ping_role_id)
-                if ping_role:
-                    ping_content = f"{ping_role.mention} Новая заявка на роль!"
+            if ping_role_ids:
+                ping_mentions = []
+                for ping_role_id in ping_role_ids:
+                    ping_role = moderation_channel.guild.get_role(ping_role_id)
+                    if ping_role:
+                        ping_mentions.append(ping_role.mention)
+                if ping_mentions:
+                    ping_content = f"-# {' '.join(ping_mentions)}"
             
             # Send to moderation channel
             await moderation_channel.send(content=ping_content, embed=embed, view=approval_view)
@@ -288,16 +291,20 @@ class CivilianApplicationModal(ui.Modal):
             embed.add_field(name="🏛️ Фракция, звание, должность", value=application_data["faction"], inline=False)
             embed.add_field(name="🎯 Цель получения роли", value=application_data["purpose"], inline=False)
             embed.add_field(name="🔗 Доказательства", value=f"[Ссылка]({application_data['proof']})", inline=False)
-              # Create approval view
-            approval_view = RoleApplicationApprovalView(application_data)
             
-            # Get ping role for notifications
-            ping_role_id = config.get('role_assignment_ping_role')
+            # Create approval view
+            approval_view = RoleApplicationApprovalView(application_data)
+              # Get ping roles for notifications (civilian applications)
+            ping_role_ids = config.get('civilian_role_assignment_ping_roles', [])
             ping_content = ""
-            if ping_role_id:
-                ping_role = moderation_channel.guild.get_role(ping_role_id)
-                if ping_role:
-                    ping_content = f"{ping_role.mention} Новая заявка на роль!"
+            if ping_role_ids:
+                ping_mentions = []
+                for ping_role_id in ping_role_ids:
+                    ping_role = moderation_channel.guild.get_role(ping_role_id)
+                    if ping_role:
+                        ping_mentions.append(ping_role.mention)
+                if ping_mentions:
+                    ping_content = f"-# {' '.join(ping_mentions)}"
             
             # Send to moderation channel
             await moderation_channel.send(content=ping_content, embed=embed, view=approval_view)
@@ -340,10 +347,10 @@ class RoleApplicationApprovalView(ui.View):
                     ephemeral=True
                 )
                 return
-              # Get appropriate role based on application type
+              
+            # Get appropriate roles based on application type
             if self.application_data["type"] == "military":
-                role_id = config.get('military_role')
-                additional_roles_ids = config.get('additional_military_roles', [])
+                role_ids = config.get('military_roles', [])
                 role_type = "военнослужащего"
                 
                 # Change nickname for military personnel
@@ -354,48 +361,49 @@ class RoleApplicationApprovalView(ui.View):
                     pass  # Bot might not have permission to change this user's nickname
                     
             else:  # civilian
-                role_id = config.get('civilian_role')
-                additional_roles_ids = []
+                role_ids = config.get('civilian_roles', [])
                 role_type = "гражданского"
             
-            if not role_id:
+            if not role_ids:
                 await interaction.response.send_message(
-                    f"❌ Роль {role_type} не настроена в конфигурации.",
+                    f"❌ Роли {role_type} не настроены в конфигурации.",
                     ephemeral=True
                 )
                 return
             
-            role = guild.get_role(role_id)
-            if not role:
+            # Get roles from guild
+            roles_to_assign = []
+            for role_id in role_ids:
+                role = guild.get_role(role_id)
+                if role:
+                    roles_to_assign.append(role)
+                else:
+                    print(f"Warning: Role {role_id} not found in guild")
+            
+            if not roles_to_assign:
                 await interaction.response.send_message(
-                    f"❌ Роль {role_type} не найдена на сервере.",
+                    f"❌ Роли {role_type} не найдены на сервере.",
                     ephemeral=True
                 )
                 return
             
-            # Remove opposite role if exists
-            opposite_role_id = config.get('civilian_role' if self.application_data["type"] == "military" else 'military_role')
-            if opposite_role_id:
+            # Remove opposite roles if they exist
+            opposite_role_ids = config.get('civilian_roles' if self.application_data["type"] == "military" else 'military_roles', [])
+            for opposite_role_id in opposite_role_ids:
                 opposite_role = guild.get_role(opposite_role_id)
                 if opposite_role and opposite_role in user.roles:
                     await user.remove_roles(opposite_role, reason=f"Получение роли {role_type}")
             
-            # Add primary role
-            await user.add_roles(role, reason=f"Одобрение заявки на роль {role_type}")
-            
-            # Add additional military roles if applicable
-            assigned_roles = [role.mention]
-            if self.application_data["type"] == "military" and additional_roles_ids:
-                for additional_role_id in additional_roles_ids:
-                    additional_role = guild.get_role(additional_role_id)
-                    if additional_role:
-                        try:
-                            await user.add_roles(additional_role, reason="Дополнительная роль военнослужащего")
-                            assigned_roles.append(additional_role.mention)
-                        except discord.Forbidden:
-                            print(f"No permission to assign role {additional_role.name} to {user}")
-                        except Exception as e:
-                            print(f"Error assigning additional role {additional_role.name}: {e}")
+            # Add all configured roles
+            assigned_roles = []
+            for role in roles_to_assign:
+                try:
+                    await user.add_roles(role, reason=f"Одобрение заявки на роль {role_type}")
+                    assigned_roles.append(role.mention)
+                except discord.Forbidden:
+                    print(f"No permission to assign role {role.name} to {user}")
+                except Exception as e:
+                    print(f"Error assigning role {role.name}: {e}")
             
             # Update embed to show approval
             original_embed = interaction.message.embeds[0]
@@ -406,54 +414,49 @@ class RoleApplicationApprovalView(ui.View):
                 inline=False
             )
             
-            # Clear ping role content by editing the message
-            ping_role_id = config.get('role_assignment_ping_role')
-            if ping_role_id:
-                ping_role = guild.get_role(ping_role_id)
-                if ping_role and ping_role.mention in interaction.message.content:
-                    await interaction.message.edit(content="")
+            # Clear ping role content
+            await interaction.message.edit(content="")
             
-            # Create new view with only one button showing
+            # Create new view with only archive button
             approved_view = ApprovedApplicationView()
             
             await interaction.response.edit_message(embed=original_embed, view=approved_view)
-            
-            # Send notification to user
+              # Send notification to user with instructions
             try:
-                roles_text = ", ".join(assigned_roles) if len(assigned_roles) > 1 else assigned_roles[0]
-                await user.send(
-                    f"✅ Ваша заявка на получение роли {role_type} была одобрена!\n"
-                    f"Вы получили {'роли' if len(assigned_roles) > 1 else 'роль'}: {roles_text}"
-                )
+                if self.application_data["type"] == "military":
+                    # Military instructions
+                    instructions = (
+                        "✅ **Ваша заявка на получение роли военнослужащего была одобрена!**\n\n"
+                        "📋 **Полезная информация:**\n"
+                        "• **Канал общения:** [Будет заполнено]\n"
+                        "• **Расписание занятий (необходимых для повышения):** [Будет заполнено]\n"
+                        "• **Следите за оповещениями обучения:** [Будет заполнено]\n"
+                        "• **Ознакомьтесь с сайтом Вооружённых Сил РФ:** [Будет заполнено]\n"
+                        "• **Следите за последними приказами:** [Будет заполнено]\n"
+                        "• **Уже были в ВС РФ? Попробуйте восстановиться:** [Будет заполнено]\n"
+                        "• **Решили, что служба не для вас? Напишите рапорт на увольнение:** [Будет заполнено]"
+                    )
+                else:
+                    # Civilian instructions
+                    instructions = (
+                        "✅ **Ваша заявка на получение роли гражданского была одобрена!**\n\n"
+                        "📋 **Полезная информация:**\n"
+                        "• **Канал общения:** [Будет заполнено]\n"
+                        "• **Доступные каналы и ресурсы:** [Будет заполнено]\n"
+                        "• **Правила взаимодействия:** [Будет заполнено]"
+                    )
+                
+                await user.send(instructions)
             except discord.Forbidden:
                 pass  # User has DMs disabled
-                
+                    
         except Exception as e:
             print(f"Error approving role application: {e}")
             await interaction.response.send_message(
                 "❌ Произошла ошибка при одобрении заявки.",
-                ephemeral=True            )
-
-class ApprovedApplicationView(ui.View):
-    """View to show after application is approved - shows only archive button"""
-    def __init__(self):
-        super().__init__(timeout=None)
+                ephemeral=True
+            )
     
-    @discord.ui.button(label="🗃️ Архивировать", style=discord.ButtonStyle.secondary, custom_id="archive_approved", disabled=True)
-    async def archive_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # This button is disabled and just for visual indication
-        pass
-
-class RejectedApplicationView(ui.View):
-    """View to show after application is rejected - shows only archive button"""
-    def __init__(self):
-        super().__init__(timeout=None)
-    
-    @discord.ui.button(label="🗃️ Архивировать", style=discord.ButtonStyle.secondary, custom_id="archive_rejected", disabled=True)
-    async def archive_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # This button is disabled and just for visual indication
-        pass
-
     @discord.ui.button(label="❌ Отклонить", style=discord.ButtonStyle.red, custom_id="reject_role_app")
     async def reject_application(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Check if user has moderator permissions
@@ -464,8 +467,8 @@ class RejectedApplicationView(ui.View):
             )
             return
         
-        modal = RejectionReasonModal(self.application_data)
-        await interaction.response.send_modal(modal)
+        # Reject immediately without reason modal
+        await self._process_rejection(interaction)
     
     async def _check_moderator_permissions(self, interaction):
         """Check if user has moderator permissions"""
@@ -489,26 +492,13 @@ class RejectedApplicationView(ui.View):
         
         return False
 
-class RejectionReasonModal(ui.Modal):
-    def __init__(self, application_data):
-        super().__init__(title="Причина отклонения заявки")
-        self.application_data = application_data
-        
-        self.reason_input = ui.TextInput(
-            label="Причина отклонения",
-            placeholder="Укажите причину отклонения заявки...",
-            style=discord.TextStyle.paragraph,
-            min_length=10,
-            max_length=500,
-            required=True
-        )
-        self.add_item(self.reason_input)
-    
-    async def on_submit(self, interaction: discord.Interaction):
+    async def _process_rejection(self, interaction):
+        """Process application rejection"""
         try:
             guild = interaction.guild
             user = guild.get_member(self.application_data["user_id"])
-              # Update embed to show rejection
+              
+            # Update embed to show rejection
             original_embed = interaction.message.embeds[0]
             original_embed.color = discord.Color.red()
             original_embed.add_field(
@@ -516,22 +506,11 @@ class RejectionReasonModal(ui.Modal):
                 value=f"Отклонено модератором {interaction.user.mention}",
                 inline=False
             )
-            original_embed.add_field(
-                name="📝 Причина отклонения",
-                value=self.reason_input.value,
-                inline=False
-            )
             
-            # Clear ping role content by editing the message
-            config = load_config()
-            guild = interaction.guild
-            ping_role_id = config.get('role_assignment_ping_role')
-            if ping_role_id:
-                ping_role = guild.get_role(ping_role_id)
-                if ping_role and ping_role.mention in interaction.message.content:
-                    await interaction.message.edit(content="")
+            # Clear ping role content
+            await interaction.message.edit(content="")
             
-            # Create new view with only one button showing
+            # Create new view with rejection status button
             rejected_view = RejectedApplicationView()
             
             await interaction.response.edit_message(embed=original_embed, view=rejected_view)
@@ -542,8 +521,7 @@ class RejectionReasonModal(ui.Modal):
                     role_type = "военнослужащего" if self.application_data["type"] == "military" else "гражданского"
                     await user.send(
                         f"❌ Ваша заявка на получение роли {role_type} была отклонена.\n\n"
-                        f"**Причина:** {self.reason_input.value}\n\n"
-                        f"Вы можете подать новую заявку, исправив указанные недостатки."
+                        f"Вы можете подать новую заявку позже."
                     )
                 except discord.Forbidden:
                     pass  # User has DMs disabled
@@ -554,6 +532,26 @@ class RejectionReasonModal(ui.Modal):
                 "❌ Произошла ошибка при отклонении заявки.",
                 ephemeral=True
             )
+
+class ApprovedApplicationView(ui.View):
+    """View to show after application is approved"""
+    def __init__(self):
+        super().__init__(timeout=None)
+    
+    @discord.ui.button(label="✅ Одобрено", style=discord.ButtonStyle.green, custom_id="status_approved", disabled=True)
+    async def approved_status(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # This button is disabled and just for visual indication
+        pass
+
+class RejectedApplicationView(ui.View):
+    """View to show after application is rejected"""
+    def __init__(self):
+        super().__init__(timeout=None)
+    
+    @discord.ui.button(label="❌ Отказано", style=discord.ButtonStyle.red, custom_id="status_rejected", disabled=True)
+    async def rejected_status(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # This button is disabled and just for visual indication
+        pass
 
 # Message with buttons for role assignment
 async def send_role_assignment_message(channel):

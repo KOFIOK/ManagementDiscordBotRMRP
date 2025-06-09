@@ -7,13 +7,12 @@ CONFIG_FILE = 'data/config.json'
 # Default configuration
 default_config = {
     'dismissal_channel': None,
-    'audit_channel': None,
-    'blacklist_channel': None,
+    'audit_channel': None,    'blacklist_channel': None,
     'role_assignment_channel': None,
-    'military_role': None,
-    'civilian_role': None,
-    'additional_military_roles': [],  # Additional roles for military personnel
-    'role_assignment_ping_role': None,  # Role to ping when new role assignment submitted
+    'military_roles': [],  # Military roles (updated to array)
+    'civilian_roles': [],  # Civilian roles (updated to array)
+    'military_role_assignment_ping_roles': [],  # Roles to ping for military applications
+    'civilian_role_assignment_ping_roles': [],  # Roles to ping for civilian applications
     'excluded_roles': [],
     'ping_settings': {},
     'moderators': {
@@ -30,7 +29,14 @@ def load_config():
         os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
         
         with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
+            config = json.load(f)
+        
+        # Apply migrations
+        if migrate_config(config):
+            save_config(config)
+            print("Configuration migrated to new format")
+        
+        return config
     except (FileNotFoundError, json.JSONDecodeError):
         # Create default config file if it doesn't exist
         save_config(default_config)
@@ -131,3 +137,43 @@ def can_moderate_user(moderator, target_user, config):
     
     # Both are role-based moderators - check hierarchy by role position
     return moderator_highest_position > target_highest_position
+
+def migrate_config(config):
+    """Migrate old configuration format to new format."""
+    migrated = False
+    
+    # Migrate old single ping role to new multiple ping roles format
+    # Handle legacy 'role_assignment_ping_role' key (used for both military and civilian)
+    if 'role_assignment_ping_role' in config:
+        old_role = config.get('role_assignment_ping_role')
+        if old_role is not None:
+            # Migrate to both military and civilian ping roles
+            config['military_role_assignment_ping_roles'] = [old_role]
+            config['civilian_role_assignment_ping_roles'] = [old_role]
+            migrated = True
+        del config['role_assignment_ping_role']
+    
+    # Migrate old separate ping roles to new multiple ping roles format
+    if 'military_role_assignment_ping_role' in config:
+        old_role = config.get('military_role_assignment_ping_role')
+        if old_role is not None:
+            config['military_role_assignment_ping_roles'] = [old_role]
+            migrated = True
+        del config['military_role_assignment_ping_role']
+    
+    if 'civilian_role_assignment_ping_role' in config:
+        old_role = config.get('civilian_role_assignment_ping_role')
+        if old_role is not None:
+            config['civilian_role_assignment_ping_roles'] = [old_role]
+            migrated = True
+        del config['civilian_role_assignment_ping_role']
+    
+    # Ensure new keys exist with defaults
+    if 'military_role_assignment_ping_roles' not in config:
+        config['military_role_assignment_ping_roles'] = []
+    if 'civilian_role_assignment_ping_roles' not in config:
+        config['civilian_role_assignment_ping_roles'] = []
+    
+    return migrated
+
+# Load configuration

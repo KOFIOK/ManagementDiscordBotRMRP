@@ -92,6 +92,11 @@ class ConfigDisplayHelper:
                     roles.append(f"❌ Роль не найдена (ID: {role_id})")
             return "\n".join(roles) if roles else "❌ Роли не найдены"
         return "❌ Не настроены"
+    
+    @staticmethod
+    def format_roles_info(config: dict, roles_key: str, guild: discord.Guild) -> str:
+        """Format roles information for display (alias to format_roles_list)"""
+        return ConfigDisplayHelper.format_roles_list(config, roles_key, guild)
 
 
 class RoleParser:

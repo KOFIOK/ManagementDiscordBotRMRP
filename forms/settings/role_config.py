@@ -10,25 +10,21 @@ from .base import BaseSettingsView, BaseSettingsModal, RoleParser
 class RolesConfigView(BaseSettingsView):
     """View for role configuration"""
     
-    @discord.ui.button(label="🪖 Роль военнослужащего", style=discord.ButtonStyle.green, custom_id="set_military_role")
-    async def set_military_role(self, interaction: discord.Interaction, button: discord.ui.Button):
-        modal = SetRoleModal("military_role", "🪖 Настройка роли военнослужащего", "Укажите роль для военнослужащих")
+    @discord.ui.button(label="🪖 Роли военнослужащих", style=discord.ButtonStyle.green, custom_id="set_military_roles")
+    async def set_military_roles(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = SetMultipleRolesModal("military_roles", "🪖 Настройка ролей военнослужащих", "Укажите роли для военнослужащих (через запятую)")
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="👤 Роль гражданского", style=discord.ButtonStyle.secondary, custom_id="set_civilian_role")
-    async def set_civilian_role(self, interaction: discord.Interaction, button: discord.ui.Button):
-        modal = SetRoleModal("civilian_role", "👤 Настройка роли гражданского", "Укажите роль для гражданских")
+    @discord.ui.button(label="👤 Роли гражданских", style=discord.ButtonStyle.secondary, custom_id="set_civilian_roles")
+    async def set_civilian_roles(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = SetMultipleRolesModal("civilian_roles", "👤 Настройка ролей гражданских", "Укажите роли для гражданских (через запятую)")
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="⚔️ Дополнительные военные роли", style=discord.ButtonStyle.primary, custom_id="set_additional_military_roles")
-    async def set_additional_military_roles(self, interaction: discord.Interaction, button: discord.ui.Button):
-        modal = SetMultipleRolesModal("additional_military_roles", "⚔️ Дополнительные военные роли", "Укажите дополнительные роли для военнослужащих (через запятую)")
-        await interaction.response.send_modal(modal)
-    
-    @discord.ui.button(label="📢 Ping-роль для заявок", style=discord.ButtonStyle.primary, custom_id="set_ping_role")
-    async def set_ping_role(self, interaction: discord.Interaction, button: discord.ui.Button):
-        modal = SetRoleModal("role_assignment_ping_role", "📢 Ping-роль для заявок", "Укажите роль для уведомлений о новых заявках")
-        await interaction.response.send_modal(modal)
+    @discord.ui.button(label="📢 Настроить ping-роли", style=discord.ButtonStyle.primary, custom_id="configure_ping_roles")
+    async def configure_ping_roles(self, interaction: discord.Interaction, button: discord.ui.Button):
+        from .channels import RolePingConfigView
+        view = RolePingConfigView()
+        await view.show_ping_config(interaction)
 
 
 class SetRoleModal(BaseSettingsModal):
@@ -64,11 +60,8 @@ class SetRoleModal(BaseSettingsModal):
             config = load_config()
             config[self.config_key] = role.id
             save_config(config)
-            
-            # Create user-friendly messages
+              # Create user-friendly messages
             role_names = {
-                "military_role": "военнослужащего",
-                "civilian_role": "гражданского",
                 "role_assignment_ping_role": "для уведомлений о заявках"
             }
             
@@ -121,11 +114,12 @@ class SetMultipleRolesModal(BaseSettingsModal):
             # Save to config
             config = load_config()
             config[self.config_key] = [role.id for role in roles]
-            save_config(config)
-            
-            # Create user-friendly messages
+            save_config(config)            # Create user-friendly messages
             roles_names = {
-                "additional_military_roles": "дополнительные военные роли"
+                "military_roles": "роли военнослужащих",
+                "civilian_roles": "роли гражданских",
+                "military_role_assignment_ping_roles": "пинг-роли для военных заявок",
+                "civilian_role_assignment_ping_roles": "пинг-роли для гражданских заявок"
             }
             
             roles_name = roles_names.get(self.config_key, self.config_key)

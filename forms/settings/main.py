@@ -121,7 +121,6 @@ class MainSettingsSelect(ui.Select):
             value=helper.format_channel_info(config, 'role_assignment_channel', interaction.guild), 
             inline=False
         )
-        
         # Role configurations
         embed.add_field(
             name="🛡️ Роли-исключения", 
@@ -129,23 +128,23 @@ class MainSettingsSelect(ui.Select):
             inline=False
         )
         embed.add_field(
-            name="🪖 Роль военнослужащего", 
-            value=helper.format_role_info(config, 'military_role', interaction.guild), 
-            inline=True
-        )
-        embed.add_field(
-            name="👤 Роль гражданского", 
-            value=helper.format_role_info(config, 'civilian_role', interaction.guild), 
-            inline=True
-        )
-        embed.add_field(
-            name="⚔️ Дополнительные военные роли", 
-            value=helper.format_roles_list(config, 'additional_military_roles', interaction.guild), 
+            name="🪖 Роли военнослужащих", 
+            value=helper.format_roles_list(config, 'military_roles', interaction.guild), 
             inline=False
         )
         embed.add_field(
-            name="📢 Ping-роль для заявок", 
-            value=helper.format_role_info(config, 'role_assignment_ping_role', interaction.guild), 
+            name="👤 Роли гражданских", 
+            value=helper.format_roles_list(config, 'civilian_roles', interaction.guild), 
+            inline=False
+        )
+        embed.add_field(
+            name="📢 Ping-роли для военных заявок", 
+            value=helper.format_roles_list(config, 'military_role_assignment_ping_roles', interaction.guild), 
+            inline=False
+        )
+        embed.add_field(
+            name="📢 Ping-роли для гражданских заявок", 
+            value=helper.format_roles_list(config, 'civilian_role_assignment_ping_roles', interaction.guild), 
             inline=False
         )
         

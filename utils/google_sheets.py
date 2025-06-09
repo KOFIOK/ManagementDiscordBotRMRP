@@ -505,5 +505,91 @@ class GoogleSheetsManager:
                 print(f"Response text: {e.response.text}")
             return False
 
+    async def add_hiring_record(self, application_data, approved_user, approving_user, hiring_time):
+        """Add a hiring record to the Google Sheets for new recruits with rank 'Рядовой'."""
+        try:
+            # Ensure connection
+            if not self._ensure_connection():
+                print("Failed to establish Google Sheets connection")
+                return False
+            
+            # Extract data from application
+            name_from_form = application_data.get('name', '')
+            static_from_form = application_data.get('static', '')
+            rank = application_data.get('rank', 'Рядовой')
+            recruitment_type = application_data.get('recruitment_type', '')
+            
+            # Only create record for "Рядовой" rank
+            if rank.lower() != 'рядовой':
+                print(f"Skipping hiring record - rank is '{rank}', not 'Рядовой'")
+                return True  # Not an error, just not applicable
+            
+            discord_id = str(approved_user.id)
+            
+            # Get approved by info - extract surname and lookup
+            approved_by_clean_name = self.extract_name_from_nickname(approving_user.display_name)
+            approved_by_info = approving_user.display_name  # Default fallback
+            
+            if approved_by_clean_name:
+                # Extract surname (last word)
+                name_parts = approved_by_clean_name.strip().split()
+                if len(name_parts) >= 2:
+                    surname = name_parts[-1]  # Last word as surname
+                    # Search in 'Пользователи' sheet
+                    full_user_info = await self.get_user_info_from_users_sheet(surname)
+                    if full_user_info:
+                        approved_by_info = full_user_info
+                    else:
+                        approved_by_info = approved_by_clean_name
+            
+            # Prepare row data according to table structure:
+            # Column 1: Отметка времени  
+            # Column 2: Имя Фамилия | 6 цифр статика
+            # Column 3: ИмяФамилия
+            # Column 4: Статик
+            # Column 5: Действие (для найма будет "Принят на службу")
+            # Column 6: Дата Действия
+            # Column 7: Подразделение (для новых - "Военная Академия")
+            # Column 8: Должность (можно оставить пустым)
+            # Column 9: Звание ("Рядовой")
+            # Column 10: Discord ID бойца
+            # Column 11: Причина увольнения (для найма - порядок набора: Экскурсия/Призыв)
+            # Column 12: Кадровую отписал
+            # Column 13: Ссылка на сообщение Discord (можно оставить пустым)
+            row_data = [
+                str(hiring_time.strftime('%d.%m.%Y %H:%M')),  # Отметка времени
+                f"{name_from_form} | {static_from_form}" if static_from_form else str(name_from_form),  # Имя Фамилия | статик
+                str(name_from_form),  # ИмяФамилия
+                str(static_from_form) if static_from_form else "",  # Статик
+                "Принят на службу",  # Действие
+                str(hiring_time.strftime('%d.%m.%Y')),  # Дата Действия
+                "Военная Академия",  # Подразделение
+                "",  # Должность (пустое)
+                "Рядовой",  # Звание
+                str(discord_id),  # Discord ID бойца
+                str(recruitment_type).capitalize(),  # Порядок набора (Экскурсия/Призыв)
+                str(approved_by_info),  # Кадровую отписал
+                ""  # Ссылка на сообщение Discord (пустое)
+            ]
+            
+            # Insert record at the beginning (after headers)
+            result = self.worksheet.insert_row(row_data, index=2)
+            
+            # Check if insert was successful
+            if result:
+                print(f"✅ Successfully added hiring record for {name_from_form} (Рядовой)")
+                return True
+            else:
+                print(f"❌ Failed to add hiring record for {name_from_form}")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Error adding hiring record to Google Sheets: {e}")
+            # Print more detailed error information
+            if hasattr(e, 'response'):
+                print(f"Response status: {e.response.status_code}")
+                print(f"Response text: {e.response.text}")
+            return False
+
 # Global instance
 sheets_manager = GoogleSheetsManager()

@@ -1,7 +1,9 @@
 import discord
 import re
 from discord import ui
+from datetime import datetime, timezone
 from utils.config_manager import load_config, save_config
+from utils.google_sheets import sheets_manager
 
 class RoleAssignmentView(ui.View):
     def __init__(self):
@@ -387,8 +389,7 @@ class RoleApplicationApprovalView(ui.View):
                         roles_to_assign.append(role)
                     else:
                         print(f"Warning: Role {role_id} not found in guild")
-                
-                # Add all found roles
+                  # Add all found roles
                 for role in roles_to_assign:
                     try:
                         await user.add_roles(role, reason=f"Одобрение заявки на роль {role_type}")
@@ -422,7 +423,25 @@ class RoleApplicationApprovalView(ui.View):
             # Create new view with only archive button
             approved_view = ApprovedApplicationView()
             
+            # Respond to interaction first to avoid timeout
             await interaction.response.edit_message(embed=original_embed, view=approved_view)
+            
+            # Add hiring record to Google Sheets for military applications with rank "Рядовой" (after responding)
+            if self.application_data["type"] == "military" and self.application_data.get("rank", "").lower() == "рядовой":
+                try:
+                    hiring_time = datetime.now(timezone.utc)
+                    sheets_success = await sheets_manager.add_hiring_record(
+                        self.application_data,
+                        user,
+                        interaction.user,
+                        hiring_time
+                    )
+                    if sheets_success:
+                        print(f"✅ Successfully added hiring record for {self.application_data.get('name', 'Unknown')}")
+                    else:
+                        print(f"⚠️ Failed to add hiring record for {self.application_data.get('name', 'Unknown')}")
+                except Exception as e:
+                    print(f"❌ Error adding hiring record to Google Sheets: {e}")
             
             # Send notification to user with instructions
             try:

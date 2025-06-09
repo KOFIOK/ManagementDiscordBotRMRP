@@ -19,12 +19,25 @@ jobs:
         username: ${{ secrets.SERVER_USER }}
         password: ${{ secrets.SERVER_PASSWORD }}
         script: |
+          set -e  # Exit on any error
+          
+          echo "🚀 Starting deployment process..."
+          echo "Repository: ${{ github.repository }}"
+          echo "SHA: ${{ github.sha }}"
+          echo "Branch: ${{ github.ref_name }}"
+          
           # Navigate to project directory or create it
           if [ ! -d "/opt/army-discord-bot" ]; then
             echo "Creating project directory..."
             mkdir -p /opt/army-discord-bot
             cd /opt/army-discord-bot
-            git clone https://github.com/${{ github.repository }}.git .
+            
+            # Clone repository with token authentication
+            echo "Cloning repository..."
+            if ! git clone https://${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git .; then
+              echo "❌ Failed to clone repository with token, trying without token for public repos..."
+              git clone https://github.com/${{ github.repository }}.git .
+            fi
           else
             echo "Updating existing project..."
             cd /opt/army-discord-bot
@@ -33,28 +46,68 @@ jobs:
             if [ ! -d ".git" ]; then
               echo "Initializing git repository..."
               rm -rf * .[^.]* 2>/dev/null || true
-              git clone https://github.com/${{ github.repository }}.git .
+              echo "Cloning repository..."
+              if ! git clone https://${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git .; then
+                echo "❌ Failed to clone repository with token, trying without token for public repos..."
+                git clone https://github.com/${{ github.repository }}.git .
+              fi
             else
+              # Configure git credentials for this session
+              echo "Configuring git credentials..."
+              git config --global credential.helper store
+              echo "https://${{ secrets.GITHUB_TOKEN }}@github.com" > ~/.git-credentials
+              
               # Pull latest changes
+              echo "Pulling latest changes..."
               git fetch origin
               git reset --hard origin/main
             fi
           fi
           
+          # Verify that the repository was cloned successfully
+          echo "Verifying repository contents..."
+          if [ ! -f "/opt/army-discord-bot/app.py" ]; then
+            echo "❌ Repository cloning failed - app.py not found"
+            echo "📁 Current directory contents:"
+            ls -la /opt/army-discord-bot/
+            exit 1
+          fi
+          
+          if [ ! -f "/opt/army-discord-bot/requirements.txt" ]; then
+            echo "❌ Repository cloning failed - requirements.txt not found"
+            echo "📁 Current directory contents:"
+            ls -la /opt/army-discord-bot/
+            exit 1
+          fi
+          
+          echo "✅ Repository cloned/updated successfully"
+          
           # Stop the bot if running
+          echo "Stopping existing bot instance..."
           screen -S army-bot -X quit || echo "Bot was not running"
-          sleep 2
+          sleep 3
           
           # Install Python3 and required packages if not present
+          echo "Installing system dependencies..."
           apt update
           apt install -y python3 python3-pip python3-venv screen
           
           # Create logs directory if not exists
           mkdir -p logs
           
+          # Backup current bot logs
+          if [ -f "logs/bot.log" ]; then
+            cp logs/bot.log logs/bot.log.backup.$(date +%Y%m%d_%H%M%S)
+          fi
+          
           # Start bot in screen session with all setup inside screen
+          echo "Starting bot in screen session..."
           screen -dmS army-bot bash -c '
             cd /opt/army-discord-bot
+            
+            # Debug: Check if we are in the right directory
+            echo "Current directory: $(pwd)"
+            echo "Files in directory: $(ls -la)"
             
             # Create virtual environment inside screen
             if [ ! -d "venv" ]; then
@@ -64,20 +117,69 @@ jobs:
             
             # Activate virtual environment
             source venv/bin/activate
+            echo "Virtual environment activated"
+            echo "Python version: $(python3 --version)"
+            echo "Pip version: $(pip --version)"
+            
+            # Check if requirements.txt exists
+            if [ ! -f "requirements.txt" ]; then
+              echo "ERROR: requirements.txt not found!"
+              exit 1
+            fi
             
             # Install/update dependencies
+            echo "Installing dependencies..."
+            pip install --upgrade pip
             pip install -r requirements.txt
+            
+            # Check if app.py exists
+            if [ ! -f "app.py" ]; then
+              echo "ERROR: app.py not found!"
+              exit 1
+            fi
+            
+            # Verify configuration files exist
+            echo "Checking configuration files..."
+            if [ ! -f "data/config.json" ]; then
+              echo "WARNING: data/config.json not found - bot may not work properly"
+            fi
             
             # Start the bot
             echo "Starting Army Discord Bot..."
+            echo "Timestamp: $(date)"
             python3 app.py 2>&1 | tee logs/bot.log
           '
           
           # Wait a moment and check if bot started successfully
-          sleep 5
+          echo "Waiting for bot to start..."
+          sleep 15
+          
           if screen -list | grep -q "army-bot"; then
             echo "✅ Bot deployed and started successfully"
+            echo "📋 Screen sessions:"
+            screen -list
+            echo "📝 Recent bot logs:"
+            if [ -f "/opt/army-discord-bot/logs/bot.log" ]; then
+              tail -20 /opt/army-discord-bot/logs/bot.log
+            else
+              echo "No logs yet - bot may still be starting"
+            fi
+            echo "🔍 Deployment completed at: $(date)"
           else
             echo "❌ Bot failed to start"
+            echo "📋 Available screen sessions:"
+            screen -list || echo "No screen sessions"
+            echo "📁 Directory contents:"
+            ls -la /opt/army-discord-bot/
+            echo "📝 Bot logs (if any):"
+            if [ -f "/opt/army-discord-bot/logs/bot.log" ]; then
+              tail -50 /opt/army-discord-bot/logs/bot.log
+            else
+              echo "No logs available"
+            fi
+            echo "🐛 Troubleshooting info:"
+            echo "Python version: $(python3 --version)"
+            echo "Disk space: $(df -h /opt/army-discord-bot)"
+            echo "Memory usage: $(free -h)"
             exit 1
           fi

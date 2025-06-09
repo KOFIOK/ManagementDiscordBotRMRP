@@ -55,7 +55,7 @@ class MilitaryApplicationModal(ui.Modal):
         
         self.recruitment_type_input = ui.TextInput(
             label="Порядок набора",
-            placeholder="экскурсия или призыв",
+            placeholder="Экскурсия или Призыв",
             min_length=1,
             max_length=20,
             required=True
@@ -76,7 +76,7 @@ class MilitaryApplicationModal(ui.Modal):
         recruitment_type = self.recruitment_type_input.value.strip().lower()
         if recruitment_type not in ["экскурсия", "призыв"]:
             await interaction.response.send_message(
-                "❌ Порядок набора должен быть: 'экскурсия' или 'призыв'.",
+                "❌ Порядок набора должен быть: 'Экскурсия' или 'Призыв'.",
                 ephemeral=True
             )
             return
@@ -349,71 +349,85 @@ class RoleApplicationApprovalView(ui.View):
                     ephemeral=True
                 )
                 return
-              
-            # Get appropriate roles based on application type
+                # Get appropriate roles based on application type
             if self.application_data["type"] == "military":
                 role_ids = config.get('military_roles', [])
                 role_type = "военнослужащего"
                 
-                # Change nickname for military personnel
-                new_nickname = f"ВА | {self.application_data['name']}"
-                try:
-                    await user.edit(nick=new_nickname, reason="Одобрение заявки на роль военнослужащего")
-                except discord.Forbidden:
-                    pass  # Bot might not have permission to change this user's nickname
-                    
+                # Check if this is "Рядовой" rank for automatic processing
+                is_private_rank = self.application_data.get("rank", "").lower() == "рядовой"
+                
+                if is_private_rank:
+                    # Change nickname only for automatic processing (Рядовой)
+                    new_nickname = f"ВА | {self.application_data['name']}"
+                    try:
+                        await user.edit(nick=new_nickname, reason="Одобрение заявки на роль военнослужащего")
+                    except discord.Forbidden:
+                        pass  # Bot might not have permission to change this user's nickname
+                        
             else:  # civilian
                 role_ids = config.get('civilian_roles', [])
                 role_type = "гражданского"
+                is_private_rank = True  # Civilians always get automatic processing
             
-            # Remove opposite roles if they exist
-            opposite_role_ids = config.get('civilian_roles' if self.application_data["type"] == "military" else 'military_roles', [])
-            for opposite_role_id in opposite_role_ids:
-                opposite_role = guild.get_role(opposite_role_id)
-                if opposite_role and opposite_role in user.roles:
-                    try:
-                        await user.remove_roles(opposite_role, reason=f"Получение роли {role_type}")
-                    except discord.Forbidden:
-                        print(f"No permission to remove role {opposite_role.name} from {user}")
-                    except Exception as e:
-                        print(f"Error removing role {opposite_role.name}: {e}")
-            
-            # Add configured roles if any exist
+            # For military non-Рядовой applications, skip role assignment
             assigned_roles = []
-            if role_ids:
-                # Get roles from guild
-                roles_to_assign = []
-                for role_id in role_ids:
-                    role = guild.get_role(role_id)
-                    if role:
-                        roles_to_assign.append(role)
-                    else:
-                        print(f"Warning: Role {role_id} not found in guild")
-                  # Add all found roles
-                for role in roles_to_assign:
-                    try:
-                        await user.add_roles(role, reason=f"Одобрение заявки на роль {role_type}")
-                        assigned_roles.append(role.mention)
-                    except discord.Forbidden:
-                        print(f"No permission to assign role {role.name} to {user}")
-                    except Exception as e:
-                        print(f"Error assigning role {role.name}: {e}")
+            if self.application_data["type"] == "military" and not is_private_rank:
+                # Skip role assignment for non-Рядовой ranks
+                print(f"Skipping role assignment for military rank: {self.application_data.get('rank', 'Unknown')}")
             else:
-                print(f"Warning: No roles configured for {role_type}")
-            
-            # Update embed to show approval
+                # Remove opposite roles if they exist
+                opposite_role_ids = config.get('civilian_roles' if self.application_data["type"] == "military" else 'military_roles', [])
+                for opposite_role_id in opposite_role_ids:
+                    opposite_role = guild.get_role(opposite_role_id)
+                    if opposite_role and opposite_role in user.roles:
+                        try:
+                            await user.remove_roles(opposite_role, reason=f"Получение роли {role_type}")
+                        except discord.Forbidden:
+                            print(f"No permission to remove role {opposite_role.name} from {user}")
+                        except Exception as e:
+                            print(f"Error removing role {opposite_role.name}: {e}")
+                
+                # Add configured roles if any exist
+                if role_ids:
+                    # Get roles from guild
+                    roles_to_assign = []
+                    for role_id in role_ids:
+                        role = guild.get_role(role_id)
+                        if role:
+                            roles_to_assign.append(role)
+                        else:
+                            print(f"Warning: Role {role_id} not found in guild")
+                      # Add all found roles
+                    for role in roles_to_assign:
+                        try:
+                            await user.add_roles(role, reason=f"Одобрение заявки на роль {role_type}")
+                            assigned_roles.append(role.mention)
+                        except discord.Forbidden:
+                            print(f"No permission to assign role {role.name} to {user}")
+                        except Exception as e:
+                            print(f"Error assigning role {role.name}: {e}")
+                else:
+                    print(f"Warning: No roles configured for {role_type}")
+              # Update embed to show approval
             original_embed = interaction.message.embeds[0]
             original_embed.color = discord.Color.green()
             
             if self.application_data["type"] == "military":
-                status_message = f"Одобрено инструктором ВК {interaction.user.mention}"
+                if is_private_rank:
+                    status_message = f"Одобрено инструктором ВК {interaction.user.mention}"
+                else:
+                    status_message = f"Одобрено инструктором ВК {interaction.user.mention}\n⚠️ Требуется ручная обработка для звания {self.application_data.get('rank', 'Неизвестно')}"
             elif self.application_data["type"] == "civilian":
                 status_message = f"Одобрено руководством бригады ( {interaction.user.mention} )"
 
-            if not role_ids:
+            if self.application_data["type"] == "military" and not is_private_rank:
+                status_message += "\n🔄 Роли и логирование пропущены - требуется ручная обработка"
+            elif not role_ids:
                 status_message += "\n⚠️ Роли не настроены - выдача ролей пропущена"
-            elif not assigned_roles:
-                status_message += "\n⚠️ Роли не найдены на сервере"
+            elif self.application_data["type"] != "military" or is_private_rank:
+                if not assigned_roles:
+                    status_message += "\n⚠️ Роли не найдены на сервере"
             
             original_embed.add_field(
                 name="✅ Статус",
@@ -428,9 +442,8 @@ class RoleApplicationApprovalView(ui.View):
             approved_view = ApprovedApplicationView()
             
             # Respond to interaction first to avoid timeout
-            await interaction.response.edit_message(embed=original_embed, view=approved_view)
-              # Add hiring record to Google Sheets for military applications with rank "Рядовой" (after responding)
-            if self.application_data["type"] == "military" and self.application_data.get("rank", "").lower() == "рядовой":
+            await interaction.response.edit_message(embed=original_embed, view=approved_view)              # Add hiring record to Google Sheets for military applications with rank "Рядовой" (after responding)
+            if self.application_data["type"] == "military" and is_private_rank:
                 try:
                     hiring_time = datetime.now(timezone.utc)
                     sheets_success = await sheets_manager.add_hiring_record(
@@ -446,8 +459,8 @@ class RoleApplicationApprovalView(ui.View):
                 except Exception as e:
                     print(f"❌ Error adding hiring record to Google Sheets: {e}")
             
-            # Send notification to audit channel for military applications
-            if self.application_data["type"] == "military":
+            # Send notification to audit channel for military applications with rank "Рядовой"
+            if self.application_data["type"] == "military" and is_private_rank:
                 try:
                     config = load_config()
                     audit_channel_id = config.get('audit_channel')
@@ -507,34 +520,32 @@ class RoleApplicationApprovalView(ui.View):
                             print(f"Sent audit notification for hiring of {user.display_name}")
                         else:
                             print(f"Audit channel not found: {audit_channel_id}")
-                    else:
-                        print("Audit channel ID not configured")
+                    else:                        print("Audit channel ID not configured")
                 except Exception as e:
                     print(f"Error sending audit notification for hiring: {e}")
-            
-            # Send notification to user with instructions
+
             try:
                 if self.application_data["type"] == "military":
-                    # Military instructions
+                    # Military instructions for automatic processing (Рядовой)
                     instructions = (
-                        "✅ **Ваша заявка на получение роли военнослужащего была одобрена!**\n\n"
-                        "📋 **Полезная информация:**\n> "
-                        "> • **Канал общения:**\n> <#1246126422251278597>\n"
-                        "> • **Расписание занятий (необходимых для повышения):**\n> <#1336337899309895722>\n"
-                        "> • **Следите за оповещениями обучения:**\n> <#1337434149274779738>\n"
-                        "> • **Ознакомьтесь с сайтом Вооружённых Сил РФ:**\n> <#1326022450307137659>\n"
-                        "> • **Следите за последними приказами:**\n> <#1251166871064019015>\n"
-                        "> • **Уже были в ВС РФ? Попробуйте восстановиться:**\n> <#1317830537724952626>\n"
-                        "> • **Решили, что служба не для вас? Напишите рапорт на увольнение:**\n> <#1246119825487564981>"
+                        "## ✅ **Ваша заявка на получение роли военнослужащего была одобрена!**\n\n"
+                        "📋 **Полезная информация:**\n"
+                        "> • Канал общения:\n> <#1246126422251278597>\n"
+                        "> • Расписание занятий (необходимых для повышения):\n> <#1336337899309895722>\n"
+                        "> • Следите за оповещениями обучения:\n> <#1337434149274779738>\n"
+                        "> • Ознакомьтесь с сайтом Вооружённых Сил РФ:\n> <#1326022450307137659>\n"
+                        "> • Следите за последними приказами:\n> <#1251166871064019015>\n"
+                        "> • Уже были в ВС РФ? Попробуйте восстановиться:\n> <#1317830537724952626>\n"
+                        "> • Решили, что служба не для вас? Напишите рапорт на увольнение:\n> <#1246119825487564981>"
                     )
                 else:
                     # Civilian instructions
                     instructions = (
-                        "✅ **Ваша заявка на получение роли гражданского была одобрена!**\n\n"
+                        "## ✅ **Ваша заявка на получение роли гражданского была одобрена!**\n\n"
                         "📋 **Полезная информация:**\n> "
-                        "> • **Канал общения:**\n> <#1246125346152251393>\n"
-                        "> • **Запросить поставку:**\n> <#1246119051726553099>\n"
-                        "> • **Запросить допуск на территорию ВС РФ:**\n> <#1246119269784354888>"
+                        "> • Канал общения:\n> <#1246125346152251393>\n"
+                        "> • Запросить поставку:\n> <#1246119051726553099>\n"
+                        "> • Запросить допуск на территорию ВС РФ:\n> <#1246119269784354888>"
                     )
                 
                 await user.send(instructions)

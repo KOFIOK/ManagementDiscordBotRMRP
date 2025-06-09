@@ -405,7 +405,11 @@ class RoleApplicationApprovalView(ui.View):
             original_embed = interaction.message.embeds[0]
             original_embed.color = discord.Color.green()
             
-            status_message = f"Одобрено модератором {interaction.user.mention}"
+            if self.application_data["type"] == "military":
+                status_message = f"Одобрено инструктором ВК {interaction.user.mention}"
+            elif self.application_data["type"] == "civilian":
+                status_message = f"Одобрено руководством бригады ( {interaction.user.mention} )"
+
             if not role_ids:
                 status_message += "\n⚠️ Роли не настроены - выдача ролей пропущена"
             elif not assigned_roles:
@@ -673,7 +677,7 @@ async def restore_approval_views(bot, channel):
                 if not embed.title:
                     continue
                     
-                # Check for application embeds that are still pending (no status field)
+                # Only restore views for PENDING applications (no status field)
                 if ("Заявка на получение роли" in embed.title and 
                     not any(field.name in ["✅ Статус", "❌ Статус"] for field in embed.fields)):
                     
@@ -689,7 +693,7 @@ async def restore_approval_views(bot, channel):
                         else:
                             continue
                         
-                        # Extract user ID from user mention in first field
+                        # Extract all required fields from embed
                         for field in embed.fields:
                             if field.name == "👤 Заявитель":
                                 user_mention = field.value
@@ -699,44 +703,44 @@ async def restore_approval_views(bot, channel):
                                 if match:
                                     application_data["user_id"] = int(match.group(1))
                                     application_data["user_mention"] = user_mention
-                                break
-                        
-                        # Extract name from embed fields
-                        for field in embed.fields:
-                            if field.name == "📝 Имя Фамилия":
+                            elif field.name == "📝 Имя Фамилия":
                                 application_data["name"] = field.value
-                                break
+                            elif field.name == "🔢 Статик":
+                                application_data["static"] = field.value
+                            elif field.name == "🎖️ Звание":
+                                application_data["rank"] = field.value
+                            elif field.name == "📋 Порядок набора":
+                                application_data["recruitment_type"] = field.value.lower()
+                            elif field.name == "🏛️ Фракция, звание, должность":
+                                application_data["faction"] = field.value
+                            elif field.name == "🎯 Цель получения роли":
+                                application_data["purpose"] = field.value
+                            elif field.name == "🔗 Доказательства":
+                                # Extract URL from markdown link [Ссылка](url)
+                                import re
+                                url_match = re.search(r'\[.*?\]\((.*?)\)', field.value)
+                                if url_match:
+                                    application_data["proof"] = url_match.group(1)
+                                else:
+                                    application_data["proof"] = field.value
                         
-                        if "user_id" in application_data and "name" in application_data:
+                        # Verify we have minimum required data
+                        if "user_id" in application_data and "name" in application_data and "type" in application_data:
                             # Create and add the approval view
                             view = RoleApplicationApprovalView(application_data)
                             await message.edit(view=view)
-                            print(f"Restored approval view for application message {message.id}")
+                            print(f"Restored approval view for {application_data['type']} application message {message.id}")
+                        else:
+                            print(f"Missing required data for application message {message.id}: {application_data}")
                         
                     except Exception as e:
                         print(f"Error parsing application data from message {message.id}: {e}")
                         continue
                         
-                # Check for approved/rejected applications
+                # For already processed applications, just skip them (don't restore views)
                 elif ("Заявка на получение роли" in embed.title and 
-                      any(field.name == "✅ Статус" for field in embed.fields)):
-                    # Approved application
-                    view = ApprovedApplicationView()
-                    try:
-                        await message.edit(view=view)
-                        print(f"Restored approved view for message {message.id}")
-                    except Exception as e:
-                        print(f"Error restoring approved view for message {message.id}: {e}")
-                        
-                elif ("Заявка на получение роли" in embed.title and 
-                      any(field.name == "❌ Статус" for field in embed.fields)):
-                    # Rejected application
-                    view = RejectedApplicationView()
-                    try:
-                        await message.edit(view=view)
-                        print(f"Restored rejected view for message {message.id}")
-                    except Exception as e:
-                        print(f"Error restoring rejected view for message {message.id}: {e}")
+                      any(field.name in ["✅ Статус", "❌ Статус"] for field in embed.fields)):
+                    continue
                     
     except Exception as e:
         print(f"Error restoring approval views: {e}")

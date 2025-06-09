@@ -44,9 +44,9 @@ jobs:
         flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics    - name: Run tests
       env:
-        DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN || 'test_token_placeholder' }}
+        DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN || 'dummy_token_for_tests' }}
       run: |
-        pytest tests/ -v --tb=short --cov=. --cov-report=xml
+        pytest tests/ -v --tb=short
 
     - name: Upload coverage reports
       if: matrix.python-version == '3.11'
@@ -102,11 +102,10 @@ jobs:
             echo "❌ Bot failed to start"
             exit 1
           fi
-
   deploy-staging:
     needs: test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push' && vars.ENABLE_STAGING == 'true'
 
     steps:
     - uses: actions/checkout@v4

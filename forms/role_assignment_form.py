@@ -429,8 +429,7 @@ class RoleApplicationApprovalView(ui.View):
             
             # Respond to interaction first to avoid timeout
             await interaction.response.edit_message(embed=original_embed, view=approved_view)
-            
-            # Add hiring record to Google Sheets for military applications with rank "Рядовой" (after responding)
+              # Add hiring record to Google Sheets for military applications with rank "Рядовой" (after responding)
             if self.application_data["type"] == "military" and self.application_data.get("rank", "").lower() == "рядовой":
                 try:
                     hiring_time = datetime.now(timezone.utc)
@@ -446,6 +445,72 @@ class RoleApplicationApprovalView(ui.View):
                         print(f"⚠️ Failed to add hiring record for {self.application_data.get('name', 'Unknown')}")
                 except Exception as e:
                     print(f"❌ Error adding hiring record to Google Sheets: {e}")
+            
+            # Send notification to audit channel for military applications
+            if self.application_data["type"] == "military":
+                try:
+                    config = load_config()
+                    audit_channel_id = config.get('audit_channel')
+                    if audit_channel_id:
+                        audit_channel = guild.get_channel(audit_channel_id)
+                        if audit_channel:
+                            # Get approving user info from Google Sheets
+                            signed_by_name = interaction.user.display_name  # Default fallback
+                            try:
+                                # Extract clean name from approving user's nickname
+                                approved_by_clean_name = sheets_manager.extract_name_from_nickname(interaction.user.display_name)
+                                if approved_by_clean_name:
+                                    # Extract surname (last word)
+                                    name_parts = approved_by_clean_name.strip().split()
+                                    if len(name_parts) >= 2:
+                                        surname = name_parts[-1]  # Last word as surname
+                                        # Search in 'Пользователи' sheet
+                                        full_user_info = await sheets_manager.get_user_info_from_users_sheet(surname)
+                                        if full_user_info:
+                                            signed_by_name = full_user_info
+                                        else:
+                                            signed_by_name = approved_by_clean_name
+                            except Exception as e:
+                                print(f"Error getting approving user info from Google Sheets: {e}")
+                            
+                            # Create audit notification embed with correct template
+                            audit_embed = discord.Embed(
+                                title="Кадровый аудит ВС РФ",
+                                color=0x055000,  # Green color as in template
+                                timestamp=discord.utils.utcnow()
+                            )
+                            
+                            # Format date as dd-MM-yyyy
+                            action_date = discord.utils.utcnow().strftime('%d-%m-%Y')
+                            
+                            # Combine name and static for "Имя Фамилия | Статик" field
+                            name_with_static = f"{self.application_data.get('name', 'Неизвестно')} | {self.application_data.get('static', '')}"
+                              # Set fields according to template
+                            audit_embed.add_field(name="Кадровую отписал", value=signed_by_name, inline=False)
+                            audit_embed.add_field(name="Имя Фамилия | 6 цифр статика", value=name_with_static, inline=False)
+                            audit_embed.add_field(name="Действие", value="Принят на службу", inline=False)
+                            
+                            # Add recruitment type if available (right after "Действие")
+                            recruitment_type = self.application_data.get("recruitment_type", "")
+                            if recruitment_type:
+                                audit_embed.add_field(name="Причина принятия", value=recruitment_type.capitalize(), inline=False)
+                            
+                            audit_embed.add_field(name="Дата Действия", value=action_date, inline=False)
+                            audit_embed.add_field(name="Подразделение", value="Военная Академия", inline=False)
+                            audit_embed.add_field(name="Воинское звание", value=self.application_data.get("rank", "Рядовой"), inline=False)
+                            
+                            # Set thumbnail to default image as in template
+                            audit_embed.set_thumbnail(url="https://i.imgur.com/07MRSyl.png")
+                            
+                            # Send notification with user mention (the user who was hired)
+                            audit_message = await audit_channel.send(content=f"<@{user.id}>", embed=audit_embed)
+                            print(f"Sent audit notification for hiring of {user.display_name}")
+                        else:
+                            print(f"Audit channel not found: {audit_channel_id}")
+                    else:
+                        print("Audit channel ID not configured")
+                except Exception as e:
+                    print(f"Error sending audit notification for hiring: {e}")
             
             # Send notification to user with instructions
             try:

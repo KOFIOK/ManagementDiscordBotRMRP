@@ -11,13 +11,13 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-
+    
     - name: Deploy to Production Server
       uses: appleboy/ssh-action@v1.0.0
       with:
-        host: 202.181.188.48
-        username: root
-        password: '&bvWF4oy432&'
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USER }}
+        password: ${{ secrets.SERVER_PASSWORD }}
         script: |
           # Navigate to project directory or create it
           if [ ! -d "/opt/army-discord-bot" ]; then

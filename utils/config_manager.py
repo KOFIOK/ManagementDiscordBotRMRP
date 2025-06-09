@@ -9,6 +9,11 @@ default_config = {
     'dismissal_channel': None,
     'audit_channel': None,
     'blacklist_channel': None,
+    'role_assignment_channel': None,
+    'military_role': None,
+    'civilian_role': None,
+    'additional_military_roles': [],  # Additional roles for military personnel
+    'role_assignment_ping_role': None,  # Role to ping when new role assignment submitted
     'excluded_roles': [],
     'ping_settings': {},
     'moderators': {

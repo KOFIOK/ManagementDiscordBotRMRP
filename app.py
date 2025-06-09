@@ -10,6 +10,7 @@ from utils.config_manager import load_config
 from utils.google_sheets import sheets_manager
 from forms.dismissal_form import DismissalReportButton, DismissalApprovalView, send_dismissal_button_message, restore_dismissal_approval_views
 from forms.settings_form import SettingsView
+from forms.role_assignment_form import RoleAssignmentView, send_role_assignment_message, restore_role_assignment_views
 
 # Load environment variables from .env file
 load_dotenv()
@@ -35,13 +36,15 @@ async def on_ready():
         print(f'Synced {len(synced)} command(s)')
     except Exception as e:
         print(f'Failed to sync commands: {e}')
-    
-    # Load configuration on startup
+      # Load configuration on startup
     config = load_config()
     print('Configuration loaded successfully')
     print(f'Dismissal channel: {config.get("dismissal_channel", "Not set")}')
     print(f'Audit channel: {config.get("audit_channel", "Not set")}')
     print(f'Blacklist channel: {config.get("blacklist_channel", "Not set")}')
+    print(f'Role assignment channel: {config.get("role_assignment_channel", "Not set")}')
+    print(f'Military role: {config.get("military_role", "Not set")}')
+    print(f'Civilian role: {config.get("civilian_role", "Not set")}')
       # Initialize Google Sheets
     print('Initializing Google Sheets...')
     sheets_success = sheets_manager.initialize()
@@ -49,10 +52,10 @@ async def on_ready():
         print('✅ Google Sheets initialized successfully')
     else:
         print('⚠️ Google Sheets initialization failed - dismissal logging will not work')
-    
-    # Create persistent button views
+      # Create persistent button views
     bot.add_view(DismissalReportButton())
     bot.add_view(SettingsView())
+    bot.add_view(RoleAssignmentView())
     
     # Add a generic DismissalApprovalView for persistent approval buttons
     bot.add_view(DismissalApprovalView())
@@ -76,6 +79,19 @@ async def restore_channel_messages(config):
             # Restore approval views for existing dismissal reports
             print(f"Restoring approval views for dismissal reports in {channel.name}")
             await restore_dismissal_approval_views(bot, channel)
+    
+    # Restore role assignment channel message
+    role_assignment_channel_id = config.get('role_assignment_channel')
+    if role_assignment_channel_id:
+        channel = bot.get_channel(role_assignment_channel_id)
+        if channel:
+            if not await check_for_button_message(channel, "Выбор роли"):
+                print(f"Sending role assignment message to channel {channel.name}")
+                await send_role_assignment_message(channel)
+            
+            # Restore role assignment views
+            print(f"Restoring role assignment views in {channel.name}")
+            await restore_role_assignment_views(bot, channel)
     
     # Restore audit channel message
     audit_channel_id = config.get('audit_channel')

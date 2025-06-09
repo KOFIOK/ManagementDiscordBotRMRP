@@ -20,31 +20,78 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
 
-# Virtual Environment
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+test-results/
+
+# Virtual environments
 venv/
-env/
 ENV/
+env/
+.venv/
 
-# IDE specific files
-.idea/
+# Environment variables
+.env
+.env.local
+.env.production
+.env.test
+
+# IDE files
 .vscode/
+.idea/
 *.swp
 *.swo
+*~
 
-# Bot configuration
-config.json
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Bot specific
+token.txt
 credentials.json
-.env
+service-account.json
 
 # Logs
-*.log
 logs/
+*.log
 
-# OS specific files
-.DS_Store
-Thumbs.db
-desktop.ini
+# Backup files
+backup/
+*.backup
+*.bak
 
-# Project specific
-token.txt
+# Temporary files
+temp/
+tmp/
+*.tmp
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Config backups
+config*.json.backup

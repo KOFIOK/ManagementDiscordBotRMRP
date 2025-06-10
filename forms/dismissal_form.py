@@ -472,7 +472,7 @@ class DismissalApprovalView(ui.View):
             # Send DM to the user
             try:
                 await target_user.send(
-                    f"Ваш рапорт на увольнение был **одобрен** сотрудником {interaction.user.mention}."
+                    f"## ✅ Ваш рапорт на увольнение был **одобрен** сотрудником {interaction.user.mention}."
                 )
             except discord.Forbidden:
                 pass  # User has DMs disabled
@@ -577,7 +577,10 @@ class DismissalApprovalView(ui.View):
             if target_user:
                 try:
                     await target_user.send(
-                        f"Ваш рапорт на увольнение был **отклонён** сотрудником {interaction.user.mention}."
+                        f"Ваш рапорт на увольнение был **отклонён** сотрудником {interaction.user.mention}.\n"
+                        "> Как только вы снова зайдёте в игру, то, возможно, окажитесь на территории В/Ч.\n"
+                        "> В таком случае вежливо попросите любого офицера вас провести до выхода.\n"
+                        "> - *Самостоятельно по территории В/Ч разгуливать запрещено!*"
                     )
                 except discord.Forbidden:
                     pass  # User has DMs disabled

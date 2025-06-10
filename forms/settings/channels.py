@@ -157,7 +157,6 @@ class ChannelConfigSelect(ui.Select):
             ping_text = ping_text or "❌ Настройки пингов не найдены"
         else:
             ping_text = "❌ Настройки пингов не настроены"
-        
         embed.add_field(
             name="📢 Настройки пингов по подразделениям:",
             value=ping_text,
@@ -168,7 +167,6 @@ class ChannelConfigSelect(ui.Select):
             name="ℹ️ Доступные действия:",
             value=(
                 "• **Настроить канал** - установить канал для рапортов на увольнение\n"
-                "• **Настроить пинги** - настроить уведомления по подразделениям\n"
                 "• **Добавить пинг** - добавить настройку для подразделения\n"
                 "• **Удалить пинг** - убрать настройку пинга\n"
                 "• **Очистить пинги** - удалить все настройки пингов"
@@ -365,11 +363,6 @@ class DismissalChannelView(BaseSettingsView):
         modal = ChannelSelectionModal("dismissal")
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="📢 Управление пингами", style=discord.ButtonStyle.primary)
-    async def manage_pings(self, interaction: discord.Interaction, button: discord.ui.Button):
-        view = DismissalPingManagementView()
-        await view.show_ping_management(interaction)
-    
     @discord.ui.button(label="➕ Добавить пинг", style=discord.ButtonStyle.secondary)
     async def add_ping(self, interaction: discord.Interaction, button: discord.ui.Button):
         from .ping_settings import AddPingSettingModal
@@ -395,105 +388,6 @@ class DismissalChannelView(BaseSettingsView):
     
     @discord.ui.button(label="🗑️ Очистить пинги", style=discord.ButtonStyle.danger)
     async def clear_pings(self, interaction: discord.Interaction, button: discord.ui.Button):
-        config = load_config()
-        config['ping_settings'] = {}
-        save_config(config)
-        
-        await self.send_success_message(
-            interaction,
-            "Настройки пингов очищены",
-            "Все настройки пингов были удалены. Теперь при подаче рапортов уведомления отправляться не будут."
-        )
-
-
-class DismissalPingManagementView(BaseSettingsView):
-    """View for managing dismissal ping settings"""
-    
-    def __init__(self):
-        super().__init__()
-    
-    async def show_ping_management(self, interaction: discord.Interaction):
-        """Show detailed ping management interface"""
-        embed = discord.Embed(
-            title="📢 Управление пингами для увольнений",
-            description="Настройка ролей для уведомлений при подаче рапортов на увольнение в зависимости от подразделения подающего.",
-            color=discord.Color.orange(),
-            timestamp=discord.utils.utcnow()
-        )
-        
-        config = load_config()
-        ping_settings = config.get('ping_settings', {})
-        
-        # Show current ping settings
-        if ping_settings:
-            ping_text = ""
-            for department_role_id, ping_roles_ids in ping_settings.items():
-                department_role = interaction.guild.get_role(int(department_role_id))
-                if department_role:
-                    ping_roles = []
-                    for ping_role_id in ping_roles_ids:
-                        ping_role = interaction.guild.get_role(ping_role_id)
-                        if ping_role:
-                            ping_roles.append(ping_role.mention)
-                    if ping_roles:
-                        ping_text += f"• {department_role.mention} → {', '.join(ping_roles)}\n"
-            ping_text = ping_text or "❌ Настройки пингов не найдены"
-        else:
-            ping_text = "❌ Настройки пингов не настроены"
-        
-        embed.add_field(name="Текущие настройки пингов:", value=ping_text, inline=False)
-        
-        embed.add_field(
-            name="ℹ️ Принцип работы:",
-            value=(
-                "При подаче рапорта на увольнение бот определит роль подразделения у подающего "
-                "и отправит уведомления указанным для этого подразделения ролям."
-            ),
-            inline=False
-        )
-        
-        embed.add_field(
-            name="🎯 Действия:",
-            value=(
-                "• **Добавить настройку** - связать подразделение с ролями для пинга\n"
-                "• **Удалить настройку** - убрать настройку для подразделения\n"
-                "• **Очистить все** - удалить все настройки пингов"
-            ),
-            inline=False
-        )
-        
-        view = DismissalPingButtonsView()
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-
-
-class DismissalPingButtonsView(BaseSettingsView):
-    """Buttons for dismissal ping configuration"""
-    
-    @discord.ui.button(label="➕ Добавить настройку", style=discord.ButtonStyle.green)
-    async def add_ping_setting(self, interaction: discord.Interaction, button: discord.ui.Button):
-        from .ping_settings import AddPingSettingModal
-        modal = AddPingSettingModal()
-        await interaction.response.send_modal(modal)
-    
-    @discord.ui.button(label="➖ Удалить настройку", style=discord.ButtonStyle.red)
-    async def remove_ping_setting(self, interaction: discord.Interaction, button: discord.ui.Button):
-        config = load_config()
-        ping_settings = config.get('ping_settings', {})
-        
-        if not ping_settings:
-            await self.send_error_message(
-                interaction,
-                "Нет настроек для удаления",
-                "Нет настроенных пингов для удаления."
-            )
-            return
-        
-        from .ping_settings import RemovePingSettingModal
-        modal = RemovePingSettingModal()
-        await interaction.response.send_modal(modal)
-    
-    @discord.ui.button(label="🗑️ Очистить все", style=discord.ButtonStyle.danger)
-    async def clear_all_pings(self, interaction: discord.Interaction, button: discord.ui.Button):
         config = load_config()
         config['ping_settings'] = {}
         save_config(config)

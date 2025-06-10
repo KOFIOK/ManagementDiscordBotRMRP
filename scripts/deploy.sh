@@ -24,10 +24,16 @@ cp -r . backup/ 2>/dev/null || true
 
 # Stop existing bot instance
 echo "🛑 Stopping existing bot..."
-# Try multiple methods to ensure bot is stopped
-screen -S $SCREEN_SESSION -X quit 2>/dev/null || echo "Screen session not found"
-pkill -f "python3 app.py" 2>/dev/null || echo "No Python processes found"
-systemctl stop army-discord-bot 2>/dev/null || echo "Systemd service not found"
+# Use our bot control script if available
+if [ -f "$APP_DIR/scripts/bot.sh" ]; then
+    bash "$APP_DIR/scripts/bot.sh" stop
+else
+    # Fallback to manual stop
+    screen -S $SCREEN_SESSION -p 0 -X stuff "^C" 2>/dev/null || true
+    sleep 3
+    screen -S $SCREEN_SESSION -X quit 2>/dev/null || true
+    pkill -f "python3 app.py" 2>/dev/null || true
+fi
 sleep 3
 
 # Double-check that bot is stopped
@@ -61,7 +67,12 @@ fi
 
 # Start bot in screen session
 echo "▶️  Starting bot..."
-screen -dmS $SCREEN_SESSION bash -c "cd $APP_DIR && python3 app.py 2>&1 | tee $LOG_DIR/bot.log"
+if [ -f "$APP_DIR/scripts/bot.sh" ]; then
+    bash "$APP_DIR/scripts/bot.sh" start
+else
+    # Fallback to direct start
+    screen -dmS $SCREEN_SESSION bash -c "cd $APP_DIR && python3 app.py 2>&1 | tee $LOG_DIR/bot.log"
+fi
 
 # Wait and verify startup
 echo "⏳ Waiting for bot to start..."
@@ -69,8 +80,12 @@ sleep 5
 
 if screen -list | grep -q "$SCREEN_SESSION"; then
     echo "✅ Bot deployed and started successfully!"
-    echo "📺 To view bot session: screen -r $SCREEN_SESSION"
-    echo "📄 To view logs: tail -f $LOG_DIR/bot.log"
+    echo ""
+    echo "📋 Управление ботом:"
+    echo "  ./scripts/bot.sh status   - статус бота"
+    echo "  ./scripts/bot.sh stop     - остановить бота"
+    echo "  ./scripts/bot.sh logs     - показать логи"
+    echo "  ./scripts/bot.sh watch    - следить за логами"
 else
     echo "❌ Bot failed to start!"
     echo "📄 Check logs: cat $LOG_DIR/bot.log"

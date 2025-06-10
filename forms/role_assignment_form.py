@@ -2,7 +2,7 @@ from discord import ui
 import discord
 import re
 from datetime import datetime, timezone
-from utils.config_manager import load_config, save_config, is_moderator_or_admin
+from utils.config_manager import load_config, save_config, is_moderator_or_admin, has_pending_role_application
 from utils.google_sheets import sheets_manager
 
 class RoleAssignmentView(ui.View):
@@ -62,6 +62,21 @@ class MilitaryApplicationModal(ui.Modal):
         self.add_item(self.recruitment_type_input)
     
     async def on_submit(self, interaction: discord.Interaction):
+        # Check if user already has a pending role application
+        config = load_config()
+        role_assignment_channel_id = config.get('role_assignment_channel')
+        
+        if role_assignment_channel_id:
+            has_pending = await has_pending_role_application(interaction.client, interaction.user.id, role_assignment_channel_id)
+            if has_pending:
+                await interaction.response.send_message(
+                    "❌ **У вас уже есть заявка на получение роли, которая находится на рассмотрении.**\n\n"
+                    "Пожалуйста, дождитесь решения по текущей заявке, прежде чем подавать новую.\n"
+                    "Это поможет избежать путаницы и ускорить обработку вашего запроса.",
+                    ephemeral=True
+                )
+                return
+        
         # Auto-format and validate static
         static = self.static_input.value.strip()
         formatted_static = self._format_static(static)
@@ -233,6 +248,21 @@ class CivilianApplicationModal(ui.Modal):
         self.add_item(self.proof_input)
     
     async def on_submit(self, interaction: discord.Interaction):
+        # Check if user already has a pending role application
+        config = load_config()
+        role_assignment_channel_id = config.get('role_assignment_channel')
+        
+        if role_assignment_channel_id:
+            has_pending = await has_pending_role_application(interaction.client, interaction.user.id, role_assignment_channel_id)
+            if has_pending:
+                await interaction.response.send_message(
+                    "❌ **У вас уже есть заявка на получение роли, которая находится на рассмотрении.**\n\n"
+                    "Пожалуйста, дождитесь решения по текущей заявке, прежде чем подавать новую.\n"
+                    "Это поможет избежать путаницы и ускорить обработку вашего запроса.",
+                    ephemeral=True
+                )
+                return
+        
         # Auto-format and validate static
         static = self.static_input.value.strip()
         formatted_static = self._format_static(static)

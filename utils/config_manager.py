@@ -472,3 +472,89 @@ def is_moderator_or_admin(user, config):
     
     # Check regular moderator permissions
     return is_moderator(user, config)
+
+async def has_pending_dismissal_report(bot, user_id, dismissal_channel_id):
+    """
+    Check if user has a pending dismissal report (not yet processed).
+    Returns True if user has pending report, False otherwise.
+    """
+    if not dismissal_channel_id:
+        return False
+        
+    try:
+        channel = bot.get_channel(dismissal_channel_id)
+        if not channel:
+            return False
+            
+        # Search through recent messages (last 100)
+        async for message in channel.history(limit=100):
+            # Check if message is from bot and has dismissal report embed
+            if (message.author == bot.user and 
+                message.embeds and
+                message.embeds[0].description and
+                "подал рапорт на увольнение!" in message.embeds[0].description):
+                
+                embed = message.embeds[0]
+                
+                # Check if this report is from the specific user
+                user_mention = f"<@{user_id}>"
+                if user_mention in embed.description:
+                    # Check if report is still pending (not approved/rejected)
+                    status_pending = True
+                    for field in embed.fields:
+                        if field.name == "Обработано":
+                            status_pending = False
+                            break
+                    
+                    if status_pending:
+                        return True
+                        
+        return False
+        
+    except Exception as e:
+        print(f"Error checking pending dismissal reports: {e}")
+        return False
+
+async def has_pending_role_application(bot, user_id, role_assignment_channel_id):
+    """
+    Check if user has a pending role application (not yet processed).
+    Returns True if user has pending application, False otherwise.
+    """
+    if not role_assignment_channel_id:
+        return False
+        
+    try:
+        channel = bot.get_channel(role_assignment_channel_id)
+        if not channel:
+            return False
+            
+        # Search through recent messages (last 100)
+        async for message in channel.history(limit=100):
+            # Check if message is from bot and has role application embed
+            if (message.author == bot.user and 
+                message.embeds and
+                len(message.embeds) > 0):
+                
+                embed = message.embeds[0]
+                if not embed.title or "Заявка на получение роли" not in embed.title:
+                    continue
+                
+                # Check if this application is from the specific user
+                user_mention = f"<@{user_id}>"
+                for field in embed.fields:
+                    if field.name == "👤 Заявитель" and user_mention in field.value:
+                        # Check if application is still pending (no status field)
+                        status_pending = True
+                        for status_field in embed.fields:
+                            if status_field.name in ["✅ Статус", "❌ Статус"]:
+                                status_pending = False
+                                break
+                        
+                        if status_pending:
+                            return True
+                            
+        return False
+        
+    except Exception as e:
+        print(f"Error checking pending role applications: {e}")
+        return False

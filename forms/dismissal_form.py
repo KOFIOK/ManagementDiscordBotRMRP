@@ -2,7 +2,7 @@ import discord
 from discord import ui
 import re
 from datetime import datetime
-from utils.config_manager import load_config, is_moderator_or_admin, can_moderate_user
+from utils.config_manager import load_config, is_moderator_or_admin, can_moderate_user, has_pending_dismissal_report
 from utils.google_sheets import sheets_manager
 
 # Define the dismissal report form
@@ -50,9 +50,23 @@ class DismissalReportModal(ui.Modal, title="Рапорт на увольнени
         else:
             # Invalid length
             return ""
-    
     async def on_submit(self, interaction: discord.Interaction):
         try:
+            # Check if user already has a pending dismissal report
+            config = load_config()
+            dismissal_channel_id = config.get('dismissal_channel')
+            
+            if dismissal_channel_id:
+                has_pending = await has_pending_dismissal_report(interaction.client, interaction.user.id, dismissal_channel_id)
+                if has_pending:
+                    await interaction.response.send_message(
+                        "❌ **У вас уже есть рапорт на увольнение, который находится на рассмотрении.**\n\n"
+                        "Пожалуйста, дождитесь решения по текущему рапорту, прежде чем подавать новый.\n"
+                        "Это поможет избежать путаницы и ускорить обработку вашего запроса.",
+                        ephemeral=True
+                    )
+                    return
+            
             # Validate name format (должно быть 2 слова)
             name_parts = self.name.value.strip().split()
             if len(name_parts) != 2:

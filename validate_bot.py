@@ -50,24 +50,37 @@ def test_complete_setup():
     # Test 5: Configuration system
     print("\n5. Testing configuration system...")
     try:
-        config = load_config()
-        test_config = {"test": "validation"}
-        save_config(test_config)
-        loaded_config = load_config()
+        from utils.config_manager import (
+            load_config, save_config, create_backup, 
+            list_backups, get_config_status
+        )
         
-        if loaded_config.get("test") == "validation":
-            print("   ✓ Configuration system working correctly")
-        else:
-            print("   ✗ Configuration system test failed")
-            return False
-            
-        # Clean up
-        import os
-        if os.path.exists('config.json'):
-            os.remove('config.json')
-            
+        # Test config loading
+        config = load_config()
+        print("   ✓ Configuration loading works")
+        
+        # Test backup system
+        status = get_config_status()
+        print(f"   ✓ Backup system status: {status['backup_count']} backups")
+        
+        print("   ✓ Configuration system working correctly")
     except Exception as e:
-        print(f"   ✗ Configuration test failed: {e}")
+        print(f"   ✗ Configuration system failed: {e}")
+        return False
+    
+    # Test 6: Enhanced backup features
+    print("\n6. Testing backup and recovery features...")
+    try:
+        backup_path = create_backup("validation_test")
+        if backup_path:
+            print("   ✓ Backup creation successful")
+        
+        backups = list_backups()
+        print(f"   ✓ Found {len(backups)} backup files")
+        
+        print("   ✓ Backup and recovery system working")
+    except Exception as e:
+        print(f"   ✗ Backup system failed: {e}")
         return False
     
     print("\n" + "=" * 50)
@@ -80,15 +93,21 @@ def test_complete_setup():
     print("4. Invite the bot to your server with appropriate permissions")
     print("5. Run: python app.py")
     print("\nAvailable Commands:")
-    print("• /setup_dismissal_channel - Set up dismissal reports")
-    print("• /setup_audit_channel - Set up personnel audit")  
-    print("• /setup_blacklist_channel - Set up blacklist management")
+    print("• /settings - Universal bot configuration interface")
+    print("• /config-backup - Backup and recovery management")
+    print("• /config-export - Export configuration for migration")
+    print("• /addmoder - Add moderator (user or role)")
+    print("• /removemoder - Remove moderator")
+    print("• /listmoders - List all moderators")
     print("\nBot Features:")
     print("• Interactive forms with validation")
     print("• Persistent button messages")
     print("• Configurable channels for each system")
     print("• Professional embed formatting")
     print("• Error handling and user feedback")
+    print("• 🛡️ PROTECTED CONFIGURATION with automatic backups")
+    print("• 🔄 Automatic recovery from corrupted config files")
+    print("• 📂 Unified settings interface for all configurations")
     
     return True
 

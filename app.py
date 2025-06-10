@@ -6,7 +6,7 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
-from utils.config_manager import load_config
+from utils.config_manager import load_config, create_backup, get_config_status
 from utils.google_sheets import sheets_manager
 from forms.dismissal_form import DismissalReportButton, DismissalApprovalView, send_dismissal_button_message, restore_dismissal_approval_views
 from forms.settings_form import SettingsView
@@ -27,6 +27,18 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 async def on_ready():
     print(f'Logged in as {bot.user} (ID: {bot.user.id})')
     print('------')
+    
+    # Create startup backup and check config status
+    print("🔄 Checking configuration system...")
+    status = get_config_status()
+    
+    if status['config_exists'] and status['config_valid']:
+        backup_path = create_backup("startup")
+        if backup_path:
+            print(f"✅ Startup backup created: {backup_path}")
+        print(f"📊 Config status: {status['backup_count']} backups available")
+    else:
+        print("⚠️  Configuration issues detected - check /config-backup status")
     
     # Load all extension cogs
     await load_extensions()

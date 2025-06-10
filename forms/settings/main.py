@@ -25,12 +25,6 @@ class MainSettingsSelect(ui.Select):
                 value="excluded_roles"
             ),
             discord.SelectOption(
-                label="Пинги",
-                description="Настроить пинги для подразделений при рапортах",
-                emoji="📢",
-                value="pings"
-            ),
-            discord.SelectOption(
                 label="Показать текущие настройки",
                 description="Посмотреть все текущие настройки",
                 emoji="⚙️",
@@ -55,8 +49,6 @@ class MainSettingsSelect(ui.Select):
             await self.show_current_config(interaction)
         elif selected_option == "excluded_roles":
             await self.show_excluded_roles_config(interaction)
-        elif selected_option == "pings":
-            await self.show_pings_config(interaction)
     
     async def show_channels_menu(self, interaction: discord.Interaction):
         """Show submenu for channel configuration"""
@@ -72,7 +64,7 @@ class MainSettingsSelect(ui.Select):
         embed.add_field(
             name="📋 Доступные каналы:",
             value=(
-                "• **Канал увольнений** - для рапортов на увольнение\n"
+                "• **Канал увольнений** - для рапортов на увольнение (включает настройки пингов)\n"
                 "• **Канал аудита** - для кадрового аудита\n"
                 "• **Канал чёрного списка** - для записей чёрного списка\n"
                 "• **Канал получения ролей** - для выбора военной/гражданской роли"
@@ -211,61 +203,6 @@ class MainSettingsSelect(ui.Select):
         
         view = ExcludedRolesView()
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-    
-    async def show_pings_config(self, interaction: discord.Interaction):
-        """Show interface for managing ping settings for departments"""
-        from .ping_settings import PingSettingsView
-        
-        config = load_config()
-        ping_settings = config.get('ping_settings', {})
-        
-        embed = discord.Embed(
-            title="📢 Управление пингами подразделений",
-            description="Настройка ролей для уведомлений при подаче рапортов на увольнение в зависимости от подразделения подающего.",
-            color=discord.Color.blue(),
-            timestamp=discord.utils.utcnow()
-        )
-        
-        # Show current ping settings
-        if ping_settings:
-            ping_text = ""
-            for department_role_id, ping_roles_ids in ping_settings.items():
-                department_role = interaction.guild.get_role(int(department_role_id))
-                if department_role:
-                    ping_roles = []
-                    for ping_role_id in ping_roles_ids:
-                        ping_role = interaction.guild.get_role(ping_role_id)
-                        if ping_role:
-                            ping_roles.append(ping_role.mention)
-                    if ping_roles:
-                        ping_text += f"• {department_role.mention} → {', '.join(ping_roles)}\n"
-            ping_text = ping_text or "❌ Настройки пингов не найдены"
-        else:
-            ping_text = "❌ Настройки пингов не настроены"
-        
-        embed.add_field(name="Текущие настройки пингов:", value=ping_text, inline=False)
-        
-        embed.add_field(
-            name="ℹ️ Принцип работы:",
-            value=(
-                "При подаче рапорта на увольнение бот определит роль подразделения у подающего "
-                "и отправит уведомления указанным для этого подразделения ролям."
-            ),
-            inline=False
-        )
-        
-        embed.add_field(
-            name="🎯 Действия:",
-            value=(
-                "• **Добавить настройку** - связать подразделение с ролями для пинга\n"
-                "• **Удалить настройку** - убрать настройку для подразделения\n"
-                "• **Очистить все** - удалить все настройки пингов"
-            ),
-            inline=False
-        )
-        
-        view = PingSettingsView()
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
 class SettingsView(BaseSettingsView):
@@ -295,7 +232,6 @@ async def send_settings_message(interaction: discord.Interaction):
         value=(
             "• **📂 Настройка каналов** - настроить каналы для различных систем\n"
             "• **🛡️ Роли-исключения** - роли, не снимаемые при увольнении\n"
-            "• **📢 Пинги** - настройка уведомлений для подразделений\n"
             "• **⚙️ Показать настройки** - просмотр текущих настроек"
         ),
         inline=False

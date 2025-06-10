@@ -1,13 +1,22 @@
+"""
+Enhanced configuration manager with backup and recovery functionality
+"""
 import os
 import json
+import shutil
+import datetime
+from typing import Dict, Any, Optional
 
 # Configuration file to store channel IDs
 CONFIG_FILE = 'data/config.json'
+BACKUP_DIR = 'data/backups'
+TEMP_CONFIG_FILE = 'data/config.json.tmp'
 
 # Default configuration
 default_config = {
     'dismissal_channel': None,
-    'audit_channel': None,    'blacklist_channel': None,
+    'audit_channel': None,
+    'blacklist_channel': None,
     'role_assignment_channel': None,
     'military_roles': [],  # Military roles (updated to array)
     'civilian_roles': [],  # Civilian roles (updated to array)
@@ -21,35 +30,205 @@ default_config = {
     }
 }
 
-# Load configuration
-def load_config():
-    """Load configuration from JSON file."""
+def create_backup(reason: str = "auto") -> str:
+    """Create a backup of current configuration with timestamp and reason."""
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_filename = f"config_backup_{timestamp}_{reason}.json"
+    backup_path = os.path.join(BACKUP_DIR, backup_filename)
+    
+    # Create backup directory if it doesn't exist
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    
+    try:
+        if os.path.exists(CONFIG_FILE):
+            shutil.copy2(CONFIG_FILE, backup_path)
+            print(f"✅ Backup created: {backup_path}")
+            
+            # Keep only last 10 backups to avoid disk space issues
+            cleanup_old_backups()
+            
+            return backup_path
+        else:
+            print("⚠️  No config file to backup")
+            return ""
+    except Exception as e:
+        print(f"❌ Failed to create backup: {e}")
+        return ""
+
+def cleanup_old_backups(keep_count: int = 10):
+    """Keep only the most recent backups, delete older ones."""
+    try:
+        if not os.path.exists(BACKUP_DIR):
+            return
+            
+        # Get all backup files
+        backup_files = [f for f in os.listdir(BACKUP_DIR) if f.startswith('config_backup_') and f.endswith('.json')]
+        
+        # Sort by modification time (newest first)
+        backup_files.sort(key=lambda x: os.path.getmtime(os.path.join(BACKUP_DIR, x)), reverse=True)
+        
+        # Delete old backups if we have more than keep_count
+        if len(backup_files) > keep_count:
+            for old_backup in backup_files[keep_count:]:
+                old_backup_path = os.path.join(BACKUP_DIR, old_backup)
+                try:
+                    os.remove(old_backup_path)
+                    print(f"🗑️  Removed old backup: {old_backup}")
+                except Exception as e:
+                    print(f"⚠️  Failed to remove old backup {old_backup}: {e}")
+                    
+    except Exception as e:
+        print(f"⚠️  Error during backup cleanup: {e}")
+
+def list_backups() -> list:
+    """List all available backups sorted by date (newest first)."""
+    try:
+        if not os.path.exists(BACKUP_DIR):
+            return []
+            
+        backup_files = [f for f in os.listdir(BACKUP_DIR) if f.startswith('config_backup_') and f.endswith('.json')]
+        
+        # Sort by modification time (newest first)
+        backup_files.sort(key=lambda x: os.path.getmtime(os.path.join(BACKUP_DIR, x)), reverse=True)
+        
+        return backup_files
+    except Exception as e:
+        print(f"❌ Error listing backups: {e}")
+        return []
+
+def restore_from_backup(backup_filename: str) -> bool:
+    """Restore configuration from a specific backup file."""
+    backup_path = os.path.join(BACKUP_DIR, backup_filename)
+    
+    if not os.path.exists(backup_path):
+        print(f"❌ Backup file not found: {backup_path}")
+        return False
+    
+    try:
+        # Create a backup of current config before restoring
+        create_backup("before_restore")
+        
+        # Test if backup file is valid JSON
+        with open(backup_path, 'r', encoding='utf-8') as f:
+            test_config = json.load(f)
+        
+        # Copy backup to main config
+        shutil.copy2(backup_path, CONFIG_FILE)
+        print(f"✅ Configuration restored from: {backup_filename}")
+        return True
+        
+    except json.JSONDecodeError as e:
+        print(f"❌ Invalid JSON in backup file: {e}")
+        return False
+    except Exception as e:
+        print(f"❌ Failed to restore from backup: {e}")
+        return False
+
+def safe_save_config(config: Dict[Any, Any]) -> bool:
+    """Safely save configuration with atomic write and backup."""
+    try:
+        # Create backup before saving
+        create_backup("before_save")
+        
+        # Create data directory if it doesn't exist
+        os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
+        
+        # Write to temporary file first (atomic write)
+        with open(TEMP_CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=4, ensure_ascii=False)
+        
+        # Test if the temporary file is valid JSON
+        with open(TEMP_CONFIG_FILE, 'r', encoding='utf-8') as f:
+            json.load(f)  # This will raise an exception if JSON is invalid
+        
+        # If we got here, the file is valid - move it to the final location
+        if os.path.exists(CONFIG_FILE):
+            # Create backup of old config with specific reason
+            create_backup("replaced")
+        
+        shutil.move(TEMP_CONFIG_FILE, CONFIG_FILE)
+        print("✅ Configuration saved successfully")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Failed to save configuration: {e}")
+        
+        # Clean up temporary file if it exists
+        if os.path.exists(TEMP_CONFIG_FILE):
+            try:
+                os.remove(TEMP_CONFIG_FILE)
+            except:
+                pass
+        
+        return False
+
+def load_config() -> Dict[Any, Any]:
+    """Load configuration from JSON file with recovery capabilities."""
     try:
         # Create data directory if it doesn't exist
         os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
+        
+        if not os.path.exists(CONFIG_FILE):
+            print("📝 Config file doesn't exist, creating default configuration")
+            safe_save_config(default_config)
+            return default_config.copy()
         
         with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
             config = json.load(f)
         
         # Apply migrations
         if migrate_config(config):
-            save_config(config)
-            print("Configuration migrated to new format")
+            print("🔄 Configuration migrated to new format")
+            safe_save_config(config)
         
+        print("✅ Configuration loaded successfully")
         return config
-    except (FileNotFoundError, json.JSONDecodeError):
-        # Create default config file if it doesn't exist
-        save_config(default_config)
-        return default_config.copy()
+        
+    except json.JSONDecodeError as e:
+        print(f"❌ Config file is corrupted: {e}")
+        return attempt_recovery()
+    except Exception as e:
+        print(f"❌ Error loading config: {e}")
+        return attempt_recovery()
 
-# Save configuration
-def save_config(config):
-    """Save configuration to JSON file."""
-    # Create data directory if it doesn't exist
-    os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
+def attempt_recovery() -> Dict[Any, Any]:
+    """Attempt to recover configuration from backups."""
+    print("🔄 Attempting configuration recovery...")
     
-    with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-        json.dump(config, f, indent=4)
+    backups = list_backups()
+    
+    if not backups:
+        print("⚠️  No backups found, using default configuration")
+        safe_save_config(default_config)
+        return default_config.copy()
+    
+    print(f"📂 Found {len(backups)} backup(s), trying to restore...")
+    
+    for backup_file in backups:
+        print(f"🔄 Trying backup: {backup_file}")
+        backup_path = os.path.join(BACKUP_DIR, backup_file)
+        
+        try:
+            with open(backup_path, 'r', encoding='utf-8') as f:
+                recovered_config = json.load(f)
+            
+            # Backup seems valid, restore it
+            shutil.copy2(backup_path, CONFIG_FILE)
+            print(f"✅ Successfully recovered from backup: {backup_file}")
+            return recovered_config
+            
+        except Exception as e:
+            print(f"❌ Backup {backup_file} is also corrupted: {e}")
+            continue
+    
+    print("❌ All backups are corrupted, using default configuration")
+    safe_save_config(default_config)
+    return default_config.copy()
+
+# Replace the original save_config function
+def save_config(config: Dict[Any, Any]) -> bool:
+    """Save configuration (wrapper for safe_save_config for backward compatibility)."""
+    return safe_save_config(config)
 
 def is_moderator(user, config):
     """Check if a user has moderator permissions."""
@@ -98,45 +277,25 @@ def can_moderate_user(moderator, target_user, config):
     if not is_moderator(target_user, config):
         # Target is not a moderator, so any moderator can approve
         return True
-      # Both are moderators - check hierarchy
-    moderators = config.get('moderators', {'users': [], 'roles': []})
-    moderator_role_ids = moderators.get('roles', [])
-    moderator_user_ids = moderators.get('users', [])
     
-    # Check if moderator is a special user-based moderator
-    moderator_is_user_based = moderator.id in moderator_user_ids
-    target_is_user_based = target_user.id in moderator_user_ids
+    # Both are moderators - check hierarchy
+    moderator_roles = [role for role in moderator.roles if role.id in config.get('moderators', {}).get('roles', [])]
+    target_roles = [role for role in target_user.roles if role.id in config.get('moderators', {}).get('roles', [])]
     
-    # Get moderator's highest moderator role position
-    moderator_highest_position = -1
-    for role in moderator.roles:
-        if role.id in moderator_role_ids:
-            if role.position > moderator_highest_position:
-                moderator_highest_position = role.position
+    if not moderator_roles:
+        # Moderator is individual user, not role-based
+        # Individual moderators cannot moderate role-based moderators
+        return not target_roles
     
-    # Get target user's highest moderator role position
-    target_highest_position = -1
-    for role in target_user.roles:
-        if role.id in moderator_role_ids:
-            if role.position > target_highest_position:
-                target_highest_position = role.position
-    
-    # Special cases for user-based moderators:
-    # 1. If moderator is user-based and target is role-based, user-based can moderate
-    # 2. If both are user-based, neither can moderate the other
-    # 3. If moderator is role-based and target is user-based, role-based cannot moderate
-    if moderator_is_user_based and target_is_user_based:
-        # Both are user-based moderators - neither can moderate the other
-        return False
-    elif moderator_is_user_based and not target_is_user_based:
-        # User-based moderator can approve role-based moderator reports
+    if not target_roles:
+        # Target is individual moderator, role-based moderators can moderate them
         return True
-    elif not moderator_is_user_based and target_is_user_based:
-        # Role-based moderator cannot approve user-based moderator reports
-        return False
     
-    # Both are role-based moderators - check hierarchy by role position
-    return moderator_highest_position > target_highest_position
+    # Both have moderator roles - check hierarchy
+    max_moderator_position = max(role.position for role in moderator_roles)
+    max_target_position = max(role.position for role in target_roles)
+    
+    return max_moderator_position > max_target_position
 
 def migrate_config(config):
     """Migrate old configuration format to new format."""
@@ -168,12 +327,105 @@ def migrate_config(config):
             migrated = True
         del config['civilian_role_assignment_ping_role']
     
-    # Ensure new keys exist with defaults
-    if 'military_role_assignment_ping_roles' not in config:
-        config['military_role_assignment_ping_roles'] = []
-    if 'civilian_role_assignment_ping_roles' not in config:
-        config['civilian_role_assignment_ping_roles'] = []
+    # Migrate old single roles to new multiple roles format
+    if 'military_role' in config:
+        old_role = config.get('military_role')
+        if old_role is not None:
+            config['military_roles'] = [old_role]
+            migrated = True
+        del config['military_role']
+    
+    if 'civilian_role' in config:
+        old_role = config.get('civilian_role')
+        if old_role is not None:
+            config['civilian_roles'] = [old_role]
+            migrated = True
+        del config['civilian_role']
+    
+    # Ensure all new keys exist with proper defaults
+    for key, default_value in default_config.items():
+        if key not in config:
+            config[key] = default_value
+            migrated = True
     
     return migrated
 
-# Load configuration
+def export_config(export_path: str) -> bool:
+    """Export current configuration to a specified path."""
+    try:
+        config = load_config()
+        
+        # Add metadata to export
+        export_data = {
+            'exported_at': datetime.datetime.now().isoformat(),
+            'version': '1.0',
+            'config': config
+        }
+        
+        with open(export_path, 'w', encoding='utf-8') as f:
+            json.dump(export_data, f, indent=4, ensure_ascii=False)
+        
+        print(f"✅ Configuration exported to: {export_path}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Failed to export configuration: {e}")
+        return False
+
+def import_config(import_path: str) -> bool:
+    """Import configuration from a specified path."""
+    try:
+        with open(import_path, 'r', encoding='utf-8') as f:
+            import_data = json.load(f)
+        
+        # Check if it's an export file with metadata
+        if 'config' in import_data and 'exported_at' in import_data:
+            config = import_data['config']
+            print(f"📦 Importing configuration exported at: {import_data['exported_at']}")
+        else:
+            # Assume it's a raw config file
+            config = import_data
+        
+        # Create backup before importing
+        create_backup("before_import")
+        
+        # Validate and save the imported config
+        return safe_save_config(config)
+        
+    except Exception as e:
+        print(f"❌ Failed to import configuration: {e}")
+        return False
+
+def get_config_status() -> Dict[str, Any]:
+    """Get detailed status of configuration system."""
+    status = {
+        'config_exists': os.path.exists(CONFIG_FILE),
+        'config_size': 0,
+        'backup_count': 0,
+        'last_backup': None,
+        'config_valid': False
+    }
+    
+    try:
+        if status['config_exists']:
+            status['config_size'] = os.path.getsize(CONFIG_FILE)
+            
+            # Test if config is valid
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                json.load(f)
+            status['config_valid'] = True
+        
+        backups = list_backups()
+        status['backup_count'] = len(backups)
+        
+        if backups:
+            latest_backup = backups[0]
+            backup_path = os.path.join(BACKUP_DIR, latest_backup)
+            status['last_backup'] = datetime.datetime.fromtimestamp(
+                os.path.getmtime(backup_path)
+            ).isoformat()
+    
+    except Exception as e:
+        print(f"Error getting config status: {e}")
+    
+    return status

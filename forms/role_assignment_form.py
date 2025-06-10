@@ -2,7 +2,7 @@ from discord import ui
 import discord
 import re
 from datetime import datetime, timezone
-from utils.config_manager import load_config, save_config
+from utils.config_manager import load_config, save_config, is_moderator_or_admin
 from utils.google_sheets import sheets_manager
 
 class RoleAssignmentView(ui.View):
@@ -568,31 +568,13 @@ class RoleApplicationApprovalView(ui.View):
                 ephemeral=True
             )
             return
-        
-        # Reject immediately without reason modal
+          # Reject immediately without reason modal
         await self._process_rejection(interaction)
     
     async def _check_moderator_permissions(self, interaction):
         """Check if user has moderator permissions"""
-        # Check if user is admin
-        if interaction.user.guild_permissions.administrator:
-            return True
-        
-        # Check moderator settings from config
         config = load_config()
-        moderators = config.get('moderators', {})
-        
-        # Check if user is in moderator users list
-        if interaction.user.id in moderators.get('users', []):
-            return True
-        
-        # Check if user has any moderator roles
-        user_role_ids = [role.id for role in interaction.user.roles]
-        moderator_role_ids = moderators.get('roles', [])
-        if any(role_id in user_role_ids for role_id in moderator_role_ids):
-            return True
-        
-        return False
+        return is_moderator_or_admin(interaction.user, config)
 
     async def _process_rejection(self, interaction):
         """Process application rejection"""

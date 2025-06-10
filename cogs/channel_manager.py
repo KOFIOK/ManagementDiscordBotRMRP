@@ -14,12 +14,22 @@ from utils.config_manager import (
 class ChannelManagementCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-
+    
     @app_commands.command(name="settings", description="⚙️ Настройка каналов Discord бота")
-    @app_commands.checks.has_permissions(administrator=True)
     async def settings(self, interaction: discord.Interaction):
         """Unified command for bot configuration with interactive interface"""
-        await send_settings_message(interaction)    # Moderator management command group
+        # Check if user has administrator permissions (custom admins or Discord admins)
+        from utils.config_manager import is_administrator
+        config = load_config()
+        
+        if not (interaction.user.guild_permissions.administrator or is_administrator(interaction.user, config)):
+            await interaction.response.send_message(
+                "❌ У вас нет прав для выполнения этой команды. Требуются права администратора.", 
+                ephemeral=True
+            )
+            return
+            
+        await send_settings_message(interaction)# Moderator management command group
     moder_group = app_commands.Group(name="moder", description="👮 Управление модераторами")
 
     @moder_group.command(name="add", description="➕ Добавить модератора (роль или пользователя)")
@@ -342,6 +352,183 @@ class ChannelManagementCog(commands.Cog):
                 "Проверьте права доступа к папке data",
                 ephemeral=True
             )
+
+    # Administrator management command group
+    admin_group = app_commands.Group(name="admin", description="👑 Управление администраторами")
+
+    @admin_group.command(name="add", description="➕ Добавить администратора (роль или пользователя)")
+    @app_commands.describe(target="Роль или пользователь для назначения администратором")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def add_administrator(self, interaction: discord.Interaction, target: discord.Member | discord.Role):
+        """Add a user or role as administrator"""
+        try:
+            config = load_config()
+            administrators = config.get('administrators', {'users': [], 'roles': []})
+            
+            if isinstance(target, discord.Member):
+                if target.id not in administrators['users']:
+                    administrators['users'].append(target.id)
+                    config['administrators'] = administrators
+                    save_config(config)
+                    
+                    await interaction.response.send_message(
+                        f"✅ Пользователь {target.mention} добавлен в список администраторов.",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.response.send_message(
+                        f"⚠️ Пользователь {target.mention} уже является администратором.",
+                        ephemeral=True
+                    )
+            
+            elif isinstance(target, discord.Role):
+                if target.id not in administrators['roles']:
+                    administrators['roles'].append(target.id)
+                    config['administrators'] = administrators
+                    save_config(config)
+                    
+                    await interaction.response.send_message(
+                        f"✅ Роль {target.mention} добавлена в список администраторских ролей.",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.response.send_message(
+                        f"⚠️ Роль {target.mention} уже является администраторской.",
+                        ephemeral=True
+                    )
+        
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Ошибка при добавлении администратора: {e}",
+                ephemeral=True
+            )
+            print(f"Add administrator error: {e}")
+
+    @admin_group.command(name="remove", description="➖ Убрать администратора (роль или пользователя)")
+    @app_commands.describe(target="Роль или пользователь для удаления из администраторов")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def remove_administrator(self, interaction: discord.Interaction, target: discord.Member | discord.Role):
+        """Remove a user or role from administrators"""
+        try:
+            config = load_config()
+            administrators = config.get('administrators', {'users': [], 'roles': []})
+            
+            if isinstance(target, discord.Member):
+                if target.id in administrators['users']:
+                    administrators['users'].remove(target.id)
+                    config['administrators'] = administrators
+                    save_config(config)
+                    
+                    await interaction.response.send_message(
+                        f"✅ Пользователь {target.mention} удален из списка администраторов.",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.response.send_message(
+                        f"⚠️ Пользователь {target.mention} не является администратором.",
+                        ephemeral=True
+                    )
+            
+            elif isinstance(target, discord.Role):
+                if target.id in administrators['roles']:
+                    administrators['roles'].remove(target.id)
+                    config['administrators'] = administrators
+                    save_config(config)
+                    
+                    await interaction.response.send_message(
+                        f"✅ Роль {target.mention} удалена из списка администраторских ролей.",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.response.send_message(
+                        f"⚠️ Роль {target.mention} не является администраторской.",
+                        ephemeral=True
+                    )
+        
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Ошибка при удалении администратора: {e}",
+                ephemeral=True
+            )
+            print(f"Remove administrator error: {e}")
+
+    @admin_group.command(name="list", description="📋 Показать список администраторов")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def list_administrators(self, interaction: discord.Interaction):
+        """List all administrators and administrator roles"""
+        try:
+            config = load_config()
+            administrators = config.get('administrators', {'users': [], 'roles': []})
+            
+            embed = discord.Embed(
+                title="👑 Список администраторов",
+                color=discord.Color.gold(),
+                timestamp=discord.utils.utcnow()
+            )
+            
+            # Administrator users
+            user_list = []
+            for user_id in administrators.get('users', []):
+                user = interaction.guild.get_member(user_id)
+                if user:
+                    user_list.append(f"• {user.mention} ({user.display_name})")
+                else:
+                    user_list.append(f"• <@{user_id}> (пользователь не найден)")
+            
+            if user_list:
+                embed.add_field(
+                    name="👤 Пользователи-администраторы",
+                    value="\n".join(user_list),
+                    inline=False
+                )
+            else:
+                embed.add_field(
+                    name="👤 Пользователи-администраторы",
+                    value="Нет назначенных пользователей",
+                    inline=False
+                )
+            
+            # Administrator roles
+            role_list = []
+            for role_id in administrators.get('roles', []):
+                role = interaction.guild.get_role(role_id)
+                if role:
+                    role_list.append(f"• {role.mention}")
+                else:
+                    role_list.append(f"• <@&{role_id}> (роль не найдена)")
+            
+            if role_list:
+                embed.add_field(
+                    name="👑 Администраторские роли",
+                    value="\n".join(role_list),
+                    inline=False
+                )
+            else:
+                embed.add_field(
+                    name="👑 Администраторские роли",
+                    value="Нет назначенных ролей",
+                    inline=False
+                )
+            
+            embed.add_field(
+                name="ℹ️ Привилегии администраторов",
+                value=(
+                    "• Одобрение/отклонение ЛЮБЫХ рапортов на увольнение\n"
+                    "• Одобрение/отклонение ЛЮБЫХ заявок на выдачу ролей\n"
+                    "• Доступ к команде /settings\n"
+                    "• Игнорируют иерархические ограничения модераторов"
+                ),
+                inline=False
+            )
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Ошибка при получении списка администраторов: {e}",
+                ephemeral=True
+            )
+            print(f"List administrators error: {e}")
 
 # Setup function for adding the cog to the bot
 async def setup(bot):

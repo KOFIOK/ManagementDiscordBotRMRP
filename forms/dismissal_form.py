@@ -2,7 +2,7 @@ import discord
 from discord import ui
 import re
 from datetime import datetime
-from utils.config_manager import load_config, is_moderator, can_moderate_user
+from utils.config_manager import load_config, is_moderator_or_admin, can_moderate_user
 from utils.google_sheets import sheets_manager
 
 # Define the dismissal report form
@@ -152,10 +152,9 @@ class DismissalApprovalView(ui.View):
     
     @discord.ui.button(label="✅ Одобрить", style=discord.ButtonStyle.green, custom_id="approve_dismissal")
     async def approve_dismissal(self, interaction: discord.Interaction, button: discord.ui.Button):
-        try:
-            # Check if user has moderator permissions
+        try:            # Check if user has moderator permissions
             config = load_config()
-            if not is_moderator(interaction.user, config):
+            if not is_moderator_or_admin(interaction.user, config):
                 await interaction.response.send_message(
                     "❌ У вас нет прав для одобрения рапортов на увольнение. Только модераторы могут выполнять это действие.",
                     ephemeral=True
@@ -213,11 +212,10 @@ class DismissalApprovalView(ui.View):
                 # Restore original buttons since permission check failed
                 original_view = DismissalApprovalView(self.user_id)
                 await interaction.followup.edit_message(interaction.message.id, embed=embed, view=original_view)
-                
-                # Determine the reason for denial
+                  # Determine the reason for denial
                 if interaction.user.id == target_user.id:
                     reason = "Вы не можете одобрить свой собственный рапорт на увольнение."
-                elif is_moderator(target_user, config):
+                elif is_moderator_or_admin(target_user, config):
                     reason = "Вы не можете одобрить рапорт модератора того же или более высокого уровня."
                 else:
                     reason = "У вас недостаточно прав для одобрения этого рапорта."
@@ -472,7 +470,10 @@ class DismissalApprovalView(ui.View):
             # Send DM to the user
             try:
                 await target_user.send(
-                    f"## ✅ Ваш рапорт на увольнение был **одобрен** сотрудником {interaction.user.mention}."
+                    f"## ✅ Ваш рапорт на увольнение был **одобрен** сотрудником {interaction.user.mention}.\n"
+                    "> Как только вы снова зайдёте в игру, то, возможно, окажитесь на территории В/Ч.\n"
+                    "> В таком случае вежливо попросите любого офицера вас провести до выхода.\n"
+                    "> - *Самостоятельно по территории В/Ч разгуливать запрещено!*"
                 )
             except discord.Forbidden:
                 pass  # User has DMs disabled
@@ -496,10 +497,9 @@ class DismissalApprovalView(ui.View):
     
     @discord.ui.button(label="❌ Отказать", style=discord.ButtonStyle.red, custom_id="reject_dismissal")
     async def reject_dismissal(self, interaction: discord.Interaction, button: discord.ui.Button):
-        try:
-            # Check if user has moderator permissions
+        try:            # Check if user has moderator permissions
             config = load_config()
-            if not is_moderator(interaction.user, config):
+            if not is_moderator_or_admin(interaction.user, config):
                 await interaction.response.send_message(
                     "❌ У вас нет прав для отказа рапортов на увольнение. Только модераторы могут выполнять это действие.",
                     ephemeral=True
@@ -541,11 +541,10 @@ class DismissalApprovalView(ui.View):
                 original_view = DismissalApprovalView(self.user_id)
                 embed = interaction.message.embeds[0]  # Get current embed
                 await interaction.followup.edit_message(interaction.message.id, embed=embed, view=original_view)
-                
-                # Determine the reason for denial
+                  # Determine the reason for denial
                 if interaction.user.id == target_user.id:
                     reason = "Вы не можете отклонить свой собственный рапорт на увольнение."
-                elif is_moderator(target_user, config):
+                elif is_moderator_or_admin(target_user, config):
                     reason = "Вы не можете отклонить рапорт модератора того же или более высокого уровня."
                 else:
                     reason = "У вас недостаточно прав для отклонения этого рапорта."
@@ -577,10 +576,7 @@ class DismissalApprovalView(ui.View):
             if target_user:
                 try:
                     await target_user.send(
-                        f"Ваш рапорт на увольнение был **отклонён** сотрудником {interaction.user.mention}.\n"
-                        "> Как только вы снова зайдёте в игру, то, возможно, окажитесь на территории В/Ч.\n"
-                        "> В таком случае вежливо попросите любого офицера вас провести до выхода.\n"
-                        "> - *Самостоятельно по территории В/Ч разгуливать запрещено!*"
+                        f"## Ваш рапорт на увольнение был **отклонён** сотрудником {interaction.user.mention}."
                     )
                 except discord.Forbidden:
                     pass  # User has DMs disabled

@@ -24,7 +24,12 @@ default_config = {
     'civilian_role_assignment_ping_roles': [],  # Roles to ping for civilian applications
     'excluded_roles': [],
     'ping_settings': {},
+    'blacklist_role_mentions': [],  # Ping roles for blacklist channel
     'moderators': {
+        'users': [],
+        'roles': []
+    },
+    'administrators': {
         'users': [],
         'roles': []
     }
@@ -231,7 +236,7 @@ def save_config(config: Dict[Any, Any]) -> bool:
     return safe_save_config(config)
 
 def is_moderator(user, config):
-    """Check if a user has moderator permissions."""
+    """Check if a user has moderator permissions (excludes administrators to maintain separation)."""
     moderators = config.get('moderators', {'users': [], 'roles': []})
     
     # Check if user is in moderator users list
@@ -245,7 +250,7 @@ def is_moderator(user, config):
     if any(role_id in user_role_ids for role_id in moderator_role_ids):
         return True
     
-    # Check if user is administrator (admins can always moderate)
+    # Discord administrators have moderator privileges but are handled separately
     if user.guild_permissions.administrator:
         return True
     
@@ -256,21 +261,29 @@ def can_moderate_user(moderator, target_user, config):
     Check if a moderator can approve/reject a dismissal report from target_user.
     
     Rules:
-    1. Moderators cannot approve their own reports
-    2. Moderators cannot approve reports from other moderators of the same or higher level
-    3. Only moderators with higher roles can approve reports from lower-level moderators
-    4. Administrators can approve any reports
+    1. Administrators can approve ANY reports (including their own)
+    2. Regular moderators cannot approve their own reports
+    3. Regular moderators cannot approve reports from other moderators of the same or higher level
+    4. Only moderators with higher roles can approve reports from lower-level moderators
     """
-    # Self-moderation is not allowed
-    if moderator.id == target_user.id:
-        return False
+    # Check if moderator is a custom administrator (custom administrators can moderate anyone, including themselves)
+    if is_administrator(moderator, config):
+        return True
     
-    # Check if moderator has admin permissions (admins can moderate anyone)
+    # Check if moderator has Discord admin permissions (Discord admins can moderate anyone, including themselves)
     if moderator.guild_permissions.administrator:
         return True
     
+    # Self-moderation is not allowed for regular moderators (but allowed for administrators above)
+    if moderator.id == target_user.id:
+        return False
+    
     # Check if moderator has moderator permissions
     if not is_moderator(moderator, config):
+        return False
+    
+    # Regular moderators cannot moderate administrators
+    if is_administrator(target_user, config):
         return False
     
     # Check if target user is a moderator
@@ -429,3 +442,33 @@ def get_config_status() -> Dict[str, Any]:
         print(f"Error getting config status: {e}")
     
     return status
+
+def is_administrator(user, config):
+    """Check if a user has administrator permissions (custom administrators, not Discord admins)."""
+    administrators = config.get('administrators', {'users': [], 'roles': []})
+    
+    # Check if user is in administrator users list
+    if user.id in administrators.get('users', []):
+        return True
+    
+    # Check if user has any of the administrator roles
+    user_role_ids = [role.id for role in user.roles]
+    administrator_role_ids = administrators.get('roles', [])
+    
+    if any(role_id in user_role_ids for role_id in administrator_role_ids):
+        return True
+    
+    # Discord administrators are always considered administrators
+    if user.guild_permissions.administrator:
+        return True
+    
+    return False
+
+def is_moderator_or_admin(user, config):
+    """Check if a user has moderator or administrator permissions."""
+    # Administrators have all moderator privileges plus more
+    if is_administrator(user, config):
+        return True
+    
+    # Check regular moderator permissions
+    return is_moderator(user, config)

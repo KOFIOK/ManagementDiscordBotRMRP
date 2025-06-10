@@ -52,18 +52,20 @@ class ChannelConfigSelect(ui.Select):
             min_values=1,
             max_values=1,
             options=options,
-            custom_id="channel_config_select"
-        )
+            custom_id="channel_config_select"        )
     
     async def callback(self, interaction: discord.Interaction):
         selected_option = self.values[0]
         await self.show_channel_selection(interaction, selected_option)
+    
     async def show_channel_selection(self, interaction: discord.Interaction, config_type: str):
         """Show channel selection interface"""
         if config_type == "role_assignment":
             await self.show_role_assignment_config(interaction)
         elif config_type == "dismissal":
             await self.show_dismissal_config(interaction)
+        elif config_type == "blacklist":
+            await self.show_blacklist_config(interaction)
         else:
             # Create channel selection modal for other channel types
             modal = ChannelSelectionModal(config_type)
@@ -175,6 +177,59 @@ class ChannelConfigSelect(ui.Select):
         )
         
         view = DismissalChannelView()
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+    
+    async def show_blacklist_config(self, interaction: discord.Interaction):
+        """Show blacklist channel configuration with ping management"""
+        embed = discord.Embed(
+            title="🚫 Настройка канала чёрного списка",
+            description="Управление каналом чёрного списка и пингами для уведомлений.",
+            color=discord.Color.dark_red(),
+            timestamp=discord.utils.utcnow()
+        )
+        
+        config = load_config()
+        helper = ConfigDisplayHelper()
+        
+        # Show current channel
+        embed.add_field(
+            name="📂 Текущий канал:",
+            value=helper.format_channel_info(config, 'blacklist_channel', interaction.guild),
+            inline=False
+        )
+        
+        # Show blacklist ping settings
+        blacklist_role_mentions = config.get('blacklist_role_mentions', [])
+        if blacklist_role_mentions:
+            ping_roles = []
+            for role_id in blacklist_role_mentions:
+                role = interaction.guild.get_role(role_id)
+                if role:
+                    ping_roles.append(role.mention)
+                else:
+                    ping_roles.append(f"❌ Роль не найдена (ID: {role_id})")
+            ping_text = ", ".join(ping_roles)
+        else:
+            ping_text = "❌ Пинги не настроены"
+        
+        embed.add_field(
+            name="📢 Пинг-роли для чёрного списка:",
+            value=ping_text,
+            inline=False
+        )
+        
+        embed.add_field(
+            name="ℹ️ Доступные действия:",
+            value=(
+                "• **Настроить канал** - установить канал для чёрного списка\n"
+                "• **Добавить пинг-роль** - добавить роль для уведомлений\n"
+                "• **Удалить пинг-роль** - убрать роль из уведомлений\n"
+                "• **Очистить пинги** - удалить все пинг-роли"
+            ),
+            inline=False
+        )
+        
+        view = BlacklistChannelView()
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
@@ -397,3 +452,139 @@ class DismissalChannelView(BaseSettingsView):
             "Настройки пингов очищены",
             "Все настройки пингов были удалены. Теперь при подаче рапортов уведомления отправляться не будут."
         )
+
+
+class BlacklistChannelView(BaseSettingsView):
+    """View for blacklist channel and ping configuration"""
+    
+    @discord.ui.button(label="📂 Настроить канал", style=discord.ButtonStyle.green)
+    async def set_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = ChannelSelectionModal("blacklist")
+        await interaction.response.send_modal(modal)
+    
+    @discord.ui.button(label="➕ Добавить пинг-роль", style=discord.ButtonStyle.secondary)
+    async def add_ping_role(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = BlacklistPingRoleModal("add")
+        await interaction.response.send_modal(modal)
+    
+    @discord.ui.button(label="➖ Удалить пинг-роль", style=discord.ButtonStyle.red)
+    async def remove_ping_role(self, interaction: discord.Interaction, button: discord.ui.Button):
+        config = load_config()
+        blacklist_role_mentions = config.get('blacklist_role_mentions', [])
+        
+        if not blacklist_role_mentions:
+            await self.send_error_message(
+                interaction,
+                "Нет ролей для удаления",
+                "Нет настроенных пинг-ролей для удаления."
+            )
+            return
+        
+        modal = BlacklistPingRoleModal("remove")
+        await interaction.response.send_modal(modal)
+    
+    @discord.ui.button(label="🗑️ Очистить пинги", style=discord.ButtonStyle.danger)
+    async def clear_ping_roles(self, interaction: discord.Interaction, button: discord.ui.Button):
+        config = load_config()
+        config['blacklist_role_mentions'] = []
+        save_config(config)
+        
+        await self.send_success_message(
+            interaction,
+            "Пинг-роли очищены",
+            "Все пинг-роли для чёрного списка были удалены. Теперь при отправке в чёрный список уведомления отправляться не будут."
+        )
+
+
+class BlacklistPingRoleModal(BaseSettingsModal):
+    """Modal for managing blacklist ping roles"""
+    
+    def __init__(self, action: str):
+        self.action = action
+        
+        if action == "add":
+            title = "Добавить пинг-роль для чёрного списка"
+            placeholder = "Например: @модераторы или 1234567890123456789"
+            label = "Роль для добавления"
+        else:  # remove
+            title = "Удалить пинг-роль из чёрного списка"
+            placeholder = "Например: @модераторы или 1234567890123456789"
+            label = "Роль для удаления"
+        
+        super().__init__(title=title)
+        
+        self.role_input = ui.TextInput(
+            label=label,
+            placeholder=placeholder,
+            min_length=1,
+            max_length=100,
+            required=True
+        )
+        self.add_item(self.role_input)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            from .base import RoleParser
+            
+            # Parse role input
+            role = RoleParser.parse_role_input(
+                self.role_input.value.strip(), 
+                interaction.guild
+            )
+            
+            if not role:
+                await self.send_error_message(
+                    interaction,
+                    "Роль не найдена",
+                    f"Не удалось найти роль: `{self.role_input.value}`"
+                )
+                return
+            
+            # Load config
+            config = load_config()
+            blacklist_role_mentions = config.get('blacklist_role_mentions', [])
+            
+            if self.action == "add":
+                if role.id in blacklist_role_mentions:
+                    await self.send_error_message(
+                        interaction,
+                        "Роль уже добавлена",
+                        f"Роль {role.mention} уже настроена для уведомлений чёрного списка."
+                    )
+                    return
+                
+                blacklist_role_mentions.append(role.id)
+                config['blacklist_role_mentions'] = blacklist_role_mentions
+                save_config(config)
+                
+                await self.send_success_message(
+                    interaction,
+                    "Пинг-роль добавлена",
+                    f"Роль {role.mention} добавлена в список уведомлений чёрного списка."
+                )
+            
+            else:  # remove
+                if role.id not in blacklist_role_mentions:
+                    await self.send_error_message(
+                        interaction,
+                        "Роль не найдена в настройках",
+                        f"Роль {role.mention} не настроена для уведомлений чёрного списка."
+                    )
+                    return
+                
+                blacklist_role_mentions.remove(role.id)
+                config['blacklist_role_mentions'] = blacklist_role_mentions
+                save_config(config)
+                
+                await self.send_success_message(
+                    interaction,
+                    "Пинг-роль удалена",
+                    f"Роль {role.mention} удалена из списка уведомлений чёрного списка."
+                )
+                
+        except Exception as e:
+            await self.send_error_message(
+                interaction,
+                "Ошибка",
+                f"Произошла ошибка при обработке роли: {str(e)}"
+            )

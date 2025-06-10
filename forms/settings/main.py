@@ -157,8 +157,23 @@ class MainSettingsSelect(ui.Select):
             ping_text = ping_text or "❌ Настройки не найдены"
         else:
             ping_text = "❌ Не настроены"
+        embed.add_field(name="📢 Настройки пингов (увольнения)", value=ping_text, inline=False)
         
-        embed.add_field(name="📢 Настройки пингов", value=ping_text, inline=False)
+        # Blacklist ping settings
+        blacklist_role_mentions = config.get('blacklist_role_mentions', [])
+        if blacklist_role_mentions:
+            blacklist_ping_roles = []
+            for role_id in blacklist_role_mentions:
+                role = interaction.guild.get_role(role_id)
+                if role:
+                    blacklist_ping_roles.append(role.mention)
+                else:
+                    blacklist_ping_roles.append(f"❌ Роль не найдена (ID: {role_id})")
+            blacklist_ping_text = ", ".join(blacklist_ping_roles)
+        else:
+            blacklist_ping_text = "❌ Не настроены"
+        
+        embed.add_field(name="📢 Пинги чёрного списка", value=blacklist_ping_text, inline=False)
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
@@ -203,7 +218,6 @@ class MainSettingsSelect(ui.Select):
         
         view = ExcludedRolesView()
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-
 
 class SettingsView(BaseSettingsView):
     """Main settings view with persistent functionality"""

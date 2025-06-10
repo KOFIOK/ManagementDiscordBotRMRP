@@ -154,7 +154,7 @@ class MilitaryApplicationModal(ui.Modal):
             await moderation_channel.send(content=ping_content, embed=embed, view=approval_view)
             
             await interaction.response.send_message(
-                "✅ Ваша заявка отправлена на рассмотрение модераторам. Ожидайте решения.",
+                "✅ Ваша заявка отправлена на рассмотрение военнослужащим. Ожидайте решения.",
                 ephemeral=True
             )
             
@@ -312,7 +312,7 @@ class CivilianApplicationModal(ui.Modal):
             await moderation_channel.send(content=ping_content, embed=embed, view=approval_view)
             
             await interaction.response.send_message(
-                "✅ Ваша заявка отправлена на рассмотрение модераторам. Ожидайте решения.",
+                "✅ Ваша заявка отправлена на рассмотрение военнослужащим. Ожидайте решения.",
                 ephemeral=True
             )
             
@@ -605,7 +605,7 @@ class RoleApplicationApprovalView(ui.View):
             original_embed.color = discord.Color.red()
             original_embed.add_field(
                 name="❌ Статус",
-                value=f"Отклонено модератором {interaction.user.mention}",
+                value=f"Отклонено сотрудником {interaction.user.mention}",
                 inline=False
             )
             

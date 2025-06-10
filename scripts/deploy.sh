@@ -24,8 +24,18 @@ cp -r . backup/ 2>/dev/null || true
 
 # Stop existing bot instance
 echo "🛑 Stopping existing bot..."
-screen -S $SCREEN_SESSION -X quit 2>/dev/null || echo "Bot was not running"
-sleep 2
+# Try multiple methods to ensure bot is stopped
+screen -S $SCREEN_SESSION -X quit 2>/dev/null || echo "Screen session not found"
+pkill -f "python3 app.py" 2>/dev/null || echo "No Python processes found"
+systemctl stop army-discord-bot 2>/dev/null || echo "Systemd service not found"
+sleep 3
+
+# Double-check that bot is stopped
+if pgrep -f "python3 app.py" > /dev/null; then
+    echo "⚠️ Bot still running, force killing..."
+    pkill -9 -f "python3 app.py"
+    sleep 2
+fi
 
 # Pull latest changes
 echo "📥 Pulling latest changes..."

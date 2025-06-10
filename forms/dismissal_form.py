@@ -16,7 +16,7 @@ class DismissalReportModal(ui.Modal, title="Рапорт на увольнени
     )
     
     static = ui.TextInput(
-        label="Статик (6 цифр, 123-456)",
+        label="Статик (123-456)",
         placeholder="Формат: 123-456",
         min_length=6,
         max_length=7,
@@ -25,7 +25,7 @@ class DismissalReportModal(ui.Modal, title="Рапорт на увольнени
     
     reason = ui.TextInput(
         label="Причина увольнения",
-        placeholder="Укажите причину увольнения...",
+        placeholder="Не пишите 'по собственному желанию', укажите более конкретную причину увольнения.",
         style=discord.TextStyle.paragraph,
         min_length=3,
         max_length=1000,
@@ -69,6 +69,10 @@ class DismissalReportModal(ui.Modal, title="Рапорт на увольнени
                     ephemeral=True
                 )
                 return
+              # Auto-determine department and rank from user's roles
+            ping_settings = config.get('ping_settings', {})
+            user_department = sheets_manager.get_department_from_roles(interaction.user, ping_settings)
+            user_rank = sheets_manager.get_rank_from_roles(interaction.user)
             
             # Create an embed for the report
             embed = discord.Embed(
@@ -77,9 +81,12 @@ class DismissalReportModal(ui.Modal, title="Рапорт на увольнени
                 timestamp=discord.utils.utcnow()
             )
             
-            embed.add_field(name="Имя Фамилия", value=self.name.value, inline=False)
-            embed.add_field(name="Статик", value=self.static.value, inline=False)
-            embed.add_field(name="Причина", value=self.reason.value, inline=False)
+            # Add fields with inline formatting for compact display
+            embed.add_field(name="Имя Фамилия", value=self.name.value, inline=True)
+            embed.add_field(name="Статик", value=self.static.value, inline=True)
+            embed.add_field(name="Подразделение", value=user_department, inline=True)
+            embed.add_field(name="Воинское звание", value=user_rank, inline=True)
+            embed.add_field(name="Причина увольнения", value=self.reason.value, inline=False)
             
             embed.set_footer(text=f"Отправлено: {interaction.user.name}")
             if interaction.user.avatar:
@@ -225,8 +232,7 @@ class DismissalApprovalView(ui.View):
             config = load_config()
             excluded_roles_ids = config.get('excluded_roles', [])
             ping_settings = config.get('ping_settings', {})
-            
-            # Extract form data from embed fields
+              # Extract form data from embed fields
             embed = interaction.message.embeds[0]
             form_data = {}
             
@@ -235,7 +241,11 @@ class DismissalApprovalView(ui.View):
                     form_data['name'] = field.value
                 elif field.name == "Статик":
                     form_data['static'] = field.value
-                elif field.name == "Причина":
+                elif field.name == "Подразделение":
+                    form_data['department'] = field.value
+                elif field.name == "Воинское звание":
+                    form_data['rank'] = field.value
+                elif field.name == "Причина увольнения":
                     form_data['reason'] = field.value
             
             # Get user data BEFORE removing roles (for audit notification)

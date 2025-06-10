@@ -716,10 +716,23 @@ class GoogleSheetsManager:
                 range_name=range_name,
                 value_input_option='RAW'  # Use RAW to prevent formula interpretation
             )
-            
-            # Check if append was successful
+              # Check if append was successful
             if result:
-                print(f"✅ Successfully registered moderator: {name} | {static} ({email})")
+                print(f"✅ Successfully registered moderator: {name} | {static} ({email})")                  # Automatically add moderator as editor to spreadsheet
+                print(f"🔑 Attempting to add editor access to spreadsheet...")
+                
+                # First check if they already have access
+                has_access = await self.check_editor_access(email)
+                if has_access:
+                    print(f"📋 {email} already has access to spreadsheet")
+                else:
+                    # Try to add editor access
+                    access_granted = await self.add_editor_to_spreadsheet(email)
+                    if access_granted:
+                        print(f"✅ Successfully granted spreadsheet access to {email}")
+                    else:
+                        print(f"⚠️  Could not automatically grant spreadsheet access to {email}")
+                
                 return True
             else:
                 print(f"❌ Failed to register moderator: {name} | {static}")
@@ -732,6 +745,76 @@ class GoogleSheetsManager:
                 print(f"Response status: {e.response.status_code}")
                 print(f"Response text: {e.response.text}")
             return False
+    async def add_editor_to_spreadsheet(self, email):
+        """
+        Add a new editor to the Google Spreadsheet.
+        
+        Args:
+            email: Email address of the user to add as editor
+            
+        Returns:
+            bool: True if access granted successfully, False otherwise
+        """
+        try:
+            # Ensure connection
+            if not self._ensure_connection():
+                print("Failed to establish Google Sheets connection for adding editor")
+                return False
+            
+            print(f"📧 Adding editor access for: {email}")
+            
+            # Share the spreadsheet with the email address
+            # 'writer' role gives edit access to the spreadsheet
+            self.spreadsheet.share(
+                email, 
+                perm_type='user', 
+                role='writer',
+                notify=True,  # Send notification email
+                email_message=f"Вам предоставлен доступ к кадровому аудиту ВС РФ. Вы можете редактировать таблицу."
+            )
+            
+            print(f"✅ Successfully added {email} as editor to spreadsheet")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error adding editor to spreadsheet: {e}")
+            # Check if error is due to invalid email or permission issues
+            if "Invalid email" in str(e).lower():
+                print(f"   Invalid email address: {email}")
+            elif "permission" in str(e).lower():
+                print(f"   Permission denied - check service account rights")
+            else:
+                print(f"   Unexpected error: {type(e).__name__}: {e}")
+            
+            return False
+    
+    async def check_editor_access(self, email):
+        """
+        Check if an email already has editor access to the spreadsheet.
+        
+        Args:
+            email: Email address to check
+            
+        Returns:
+            bool: True if user already has access, False otherwise
+        """
+        try:
+            # Get list of permissions for the spreadsheet
+            permissions = self.spreadsheet.list_permissions()
+            
+            # Check if email already has access
+            for permission in permissions:
+                if permission.get('emailAddress', '').lower() == email.lower():
+                    role = permission.get('role', '')
+                    print(f"📋 {email} already has {role} access")
+                    return True
+            
+            return False
+            
+        except Exception as e:
+            print(f"❌ Error checking editor access: {e}")
+            return False    # ...existing code...
+    
 
 # Global instance
 sheets_manager = GoogleSheetsManager()

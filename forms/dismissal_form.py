@@ -29,8 +29,27 @@ class DismissalReportModal(ui.Modal, title="Рапорт на увольнени
         style=discord.TextStyle.paragraph,
         min_length=3,
         max_length=1000,
-        required=True
-    )
+        required=True    )
+    
+    def format_static(self, static_input: str) -> str:
+        """
+        Auto-format static number to standard format (XXX-XXX or XX-XXX).
+        Accepts various input formats: 123456, 123 456, 123-456, etc.
+        Returns formatted static or empty string if invalid.
+        """
+        # Remove all non-digit characters
+        digits_only = re.sub(r'\D', '', static_input.strip())
+        
+        # Check if we have exactly 5 or 6 digits
+        if len(digits_only) == 5:
+            # Format as XX-XXX (2-3)
+            return f"{digits_only[:2]}-{digits_only[2:]}"
+        elif len(digits_only) == 6:
+            # Format as XXX-XXX (3-3)
+            return f"{digits_only[:3]}-{digits_only[3:]}"
+        else:
+            # Invalid length
+            return ""
     
     async def on_submit(self, interaction: discord.Interaction):
         try:
@@ -42,11 +61,15 @@ class DismissalReportModal(ui.Modal, title="Рапорт на увольнени
                     ephemeral=True
                 )
                 return
-            
-            # Validate static format (5 цифр: 12-345)
-            if not re.match(r'^\d{2}-\d{3}$|^\d{3}-\d{3}$', self.static.value):
+              # Auto-format and validate static
+            formatted_static = self.format_static(self.static.value)
+            if not formatted_static:
                 await interaction.response.send_message(
-                    "Ошибка: Статик должен быть в формате 123-456 (3 цифры, тире, 3 цифры).", 
+                    "Ошибка: Статик должен содержать 5 или 6 цифр.\n"
+                    "Примеры допустимых форматов:\n"
+                    "• 123-456 или 123456\n"
+                    "• 12-345 или 12345\n"
+                    "• 123 456 (с пробелом)", 
                     ephemeral=True
                 )
                 return
@@ -80,10 +103,9 @@ class DismissalReportModal(ui.Modal, title="Рапорт на увольнени
                 color=discord.Color.red(),
                 timestamp=discord.utils.utcnow()
             )
-            
-            # Add fields with inline formatting for compact display
+              # Add fields with inline formatting for compact display
             embed.add_field(name="Имя Фамилия", value=self.name.value, inline=True)
-            embed.add_field(name="Статик", value=self.static.value, inline=True)
+            embed.add_field(name="Статик", value=formatted_static, inline=True)
             embed.add_field(name="Подразделение", value=user_department, inline=True)
             embed.add_field(name="Воинское звание", value=user_rank, inline=True)
             embed.add_field(name="Причина увольнения", value=self.reason.value, inline=False)

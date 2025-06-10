@@ -52,7 +52,6 @@ class MilitaryApplicationModal(ui.Modal):
             default="Рядовой"
         )
         self.add_item(self.rank_input)
-        
         self.recruitment_type_input = ui.TextInput(
             label="Порядок набора",
             placeholder="Экскурсия или Призыв",
@@ -63,11 +62,13 @@ class MilitaryApplicationModal(ui.Modal):
         self.add_item(self.recruitment_type_input)
     
     async def on_submit(self, interaction: discord.Interaction):
-        # Validate static format
+        # Auto-format and validate static
         static = self.static_input.value.strip()
-        if not self._validate_static(static):
+        formatted_static = self._format_static(static)
+        if not formatted_static:
             await interaction.response.send_message(
-                "❌ Неверный формат статика. Используйте формат 123-456 (5-6 цифр).",
+                "❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.\n"
+                "Примеры: 123456, 123-456, 12345, 12-345, 123 456",
                 ephemeral=True
             )
             return
@@ -80,20 +81,38 @@ class MilitaryApplicationModal(ui.Modal):
                 ephemeral=True
             )
             return
-        
-        # Create application data
+          # Create application data
         application_data = {
             "type": "military",
             "name": self.name_input.value.strip(),
-            "static": static,
+            "static": formatted_static,
             "rank": self.rank_input.value.strip(),
             "recruitment_type": recruitment_type,
             "user_id": interaction.user.id,
             "user_mention": interaction.user.mention
         }
-        
-        # Send application for moderation
+          # Send application for moderation
         await self._send_application_for_approval(interaction, application_data)
+    
+    def _format_static(self, static_input: str) -> str:
+        """
+        Auto-format static number to standard format (XXX-XXX or XX-XXX).
+        Accepts various input formats: 123456, 123 456, 123-456, etc.
+        Returns formatted static or empty string if invalid.
+        """
+        # Remove all non-digit characters
+        digits_only = re.sub(r'\D', '', static_input.strip())
+        
+        # Check if we have exactly 5 or 6 digits
+        if len(digits_only) == 5:
+            # Format as XX-XXX (2-3)
+            return f"{digits_only[:2]}-{digits_only[2:]}"
+        elif len(digits_only) == 6:
+            # Format as XXX-XXX (3-3)
+            return f"{digits_only[:3]}-{digits_only[3:]}"
+        else:
+            # Invalid length
+            return ""
     
     def _validate_static(self, static):
         """Validate static format (123-456 or 12345)"""
@@ -204,7 +223,6 @@ class CivilianApplicationModal(ui.Modal):
             required=True
         )
         self.add_item(self.purpose_input)
-        
         self.proof_input = ui.TextInput(
             label="Доказательства (ссылка)",
             placeholder="Ссылка на доказательства",
@@ -215,11 +233,13 @@ class CivilianApplicationModal(ui.Modal):
         self.add_item(self.proof_input)
     
     async def on_submit(self, interaction: discord.Interaction):
-        # Validate static format
+        # Auto-format and validate static
         static = self.static_input.value.strip()
-        if not self._validate_static(static):
+        formatted_static = self._format_static(static)
+        if not formatted_static:
             await interaction.response.send_message(
-                "❌ Неверный формат статика. Используйте формат 123-456 (5-6 цифр).",
+                "❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.\n"
+                "Примеры: 123456, 123-456, 12345, 12-345, 123 456",
                 ephemeral=True
             )
             return
@@ -232,12 +252,11 @@ class CivilianApplicationModal(ui.Modal):
                 ephemeral=True
             )
             return
-        
-        # Create application data
+          # Create application data
         application_data = {
             "type": "civilian",
             "name": self.name_input.value.strip(),
-            "static": static,
+            "static": formatted_static,
             "faction": self.faction_input.value.strip(),
             "purpose": self.purpose_input.value.strip(),
             "proof": proof,
@@ -245,8 +264,27 @@ class CivilianApplicationModal(ui.Modal):
             "user_mention": interaction.user.mention
         }
         
-        # Send application for moderation
-        await self._send_application_for_approval(interaction, application_data)
+        # Send application for moderation        await self._send_application_for_approval(interaction, application_data)
+    
+    def _format_static(self, static_input: str) -> str:
+        """
+        Auto-format static number to standard format (XXX-XXX or XX-XXX).
+        Accepts various input formats: 123456, 123 456, 123-456, etc.
+        Returns formatted static or empty string if invalid.
+        """
+        # Remove all non-digit characters
+        digits_only = re.sub(r'\D', '', static_input.strip())
+        
+        # Check if we have exactly 5 or 6 digits
+        if len(digits_only) == 5:
+            # Format as XX-XXX (2-3)
+            return f"{digits_only[:2]}-{digits_only[2:]}"
+        elif len(digits_only) == 6:
+            # Format as XXX-XXX (3-3)
+            return f"{digits_only[:3]}-{digits_only[3:]}"
+        else:
+            # Invalid length
+            return ""
     
     def _validate_static(self, static):
         """Validate static format (123-456 or 12345)"""

@@ -2,8 +2,16 @@ import discord
 from discord import ui
 import re
 
-class ModeratorAuthModal(ui.Modal, title="Авторизация модератора"):
-    """Modal for manual moderator data entry when not found in 'Пользователи' sheet."""
+class ModeratorAuthModal(ui.Modal, title="Регистрация модератора в системе"):
+    """Modal for moderator registration when not found in 'Пользователи' sheet."""
+    
+    email = ui.TextInput(
+        label="Email (для доступа к кадровому)",
+        placeholder="example@gmail.com",
+        min_length=5,
+        max_length=100,
+        required=True
+    )
     
     name = ui.TextInput(
         label="Имя Фамилия",
@@ -18,6 +26,14 @@ class ModeratorAuthModal(ui.Modal, title="Авторизация модерат�
         placeholder="Введите ваш статик в любом формате",
         min_length=5,
         max_length=7,
+        required=True
+    )
+    
+    position = ui.TextInput(
+        label="Должность",
+        placeholder="Например: Комиссар. Если без должности - укажите звание",
+        min_length=2,
+        max_length=50,
         required=True
     )
     
@@ -54,8 +70,19 @@ class ModeratorAuthModal(ui.Modal, title="Авторизация модерат�
             return ""
     
     async def on_submit(self, interaction: discord.Interaction):
-        """Handle form submission with validation."""
+        """Handle form submission with validation and registration."""
         try:
+            # Validate email format
+            email_value = self.email.value.strip()
+            if "@" not in email_value or "." not in email_value:
+                await interaction.response.send_message(
+                    "❌ **Ошибка валидации email**\n"
+                    "Пожалуйста, введите корректный email адрес.\n"
+                    "**Пример:** `example@gmail.com`", 
+                    ephemeral=True
+                )
+                return
+            
             # Validate name format (должно быть 2 слова)
             name_parts = self.name.value.strip().split()
             if len(name_parts) != 2:
@@ -83,37 +110,78 @@ class ModeratorAuthModal(ui.Modal, title="Авторизация модерат�
                 )
                 return
             
-            # Create moderator info
-            moderator_data = {
-                "name": self.name.value.strip(),
-                "static": formatted_static,
-                "full_info": f"{self.name.value.strip()} | {formatted_static}"
-            }
+            # Validate position
+            position_value = self.position.value.strip()
+            if len(position_value) < 2:
+                await interaction.response.send_message(
+                    "❌ **Ошибка валидации должности**\n"
+                    "Пожалуйста, укажите вашу должность или звание.\n"
+                    "**Примеры:** `Комиссар`, `Капитан`, `Майор`",
+                    ephemeral=True
+                )
+                return
             
-            # Send success confirmation to user
+            # Send processing message
             await interaction.response.send_message(
-                f"✅ **Авторизация успешна**\n"
-                f"Имя: `{moderator_data['name']}`\n"
-                f"Статик: `{moderator_data['static']}`\n"
-                f"Продолжаем обработку заявки...",
-                ephemeral=True            )
+                "⏳ **Регистрируем вас в системе...**\n"
+                "Пожалуйста, подождите...",
+                ephemeral=True
+            )
             
-            # Call the callback function with the moderator data
-            if self.callback_func:
-                await self.callback_func(interaction, moderator_data, *self.callback_args, **self.callback_kwargs)
+            # Register moderator in Google Sheets
+            from utils.google_sheets import sheets_manager
+            
+            registration_success = await sheets_manager.register_moderator(
+                email=email_value,
+                name=self.name.value.strip(),
+                static=formatted_static,
+                position=position_value
+            )
+            
+            if registration_success:
+                # Create moderator info for callback
+                moderator_data = {
+                    "email": email_value,
+                    "name": self.name.value.strip(),
+                    "static": formatted_static,
+                    "position": position_value,
+                    "full_info": f"{self.name.value.strip()} | {formatted_static}"
+                }                # Send success confirmation
+                await interaction.followup.send(
+                    f"✅ **Регистрация успешна!**\n"
+                    f"📧 Email: `{email_value}`\n"
+                    f"👤 Имя: `{moderator_data['name']}`\n"
+                    f"🔢 Статик: `{formatted_static}`\n"
+                    f"💼 Должность: `{position_value}`\n\n"
+                    f"🔄 Вы зарегистрированы в системе, продолжаем обработку заявки...",
+                    ephemeral=True
+                )
+                
+                # Call the callback function with the moderator data
+                if self.callback_func:
+                    await self.callback_func(interaction, moderator_data, *self.callback_args, **self.callback_kwargs)
+            else:
+                await interaction.followup.send(
+                    "❌ **Ошибка регистрации**\n"
+                    "Не удалось зарегистрировать вас в системе.\n"
+                    "Пожалуйста, обратитесь к администратору.",
+                    ephemeral=True
+                )
                 
         except Exception as e:
             print(f"Error in ModeratorAuthModal.on_submit: {e}")
             try:
-                await interaction.response.send_message(
-                    "❌ **Ошибка при обработке данных**\n"
-                    "Попробуйте еще раз или обратитесь к администратору.",
-                    ephemeral=True
-                )
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        "❌ **Ошибка при обработке данных**\n"
+                        "Попробуйте еще раз или обратитесь к администратору.",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.followup.send(
+                        "❌ **Ошибка при обработке данных**\n"
+                        "Попробуйте еще раз или обратитесь к администратору.",
+                        ephemeral=True
+                    )
             except:
-                # If interaction was already responded to
-                await interaction.followup.send(
-                    "❌ **Ошибка при обработке данных**\n"
-                    "Попробуйте еще раз или обратитесь к администратору.",
-                    ephemeral=True
-                )
+                print(f"Could not send error message to user: {e}")

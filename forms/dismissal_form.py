@@ -427,8 +427,7 @@ class DismissalApprovalView(ui.View):
                     f"Произошла ошибка при обработке отказа: {e}", 
                     ephemeral=True
                 )
-            except:
-                # If followup fails, try response (in case defer didn't work)
+            except:                # If followup fails, try response (in case defer didn't work)
                 try:
                     await interaction.response.send_message(
                         f"Произошла ошибка при обработке отказа: {e}", 
@@ -440,8 +439,8 @@ class DismissalApprovalView(ui.View):
     async def _continue_dismissal_with_manual_auth(self, interaction, moderator_data, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time):
         """Continue dismissal process with manually entered moderator data."""
         try:
-            # Use manually entered moderator info
-            signed_by_name = f"{moderator_data['name']} | {moderator_data['static']}"
+            # Use manually entered moderator info with full details
+            signed_by_name = moderator_data['full_info']  # "Имя Фамилия | Статик"
             
             # Process dismissal with manual auth data
             await self._process_dismissal_approval(

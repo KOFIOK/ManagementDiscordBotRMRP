@@ -141,8 +141,7 @@ class GoogleSheetsManager:
                 clean_name = re.sub(r'^[!\s]+', '', after_bracket).strip()
                 if clean_name:
                     return clean_name
-        
-        # If no specific format found, return as is
+          # If no specific format found, return as is
         return display_name
     
     async def get_user_info_from_users_sheet(self, surname):
@@ -163,22 +162,30 @@ class GoogleSheetsManager:
                 print("'Пользователи' sheet not found")
                 return None
             
-            # Get all values from column B (full names) and column J (full info)
-            names_column = users_worksheet.col_values(2)  # Column B
-            full_info_column = users_worksheet.col_values(10)  # Column J
+            # Get all values from column B (full names) and column J (full info) using get_all_values
+            all_values = users_worksheet.get_all_values()
             
-            # Search for matching surname (case-insensitive)
+            # Skip header row (row 0) and search in data rows
             surname_lower = surname.lower().strip()
-            for i, cell_name in enumerate(names_column):
-                if cell_name and cell_name.strip():
-                    # Extract surname from "Имя Фамилия" (last word)
-                    name_parts = cell_name.strip().split()
-                    if len(name_parts) >= 2:
-                        cell_surname = name_parts[-1].lower().strip()
-                        if cell_surname == surname_lower:
-                            # Found match, return corresponding value from column J
-                            if i < len(full_info_column) and full_info_column[i]:
-                                return full_info_column[i]
+            for i, row in enumerate(all_values[1:], start=1):  # Start from row 1 (skip header)
+                if len(row) > 1:  # Ensure row has at least column B
+                    cell_name = row[1] if len(row) > 1 else ""  # Column B (index 1)
+                    if cell_name and cell_name.strip():
+                        # Extract surname from "Имя Фамилия" (last word)
+                        name_parts = cell_name.strip().split()
+                        if len(name_parts) >= 2:
+                            cell_surname = name_parts[-1].lower().strip()
+                            if cell_surname == surname_lower:
+                                # Found match, return corresponding value from column J (index 9)
+                                if len(row) > 9 and row[9]:  # Column J exists and has value
+                                    return row[9]
+                                else:
+                                    # If column J is empty, construct from B and C
+                                    static_value = row[2] if len(row) > 2 else ""  # Column C
+                                    if static_value:
+                                        return f"{cell_name} | {static_value}"
+                                    else:
+                                        return cell_name
             
             return None
         
@@ -499,7 +506,8 @@ class GoogleSheetsManager:
             from datetime import timedelta
             current_date = dismissal_time.strftime('%d.%m.%Y')
             # Calculate enforcement date (current date + 14 days)
-            enforcement_date = (dismissal_time + timedelta(days=14)).strftime('%d.%m.%Y')            # Prepare row data according to blacklist sheet structure:
+            enforcement_date = (dismissal_time + timedelta(days=14)).strftime('%d.%m.%Y')
+            # Prepare row data according to blacklist sheet structure:
             # Column A: Срок (продолжительность неустойки)
             # Column B: Имя Фамилия | Статик
             # Column C: Причина
@@ -607,6 +615,118 @@ class GoogleSheetsManager:
                 
         except Exception as e:
             print(f"❌ Error adding hiring record to Google Sheets: {e}")
+            # Print more detailed error information
+            if hasattr(e, 'response'):
+                print(f"Response status: {e.response.status_code}")
+                print(f"Response text: {e.response.text}")
+            return False
+    async def register_moderator(self, email, name, static, position):
+        """
+        Register a new moderator in the 'Пользователи' sheet.
+        
+        Args:
+            email: Moderator's email address
+            name: Moderator's full name (Имя Фамилия)
+            static: Moderator's static number (formatted)
+            position: Moderator's position/rank
+            
+        Returns:
+            bool: True if registration successful, False otherwise
+        """
+        try:
+            # Ensure connection
+            if not self._ensure_connection():
+                print("Failed to establish Google Sheets connection for moderator registration")
+                return False
+            
+            # Get the 'Пользователи' worksheet
+            users_worksheet = None
+            for worksheet in self.spreadsheet.worksheets():
+                if worksheet.title == "Пользователи":
+                    users_worksheet = worksheet
+                    break
+            
+            if not users_worksheet:
+                print("'Пользователи' sheet not found")
+                return False
+              # Check if moderator already exists (by email or name+static)
+            try:
+                # Use get_all_values instead of get_all_records to avoid header issues
+                all_values = users_worksheet.get_all_values()
+                
+                # Skip header row and check existing data
+                for row in all_values[1:]:  # Skip first row (headers)
+                    if len(row) > 0:
+                        # Check by email (column A, index 0)
+                        if len(row) > 0 and row[0].strip().lower() == email.lower():
+                            print(f"Moderator with email {email} already exists")
+                            return True  # Already registered, consider it success
+                        
+                        # Check by name + static combination (columns B and C, indices 1 and 2)
+                        if len(row) > 2:
+                            existing_name = row[1].strip() if len(row) > 1 else ""
+                            existing_static = row[2].strip() if len(row) > 2 else ""
+                            if existing_name == name and existing_static == static:
+                                print(f"Moderator {name} | {static} already exists")
+                                return True  # Already registered, consider it success
+            except Exception as e:
+                print(f"Warning: Could not check existing moderators: {e}")
+                # Continue with registration anyway
+                # # Format registration date
+            registration_date = datetime.now().strftime('%d.%m.%Y %H:%M')
+            
+            # Prepare row data for 'Пользователи' sheet (only columns A-E):
+            # Column A: Email
+            # Column B: Имя Фамилия  
+            # Column C: Статик
+            # Column D: Должность
+            # Column E: Дата регистрации
+            # Note: Column J with "Имя Фамилия | Статик" is auto-generated by table formula
+            row_data = [
+                email,              # Column A: Email
+                name,               # Column B: Имя Фамилия
+                static,             # Column C: Статик
+                position,           # Column D: Должность
+                registration_date   # Column E: Дата регистрации
+            ]            # Find the next empty row safely (avoiding formula conflicts)
+            all_data = users_worksheet.get_all_values()
+            
+            # Find the last row with actual data in columns A-E
+            last_data_row = 0
+            for i, row in enumerate(all_data):
+                if any(cell.strip() for cell in row[:5] if cell):  # Check if first 5 columns have data
+                    last_data_row = i + 1
+            
+            # Add new data after the last data row (not at the very end to avoid formula conflicts)
+            next_row = last_data_row + 1
+            
+            # Safety check: ensure we don't overwrite existing data
+            while next_row <= len(all_data):
+                if next_row > len(all_data) or not any(cell.strip() for cell in all_data[next_row-1][:5] if cell):
+                    break
+                next_row += 1
+            
+            # Use batch update with exact range to avoid formula interference
+            range_name = f"A{next_row}:E{next_row}"
+            print(f"📝 Registering moderator in range {range_name}")
+            
+            # Use batch update instead of single cell updates
+            result = users_worksheet.update(
+                values=[row_data], 
+                range_name=range_name,
+                value_input_option='RAW'  # Use RAW to prevent formula interpretation
+            )
+            
+            # Check if append was successful
+            if result:
+                print(f"✅ Successfully registered moderator: {name} | {static} ({email})")
+                return True
+            else:
+                print(f"❌ Failed to register moderator: {name} | {static}")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Error registering moderator in Google Sheets: {e}")
             # Print more detailed error information
             if hasattr(e, 'response'):
                 print(f"Response status: {e.response.status_code}")

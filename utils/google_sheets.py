@@ -186,26 +186,22 @@ class GoogleSheetsManager:
             print(f"Error searching in 'Пользователи' sheet: {e}")
             return None
     
-    async def add_dismissal_record(self, form_data, dismissed_user, approving_user, dismissal_time, ping_settings):
-        """Add a dismissal record to the Google Sheets."""
+    async def check_moderator_authorization(self, approving_user):
+        """
+        Check if moderator is authorized in 'Пользователи' sheet.
+        Returns dict with authorization status and info.
+        
+        Returns:
+            {
+                "found": bool,
+                "info": str or None,  # "Имя Фамилия | Статик" if found
+                "clean_name": str or None,  # Extracted clean name
+                "requires_manual_input": bool
+            }
+        """
         try:
-            # Ensure connection
-            if not self._ensure_connection():
-                print("Failed to establish Google Sheets connection")
-                return False
-              # Extract name from form data (use form name as primary source)
-            name_from_form = form_data.get('name', '')
-            static_from_form = form_data.get('static', '')
-            
-            # Use name from form as primary, fallback to extracted from nickname
-            real_name = name_from_form or self.extract_name_from_nickname(dismissed_user.display_name)
-            discord_id = str(dismissed_user.id)
-            rank = self.get_rank_from_roles(dismissed_user)
-            department = self.get_department_from_roles(dismissed_user, ping_settings)
-            
-            # Get approved by info - extract surname and lookup
+            # Extract clean name from nickname
             approved_by_clean_name = self.extract_name_from_nickname(approving_user.display_name)
-            approved_by_info = approving_user.display_name  # Default fallback
             
             if approved_by_clean_name:
                 # Extract surname (last word)
@@ -215,9 +211,61 @@ class GoogleSheetsManager:
                     # Search in 'Пользователи' sheet
                     full_user_info = await self.get_user_info_from_users_sheet(surname)
                     if full_user_info:
-                        approved_by_info = full_user_info
+                        return {
+                            "found": True,
+                            "info": full_user_info,
+                            "clean_name": approved_by_clean_name,
+                            "requires_manual_input": False
+                        }
                     else:
-                        approved_by_info = approved_by_clean_name
+                        return {
+                            "found": False,
+                            "info": None,
+                            "clean_name": approved_by_clean_name,
+                            "requires_manual_input": True
+                        }
+            
+            # If we can't extract clean name, require manual input
+            return {
+                "found": False,
+                "info": None,
+                "clean_name": approving_user.display_name,
+                "requires_manual_input": True
+            }
+            
+        except Exception as e:
+            print(f"Error in check_moderator_authorization: {e}")
+            return {
+                "found": False,
+                "info": None,
+                "clean_name": approving_user.display_name,                "requires_manual_input": True
+            }
+    
+    async def add_dismissal_record(self, form_data, dismissed_user, approving_user, dismissal_time, ping_settings, override_moderator_info=None):
+        """Add a dismissal record to the Google Sheets."""
+        try:
+            # Ensure connection
+            if not self._ensure_connection():
+                print("Failed to establish Google Sheets connection")
+                return False
+            
+            # Extract name from form data (use form name as primary source)
+            name_from_form = form_data.get('name', '')
+            static_from_form = form_data.get('static', '')
+            
+            # Use name from form as primary, fallback to extracted from nickname
+            real_name = name_from_form or self.extract_name_from_nickname(dismissed_user.display_name)
+            discord_id = str(dismissed_user.id)
+            rank = self.get_rank_from_roles(dismissed_user)
+            department = self.get_department_from_roles(dismissed_user, ping_settings)
+            
+            # Get approved by info - use override if provided, otherwise use centralized method
+            if override_moderator_info:
+                approved_by_info = override_moderator_info
+            else:
+                # Use centralized authorization check
+                auth_result = await self.check_moderator_authorization(approving_user)
+                approved_by_info = auth_result["info"] or auth_result["clean_name"]
               # Prepare row data according to table structure:
             # Column 1: Отметка времени  
             # Column 2: Имя Фамилия | 6 цифр статика
@@ -265,8 +313,7 @@ class GoogleSheetsManager:
                 print(f"Response status: {e.response.status_code}")
                 print(f"Response text: {e.response.text}")
             return False
-        
-    async def send_to_blacklist(self, guild, form_data, days_difference, audit_message_url=None, approving_user=None):
+    async def send_to_blacklist(self, guild, form_data, days_difference, audit_message_url=None, approving_user=None, override_moderator_info=None):
         """Send a message to blacklist channel about early dismissal penalty."""
         try:
             from utils.config_manager import load_config
@@ -283,22 +330,15 @@ class GoogleSheetsManager:
                 print(f"Blacklist channel not found: {blacklist_channel_id}")
                 return False
             
-            # Get approving user info
+            # Get approving user info - use override if provided, otherwise use centralized method
             approving_user_name = "Система"
             if approving_user:
-                # Extract clean name and lookup in Users sheet
-                approved_by_clean_name = self.extract_name_from_nickname(approving_user.display_name)
-                if approved_by_clean_name:
-                    name_parts = approved_by_clean_name.strip().split()
-                    if len(name_parts) >= 2:
-                        surname = name_parts[-1]
-                        full_user_info = await self.get_user_info_from_users_sheet(surname)
-                        if full_user_info:
-                            approving_user_name = full_user_info
-                        else:
-                            approving_user_name = approved_by_clean_name
+                if override_moderator_info:
+                    approving_user_name = override_moderator_info
                 else:
-                    approving_user_name = approving_user.display_name
+                    # Use centralized authorization check
+                    auth_result = await self.check_moderator_authorization(approving_user)
+                    approving_user_name = auth_result["info"] or auth_result["clean_name"]
             
             name = form_data.get('name', 'Неизвестно')
             static = form_data.get('static', 'Неизвестно')
@@ -421,8 +461,7 @@ class GoogleSheetsManager:
         except Exception as e:
             print(f"Error searching for hiring record by static: {e}")
             return None
-
-    async def add_blacklist_record(self, form_data, dismissed_user, approving_user, dismissal_time, days_difference):
+    async def add_blacklist_record(self, form_data, dismissed_user, approving_user, dismissal_time, days_difference, override_moderator_info=None):
         """Add a blacklist penalty record to the 'Отправлено (НЕ РЕДАКТИРОВАТЬ)' sheet."""
         try:
             # Ensure connection
@@ -448,21 +487,13 @@ class GoogleSheetsManager:
             # Use name from form as primary
             real_name = name_from_form or self.extract_name_from_nickname(dismissed_user.display_name)
             
-            # Get approving user info for "Кем внесён" field using the same system as dismissal records
-            approved_by_clean_name = self.extract_name_from_nickname(approving_user.display_name)
-            approved_by_info = approving_user.display_name  # Default fallback
-            
-            if approved_by_clean_name:
-                # Extract surname (last word)
-                name_parts = approved_by_clean_name.strip().split()
-                if len(name_parts) >= 2:
-                    surname = name_parts[-1]  # Last word as surname
-                    # Search in 'Пользователи' sheet
-                    full_user_info = await self.get_user_info_from_users_sheet(surname)
-                    if full_user_info:
-                        approved_by_info = full_user_info
-                    else:
-                        approved_by_info = approved_by_clean_name
+            # Get approving user info - use override if provided, otherwise use centralized method
+            if override_moderator_info:
+                approved_by_info = override_moderator_info
+            else:
+                # Use centralized authorization check
+                auth_result = await self.check_moderator_authorization(approving_user)
+                approved_by_info = auth_result["info"] or auth_result["clean_name"]
             
             # Format dates
             from datetime import timedelta
@@ -504,8 +535,7 @@ class GoogleSheetsManager:
                 print(f"Response status: {e.response.status_code}")
                 print(f"Response text: {e.response.text}")
             return False
-
-    async def add_hiring_record(self, application_data, approved_user, approving_user, hiring_time):
+    async def add_hiring_record(self, application_data, approved_user, approving_user, hiring_time, override_moderator_info=None):
         """Add a hiring record to the Google Sheets for new recruits with rank 'Рядовой'."""
         try:
             # Ensure connection
@@ -526,21 +556,13 @@ class GoogleSheetsManager:
             
             discord_id = str(approved_user.id)
             
-            # Get approved by info - extract surname and lookup
-            approved_by_clean_name = self.extract_name_from_nickname(approving_user.display_name)
-            approved_by_info = approving_user.display_name  # Default fallback
-            
-            if approved_by_clean_name:
-                # Extract surname (last word)
-                name_parts = approved_by_clean_name.strip().split()
-                if len(name_parts) >= 2:
-                    surname = name_parts[-1]  # Last word as surname
-                    # Search in 'Пользователи' sheet
-                    full_user_info = await self.get_user_info_from_users_sheet(surname)
-                    if full_user_info:
-                        approved_by_info = full_user_info
-                    else:
-                        approved_by_info = approved_by_clean_name
+            # Get approved by info - use override if provided, otherwise use centralized method
+            if override_moderator_info:
+                approved_by_info = override_moderator_info
+            else:
+                # Use centralized authorization check
+                auth_result = await self.check_moderator_authorization(approving_user)
+                approved_by_info = auth_result["info"] or auth_result["clean_name"]
             
             # Prepare row data according to table structure:
             # Column 1: Отметка времени  

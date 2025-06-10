@@ -19,9 +19,10 @@ class ChannelManagementCog(commands.Cog):
     @app_commands.checks.has_permissions(administrator=True)
     async def settings(self, interaction: discord.Interaction):
         """Unified command for bot configuration with interactive interface"""
-        await send_settings_message(interaction)
+        await send_settings_message(interaction)    # Moderator management command group
+    moder_group = app_commands.Group(name="moder", description="👮 Управление модераторами")
 
-    @app_commands.command(name="addmoder", description="👮 Добавить модератора (роль или пользователя)")
+    @moder_group.command(name="add", description="➕ Добавить модератора (роль или пользователя)")
     @app_commands.describe(target="Роль или пользователь для назначения модератором")
     @app_commands.checks.has_permissions(administrator=True)
     async def add_moderator(self, interaction: discord.Interaction, target: discord.Member | discord.Role):
@@ -69,7 +70,7 @@ class ChannelManagementCog(commands.Cog):
             )
             print(f"Add moderator error: {e}")
 
-    @app_commands.command(name="removemoder", description="🚫 Убрать модератора (роль или пользователя)")
+    @moder_group.command(name="remove", description="➖ Убрать модератора (роль или пользователя)")
     @app_commands.describe(target="Роль или пользователь для удаления из модераторов")
     @app_commands.checks.has_permissions(administrator=True)
     async def remove_moderator(self, interaction: discord.Interaction, target: discord.Member | discord.Role):
@@ -117,7 +118,7 @@ class ChannelManagementCog(commands.Cog):
             )
             print(f"Remove moderator error: {e}")
 
-    @app_commands.command(name="listmoders", description="📋 Показать список модераторов")
+    @moder_group.command(name="list", description="📋 Показать список модераторов")
     @app_commands.checks.has_permissions(administrator=True)
     async def list_moderators(self, interaction: discord.Interaction):
         """List all moderators and moderator roles"""

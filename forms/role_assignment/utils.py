@@ -5,7 +5,7 @@ Utility functions for role assignment system
 import discord
 import re
 from .views import RoleAssignmentView
-from .approval import RoleApplicationApprovalView
+from .base import create_approval_view
 
 
 async def send_role_assignment_message(channel):
@@ -150,13 +150,12 @@ async def restore_approval_views(bot, channel):
                             application_data["type"] = "civilian"
                         else:
                             continue
-                        
-                        # Extract all required fields from embed
+                          # Extract all required fields from embed
                         for field in embed.fields:
                             if field.name == "👤 Заявитель":
                                 user_mention = field.value
                                 # Extract user ID from mention format <@!123456789> or <@123456789>
-                                match = re.search(r'<@!?(\\d+)>', user_mention)
+                                match = re.search(r'<@!?(\d+)>', user_mention)
                                 if match:
                                     application_data["user_id"] = int(match.group(1))
                                     application_data["user_mention"] = user_mention
@@ -174,7 +173,7 @@ async def restore_approval_views(bot, channel):
                                 application_data["purpose"] = field.value
                             elif field.name == "🔗 Доказательства":
                                 # Extract URL from markdown link [Ссылка](url)
-                                url_match = re.search(r'\\[.*?\\]\\((.*?)\\)', field.value)
+                                url_match = re.search(r'\[.*?\]\((.*?)\)', field.value)
                                 if url_match:
                                     application_data["proof"] = url_match.group(1)
                                 else:
@@ -182,8 +181,8 @@ async def restore_approval_views(bot, channel):
                         
                         # Verify we have minimum required data
                         if "user_id" in application_data and "name" in application_data and "type" in application_data:
-                            # Create and add the approval view
-                            view = RoleApplicationApprovalView(application_data)
+                            # Create and add the approval view using factory function
+                            view = create_approval_view(application_data)
                             await message.edit(view=view)
                             print(f"Restored approval view for {application_data['type']} application message {message.id}")
                         else:

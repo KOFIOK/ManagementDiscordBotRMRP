@@ -5,6 +5,53 @@ from datetime import datetime, timezone
 from utils.config_manager import load_config, save_config, is_moderator_or_admin, has_pending_role_application
 from utils.google_sheets import sheets_manager
 
+async def get_channel_with_fallback(bot_or_guild, channel_id, channel_name="audit channel"):
+    """
+    Safely get a channel with fallback mechanisms.
+    
+    Args:
+        bot_or_guild: Either bot instance or guild instance
+        channel_id: The channel ID to find
+        channel_name: Description of the channel for logging
+        
+    Returns:
+        discord.TextChannel or None
+    """
+    if not channel_id:
+        return None
+    
+    try:
+        # Try 1: Use guild.get_channel() (fastest, cached)
+        if hasattr(bot_or_guild, 'get_channel'):
+            channel = bot_or_guild.get_channel(channel_id)
+            if channel:
+                return channel
+        
+        # Try 2: Use bot.fetch_channel() (slower, API call)
+        if hasattr(bot_or_guild, 'fetch_channel'):
+            try:
+                channel = await bot_or_guild.fetch_channel(channel_id)
+                if channel:
+                    return channel
+            except discord.NotFound:
+                pass  # Channel doesn't exist
+            except discord.Forbidden:
+                pass  # No access to channel
+            except Exception:
+                pass  # Other API errors
+        
+        # Try 3: If we have a guild object, try to find in all channels
+        guild = bot_or_guild if hasattr(bot_or_guild, 'channels') else getattr(bot_or_guild, 'guild', None)
+        if guild and hasattr(guild, 'channels'):
+            for channel in guild.channels:
+                if channel.id == channel_id and isinstance(channel, discord.TextChannel):
+                    return channel
+        
+        return None
+        
+    except Exception:
+        return None
+
 class RoleAssignmentView(ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -585,25 +632,28 @@ class RoleApplicationApprovalView(ui.View):
                     else:
                         print(f"⚠️ Failed to add hiring record for {self.application_data.get('name', 'Unknown')}")
                 except Exception as e:
-                    print(f"❌ Error adding hiring record to Google Sheets: {e}")
-                
-                # Send notification to audit channel
+                    print(f"❌ Error adding hiring record to Google Sheets: {e}")                # Send notification to audit channel
                 try:
                     config = load_config()
                     audit_channel_id = config.get('audit_channel')
+                    
                     if audit_channel_id:
-                        audit_channel = guild.get_channel(audit_channel_id)
+                        # Use our improved channel lookup function
+                        audit_channel = await get_channel_with_fallback(guild, audit_channel_id, "audit channel")
+                        
                         if audit_channel:
                             # Continue with normal hiring process using already determined signed_by_name
                             await self._continue_hiring_process(
                                 interaction, user, audit_channel, signed_by_name, hiring_time, override_moderator_info
                             )
                         else:
-                            print(f"Audit channel not found: {audit_channel_id}")
+                            print(f"⚠️ Audit channel not accessible (ID: {audit_channel_id}). Continuing without audit logging.")
                     else:
-                        print("Audit channel ID not configured")
+                        print("⚠️ Audit channel not configured. Skipping audit logging.")
                 except Exception as e:
-                    print(f"Error sending audit notification for hiring: {e}")
+                    print(f"❌ Error sending audit notification for hiring: {e}")
+                    import traceback
+                    traceback.print_exc()
 
             # Send instructions to user via DM
             try:
@@ -617,7 +667,8 @@ class RoleApplicationApprovalView(ui.View):
                         "> • Следите за оповещениями обучения:\n> <#1337434149274779738>\n"
                         "> • Ознакомьтесь с сайтом Вооружённых Сил РФ:\n> <#1326022450307137659>\n"
                         "> • Следите за последними приказами:\n> <#1251166871064019015>\n"
-                        "> • Уже были в ВС РФ? Попробуйте восстановиться:\n> <#1317830537724952626>\n"                        "> • Решили, что служба не для вас? Напишите рапорт на увольнение:\n> <#1246119825487564981>"
+                        "> • Уже были в ВС РФ? Попробуйте восстановиться:\n> <#1317830537724952626>\n"
+                        "> • Решили, что служба не для вас? Напишите рапорт на увольнение:\n> <#1246119825487564981>"
                     )
                 else:
                     # Civilian instructions
@@ -718,20 +769,21 @@ class RoleApplicationApprovalView(ui.View):
             if sheets_success:
                 print(f"✅ Successfully added hiring record for {self.application_data.get('name', 'Unknown')}")
             else:
-                print(f"⚠️ Failed to add hiring record for {self.application_data.get('name', 'Unknown')}")
-            
-            # Send notification to audit channel
+                print(f"⚠️ Failed to add hiring record for {self.application_data.get('name', 'Unknown')}")            # Send notification to audit channel
             config = load_config()
             audit_channel_id = config.get('audit_channel')
+            
             if audit_channel_id:
-                audit_channel = interaction.guild.get_channel(audit_channel_id)
+                # Use our improved channel lookup function
+                audit_channel = await get_channel_with_fallback(interaction.guild, audit_channel_id, "audit channel (manual auth)")
+                
                 if audit_channel:
                     # Continue with normal hiring process
                     await self._continue_hiring_process(interaction, user, audit_channel, signed_by_name, hiring_time, override_moderator_info)
                 else:
-                    print(f"Audit channel not found: {audit_channel_id}")
+                    print(f"⚠️ Audit channel not accessible (ID: {audit_channel_id}). Continuing without audit logging.")
             else:
-                print("Audit channel ID not configured")
+                print("⚠️ Audit channel not configured. Skipping audit logging.")
             
             # Send instructions to user via DM
             try:
@@ -769,6 +821,19 @@ class RoleApplicationApprovalView(ui.View):
     async def _continue_hiring_process(self, interaction, user, audit_channel, signed_by_name, hiring_time, override_moderator_info=None):
         """Complete the hiring process with audit logging"""
         try:
+            # Add hiring record to Google Sheets
+            sheets_success = await sheets_manager.add_hiring_record(
+                self.application_data,
+                user,
+                interaction.user,
+                hiring_time,
+                override_moderator_info=override_moderator_info
+            )
+            if sheets_success:
+                print(f"✅ Successfully added hiring record for {self.application_data.get('name', 'Unknown')}")
+            else:
+                print(f"⚠️ Failed to add hiring record for {self.application_data.get('name', 'Unknown')}")
+
             # Create audit notification embed with correct template
             audit_embed = discord.Embed(
                 title="Кадровый аудит ВС РФ",

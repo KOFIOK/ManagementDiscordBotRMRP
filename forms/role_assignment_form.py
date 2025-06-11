@@ -520,21 +520,65 @@ class RoleApplicationApprovalView(ui.View):
             
             # Clear ping role content
             await interaction.message.edit(content="")
-            
-            # Create new view with only archive button
+              # Create new view with only archive button
             approved_view = ApprovedApplicationView()
-              # Respond to interaction first to avoid timeout
+            
+            # For military applications with "Рядовой" rank, check authorization BEFORE responding
+            hiring_time = datetime.now(timezone.utc)
+            signed_by_name = interaction.user.display_name  # Default fallback
+            override_moderator_info = None
+            
+            if self.application_data["type"] == "military" and is_private_rank:
+                try:
+                    # Check if moderator is authorized in system
+                    auth_result = await sheets_manager.check_moderator_authorization(interaction.user)
+                    
+                    if not auth_result["found"]:
+                        # Moderator not found - show modal for manual registration BEFORE responding
+                        print(f"Moderator not found in system, showing authorization modal")
+                        
+                        from forms.moderator_auth_form import ModeratorAuthModal
+                        
+                        # Create modal with callback to continue processing
+                        modal = ModeratorAuthModal(
+                            self._continue_hiring_with_manual_auth,
+                            user, approved_view, original_embed, hiring_time
+                        )
+                        
+                        # Show modal immediately (this will consume the interaction response)
+                        await interaction.response.send_modal(modal)
+                        return  # Exit here, processing will continue in modal callback
+                    else:
+                        # Moderator found in system
+                        signed_by_name = auth_result["info"]
+                        print(f"Moderator authorized: {signed_by_name}")
+                        
+                except Exception as e:
+                    print(f"Error checking moderator authorization: {e}")
+                    # Fallback to old method
+                    approved_by_clean_name = sheets_manager.extract_name_from_nickname(interaction.user.display_name)
+                    if approved_by_clean_name:
+                        name_parts = approved_by_clean_name.strip().split()
+                        if len(name_parts) >= 2:
+                            surname = name_parts[-1]
+                            full_user_info = await sheets_manager.get_user_info_from_users_sheet(surname)
+                            if full_user_info:
+                                signed_by_name = full_user_info
+                            else:
+                                signed_by_name = approved_by_clean_name
+            
+            # Respond to interaction first to avoid timeout
             await interaction.response.edit_message(embed=original_embed, view=approved_view)
             
             # Add hiring record to Google Sheets for military applications with rank "Рядовой" (after responding)
             if self.application_data["type"] == "military" and is_private_rank:
                 try:
-                    hiring_time = datetime.now(timezone.utc)
                     sheets_success = await sheets_manager.add_hiring_record(
                         self.application_data,
                         user,
                         interaction.user,
-                        hiring_time
+                        hiring_time,
+                        override_moderator_info=override_moderator_info
                     )
                     if sheets_success:
                         print(f"✅ Successfully added hiring record for {self.application_data.get('name', 'Unknown')}")
@@ -542,62 +586,18 @@ class RoleApplicationApprovalView(ui.View):
                         print(f"⚠️ Failed to add hiring record for {self.application_data.get('name', 'Unknown')}")
                 except Exception as e:
                     print(f"❌ Error adding hiring record to Google Sheets: {e}")
-            
-            # Send notification to audit channel for military applications with rank "Рядовой"
-            if self.application_data["type"] == "military" and is_private_rank:
+                
+                # Send notification to audit channel
                 try:
                     config = load_config()
                     audit_channel_id = config.get('audit_channel')
                     if audit_channel_id:
                         audit_channel = guild.get_channel(audit_channel_id)
                         if audit_channel:
-                            # Get approving user info from Google Sheets using new authorization system
-                            from forms.moderator_auth_form import ModeratorAuthModal
-                            
-                            signed_by_name = interaction.user.display_name  # Default fallback
-                            try:
-                                # Check if moderator is authorized in system
-                                auth_result = await sheets_manager.check_moderator_authorization(interaction.user)
-                                
-                                if auth_result["found"]:
-                                    # Moderator found in system
-                                    signed_by_name = auth_result["info"]
-                                    
-                                    # Continue with normal processing
-                                    await self._continue_hiring_process(
-                                        interaction, user, audit_channel, signed_by_name, hiring_time
-                                    )
-                                else:
-                                    # Moderator not found - show modal for manual registration
-                                    print(f"Moderator not found in system, showing authorization modal")
-                                    
-                                    # Create modal with callback to continue processing
-                                    modal = ModeratorAuthModal(
-                                        self._continue_hiring_with_manual_auth,
-                                        user, audit_channel, hiring_time
-                                    )
-                                    
-                                    # Show modal (this will consume the interaction response)
-                                    await interaction.response.send_modal(modal)
-                                    return  # Exit here, processing will continue in modal callback
-                            except Exception as e:
-                                print(f"Error checking moderator authorization: {e}")
-                                # Fallback to old method
-                                approved_by_clean_name = sheets_manager.extract_name_from_nickname(interaction.user.display_name)
-                                if approved_by_clean_name:
-                                    name_parts = approved_by_clean_name.strip().split()
-                                    if len(name_parts) >= 2:
-                                        surname = name_parts[-1]
-                                        full_user_info = await sheets_manager.get_user_info_from_users_sheet(surname)
-                                        if full_user_info:
-                                            signed_by_name = full_user_info
-                                        else:
-                                            signed_by_name = approved_by_clean_name
-                                
-                                # Continue with fallback processing using extracted name
-                                await self._continue_hiring_process(
-                                    interaction, user, audit_channel, signed_by_name, hiring_time
-                                )
+                            # Continue with normal hiring process using already determined signed_by_name
+                            await self._continue_hiring_process(
+                                interaction, user, audit_channel, signed_by_name, hiring_time, override_moderator_info
+                            )
                         else:
                             print(f"Audit channel not found: {audit_channel_id}")
                     else:
@@ -605,6 +605,7 @@ class RoleApplicationApprovalView(ui.View):
                 except Exception as e:
                     print(f"Error sending audit notification for hiring: {e}")
 
+            # Send instructions to user via DM
             try:
                 if self.application_data["type"] == "military":
                     # Military instructions for automatic processing (Рядовой)
@@ -616,8 +617,7 @@ class RoleApplicationApprovalView(ui.View):
                         "> • Следите за оповещениями обучения:\n> <#1337434149274779738>\n"
                         "> • Ознакомьтесь с сайтом Вооружённых Сил РФ:\n> <#1326022450307137659>\n"
                         "> • Следите за последними приказами:\n> <#1251166871064019015>\n"
-                        "> • Уже были в ВС РФ? Попробуйте восстановиться:\n> <#1317830537724952626>\n"
-                        "> • Решили, что служба не для вас? Напишите рапорт на увольнение:\n> <#1246119825487564981>"
+                        "> • Уже были в ВС РФ? Попробуйте восстановиться:\n> <#1317830537724952626>\n"                        "> • Решили, что служба не для вас? Напишите рапорт на увольнение:\n> <#1246119825487564981>"
                     )
                 else:
                     # Civilian instructions
@@ -696,6 +696,115 @@ class RoleApplicationApprovalView(ui.View):
                 "❌ Произошла ошибка при отклонении заявки.",
                 ephemeral=True
             )
+
+    async def _continue_hiring_with_manual_auth(self, interaction, moderator_data, user, approved_view, original_embed, hiring_time):
+        """Continue hiring process with manually entered moderator data"""
+        try:
+            # Use manually entered moderator info for audit record
+            signed_by_name = f"{moderator_data['name']} | {moderator_data['static']}"
+            override_moderator_info = moderator_data
+            
+            # Update the embed and respond to the interaction
+            await interaction.response.edit_message(embed=original_embed, view=approved_view)
+            
+            # Add hiring record to Google Sheets
+            sheets_success = await sheets_manager.add_hiring_record(
+                self.application_data,
+                user,
+                interaction.user,
+                hiring_time,
+                override_moderator_info=override_moderator_info
+            )
+            if sheets_success:
+                print(f"✅ Successfully added hiring record for {self.application_data.get('name', 'Unknown')}")
+            else:
+                print(f"⚠️ Failed to add hiring record for {self.application_data.get('name', 'Unknown')}")
+            
+            # Send notification to audit channel
+            config = load_config()
+            audit_channel_id = config.get('audit_channel')
+            if audit_channel_id:
+                audit_channel = interaction.guild.get_channel(audit_channel_id)
+                if audit_channel:
+                    # Continue with normal hiring process
+                    await self._continue_hiring_process(interaction, user, audit_channel, signed_by_name, hiring_time, override_moderator_info)
+                else:
+                    print(f"Audit channel not found: {audit_channel_id}")
+            else:
+                print("Audit channel ID not configured")
+            
+            # Send instructions to user via DM
+            try:
+                if self.application_data["type"] == "military":
+                    # Military instructions for automatic processing (Рядовой)
+                    instructions = (
+                        "## ✅ **Ваша заявка на получение роли военнослужащего была одобрена!**\n\n"
+                        "📋 **Полезная информация:**\n"
+                        "> • Канал общения:\n> <#1246126422251278597>\n"
+                        "> • Расписание занятий (необходимых для повышения):\n> <#1336337899309895722>\n"
+                        "> • Следите за оповещениями обучения:\n> <#1337434149274779738>\n"
+                        "> • Ознакомьтесь с сайтом Вооружённых Сил РФ:\n> <#1326022450307137659>\n"
+                        "> • Следите за последними приказами:\n> <#1251166871064019015>\n"
+                        "> • Уже были в ВС РФ? Попробуйте восстановиться:\n> <#1317830537724952626>\n"
+                        "> • Решили, что служба не для вас? Напишите рапорт на увольнение:\n> <#1246119825487564981>"
+                    )
+                else:
+                    # Civilian instructions
+                    instructions = (
+                        "## ✅ **Ваша заявка на получение роли госслужащего была одобрена!**\n\n"
+                        "📋 **Полезная информация:**\n"
+                        "> • Канал общения:\n> <#1246125346152251393>\n"
+                        "> • Запросить поставку:\n> <#1246119051726553099>\n"
+                        "> • Запросить допуск на территорию ВС РФ:\n> <#1246119269784354888>"
+                    )
+                
+                await user.send(instructions)
+            except discord.Forbidden:
+                pass  # User has DMs disabled
+            
+        except Exception as e:
+            print(f"Error in manual auth hiring continuation: {e}")
+            await interaction.followup.send("❌ Произошла ошибка при обработке заявки.", ephemeral=True)
+
+    async def _continue_hiring_process(self, interaction, user, audit_channel, signed_by_name, hiring_time, override_moderator_info=None):
+        """Complete the hiring process with audit logging"""
+        try:
+            # Create audit notification embed with correct template
+            audit_embed = discord.Embed(
+                title="Кадровый аудит ВС РФ",
+                color=0x055000,  # Green color as in template
+                timestamp=discord.utils.utcnow()
+            )
+            
+            # Format date as dd-MM-yyyy
+            action_date = discord.utils.utcnow().strftime('%d-%m-%Y')
+            
+            # Combine name and static for "Имя Фамилия | Статик" field
+            name_with_static = f"{self.application_data.get('name', 'Неизвестно')} | {self.application_data.get('static', '')}"
+            
+            # Set fields according to template
+            audit_embed.add_field(name="Кадровую отписал", value=signed_by_name, inline=False)
+            audit_embed.add_field(name="Имя Фамилия | 6 цифр статика", value=name_with_static, inline=False)
+            audit_embed.add_field(name="Действие", value="Принят на службу", inline=False)
+            
+            # Add recruitment type if available (right after "Действие")
+            recruitment_type = self.application_data.get("recruitment_type", "")
+            if recruitment_type:
+                audit_embed.add_field(name="Причина принятия", value=recruitment_type.capitalize(), inline=False)
+            
+            audit_embed.add_field(name="Дата Действия", value=action_date, inline=False)
+            audit_embed.add_field(name="Подразделение", value="Военная Академия", inline=False)
+            audit_embed.add_field(name="Воинское звание", value=self.application_data.get("rank", "Рядовой"), inline=False)
+            
+            # Set thumbnail to default image as in template
+            audit_embed.set_thumbnail(url="https://i.imgur.com/07MRSyl.png")
+            
+            # Send notification with user mention (the user who was hired)
+            audit_message = await audit_channel.send(content=f"<@{user.id}>", embed=audit_embed)
+            print(f"Sent audit notification for hiring of {user.display_name}")
+            
+        except Exception as e:
+            print(f"Error in hiring process continuation: {e}")
 
 class ApprovedApplicationView(ui.View):
     """View to show after application is approved"""
@@ -910,15 +1019,42 @@ async def restore_approval_views(bot, channel):
                     
     except Exception as e:
         print(f"Error restoring approval views: {e}")
-
-    async def _continue_hiring_with_manual_auth(self, interaction, moderator_data, user, audit_channel, hiring_time):
+    
+    async def _continue_hiring_with_manual_auth(self, interaction, moderator_data, user, approved_view, original_embed, hiring_time):
         """Continue hiring process with manually entered moderator data"""
         try:
             # Use manually entered moderator info for audit record
             signed_by_name = f"{moderator_data['name']} | {moderator_data['static']}"
+            override_moderator_info = moderator_data
             
-            # Continue with normal hiring process
-            await self._continue_hiring_process(interaction, user, audit_channel, signed_by_name, hiring_time, moderator_data)
+            # Update the embed and respond to the interaction
+            await interaction.response.edit_message(embed=original_embed, view=approved_view)
+            
+            # Add hiring record to Google Sheets
+            sheets_success = await sheets_manager.add_hiring_record(
+                self.application_data,
+                user,
+                interaction.user,
+                hiring_time,
+                override_moderator_info=override_moderator_info
+            )
+            if sheets_success:
+                print(f"✅ Successfully added hiring record for {self.application_data.get('name', 'Unknown')}")
+            else:
+                print(f"⚠️ Failed to add hiring record for {self.application_data.get('name', 'Unknown')}")
+            
+            # Send notification to audit channel
+            config = load_config()
+            audit_channel_id = config.get('audit_channel')
+            if audit_channel_id:
+                audit_channel = interaction.guild.get_channel(audit_channel_id)
+                if audit_channel:
+                    # Continue with normal hiring process
+                    await self._continue_hiring_process(interaction, user, audit_channel, signed_by_name, hiring_time, override_moderator_info)
+                else:
+                    print(f"Audit channel not found: {audit_channel_id}")
+            else:
+                print("Audit channel ID not configured")
             
         except Exception as e:
             print(f"Error in manual auth hiring continuation: {e}")

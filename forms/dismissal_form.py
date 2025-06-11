@@ -588,14 +588,20 @@ class DismissalApprovalView(ui.View):
                     print("Audit channel ID not configured")
             except Exception as e:
                 print(f"Error sending audit notification: {e}")
-            
-            # Check for early dismissal penalty (less than 5 days of service)
+              # Check for early dismissal penalty (less than 5 days of service)
             try:
                 static = form_data.get('static', '')
+                print(f"🔍 CHECKING EARLY DISMISSAL: Static = {static}")
+                
                 if static:
+                    print(f"🔍 Searching for hiring record by static: {static}")
                     hiring_record = await sheets_manager.get_latest_hiring_record_by_static(static)
+                    
                     if hiring_record:
+                        print(f"✅ Found hiring record: {hiring_record}")
                         hire_date_str = str(hiring_record.get('Дата Действия', '')).strip()
+                        print(f"🔍 Hire date string: '{hire_date_str}'")
+                        
                         if hire_date_str:
                             try:
                                 # Parse hire date
@@ -606,27 +612,37 @@ class DismissalApprovalView(ui.View):
                                     date_part = hire_date_str.split(' ')[0]
                                 else:
                                     date_part = hire_date_str
+                                
+                                print(f"🔍 Parsing date part: '{date_part}'")
                                   # Try different date formats
                                 try:
                                     hire_date = datetime.strptime(date_part, '%d.%m.%Y')
+                                    print(f"✅ Parsed date with format %d.%m.%Y: {hire_date}")
                                 except ValueError:
                                     try:
                                         hire_date = datetime.strptime(date_part, '%d-%m-%Y')
+                                        print(f"✅ Parsed date with format %d-%m-%Y: {hire_date}")
                                     except ValueError:
                                         # Try full datetime format
                                         try:
                                             hire_date = datetime.strptime(hire_date_str, '%d.%m.%Y %H:%M:%S')
+                                            print(f"✅ Parsed date with format %d.%m.%Y %H:%M:%S: {hire_date}")
                                         except ValueError:
                                             hire_date = datetime.strptime(hire_date_str, '%d-%m-%Y %H:%M:%S')
+                                            print(f"✅ Parsed date with format %d-%m-%Y %H:%M:%S: {hire_date}")
                                 
                                 # Calculate days difference
                                 dismissal_date = current_time.replace(tzinfo=None)
                                 days_difference = (dismissal_date - hire_date).days
+                                print(f"📊 DAYS CALCULATION:")
+                                print(f"   Hire Date: {hire_date}")
+                                print(f"   Dismissal Date: {dismissal_date}")
+                                print(f"   Days Difference: {days_difference}")
                                 
                                 if days_difference < 5:
-                                    print(f"Early dismissal detected: {days_difference} days of service for {form_data.get('name', 'Unknown')}")
+                                    print(f"🚨 EARLY DISMISSAL DETECTED: {days_difference} days of service for {form_data.get('name', 'Unknown')}")
                                     # Send to blacklist channel with audit message URL and approving user
-                                    await sheets_manager.send_to_blacklist(
+                                    blacklist_result = await sheets_manager.send_to_blacklist(
                                         guild=interaction.guild,
                                         form_data=form_data,
                                         days_difference=days_difference,
@@ -634,6 +650,8 @@ class DismissalApprovalView(ui.View):
                                         approving_user=interaction.user,
                                         override_moderator_info=override_moderator_info
                                     )
+                                    print(f"📋 Blacklist channel result: {blacklist_result}")
+                                    
                                     # Log penalty to "Отправлено (НЕ РЕДАКТИРОВАТЬ)" sheet
                                     try:
                                         penalty_logged = await sheets_manager.add_blacklist_record(
@@ -644,21 +662,29 @@ class DismissalApprovalView(ui.View):
                                             days_difference=days_difference,
                                             override_moderator_info=override_moderator_info
                                         )
+                                        print(f"📊 Google Sheets blacklist result: {penalty_logged}")
+                                        
                                         if penalty_logged:
-                                            print(f"Successfully logged early dismissal penalty for {form_data.get('name', 'Unknown')}")
+                                            print(f"✅ Successfully logged early dismissal penalty for {form_data.get('name', 'Unknown')}")
                                         else:
-                                            print(f"Failed to log early dismissal penalty for {form_data.get('name', 'Unknown')}")
+                                            print(f"❌ Failed to log early dismissal penalty for {form_data.get('name', 'Unknown')}")
                                     except Exception as penalty_error:
-                                        print(f"Error logging penalty to blacklist sheet: {penalty_error}")
+                                        print(f"❌ Error logging penalty to blacklist sheet: {penalty_error}")
                                 else:
-                                    print(f"Normal dismissal: {days_difference} days of service")
+                                    print(f"✅ Normal dismissal: {days_difference} days of service (≥5 days)")
                             
                             except ValueError as date_error:
-                                print(f"Error parsing hire date '{hire_date_str}': {date_error}")
+                                print(f"❌ Error parsing hire date '{hire_date_str}': {date_error}")
+                        else:
+                            print(f"⚠️ Hire date string is empty in record: {hiring_record}")
                     else:
-                        print(f"No hiring record found for static {static}")
+                        print(f"⚠️ No hiring record found for static {static}")
+                else:
+                    print(f"⚠️ No static provided in form_data: {form_data}")
             except Exception as e:
-                print(f"Error checking for early dismissal: {e}")
+                print(f"❌ Error checking for early dismissal: {e}")
+                import traceback
+                traceback.print_exc()
             
             # Send DM to the user
             try:

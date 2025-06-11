@@ -146,7 +146,8 @@ class ModeratorAuthModal(ui.Modal, title="Регистрация модерат�
                     "static": formatted_static,
                     "position": position_value,
                     "full_info": f"{self.name.value.strip()} | {formatted_static}"
-                }                # Send success confirmation
+                }
+                # Send success confirmation
                 await interaction.followup.send(
                     f"✅ **Регистрация успешна!**\n"
                     f"📧 Email: `{email_value}`\n"

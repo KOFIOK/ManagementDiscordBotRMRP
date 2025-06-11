@@ -294,7 +294,8 @@ class CivilianApplicationModal(ui.Modal):
             "user_mention": interaction.user.mention
         }
         
-        # Send application for moderation        await self._send_application_for_approval(interaction, application_data)
+        # Send application for moderation
+        await self._send_application_for_approval(interaction, application_data)
     
     def _format_static(self, static_input: str) -> str:
         """
@@ -508,9 +509,10 @@ class RoleApplicationApprovalView(ui.View):
             
             # Create new view with only archive button
             approved_view = ApprovedApplicationView()
+              # Respond to interaction first to avoid timeout
+            await interaction.response.edit_message(embed=original_embed, view=approved_view)
             
-            # Respond to interaction first to avoid timeout
-            await interaction.response.edit_message(embed=original_embed, view=approved_view)              # Add hiring record to Google Sheets for military applications with rank "Рядовой" (after responding)
+            # Add hiring record to Google Sheets for military applications with rank "Рядовой" (after responding)
             if self.application_data["type"] == "military" and is_private_rank:
                 try:
                     hiring_time = datetime.now(timezone.utc)
@@ -526,7 +528,8 @@ class RoleApplicationApprovalView(ui.View):
                         print(f"⚠️ Failed to add hiring record for {self.application_data.get('name', 'Unknown')}")
                 except Exception as e:
                     print(f"❌ Error adding hiring record to Google Sheets: {e}")
-              # Send notification to audit channel for military applications with rank "Рядовой"
+            
+            # Send notification to audit channel for military applications with rank "Рядовой"
             if self.application_data["type"] == "military" and is_private_rank:
                 try:
                     config = load_config()
@@ -535,7 +538,7 @@ class RoleApplicationApprovalView(ui.View):
                         audit_channel = guild.get_channel(audit_channel_id)
                         if audit_channel:
                             # Get approving user info from Google Sheets using new authorization system
-                            from utils.moderator_auth import ModeratorAuthHandler
+                            from forms.moderator_auth_form import ModeratorAuthModal
                             
                             signed_by_name = interaction.user.display_name  # Default fallback
                             try:
@@ -551,16 +554,18 @@ class RoleApplicationApprovalView(ui.View):
                                         interaction, user, audit_channel, signed_by_name, hiring_time
                                     )
                                 else:
-                                    # Moderator not found - request manual input
-                                    await ModeratorAuthHandler.send_authorization_warning(interaction)
+                                    # Moderator not found - show modal for manual registration
+                                    print(f"Moderator not found in system, showing authorization modal")
                                     
-                                    # Show modal for manual input
-                                    await ModeratorAuthHandler.request_moderator_data(
-                                        interaction,
+                                    # Create modal with callback to continue processing
+                                    modal = ModeratorAuthModal(
                                         self._continue_hiring_with_manual_auth,
                                         user, audit_channel, hiring_time
                                     )
-                                    return  # Exit here, processing will continue in callback
+                                    
+                                    # Show modal (this will consume the interaction response)
+                                    await interaction.response.send_modal(modal)
+                                    return  # Exit here, processing will continue in modal callback
                             except Exception as e:
                                 print(f"Error checking moderator authorization: {e}")
                                 # Fallback to old method
@@ -573,10 +578,12 @@ class RoleApplicationApprovalView(ui.View):
                                         if full_user_info:
                                             signed_by_name = full_user_info
                                         else:
-                                            signed_by_name = approved_by_clean_name                            # Continue with fallback processing using extracted name
-                            await self._continue_hiring_process(
-                                interaction, user, audit_channel, signed_by_name, hiring_time
-                            )
+                                            signed_by_name = approved_by_clean_name
+                                
+                                # Continue with fallback processing using extracted name
+                                await self._continue_hiring_process(
+                                    interaction, user, audit_channel, signed_by_name, hiring_time
+                                )
                         else:
                             print(f"Audit channel not found: {audit_channel_id}")
                     else:

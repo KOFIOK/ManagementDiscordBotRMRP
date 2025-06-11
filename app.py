@@ -76,9 +76,40 @@ async def on_ready():
     
     # Setup welcome system events
     setup_welcome_events(bot)
-    
-    # Check channels and restore messages if needed
+      # Check channels and restore messages if needed
     await restore_channel_messages(config)
+
+@bot.event
+async def on_member_remove(member):
+    """Handle member leaving the server and create automatic dismissal if needed."""
+    try:
+        print(f"👋 Member left: {member.name} (ID: {member.id})")
+        
+        # Import here to avoid circular imports
+        from forms.dismissal_form import should_create_automatic_dismissal, create_automatic_dismissal_report
+        
+        # Get target role name from config
+        config = load_config()
+        target_role_name = config.get('military_role_name', 'Военнослужащий ВС РФ')
+        
+        # Check if member should get automatic dismissal
+        should_dismiss = await should_create_automatic_dismissal(member, target_role_name)
+        
+        if should_dismiss:
+            print(f"🚨 Creating automatic dismissal for {member.name} - had role '{target_role_name}'")
+            
+            # Create automatic dismissal report using member object (has role info)
+            success = await create_automatic_dismissal_report(member.guild, member, target_role_name)
+            
+            if success:
+                print(f"✅ Automatic dismissal report created for {member.name}")
+            else:
+                print(f"❌ Failed to create automatic dismissal report for {member.name}")
+        else:
+            print(f"ℹ️ No automatic dismissal needed for {member.name} - didn't have target role")
+            
+    except Exception as e:
+        print(f"❌ Error handling member removal for {member.name}: {e}")
 
 async def restore_channel_messages(config):
     """Check and restore button messages for all configured channels."""    # Restore dismissal channel message

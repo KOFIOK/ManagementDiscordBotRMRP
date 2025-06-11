@@ -1,0 +1,262 @@
+"""
+Dismissal system modals
+Contains modal forms for dismissal reports and static input
+"""
+
+import discord
+from discord import ui
+import re
+from utils.config_manager import load_config, has_pending_dismissal_report
+from utils.google_sheets import sheets_manager
+
+
+class StaticRequestModal(ui.Modal, title="Укажите статик увольняемого"):
+    """Modal for requesting static number when approving dismissal without static"""
+    
+    static_input = ui.TextInput(
+        label="Статик (123-456)",
+        placeholder="Введите статик покинувшего пользователя",
+        min_length=5,
+        max_length=7,
+        required=True
+    )
+    
+    def __init__(self, callback_func, *args, **kwargs):
+        super().__init__()
+        self.callback_func = callback_func
+        self.callback_args = args
+        self.callback_kwargs = kwargs
+    
+    def format_static(self, static_input: str) -> str:
+        """Auto-format static number to standard format"""
+        digits_only = re.sub(r'\D', '', static_input.strip())
+        
+        if len(digits_only) == 5:
+            return f"{digits_only[:2]}-{digits_only[2:]}"
+        elif len(digits_only) == 6:
+            return f"{digits_only[:3]}-{digits_only[3:]}"
+        else:
+            return ""
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            # Format and validate static
+            formatted_static = self.format_static(self.static_input.value)
+            if not formatted_static:
+                await interaction.response.send_message(
+                    "❌ **Ошибка валидации статика**\n"
+                    "Статик должен содержать ровно 5 или 6 цифр.\n"
+                    "**Примеры:** `123456` → `123-456`, `12345` → `12-345`",
+                    ephemeral=True
+                )
+                return
+            
+            # Send processing message
+            await interaction.response.send_message(
+                "✅ **Статик принят**\n"
+                "Продолжаем обработку увольнения...",
+                ephemeral=True
+            )
+            
+            # Call the callback function with formatted static
+            if self.callback_func:
+                await self.callback_func(interaction, formatted_static, *self.callback_args, **self.callback_kwargs)
+                
+        except Exception as e:
+            print(f"Error in StaticRequestModal: {e}")
+            await interaction.followup.send(
+                "❌ Произошла ошибка при обработке статика.",
+                ephemeral=True
+            )
+
+
+class DismissalReportModal(ui.Modal, title="Рапорт на увольнение"):
+    """Main dismissal report modal form"""
+    
+    name = ui.TextInput(
+        label="Имя Фамилия",
+        placeholder="Введите имя и фамилию через пробел",
+        min_length=3,
+        max_length=50,
+        required=True
+    )
+    
+    static = ui.TextInput(
+        label="Статик (123-456)",
+        placeholder="Формат: 123-456",
+        min_length=6,
+        max_length=7,
+        required=True
+    )
+    
+    reason = ui.TextInput(
+        label="Причина увольнения",
+        placeholder="ПСЖ или Перевод",
+        style=discord.TextStyle.short,
+        min_length=3,
+        max_length=10,
+        required=True
+    )
+    
+    def format_static(self, static_input: str) -> str:
+        """
+        Auto-format static number to standard format (XXX-XXX or XX-XXX).
+        Accepts various input formats: 123456, 123 456, 123-456, etc.
+        Returns formatted static or empty string if invalid.
+        """
+        # Remove all non-digit characters
+        digits_only = re.sub(r'\D', '', static_input.strip())
+        
+        # Check if we have exactly 5 or 6 digits
+        if len(digits_only) == 5:
+            # Format as XX-XXX (2-3)
+            return f"{digits_only[:2]}-{digits_only[2:]}"
+        elif len(digits_only) == 6:
+            # Format as XXX-XXX (3-3)
+            return f"{digits_only[:3]}-{digits_only[3:]}"
+        else:
+            # Invalid length
+            return ""
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            # Check if user already has a pending dismissal report
+            config = load_config()
+            dismissal_channel_id = config.get('dismissal_channel')
+            
+            if dismissal_channel_id:
+                has_pending = await has_pending_dismissal_report(interaction.client, interaction.user.id, dismissal_channel_id)
+                if has_pending:
+                    await interaction.response.send_message(
+                        "❌ **У вас уже есть рапорт на увольнение, который находится на рассмотрении.**\n\n"
+                        "Пожалуйста, дождитесь решения по текущему рапорту, прежде чем подавать новый.\n"
+                        "Это поможет избежать путаницы и ускорить обработку вашего запроса.",
+                        ephemeral=True
+                    )
+                    return
+            
+            # Validate name format (должно быть 2 слова)
+            name_parts = self.name.value.strip().split()
+            if len(name_parts) != 2:
+                await interaction.response.send_message(
+                    "Ошибка: Имя и фамилия должны состоять из 2 слов, разделенных пробелом.", 
+                    ephemeral=True
+                )
+                return
+            
+            # Auto-format and validate static
+            formatted_static = self.format_static(self.static.value)
+            if not formatted_static:
+                await interaction.response.send_message(
+                    "Ошибка: Статик должен содержать 5 или 6 цифр.\n"
+                    "Примеры допустимых форматов:\n"
+                    "• 123-456 или 123456\n"
+                    "• 12-345 или 12345\n"
+                    "• 123 456 (с пробелом)", 
+                    ephemeral=True
+                )
+                return
+            
+            # Validate dismissal reason
+            reason = self.reason.value.strip().upper()
+            if reason not in ["ПСЖ", "ПЕРЕВОД"]:
+                await interaction.response.send_message(
+                    "❌ Укажите одну из причин увольнения: 'ПСЖ' (По Собственному Желанию) или 'Перевод'.",
+                    ephemeral=True
+                )
+                return
+            
+            # Get the channel where reports should be sent
+            channel_id = config.get('dismissal_channel')
+            
+            if not channel_id:
+                await interaction.response.send_message(
+                    "Ошибка: канал для рапортов не настроен. Обратитесь к администратору.", 
+                    ephemeral=True
+                )
+                return
+            
+            channel = interaction.client.get_channel(channel_id)
+            if not channel:
+                await interaction.response.send_message(
+                    "Ошибка: не удалось найти канал для рапортов. Обратитесь к администратору.",
+                    ephemeral=True
+                )
+                return
+            
+            # Auto-determine department and rank from user's roles
+            ping_settings = config.get('ping_settings', {})
+            user_department = sheets_manager.get_department_from_roles(interaction.user, ping_settings)
+            user_rank = sheets_manager.get_rank_from_roles(interaction.user)
+            
+            # Create an embed for the report
+            embed = discord.Embed(
+                title="🚨 Рапорт на увольнение",
+                description=f"## {interaction.user.mention} подал рапорт на увольнение!",
+                color=discord.Color.red(),
+                timestamp=discord.utils.utcnow()
+            )
+            
+            # Add fields with inline formatting for compact display
+            embed.add_field(name="Имя Фамилия", value=self.name.value, inline=True)
+            embed.add_field(name="Статик", value=formatted_static, inline=True)
+            embed.add_field(name="Подразделение", value=user_department, inline=True)
+            embed.add_field(name="Воинское звание", value=user_rank, inline=True)
+            embed.add_field(name="Причина увольнения", value=reason, inline=False)
+            
+            embed.set_footer(text=f"Отправлено: {interaction.user.name}")
+            if interaction.user.avatar:
+                embed.set_thumbnail(url=interaction.user.avatar.url)
+              # Import here to avoid circular imports
+            from .views import DismissalApprovalView
+            
+            # Create view with approval/rejection buttons
+            approval_view = DismissalApprovalView(interaction.user.id)
+            
+            # Check for ping settings and add mentions
+            ping_content = ""
+            if ping_settings:
+                # Find user's highest department role (by position in hierarchy)
+                user_department = None
+                highest_position = -1
+                
+                for department_role_id in ping_settings.keys():
+                    department_role = interaction.guild.get_role(int(department_role_id))
+                    if department_role and department_role in interaction.user.roles:
+                        # Check if this role is higher in hierarchy than current highest
+                        if department_role.position > highest_position:
+                            highest_position = department_role.position
+                            user_department = department_role
+                
+                if user_department:
+                    ping_role_ids = ping_settings.get(str(user_department.id), [])
+                    ping_roles = []
+                    for role_id in ping_role_ids:
+                        role = interaction.guild.get_role(role_id)
+                        if role:
+                            ping_roles.append(role.mention)
+                    
+                    if ping_roles:
+                        ping_content = f"-# {' '.join(ping_roles)}\n\n"
+            
+            # Send the report to the dismissal channel with pings
+            await channel.send(content=ping_content, embed=embed, view=approval_view)
+            
+            await interaction.response.send_message(
+                "Ваш рапорт на увольнение был успешно отправлен и будет рассмотрен.", 
+                ephemeral=True
+            )
+            
+        except Exception as e:
+            print(f"Error in form submission: {e}")
+            await interaction.response.send_message(
+                f"Произошла ошибка при отправке рапорта: {e}", 
+                ephemeral=True
+            )
+    
+    async def on_error(self, interaction: discord.Interaction, error: Exception):
+        print(f"Modal error: {error}")
+        await interaction.response.send_message(
+            "Произошла ошибка при обработке формы. Пожалуйста, попробуйте еще раз или обратитесь к администратору.",
+            ephemeral=True
+        )

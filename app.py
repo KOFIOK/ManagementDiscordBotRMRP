@@ -11,6 +11,7 @@ from utils.google_sheets import sheets_manager
 from forms.dismissal_form import DismissalReportButton, DismissalApprovalView, send_dismissal_button_message, restore_dismissal_approval_views, restore_dismissal_button_views
 from forms.settings_form import SettingsView
 from forms.role_assignment_form import RoleAssignmentView, send_role_assignment_message, restore_role_assignment_views, restore_approval_views
+from forms.welcome_system import setup_welcome_events, WelcomeButtonsView
 
 # Load environment variables from .env file
 load_dotenv()
@@ -63,16 +64,19 @@ async def on_ready():
     if sheets_success:
         print('✅ Google Sheets initialized successfully')
     else:
-        print('⚠️ Google Sheets initialization failed - dismissal logging will not work')
-      # Create persistent button views
+        print('⚠️ Google Sheets initialization failed - dismissal logging will not work')    # Create persistent button views
     bot.add_view(DismissalReportButton())
     bot.add_view(SettingsView())
     bot.add_view(RoleAssignmentView())
+    bot.add_view(WelcomeButtonsView())
     
     # Add a generic DismissalApprovalView for persistent approval buttons
     bot.add_view(DismissalApprovalView())
     
     print('Persistent views added to bot')
+    
+    # Setup welcome system events
+    setup_welcome_events(bot)
     
     # Check channels and restore messages if needed
     await restore_channel_messages(config)

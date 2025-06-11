@@ -45,14 +45,15 @@ class ChannelConfigSelect(ui.Select):
                 emoji="🎖️",
                 value="role_assignment"
             )
-        ]
+    ]
         
         super().__init__(
             placeholder="Выберите канал для настройки...",
             min_values=1,
             max_values=1,
             options=options,
-            custom_id="channel_config_select"        )
+            custom_id="channel_config_select"
+        )
     
     async def callback(self, interaction: discord.Interaction):
         selected_option = self.values[0]

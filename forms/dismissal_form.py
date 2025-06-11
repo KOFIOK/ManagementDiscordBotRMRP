@@ -508,8 +508,7 @@ class DismissalApprovalView(ui.View):
             
             if roles_to_remove:
                 await target_user.remove_roles(*roles_to_remove, reason="Рапорт на увольнение одобрен")
-            
-            # Change nickname to "Уволен | Имя Фамилия"
+              # Change nickname to "Уволен | Имя Фамилия"
             try:
                 # Extract name from current nickname or username
                 current_name = target_user.display_name
@@ -534,7 +533,23 @@ class DismissalApprovalView(ui.View):
                 if not name_part or not name_part.strip():
                     name_part = target_user.display_name
                 
-                new_nickname = f"Уволен | {name_part}"
+                # Smart nickname formatting - check length
+                full_nickname = f"Уволен | {name_part}"
+                
+                # Discord nickname limit is 32 characters
+                if len(full_nickname) <= 32:
+                    new_nickname = full_nickname
+                else:
+                    # Format as "Уволен | И. Фамилия" if too long
+                    name_parts = name_part.split()
+                    if len(name_parts) >= 2:
+                        first_name_initial = name_parts[0][0] if name_parts[0] else "И"
+                        last_name = name_parts[-1]
+                        new_nickname = f"Уволен | {first_name_initial}. {last_name}"
+                    else:
+                        # Fallback if name format is unusual
+                        new_nickname = f"Уволен | {name_part[:23]}"  # Truncate to fit ("Уволен | " is 9 chars)
+                
                 await target_user.edit(nick=new_nickname, reason="Рапорт на увольнение одобрен")
             except discord.Forbidden:
                 # Bot doesn't have permission to change nickname

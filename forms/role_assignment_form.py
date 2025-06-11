@@ -9,13 +9,13 @@ class RoleAssignmentView(ui.View):
     def __init__(self):
         super().__init__(timeout=None)
     
-    @discord.ui.button(label="Я военнослужащий", style=discord.ButtonStyle.green, custom_id="role_military")
+    @discord.ui.button(label="Призыв / Экскурсия", style=discord.ButtonStyle.green, custom_id="role_military")
     async def military_application(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Open military service application form"""
         modal = MilitaryApplicationModal()
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="Я не во фракции ВС РФ", style=discord.ButtonStyle.secondary, custom_id="role_civilian")
+    @discord.ui.button(label="Я госслужащий", style=discord.ButtonStyle.secondary, custom_id="role_civilian")
     async def civilian_application(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Open civilian application form"""
         modal = CivilianApplicationModal()
@@ -201,7 +201,7 @@ class MilitaryApplicationModal(ui.Modal):
 
 class CivilianApplicationModal(ui.Modal):
     def __init__(self):
-        super().__init__(title="Заявка на получение роли гражданского")
+        super().__init__(title="Заявка на получение роли госслужащего")
         
         self.name_input = ui.TextInput(
             label="Имя Фамилия",
@@ -347,10 +347,9 @@ class CivilianApplicationModal(ui.Modal):
                     ephemeral=True
                 )
                 return
-            
-            # Create application embed
+              # Create application embed
             embed = discord.Embed(
-                title="📋 Заявка на получение роли гражданского",
+                title="📋 Заявка на получение роли госслужащего",
                 color=discord.Color.orange(),
                 timestamp=discord.utils.utcnow()
             )
@@ -422,13 +421,28 @@ class RoleApplicationApprovalView(ui.View):
             if self.application_data["type"] == "military":
                 role_ids = config.get('military_roles', [])
                 role_type = "военнослужащего"
-                
-                # Check if this is "Рядовой" rank for automatic processing
+                  # Check if this is "Рядовой" rank for automatic processing
                 is_private_rank = self.application_data.get("rank", "").lower() == "рядовой"
-                
                 if is_private_rank:
                     # Change nickname only for automatic processing (Рядовой)
-                    new_nickname = f"ВА | {self.application_data['name']}"
+                    # Smart nickname formatting - check length
+                    full_name = self.application_data['name']
+                    full_nickname = f"ВА | {full_name}"
+                    
+                    # Discord nickname limit is 32 characters
+                    if len(full_nickname) <= 32:
+                        new_nickname = full_nickname
+                    else:
+                        # Format as "ВА | И. Фамилия" if too long
+                        name_parts = full_name.split()
+                        if len(name_parts) >= 2:
+                            first_name_initial = name_parts[0][0] if name_parts[0] else "И"
+                            last_name = name_parts[-1]
+                            new_nickname = f"ВА | {first_name_initial}. {last_name}"
+                        else:
+                            # Fallback if name format is unusual
+                            new_nickname = f"ВА | {full_name[:25]}"  # Truncate to fit
+                    
                     try:
                         await user.edit(nick=new_nickname, reason="Одобрение заявки на роль военнослужащего")
                     except discord.Forbidden:
@@ -436,7 +450,7 @@ class RoleApplicationApprovalView(ui.View):
                         
             else:  # civilian
                 role_ids = config.get('civilian_roles', [])
-                role_type = "гражданского"
+                role_type = "госслужащего"
                 is_private_rank = True  # Civilians always get automatic processing
             
             # For military non-Рядовой applications, skip role assignment
@@ -608,8 +622,8 @@ class RoleApplicationApprovalView(ui.View):
                 else:
                     # Civilian instructions
                     instructions = (
-                        "## ✅ **Ваша заявка на получение роли гражданского была одобрена!**\n\n"
-                        "📋 **Полезная информация:**\n> "
+                        "## ✅ **Ваша заявка на получение роли госслужащего была одобрена!**\n\n"
+                        "📋 **Полезная информация:**\n"
                         "> • Канал общения:\n> <#1246125346152251393>\n"
                         "> • Запросить поставку:\n> <#1246119051726553099>\n"
                         "> • Запросить допуск на территорию ВС РФ:\n> <#1246119269784354888>"
@@ -665,11 +679,10 @@ class RoleApplicationApprovalView(ui.View):
             rejected_view = RejectedApplicationView()
             
             await interaction.response.edit_message(embed=original_embed, view=rejected_view)
-            
-            # Send notification to user
+              # Send notification to user
             if user:
                 try:
-                    role_type = "военнослужащего" if self.application_data["type"] == "military" else "гражданского"
+                    role_type = "военнослужащего" if self.application_data["type"] == "military" else "госслужащего"
                     await user.send(
                         f"❌ Ваша заявка на получение роли {role_type} была отклонена.\n\n"
                         f"Вы можете подать новую заявку позже."
@@ -732,26 +745,25 @@ async def send_role_assignment_message(channel):
                     break
     except Exception as e:
         print(f"Error checking for existing messages: {e}")
-    
-    # Create new message if none exists or old one couldn't be updated
+      # Create new message if none exists or old one couldn't be updated
     embed = discord.Embed(
         title="🎖️ Получение ролей",
         description=(
-            "Выберите вашу принадлежность к Вооружённым Силам Российской Федерации.\n\n"
-            "# ⚠️ ВАЖНО:\nЕсли вы после набора (экскурсии/призыва), то нажимайте на кнопку `\"Я военнослужащий\"`!"
+            "Выберите ваш тип заявки для получения соответствующих ролей на сервере.\n\n"
+            "# ⚠️ ВАЖНО:\nЕсли вы прошли призыв или экскурсию, нажимайте кнопку `\"Призыв / Экскурсия\"`!"
         ),
         color=discord.Color.blue()
     )
     
     embed.add_field(
-        name="🪖 Я военнослужащий", 
+        name="🪖 Призыв / Экскурсия", 
         value="Выберите эту опцию, если:\n• Вы прошли набор/призыв\n• Участвуете в экскурсии\n• Являетесь действующим военнослужащим ВС РФ", 
         inline=True
     )
     
     embed.add_field(
-        name="👤 Я не во фракции ВС РФ", 
-        value="Выберите эту опцию, если:\n• Вы просто наблюдатель\n• Вы поставщик\n• Вы другой гос. служащий", 
+        name="👤 Я госслужащий", 
+        value="Выберите эту опцию, если:\n• Вы работник другого госоргана\n• Вы поставщик\n• Вы представитель организации", 
         inline=True
     )
     
@@ -809,11 +821,10 @@ async def restore_approval_views(bot, channel):
                     # Extract application data from embed
                     try:
                         application_data = {}
-                        
-                        # Determine type from title
+                          # Determine type from title
                         if "военнослужащего" in embed.title:
                             application_data["type"] = "military"
-                        elif "гражданского" in embed.title:
+                        elif "гражданского" in embed.title or "госслужащего" in embed.title:
                             application_data["type"] = "civilian"
                         else:
                             continue

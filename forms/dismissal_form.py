@@ -20,16 +20,16 @@ class DismissalReportModal(ui.Modal, title="Рапорт на увольнени
         placeholder="Формат: 123-456",
         min_length=6,
         max_length=7,
-        required=True
-    )
+        required=True    )
     
     reason = ui.TextInput(
         label="Причина увольнения",
-        placeholder="Не пишите 'по собственному желанию', укажите более конкретную причину увольнения.",
-        style=discord.TextStyle.paragraph,
+        placeholder="ПСЖ или Перевод",
+        style=discord.TextStyle.short,
         min_length=3,
-        max_length=1000,
-        required=True    )
+        max_length=10,
+        required=True
+    )
     
     def format_static(self, static_input: str) -> str:
         """
@@ -74,8 +74,7 @@ class DismissalReportModal(ui.Modal, title="Рапорт на увольнени
                     "Ошибка: Имя и фамилия должны состоять из 2 слов, разделенных пробелом.", 
                     ephemeral=True
                 )
-                return
-              # Auto-format and validate static
+                return              # Auto-format and validate static
             formatted_static = self.format_static(self.static.value)
             if not formatted_static:
                 await interaction.response.send_message(
@@ -84,6 +83,15 @@ class DismissalReportModal(ui.Modal, title="Рапорт на увольнени
                     "• 123-456 или 123456\n"
                     "• 12-345 или 12345\n"
                     "• 123 456 (с пробелом)", 
+                    ephemeral=True
+                )
+                return
+            
+            # Validate dismissal reason
+            reason = self.reason.value.strip().upper()
+            if reason not in ["ПСЖ", "ПЕРЕВОД"]:
+                await interaction.response.send_message(
+                    "❌ Укажите одну из причин увольнения: 'ПСЖ' (По Собственному Желанию) или 'Перевод'.",
                     ephemeral=True
                 )
                 return
@@ -116,13 +124,12 @@ class DismissalReportModal(ui.Modal, title="Рапорт на увольнени
                 description=f"## {interaction.user.mention} подал рапорт на увольнение!",
                 color=discord.Color.red(),
                 timestamp=discord.utils.utcnow()
-            )
-              # Add fields with inline formatting for compact display
+            )              # Add fields with inline formatting for compact display
             embed.add_field(name="Имя Фамилия", value=self.name.value, inline=True)
             embed.add_field(name="Статик", value=formatted_static, inline=True)
             embed.add_field(name="Подразделение", value=user_department, inline=True)
             embed.add_field(name="Воинское звание", value=user_rank, inline=True)
-            embed.add_field(name="Причина увольнения", value=self.reason.value, inline=False)
+            embed.add_field(name="Причина увольнения", value=reason, inline=False)
             
             embed.set_footer(text=f"Отправлено: {interaction.user.name}")
             if interaction.user.avatar:

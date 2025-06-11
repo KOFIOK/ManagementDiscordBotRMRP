@@ -59,27 +59,60 @@ class DismissalApprovalView(ui.View):
                         for member in interaction.guild.members:
                             if member.name == username or member.display_name == username:
                                 target_user = member
-                                break
+                                break            # Handle case when user has already left the server or doesn't exist
+            user_has_left_server = target_user is None
             
-            if not target_user:
-                # Update the embed first
+            # Create a comprehensive mock user class for users who left
+            class MockUser:
+                def __init__(self, name, user_id=None):
+                    self.display_name = name
+                    self.name = name
+                    self.id = user_id or 0
+                    self.mention = f"@{name}"
+                    self.roles = []  # Empty roles list for compatibility
+                    self.guild = None  # No guild reference
+                    self._is_mock = True  # Flag to identify mock users
+                    
+                def __str__(self):
+                    return self.display_name
+                    
+                # Add missing methods that might be called
+                async def remove_roles(self, *roles, reason=None):
+                    # Mock method - do nothing for users who left
+                    pass
+                    
+                async def edit(self, **kwargs):
+                    # Mock method - do nothing for users who left
+                    pass
+                    
+                async def send(self, content=None, **kwargs):
+                    # Mock method - do nothing for users who left
+                    pass
+            
+            if user_has_left_server:
+                # Extract user info from embed to create mock user
                 embed = interaction.message.embeds[0]
-                embed.color = discord.Color.orange()
-                embed.add_field(
-                    name="Обработано", 
-                    value=f"Сотрудник: {interaction.user.mention}\nВремя: {discord.utils.format_dt(discord.utils.utcnow(), 'F')}\n⚠️ Пользователь не найден - роли не сняты", 
-                    inline=False
-                )
-                # Create new view with only "Approved" button (disabled)
-                approved_view = ui.View(timeout=None)
-                approved_button = ui.Button(label="✅ Одобрено", style=discord.ButtonStyle.green, disabled=True)
-                approved_view.add_item(approved_button)
+                user_name_for_logging = "Покинул сервер"
+                user_id_for_logging = None
                 
-                await interaction.response.edit_message(content="", embed=embed, view=approved_view)
-                return
-              
-            # Check hierarchical moderation permissions
-            if not can_moderate_user(interaction.user, target_user, config):
+                # Try to extract user info from embed footer
+                if embed.footer and embed.footer.text:
+                    footer_text = embed.footer.text
+                    if "Отправлено:" in footer_text:
+                        user_name_for_logging = footer_text.replace("Отправлено:", "").strip()
+                
+                # Try to extract user ID from embed description or fields
+                if embed.description:
+                    # Look for user ID in description (format: <@123456789>)
+                    import re
+                    user_id_match = re.search(r'<@(\d+)>', embed.description)
+                    if user_id_match:
+                        user_id_for_logging = int(user_id_match.group(1))
+                
+                target_user = MockUser(user_name_for_logging, user_id_for_logging)
+                print(f"Created MockUser for left server user: {user_name_for_logging} (ID: {user_id_for_logging})")
+                # Check hierarchical moderation permissions (skip for users who left server)
+            if not user_has_left_server and not can_moderate_user(interaction.user, target_user, config):
                 # Determine the reason for denial
                 if interaction.user.id == target_user.id:
                     reason = "Вы не можете одобрить свой собственный рапорт на увольнение."
@@ -92,16 +125,41 @@ class DismissalApprovalView(ui.View):
                     f"❌ {reason}",
                     ephemeral=True
                 )
-                return
-              # Load configuration to get excluded roles and ping settings
+                return            # Load configuration to get excluded roles and ping settings
             config = load_config()
             excluded_roles_ids = config.get('excluded_roles', [])
             ping_settings = config.get('ping_settings', {})
-            
-            # Get user data BEFORE removing roles (for audit notification)
-            user_rank_for_audit = sheets_manager.get_rank_from_roles(target_user)
-            user_unit_for_audit = sheets_manager.get_department_from_roles(target_user, ping_settings)
+              # Get user data for audit notification - handle missing users gracefully
             current_time = discord.utils.utcnow()
+            
+            # Always try to extract rank and department from embed first (most reliable for all cases)
+            user_rank_for_audit = "Неизвестно"
+            user_unit_for_audit = "Неизвестно"
+            
+            # Extract from embed fields (works for both present and absent users)
+            embed = interaction.message.embeds[0]
+            for field in embed.fields:
+                if field.name == "Воинское звание":
+                    user_rank_for_audit = field.value
+                elif field.name == "Подразделение":
+                    user_unit_for_audit = field.value
+            
+            # If embed doesn't have the data and user is present, try to get from roles
+            if (user_rank_for_audit == "Неизвестно" or user_unit_for_audit == "Неизвестно") and not user_has_left_server:
+                try:
+                    if user_rank_for_audit == "Неизвестно":
+                        role_rank = sheets_manager.get_rank_from_roles(target_user)
+                        if role_rank != "Неизвестно":
+                            user_rank_for_audit = role_rank
+                    
+                    if user_unit_for_audit == "Неизвестно":
+                        role_unit = sheets_manager.get_department_from_roles(target_user, ping_settings)
+                        if role_unit != "Неизвестно":
+                            user_unit_for_audit = role_unit
+                except Exception as e:
+                    print(f"Error getting data from roles: {e}")
+            
+            print(f"Audit data - User: {target_user.display_name}, Rank: {user_rank_for_audit}, Unit: {user_unit_for_audit}, Left server: {user_has_left_server}")
             
             # Extract form data from embed fields
             embed = interaction.message.embeds[0]
@@ -128,8 +186,7 @@ class DismissalApprovalView(ui.View):
                     form_data['rank'] = field.value
                 elif field.name == "Причина увольнения":
                     form_data['reason'] = field.value
-            
-            # If this is an automatic report without static, request it from moderator
+              # If this is an automatic report without static, request it from moderator FIRST
             if is_automatic_report and not form_data.get('static'):
                 print(f"Automatic dismissal detected, requesting static from moderator")
                 
@@ -139,7 +196,7 @@ class DismissalApprovalView(ui.View):
                 static_modal = StaticRequestModal(
                     self._continue_dismissal_with_static,
                     interaction, target_user, form_data,
-                    user_rank_for_audit, user_unit_for_audit, current_time
+                    user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server
                 )
                 
                 await interaction.response.send_modal(static_modal)
@@ -161,7 +218,7 @@ class DismissalApprovalView(ui.View):
                     modal = ModeratorAuthModal(
                         self._continue_dismissal_with_manual_auth,
                         target_user, form_data,
-                        user_rank_for_audit, user_unit_for_audit, current_time
+                        user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server
                     )
                     
                     # Show modal immediately (this will consume the interaction response)
@@ -189,12 +246,11 @@ class DismissalApprovalView(ui.View):
             # Update the message to show processing state
             embed = interaction.message.embeds[0]
             await interaction.followup.edit_message(interaction.message.id, embed=embed, view=processing_view)
-            
-            # Continue with processing using authorized moderator info
+              # Continue with processing using authorized moderator info
             await self._process_dismissal_approval(
                 interaction, target_user, form_data,
                 user_rank_for_audit, user_unit_for_audit,
-                current_time, signed_by_name, override_moderator_info=None
+                current_time, signed_by_name, override_moderator_info=None, user_has_left_server=user_has_left_server
             )
         except Exception as e:
             print(f"Error in dismissal approval: {e}")
@@ -319,7 +375,7 @@ class DismissalApprovalView(ui.View):
                 except:
                     pass
 
-    async def _continue_dismissal_with_manual_auth(self, interaction, moderator_data, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time):
+    async def _continue_dismissal_with_manual_auth(self, interaction, moderator_data, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server=False):
         """Continue dismissal process with manually entered moderator data."""
         try:
             # Immediately show "Processing..." state to give user feedback
@@ -333,18 +389,17 @@ class DismissalApprovalView(ui.View):
             
             # Use manually entered moderator info with full details
             signed_by_name = moderator_data['full_info']  # "Имя Фамилия | Статик"
-              
-            # Process dismissal with manual auth data
+                # Process dismissal with manual auth data
             await self._process_dismissal_approval(
                 interaction, target_user, form_data,
                 user_rank_for_audit, user_unit_for_audit,
-                current_time, signed_by_name, override_moderator_info=signed_by_name
+                current_time, signed_by_name, override_moderator_info=signed_by_name, user_has_left_server=user_has_left_server
             )
         except Exception as e:
             print(f"Error in manual auth dismissal continuation: {e}")
             await interaction.followup.send("❌ Произошла ошибка при обработке данных авторизации.", ephemeral=True)
 
-    async def _continue_dismissal_with_static(self, interaction, static, original_interaction, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time):
+    async def _continue_dismissal_with_static(self, interaction, static, original_interaction, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server=False):
         """Continue dismissal process after receiving static from moderator."""
         try:
             # Update form_data with the provided static
@@ -382,7 +437,7 @@ class DismissalApprovalView(ui.View):
                     modal = ModeratorAuthModal(
                         self._continue_dismissal_with_manual_auth,
                         target_user, form_data,
-                        user_rank_for_audit, user_unit_for_audit, current_time
+                        user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server
                     )
                     
                     # Show modal
@@ -395,19 +450,18 @@ class DismissalApprovalView(ui.View):
             except Exception as e:
                 print(f"Error in authorization flow: {e}")
                 signed_by_name = original_interaction.user.display_name
-            
-            # Continue with normal dismissal processing
+              # Continue with normal dismissal processing
             await self._process_dismissal_approval(
                 original_interaction, target_user, form_data,
                 user_rank_for_audit, user_unit_for_audit,
-                current_time, signed_by_name, override_moderator_info=None
+                current_time, signed_by_name, override_moderator_info=None, user_has_left_server=user_has_left_server
             )
             
         except Exception as e:
             print(f"Error in dismissal continuation with static: {e}")
             await interaction.followup.send("❌ Произошла ошибка при обработке увольнения.", ephemeral=True)
 
-    async def _process_dismissal_approval(self, interaction, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, signed_by_name, override_moderator_info=None):
+    async def _process_dismissal_approval(self, interaction, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, signed_by_name, override_moderator_info=None, user_has_left_server=False):
         """Complete dismissal approval process with moderator information."""
         try:
             config = load_config()
@@ -429,72 +483,100 @@ class DismissalApprovalView(ui.View):
                 else:
                     print(f"Failed to log dismissal to Google Sheets for {target_user.display_name}")
             except Exception as e:
-                print(f"Error logging to Google Sheets: {e}")
-            
-            # Remove all roles from the user (except @everyone and excluded roles)
-            roles_to_remove = []
-            for role in target_user.roles:
-                if role.name != "@everyone" and role.id not in excluded_roles_ids:
-                    roles_to_remove.append(role)
-            
-            if roles_to_remove:
-                await target_user.remove_roles(*roles_to_remove, reason="Рапорт на увольнение одобрен")
-              
-            # Change nickname to "Уволен | Имя Фамилия"
-            try:
-                # Extract name from current nickname or username
-                current_name = target_user.display_name
+                print(f"Error logging to Google Sheets: {e}")            # Remove all roles from the user (except @everyone and excluded roles)
+            # Skip if user has left the server or is a MockUser
+            roles_removed = False
+            if not user_has_left_server and not getattr(target_user, '_is_mock', False):
+                roles_to_remove = []
+                for role in target_user.roles:
+                    if role.name != "@everyone" and role.id not in excluded_roles_ids:
+                        roles_to_remove.append(role)
                 
-                # Extract name part based on different nickname formats
-                name_part = None
-                
-                # Format 1: "{Подразделение} | Имя Фамилия"
-                if " | " in current_name:
-                    name_part = current_name.split(" | ", 1)[1]
-                # Format 2: "[Должность] Имя Фамилия" or "!![Должность] Имя Фамилия" or "![Должность] Имя Фамилия"
-                elif "]" in current_name:
-                    # Find the last occurrence of "]" to handle nested brackets
-                    bracket_end = current_name.rfind("]")
-                    if bracket_end != -1:
-                        # Extract everything after "]", removing leading exclamation marks and spaces
-                        after_bracket = current_name[bracket_end + 1:]
-                        # Remove leading exclamation marks and spaces
-                        name_part = re.sub(r'^[!\s]+', '', after_bracket).strip()
-                
-                # If no specific format found, use the display name as is
-                if not name_part or not name_part.strip():
-                    name_part = target_user.display_name
-                
-                # Smart nickname formatting - check length
-                full_nickname = f"Уволен | {name_part}"
-                
-                # Discord nickname limit is 32 characters
-                if len(full_nickname) <= 32:
-                    new_nickname = full_nickname
+                if roles_to_remove:
+                    try:
+                        await target_user.remove_roles(*roles_to_remove, reason="Рапорт на увольнение одобрен")
+                        roles_removed = True
+                        print(f"Successfully removed {len(roles_to_remove)} roles from {target_user.display_name}")
+                    except discord.HTTPException as e:
+                        print(f"Failed to remove roles from {target_user.display_name}: {e}")
                 else:
-                    # Format as "Уволен | И. Фамилия" if too long
-                    name_parts = name_part.split()
-                    if len(name_parts) >= 2:
-                        first_name_initial = name_parts[0][0] if name_parts[0] else "И"
-                        last_name = name_parts[-1]
-                        new_nickname = f"Уволен | {first_name_initial}. {last_name}"
-                    else:
-                        # Fallback if name format is unusual
-                        new_nickname = f"Уволен | {name_part[:23]}"  # Truncate to fit ("Уволен | " is 9 chars)
-                
-                await target_user.edit(nick=new_nickname, reason="Рапорт на увольнение одобрен")
-            except discord.Forbidden:
-                # Bot doesn't have permission to change nickname
-                print(f"Cannot change nickname for {target_user.name} - insufficient permissions")
-            except Exception as e:
-                print(f"Error changing nickname for {target_user.name}: {e}")
+                    print(f"No roles to remove from {target_user.display_name}")
+            else:
+                print(f"Skipping role removal for {target_user.display_name} - user has left server or is MockUser")
             
-            # Update the embed
+            # Change nickname to "Уволен | Имя Фамилия"
+            # Skip if user has left the server or is a MockUser
+            nickname_changed = False
+            if not user_has_left_server and not getattr(target_user, '_is_mock', False):
+                try:
+                    # Extract name from current nickname or username
+                    current_name = target_user.display_name
+                    
+                    # Extract name part based on different nickname formats
+                    name_part = None
+                    
+                    # Format 1: "{Подразделение} | Имя Фамилия"
+                    if " | " in current_name:
+                        name_part = current_name.split(" | ", 1)[1]
+                    # Format 2: "[Должность] Имя Фамилия" or "!![Должность] Имя Фамилия" or "![Должность] Имя Фамилия"
+                    elif "]" in current_name:
+                        # Find the last occurrence of "]" to handle nested brackets
+                        bracket_end = current_name.rfind("]")
+                        if bracket_end != -1:
+                            # Extract everything after "]", removing leading exclamation marks and spaces
+                            after_bracket = current_name[bracket_end + 1:]
+                            # Remove leading exclamation marks and spaces
+                            name_part = re.sub(r'^[!\s]+', '', after_bracket).strip()
+                    
+                    # If no specific format found, use the display name as is
+                    if not name_part or not name_part.strip():
+                        name_part = target_user.display_name
+                    
+                    # Smart nickname formatting - check length
+                    full_nickname = f"Уволен | {name_part}"
+                    
+                    # Discord nickname limit is 32 characters
+                    if len(full_nickname) <= 32:
+                        new_nickname = full_nickname
+                    else:
+                        # Format as "Уволен | И. Фамилия" if too long
+                        name_parts = name_part.split()
+                        if len(name_parts) >= 2:
+                            first_name_initial = name_parts[0][0] if name_parts[0] else "И"
+                            last_name = name_parts[-1]
+                            new_nickname = f"Уволен | {first_name_initial}. {last_name}"
+                        else:
+                            # Fallback if name format is unusual
+                            new_nickname = f"Уволен | {name_part[:23]}"  # Truncate to fit ("Уволен | " is 9 chars)
+                    
+                    await target_user.edit(nick=new_nickname, reason="Рапорт на увольнение одобрен")
+                    nickname_changed = True
+                    print(f"Successfully changed nickname for {target_user.display_name} to {new_nickname}")
+                except discord.Forbidden:
+                    # Bot doesn't have permission to change nickname
+                    print(f"Cannot change nickname for {target_user.name} - insufficient permissions")
+                except Exception as e:
+                    print(f"Error changing nickname for {target_user.name}: {e}")
+            else:
+                print(f"Skipping nickname change for {target_user.display_name} - user has left server or is MockUser")
+              # Update the embed
             embed = interaction.message.embeds[0]
             embed.color = discord.Color.green()
+            
+            # Create status message based on what actions were performed
+            status_parts = [f"Сотрудник: {interaction.user.mention}", f"Время: {discord.utils.format_dt(discord.utils.utcnow(), 'F')}"]
+            
+            if not user_has_left_server:
+                if roles_removed:
+                    status_parts.append("✅ Роли сняты")
+                if nickname_changed:
+                    status_parts.append("✅ Никнейм изменён")
+                if not roles_removed and not nickname_changed:
+                    status_parts.append("⚠️ Роли и никнейм не изменены")
+            
             embed.add_field(
                 name="Обработано", 
-                value=f"Сотрудник: {interaction.user.mention}\nВремя: {discord.utils.format_dt(discord.utils.utcnow(), 'F')}", 
+                value="\n".join(status_parts),
                 inline=False
             )
             
@@ -649,20 +731,21 @@ class DismissalApprovalView(ui.View):
             except Exception as e:
                 print(f"❌ Error checking for early dismissal: {e}")
                 import traceback
-                traceback.print_exc()
-            
-            # Send DM to the user
-            try:
-                await target_user.send(
-                    f"## ✅ Ваш рапорт на увольнение был **одобрен** сотрудником {interaction.user.mention}.\n"
-                    f"С вас были сняты все роли.\n\n"
-                    f"## 📋 Что делать дальше?\n"
-                    f"> Как только вы снова зайдёте в игру, то, возможно, окажитесь на территории В/Ч.\n"
-                    f"> В таком случае вежливо попросите любого офицера вас провести до выхода.\n"
-                    f"> - *Самостоятельно по территории В/Ч разгуливать запрещено!*"
-                )
-            except discord.Forbidden:
-                pass  # User has DMs disabled
+                traceback.print_exc()            # Send DM to the user (only if they're still on the server and not a MockUser)
+            if not user_has_left_server and not getattr(target_user, '_is_mock', False):
+                try:
+                    await target_user.send(
+                        f"## ✅ Ваш рапорт на увольнение был **одобрен** сотрудником {interaction.user.mention}.\n"
+                        f"С вас были сняты все роли.\n\n"
+                        f"## 📋 Что делать дальше?\n"
+                        f"> Как только вы снова зайдёте в игру, то, возможно, окажитесь на территории В/Ч.\n"
+                        f"> В таком случае вежливо попросите любого офицера вас провести до выхода.\n"
+                        f"> - *Самостоятельно по территории В/Ч разгуливать запрещено!*"
+                    )
+                except discord.Forbidden:
+                    pass  # User has DMs disabled
+            else:
+                print(f"Skipping DM to {target_user.display_name} - user has left server or is MockUser")
             
         except Exception as e:
             print(f"Error in _process_dismissal_approval: {e}")

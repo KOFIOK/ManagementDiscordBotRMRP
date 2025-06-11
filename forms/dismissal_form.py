@@ -314,9 +314,17 @@ class DismissalApprovalView(ui.View):
                 print(f"Falling back to display name")
                 # Fall back to display name
                 signed_by_name = interaction.user.display_name
-            
-            # Now defer the interaction since we're continuing with normal processing
+              # Now defer the interaction since we're continuing with normal processing
             await interaction.response.defer()
+            
+            # Immediately show "Processing..." state to give user feedback
+            processing_view = ui.View(timeout=None)
+            processing_button = ui.Button(label="⏳ Обрабатывается...", style=discord.ButtonStyle.gray, disabled=True)
+            processing_view.add_item(processing_button)
+            
+            # Update the message to show processing state
+            embed = interaction.message.embeds[0]
+            await interaction.followup.edit_message(interaction.message.id, embed=embed, view=processing_view)
             
             # Continue with processing using authorized moderator info
             await self._process_dismissal_approval(
@@ -442,14 +450,22 @@ class DismissalApprovalView(ui.View):
                     )
                 except:
                     pass
-
+    
     async def _continue_dismissal_with_manual_auth(self, interaction, moderator_data, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time):
         """Continue dismissal process with manually entered moderator data."""
         try:
+            # Immediately show "Processing..." state to give user feedback
+            processing_view = ui.View(timeout=None)
+            processing_button = ui.Button(label="⏳ Обрабатывается...", style=discord.ButtonStyle.gray, disabled=True)
+            processing_view.add_item(processing_button)
+            
+            # Update the message to show processing state
+            embed = interaction.message.embeds[0]
+            await interaction.followup.edit_message(interaction.message.id, embed=embed, view=processing_view)
+            
             # Use manually entered moderator info with full details
             signed_by_name = moderator_data['full_info']  # "Имя Фамилия | Статик"
-            
-            # Process dismissal with manual auth data
+              # Process dismissal with manual auth data
             await self._process_dismissal_approval(
                 interaction, target_user, form_data,
                 user_rank_for_audit, user_unit_for_audit,

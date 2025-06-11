@@ -71,9 +71,17 @@ class GoogleSheetsManager:
                 print(f"Error establishing Google Sheets connection: {e}")
                 return False
         return True
-        
+    
     def get_rank_from_roles(self, member):
         """Extract rank from user's Discord roles."""
+        # Check if this is a MockUser (users who left the server)
+        if getattr(member, '_is_mock', False):
+            return "Неизвестно"
+            
+        # Check if member has roles attribute (additional safety check)
+        if not hasattr(member, 'roles') or member.roles is None:
+            return "Неизвестно"
+            
         # Full rank names
         ranks = [
             "Генерал Армии", "Генерал-Полковник", "Генерал-Лейтенант", "Генерал-Майор",
@@ -99,14 +107,21 @@ class GoogleSheetsManager:
             # Check full rank names first
             if role.name in ranks:
                 return role.name
-            # Check abbreviated rank names
-            elif role.name in rank_abbreviations:
+            # Check abbreviated rank names        elif role.name in rank_abbreviations:
                 return rank_abbreviations[role.name]
         
         return "Неизвестно"
     
     def get_department_from_roles(self, member, ping_settings):
         """Extract department from user's Discord roles based on ping settings."""
+        # Check if this is a MockUser (users who left the server)
+        if getattr(member, '_is_mock', False):
+            return "Неизвестно"
+            
+        # Check if member has a guild (additional safety check)
+        if not hasattr(member, 'guild') or member.guild is None:
+            return "Неизвестно"
+            
         if not ping_settings:
             return "Неизвестно"
         
@@ -259,12 +274,20 @@ class GoogleSheetsManager:
             # Extract name from form data (use form name as primary source)
             name_from_form = form_data.get('name', '')
             static_from_form = form_data.get('static', '')
-            
-            # Use name from form as primary, fallback to extracted from nickname
+              # Use name from form as primary, fallback to extracted from nickname
             real_name = name_from_form or self.extract_name_from_nickname(dismissed_user.display_name)
             discord_id = str(dismissed_user.id)
-            rank = self.get_rank_from_roles(dismissed_user)
-            department = self.get_department_from_roles(dismissed_user, ping_settings)
+            
+            # Handle MockUser case - use form data instead of roles
+            if getattr(dismissed_user, '_is_mock', False):
+                # For MockUser, get data from form instead of roles
+                rank = form_data.get('rank', 'Неизвестно')
+                department = form_data.get('department', 'Неизвестно')
+                print(f"Using form data for MockUser: rank={rank}, department={department}")
+            else:
+                # For real users, get from roles
+                rank = self.get_rank_from_roles(dismissed_user)
+                department = self.get_department_from_roles(dismissed_user, ping_settings)
             
             # Get approved by info - use override if provided, otherwise use centralized method
             if override_moderator_info:

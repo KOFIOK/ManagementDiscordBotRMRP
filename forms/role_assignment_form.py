@@ -613,26 +613,11 @@ class RoleApplicationApprovalView(ui.View):
                                 signed_by_name = full_user_info
                             else:
                                 signed_by_name = approved_by_clean_name
-            
-            # Respond to interaction first to avoid timeout
+              # Respond to interaction first to avoid timeout
             await interaction.response.edit_message(embed=original_embed, view=approved_view)
             
-            # Add hiring record to Google Sheets for military applications with rank "Рядовой" (after responding)
+            # Send notification to audit channel (Google Sheets logging happens in _continue_hiring_process)
             if self.application_data["type"] == "military" and is_private_rank:
-                try:
-                    sheets_success = await sheets_manager.add_hiring_record(
-                        self.application_data,
-                        user,
-                        interaction.user,
-                        hiring_time,
-                        override_moderator_info=override_moderator_info
-                    )
-                    if sheets_success:
-                        print(f"✅ Successfully added hiring record for {self.application_data.get('name', 'Unknown')}")
-                    else:
-                        print(f"⚠️ Failed to add hiring record for {self.application_data.get('name', 'Unknown')}")
-                except Exception as e:
-                    print(f"❌ Error adding hiring record to Google Sheets: {e}")                # Send notification to audit channel
                 try:
                     config = load_config()
                     audit_channel_id = config.get('audit_channel')
@@ -679,17 +664,26 @@ class RoleApplicationApprovalView(ui.View):
                         "> • Запросить поставку:\n> <#1246119051726553099>\n"
                         "> • Запросить допуск на территорию ВС РФ:\n> <#1246119269784354888>"
                     )
-                
                 await user.send(instructions)
             except discord.Forbidden:
                 pass  # User has DMs disabled
                     
         except Exception as e:
             print(f"Error approving role application: {e}")
-            await interaction.response.send_message(
-                "❌ Произошла ошибка при одобрении заявки.",
-                ephemeral=True
-            )
+            try:
+                await interaction.followup.send(
+                    "❌ Произошла ошибка при одобрении заявки.",
+                    ephemeral=True
+                )
+            except:
+                # If interaction is not responded yet, try response
+                try:
+                    await interaction.response.send_message(
+                        "❌ Произошла ошибка при одобрении заявки.",
+                        ephemeral=True
+                    )
+                except:
+                    pass  # Nothing we can do at this point
     
     @discord.ui.button(label="❌ Отклонить", style=discord.ButtonStyle.red, custom_id="reject_role_app")
     async def reject_application(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -754,22 +748,10 @@ class RoleApplicationApprovalView(ui.View):
             # Use manually entered moderator info for audit record
             signed_by_name = f"{moderator_data['name']} | {moderator_data['static']}"
             override_moderator_info = moderator_data
+            # Update the original message using followup (interaction response was consumed by modal)
+            await interaction.followup.edit_message(interaction.message.id, embed=original_embed, view=approved_view)
             
-            # Update the embed and respond to the interaction
-            await interaction.response.edit_message(embed=original_embed, view=approved_view)
-            
-            # Add hiring record to Google Sheets
-            sheets_success = await sheets_manager.add_hiring_record(
-                self.application_data,
-                user,
-                interaction.user,
-                hiring_time,
-                override_moderator_info=override_moderator_info
-            )
-            if sheets_success:
-                print(f"✅ Successfully added hiring record for {self.application_data.get('name', 'Unknown')}")
-            else:
-                print(f"⚠️ Failed to add hiring record for {self.application_data.get('name', 'Unknown')}")            # Send notification to audit channel
+            # Send notification to audit channel (Google Sheets logging happens in _continue_hiring_process)
             config = load_config()
             audit_channel_id = config.get('audit_channel')
             
@@ -821,7 +803,7 @@ class RoleApplicationApprovalView(ui.View):
     async def _continue_hiring_process(self, interaction, user, audit_channel, signed_by_name, hiring_time, override_moderator_info=None):
         """Complete the hiring process with audit logging"""
         try:
-            # Add hiring record to Google Sheets
+            # Add hiring record to Google Sheets (SINGLE SOURCE OF TRUTH for logging)
             sheets_success = await sheets_manager.add_hiring_record(
                 self.application_data,
                 user,
@@ -1084,96 +1066,3 @@ async def restore_approval_views(bot, channel):
                     
     except Exception as e:
         print(f"Error restoring approval views: {e}")
-    
-    async def _continue_hiring_with_manual_auth(self, interaction, moderator_data, user, approved_view, original_embed, hiring_time):
-        """Continue hiring process with manually entered moderator data"""
-        try:
-            # Use manually entered moderator info for audit record
-            signed_by_name = f"{moderator_data['name']} | {moderator_data['static']}"
-            override_moderator_info = moderator_data
-            
-            # Update the embed and respond to the interaction
-            await interaction.response.edit_message(embed=original_embed, view=approved_view)
-            
-            # Add hiring record to Google Sheets
-            sheets_success = await sheets_manager.add_hiring_record(
-                self.application_data,
-                user,
-                interaction.user,
-                hiring_time,
-                override_moderator_info=override_moderator_info
-            )
-            if sheets_success:
-                print(f"✅ Successfully added hiring record for {self.application_data.get('name', 'Unknown')}")
-            else:
-                print(f"⚠️ Failed to add hiring record for {self.application_data.get('name', 'Unknown')}")
-            
-            # Send notification to audit channel
-            config = load_config()
-            audit_channel_id = config.get('audit_channel')
-            if audit_channel_id:
-                audit_channel = interaction.guild.get_channel(audit_channel_id)
-                if audit_channel:
-                    # Continue with normal hiring process
-                    await self._continue_hiring_process(interaction, user, audit_channel, signed_by_name, hiring_time, override_moderator_info)
-                else:
-                    print(f"Audit channel not found: {audit_channel_id}")
-            else:
-                print("Audit channel ID not configured")
-            
-        except Exception as e:
-            print(f"Error in manual auth hiring continuation: {e}")
-            await interaction.followup.send("❌ Произошла ошибка при обработке заявки.", ephemeral=True)
-
-    async def _continue_hiring_process(self, interaction, user, audit_channel, signed_by_name, hiring_time, override_moderator_info=None):
-        """Complete the hiring process with audit logging"""
-        try:
-            # Add hiring record to Google Sheets
-            sheets_success = await sheets_manager.add_hiring_record(
-                self.application_data,
-                user,
-                interaction.user,
-                hiring_time,
-                override_moderator_info=override_moderator_info
-            )
-            if sheets_success:
-                print(f"✅ Successfully added hiring record for {self.application_data.get('name', 'Unknown')}")
-            else:
-                print(f"⚠️ Failed to add hiring record for {self.application_data.get('name', 'Unknown')}")
-
-            # Create audit notification embed with correct template
-            audit_embed = discord.Embed(
-                title="Кадровый аудит ВС РФ",
-                color=0x055000,  # Green color as in template
-                timestamp=discord.utils.utcnow()
-            )
-            
-            # Format date as dd-MM-yyyy
-            action_date = discord.utils.utcnow().strftime('%d-%m-%Y')
-            
-            # Combine name and static for "Имя Фамилия | Статик" field
-            name_with_static = f"{self.application_data.get('name', 'Неизвестно')} | {self.application_data.get('static', '')}"
-            
-            # Set fields according to template
-            audit_embed.add_field(name="Кадровую отписал", value=signed_by_name, inline=False)
-            audit_embed.add_field(name="Имя Фамилия | 6 цифр статика", value=name_with_static, inline=False)
-            audit_embed.add_field(name="Действие", value="Принят на службу", inline=False)
-            
-            # Add recruitment type if available (right after "Действие")
-            recruitment_type = self.application_data.get("recruitment_type", "")
-            if recruitment_type:
-                audit_embed.add_field(name="Причина принятия", value=recruitment_type.capitalize(), inline=False)
-            
-            audit_embed.add_field(name="Дата Действия", value=action_date, inline=False)
-            audit_embed.add_field(name="Подразделение", value="Военная Академия", inline=False)
-            audit_embed.add_field(name="Воинское звание", value=self.application_data.get("rank", "Рядовой"), inline=False)
-            
-            # Set thumbnail to default image as in template
-            audit_embed.set_thumbnail(url="https://i.imgur.com/07MRSyl.png")
-            
-            # Send notification with user mention (the user who was hired)
-            audit_message = await audit_channel.send(content=f"<@{user.id}>", embed=audit_embed)
-            print(f"Sent audit notification for hiring of {user.display_name}")
-            
-        except Exception as e:
-            print(f"Error in hiring process continuation: {e}")

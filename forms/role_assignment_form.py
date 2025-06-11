@@ -719,33 +719,37 @@ class RejectedApplicationView(ui.View):
 
 # Message with buttons for role assignment
 async def send_role_assignment_message(channel):
-    """Send role assignment message with buttons, avoiding duplicates."""
+    """Send role assignment message with buttons, avoiding duplicates using pinned messages."""
     
-    # Check if there's already a role assignment message in the channel
+    # Check pinned messages first for role assignment message
     try:
-        async for message in channel.history(limit=20):
+        pinned_messages = await channel.pins()
+        for message in pinned_messages:
             if (message.author == channel.guild.me and 
                 message.embeds and
                 message.embeds[0].title and
                 "Получение ролей" in message.embeds[0].title):
                 
-                # Message already exists, just restore the view
+                # Found pinned role assignment message, restore the view
                 view = RoleAssignmentView()
                 try:
                     await message.edit(view=view)
-                    print(f"Updated existing role assignment message {message.id}")
+                    print(f"Updated existing pinned role assignment message {message.id}")
                     return
                 except Exception as e:
-                    print(f"Error updating existing message: {e}")
-                    # If update fails, delete old message and create new one
+                    print(f"Error updating pinned role assignment message: {e}")
+                    # If update fails, unpin and delete old message, create new one
                     try:
+                        await message.unpin()
                         await message.delete()
+                        print(f"Removed old pinned role assignment message {message.id}")
                     except:
                         pass
                     break
     except Exception as e:
-        print(f"Error checking for existing messages: {e}")
-      # Create new message if none exists or old one couldn't be updated
+        print(f"Error checking pinned messages for role assignment: {e}")
+    
+    # Create new message if none exists or old one couldn't be updated
     embed = discord.Embed(
         title="🎖️ Получение ролей",
         description=(
@@ -770,16 +774,42 @@ async def send_role_assignment_message(channel):
     embed.add_field(
         name="ℹ️ Инструкция", 
         value="1. Нажмите на соответствующую кнопку\n2. Заполните форму\n3. При необходимости можете изменить выбор, нажав другую кнопку", 
-        inline=False
-    )
+        inline=False    )
     
     view = RoleAssignmentView()
-    await channel.send(embed=embed, view=view)
+    message = await channel.send(embed=embed, view=view)
+    
+    # Pin the new message for easy access
+    try:
+        await message.pin()
+        print(f"Pinned new role assignment message {message.id}")
+    except Exception as e:
+        print(f"Error pinning role assignment message: {e}")
 
 # Function to restore role assignment views for existing messages
 async def restore_role_assignment_views(bot, channel):
-    """Restore role assignment views for existing role assignment messages."""
+    """Restore role assignment views for existing role assignment messages using pinned messages."""
     try:
+        # Check pinned messages first
+        pinned_messages = await channel.pins()
+        for message in pinned_messages:
+            if (message.author == bot.user and 
+                message.embeds and
+                message.embeds[0].title and
+                "Получение ролей" in message.embeds[0].title):
+                
+                # Add the view back to the pinned message
+                view = RoleAssignmentView()
+                try:
+                    await message.edit(view=view)
+                    print(f"Restored role assignment view for pinned message {message.id}")
+                    return  # Found and restored pinned message
+                except discord.NotFound:
+                    continue
+                except Exception as e:
+                    print(f"Error restoring view for pinned message {message.id}: {e}")
+        
+        # If no pinned message found, check recent history as fallback
         async for message in channel.history(limit=50):
             # Check if message is from bot and has role assignment embed
             if (message.author == bot.user and 

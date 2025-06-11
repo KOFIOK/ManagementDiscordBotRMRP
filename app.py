@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 from utils.config_manager import load_config, create_backup, get_config_status
 from utils.google_sheets import sheets_manager
-from forms.dismissal_form import DismissalReportButton, DismissalApprovalView, send_dismissal_button_message, restore_dismissal_approval_views
+from forms.dismissal_form import DismissalReportButton, DismissalApprovalView, send_dismissal_button_message, restore_dismissal_approval_views, restore_dismissal_button_views
 from forms.settings_form import SettingsView
 from forms.role_assignment_form import RoleAssignmentView, send_role_assignment_message, restore_role_assignment_views, restore_approval_views
 
@@ -78,8 +78,7 @@ async def on_ready():
     await restore_channel_messages(config)
 
 async def restore_channel_messages(config):
-    """Check and restore button messages for all configured channels."""
-      # Restore dismissal channel message
+    """Check and restore button messages for all configured channels."""    # Restore dismissal channel message
     dismissal_channel_id = config.get('dismissal_channel')
     if dismissal_channel_id:
         channel = bot.get_channel(dismissal_channel_id)
@@ -87,6 +86,10 @@ async def restore_channel_messages(config):
             if not await check_for_button_message(channel, "Рапорты на увольнение"):
                 print(f"Sending dismissal button message to channel {channel.name}")
                 await send_dismissal_button_message(channel)
+            
+            # Restore dismissal button views for existing dismissal button messages
+            print(f"Restoring dismissal button views in {channel.name}")
+            await restore_dismissal_button_views(bot, channel)
             
             # Restore approval views for existing dismissal reports
             print(f"Restoring approval views for dismissal reports in {channel.name}")
@@ -97,7 +100,7 @@ async def restore_channel_messages(config):
     if role_assignment_channel_id:
         channel = bot.get_channel(role_assignment_channel_id)
         if channel:
-            if not await check_for_button_message(channel, "Выбор роли"):
+            if not await check_for_button_message(channel, "Получение ролей"):
                 print(f"Sending role assignment message to channel {channel.name}")
                 await send_role_assignment_message(channel)
               # Restore role assignment views

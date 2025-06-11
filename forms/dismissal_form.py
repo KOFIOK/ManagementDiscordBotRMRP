@@ -691,6 +691,36 @@ class DismissalReportButton(ui.View):
 
 # Message with button for the dismissal channel
 async def send_dismissal_button_message(channel):
+    """Send dismissal button message, avoiding duplicates using pinned messages."""
+    
+    # Check pinned messages first for dismissal message
+    try:
+        pinned_messages = await channel.pins()
+        for message in pinned_messages:
+            if (message.author == channel.guild.me and 
+                message.embeds and
+                message.embeds[0].title and
+                "Рапорты на увольнение" in message.embeds[0].title):
+                
+                # Found pinned dismissal message, restore the view
+                view = DismissalReportButton()
+                try:
+                    await message.edit(view=view)
+                    print(f"Updated existing pinned dismissal message {message.id}")
+                    return
+                except Exception as e:
+                    print(f"Error updating pinned dismissal message: {e}")
+                    # If update fails, unpin and delete old message, create new one
+                    try:
+                        await message.unpin()
+                        await message.delete()
+                        print(f"Removed old pinned dismissal message {message.id}")
+                    except:
+                        pass
+                    break
+    except Exception as e:
+        print(f"Error checking pinned messages for dismissal: {e}")
+      # Create new message if none exists or old one couldn't be updated
     embed = discord.Embed(
         title="Рапорты на увольнение",
         description="Нажмите на кнопку ниже, чтобы отправить рапорт на увольнение.",
@@ -704,7 +734,14 @@ async def send_dismissal_button_message(channel):
     )
     
     view = DismissalReportButton()
-    await channel.send(embed=embed, view=view)
+    message = await channel.send(embed=embed, view=view)
+    
+    # Pin the new message for easy access
+    try:
+        await message.pin()
+        print(f"Pinned new dismissal message {message.id}")
+    except Exception as e:
+        print(f"Error pinning dismissal message: {e}")
 
 # Function to restore approval views for existing dismissal reports
 async def restore_dismissal_approval_views(bot, channel):
@@ -743,3 +780,46 @@ async def restore_dismissal_approval_views(bot, channel):
                         
     except Exception as e:
         print(f"Error restoring dismissal approval views: {e}")
+
+# Function to restore dismissal button views for existing dismissal button messages
+async def restore_dismissal_button_views(bot, channel):
+    """Restore dismissal button views for existing dismissal button messages using pinned messages."""
+    try:
+        # Check pinned messages first
+        pinned_messages = await channel.pins()
+        for message in pinned_messages:
+            if (message.author == bot.user and 
+                message.embeds and
+                message.embeds[0].title and
+                "Рапорты на увольнение" in message.embeds[0].title):
+                
+                # Add the view back to the pinned message
+                view = DismissalReportButton()
+                try:
+                    await message.edit(view=view)
+                    print(f"Restored dismissal button view for pinned message {message.id}")
+                    return  # Found and restored pinned message
+                except discord.NotFound:
+                    continue
+                except Exception as e:
+                    print(f"Error restoring dismissal button view for pinned message {message.id}: {e}")
+        
+        # If no pinned message found, check recent history as fallback
+        async for message in channel.history(limit=50):
+            # Check if message is from bot and has dismissal button embed
+            if (message.author == bot.user and 
+                message.embeds and
+                message.embeds[0].title and
+                "Рапорты на увольнение" in message.embeds[0].title):
+                
+                # Add the view back to the message
+                view = DismissalReportButton()
+                try:
+                    await message.edit(view=view)
+                    print(f"Restored dismissal button view for message {message.id}")
+                except discord.NotFound:
+                    continue
+                except Exception as e:
+                    print(f"Error restoring dismissal button view for message {message.id}: {e}")                    
+    except Exception as e:
+        print(f"Error restoring dismissal button views: {e}")

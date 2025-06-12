@@ -140,12 +140,11 @@ class DismissalApprovalView(ui.View):
             
             # Update the message to show processing state
             embed = interaction.message.embeds[0]
-            await interaction.followup.edit_message(interaction.message.id, embed=embed, view=processing_view)
-              # Continue with processing using authorized moderator info
+            await interaction.followup.edit_message(interaction.message.id, embed=embed, view=processing_view)            # Continue with processing using authorized moderator info
             await self._process_dismissal_approval(
                 interaction, target_user, form_data,
                 user_rank_for_audit, user_unit_for_audit,
-                current_time, signed_by_name, config, user_has_left_server=user_has_left_server
+                current_time, signed_by_name, config, override_moderator_info=None, user_has_left_server=user_has_left_server
             )
         except Exception as e:
             print(f"Error in dismissal approval: {e}")
@@ -432,12 +431,12 @@ class DismissalApprovalView(ui.View):
             # Update the message to show processing state
             embed = interaction.message.embeds[0]
             await interaction.followup.edit_message(interaction.message.id, embed=embed, view=processing_view)
-            
-            # Process dismissal with manual auth data
+              # Process dismissal with manual auth data
+            config = load_config()  # Load config for this method
             await self._process_dismissal_approval(
                 interaction, target_user, form_data,
                 user_rank_for_audit, user_unit_for_audit,
-                current_time, signed_by_name, override_moderator_info=signed_by_name, user_has_left_server=user_has_left_server
+                current_time, signed_by_name, config, override_moderator_info=signed_by_name, user_has_left_server=user_has_left_server
             )
         except Exception as e:
             print(f"Error in manual auth dismissal continuation: {e}")
@@ -472,19 +471,18 @@ class DismissalApprovalView(ui.View):
                     "✅ Статик получен, продолжаем обработку...",
                     ephemeral=True
                 )
-            
-            # Continue with normal dismissal processing (authorization already done)
+              # Continue with normal dismissal processing (authorization already done)
+            config = load_config()  # Load config for this method
             await self._process_dismissal_approval(
                 original_interaction, target_user, form_data,
                 user_rank_for_audit, user_unit_for_audit,
-                current_time, signed_by_name, override_moderator_info=None, user_has_left_server=user_has_left_server
+                current_time, signed_by_name, config, override_moderator_info=None, user_has_left_server=user_has_left_server
             )
-            
         except Exception as e:
             print(f"Error in dismissal continuation with static after auth: {e}")
             await interaction.followup.send("❌ Произошла ошибка при обработке увольнения.", ephemeral=True)
-            
-    async def _process_dismissal_approval(self, interaction, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, signed_by_name, config, user_has_left_server=False):
+
+    async def _process_dismissal_approval(self, interaction, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, signed_by_name, config, override_moderator_info=None, user_has_left_server=False):
         """Complete dismissal approval process with moderator information."""
         try:
             excluded_roles_ids = config.get('excluded_roles', [])

@@ -6,6 +6,7 @@ Contains interactive components (buttons and views) for dismissal reports
 import discord
 from discord import ui
 import re
+import traceback
 from datetime import datetime
 from utils.config_manager import load_config, is_moderator_or_admin, can_moderate_user
 from utils.google_sheets import sheets_manager
@@ -17,7 +18,8 @@ class DismissalConstants:
     PROCESSING_LABEL = "⏳ Обрабатывается..."
     APPROVED_LABEL = "✅ Одобрено"
     REJECTED_LABEL = "❌ Отказано"
-      # Error Messages
+    
+    # Error Messages
     NO_PERMISSION_APPROVAL = "❌ У вас нет прав для одобрения рапортов на увольнение. Только модераторы могут выполнять это действие."
     NO_PERMISSION_REJECTION = "❌ У вас нет прав для отказа рапортов на увольнение. Только модераторы могут выполнять это действие."
     AUTHORIZATION_ERROR = "❌ Ошибка проверки авторизации модератора. Обратитесь к администратору."
@@ -847,13 +849,60 @@ class DismissalApprovalView(ui.View):
                 user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server, signed_by_name
             )
             
-            # Check if we need to send modal or use followup
-            if not interaction.response.is_done():
-                await interaction.response.send_modal(static_modal)
-            else:
-                # This shouldn't happen in normal flow, but let's handle it gracefully
-                await interaction.followup.send("Требуется ввод статика. Попробуйте еще раз.", ephemeral=True)
-            return True  # Modal was shown, processing will continue in callback
+            # For automatic static request, we need to handle the case where interaction was already deferred
+            # In this case, we need to create a fresh interaction response
+            try:
+                if not interaction.response.is_done():
+                    # Fresh interaction - can send modal directly
+                    await interaction.response.send_modal(static_modal)
+                    print(f"✅ Static modal sent via fresh interaction response")
+                else:
+                    # Interaction already processed (deferred) - we need to send modal differently
+                    # Since we can't send modal via followup, we need to edit the message to show a new button
+                    # that will trigger the static modal when clicked
+                    print(f"⚠️ Interaction already processed, cannot send modal via followup")
+                    print(f"Creating new view with static input button...")
+                    
+                    # Create a temporary view with a static input button
+                    static_input_view = ui.View(timeout=300)  # 5 minute timeout
+                    static_button = ui.Button(
+                        label="📝 Ввести статик", 
+                        style=discord.ButtonStyle.primary,
+                        custom_id="static_input_button"
+                    )
+                    
+                    async def static_button_callback(button_interaction):
+                        await button_interaction.response.send_modal(static_modal)
+                    
+                    static_button.callback = static_button_callback
+                    static_input_view.add_item(static_button)
+                    
+                    # Update the message with the new view
+                    embed = interaction.message.embeds[0]
+                    await interaction.followup.edit_message(
+                        interaction.message.id, 
+                        embed=embed, 
+                        view=static_input_view
+                    )
+                    
+                    # Send instruction message
+                    await interaction.followup.send(
+                        "📋 **Требуется ввод статика для автоматического рапорта**\n\n"
+                        "🔽 Нажмите кнопку **\"📝 Ввести статик\"** ниже для ввода статика покинувшего сервер пользователя.",
+                        ephemeral=True
+                    )
+                
+                return True  # Modal handling initiated
+                
+            except Exception as modal_error:
+                print(f"❌ Error handling static modal: {modal_error}")
+                # Fallback: ask user to try again
+                await interaction.followup.send(
+                    "❌ Не удалось открыть форму для ввода статика.\n"
+                    "🔄 Пожалуйста, нажмите кнопку \"✅ Одобрить\" еще раз.",
+                    ephemeral=True
+                )
+                return True
         
         return False  # No modal needed
     

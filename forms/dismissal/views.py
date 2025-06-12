@@ -30,12 +30,15 @@ class DismissalApprovalView(ui.View):
         super().__init__(timeout=None)
         self.user_id = user_id
         self.is_automatic = is_automatic  # Flag for automatic dismissal reports
-    
     @discord.ui.button(label="✅ Одобрить", style=discord.ButtonStyle.green, custom_id="approve_dismissal")
     async def approve_dismissal(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:            
-            # Check if user has moderator permissions
+            # Load configuration once for the entire operation
             config = load_config()
+            excluded_roles_ids = config.get('excluded_roles', [])
+            ping_settings = config.get('ping_settings', {})
+            
+            # Check if user has moderator permissions FIRST
             if not is_moderator_or_admin(interaction.user, config):
                 await interaction.response.send_message(
                     "❌ У вас нет прав для одобрения рапортов на увольнение. Только модераторы могут выполнять это действие.",
@@ -43,75 +46,12 @@ class DismissalApprovalView(ui.View):
                 )
                 return
             
-            # Try to get user_id from the view, or extract from embed footer
-            target_user = None
+            print(f"User {interaction.user.display_name} found in config moderators - proceeding")
             
-            if self.user_id:
-                target_user = interaction.guild.get_member(self.user_id)
-            else:
-                # Try to extract user info from embed footer
-                embed = interaction.message.embeds[0]
-                if embed.footer and embed.footer.text:
-                    footer_text = embed.footer.text
-                    if "Отправлено:" in footer_text:
-                        username = footer_text.replace("Отправлено:", "").strip()
-                        # Try to find user by username
-                        for member in interaction.guild.members:
-                            if member.name == username or member.display_name == username:
-                                target_user = member
-                                break            # Handle case when user has already left the server or doesn't exist
-            user_has_left_server = target_user is None
+            # Extract target user and check if they left the server
+            target_user, user_has_left_server = self._extract_target_user(interaction)
             
-            # Create a comprehensive mock user class for users who left
-            class MockUser:
-                def __init__(self, name, user_id=None):
-                    self.display_name = name
-                    self.name = name
-                    self.id = user_id or 0
-                    self.mention = f"@{name}"
-                    self.roles = []  # Empty roles list for compatibility
-                    self.guild = None  # No guild reference
-                    self._is_mock = True  # Flag to identify mock users
-                    
-                def __str__(self):
-                    return self.display_name
-                    
-                # Add missing methods that might be called
-                async def remove_roles(self, *roles, reason=None):
-                    # Mock method - do nothing for users who left
-                    pass
-                    
-                async def edit(self, **kwargs):
-                    # Mock method - do nothing for users who left
-                    pass
-                    
-                async def send(self, content=None, **kwargs):
-                    # Mock method - do nothing for users who left
-                    pass
-            
-            if user_has_left_server:
-                # Extract user info from embed to create mock user
-                embed = interaction.message.embeds[0]
-                user_name_for_logging = "Покинул сервер"
-                user_id_for_logging = None
-                
-                # Try to extract user info from embed footer
-                if embed.footer and embed.footer.text:
-                    footer_text = embed.footer.text
-                    if "Отправлено:" in footer_text:
-                        user_name_for_logging = footer_text.replace("Отправлено:", "").strip()
-                
-                # Try to extract user ID from embed description or fields
-                if embed.description:
-                    # Look for user ID in description (format: <@123456789>)
-                    import re
-                    user_id_match = re.search(r'<@(\d+)>', embed.description)
-                    if user_id_match:
-                        user_id_for_logging = int(user_id_match.group(1))
-                
-                target_user = MockUser(user_name_for_logging, user_id_for_logging)
-                print(f"Created MockUser for left server user: {user_name_for_logging} (ID: {user_id_for_logging})")
-                # Check hierarchical moderation permissions (skip for users who left server)
+            # Check hierarchical moderation permissions (skip for users who left server)
             if not user_has_left_server and not can_moderate_user(interaction.user, target_user, config):
                 # Determine the reason for denial
                 if interaction.user.id == target_user.id:
@@ -125,82 +65,16 @@ class DismissalApprovalView(ui.View):
                     f"❌ {reason}",
                     ephemeral=True
                 )
-                return            # Load configuration to get excluded roles and ping settings
-            config = load_config()
-            excluded_roles_ids = config.get('excluded_roles', [])
-            ping_settings = config.get('ping_settings', {})
+                return
               # Get user data for audit notification - handle missing users gracefully
             current_time = discord.utils.utcnow()
             
-            # Always try to extract rank and department from embed first (most reliable for all cases)
-            user_rank_for_audit = "Неизвестно"
-            user_unit_for_audit = "Неизвестно"
-            
-            # Extract from embed fields (works for both present and absent users)
+            # Extract rank and department data for audit
             embed = interaction.message.embeds[0]
-            for field in embed.fields:
-                if field.name == "Воинское звание":
-                    user_rank_for_audit = field.value
-                elif field.name == "Подразделение":
-                    user_unit_for_audit = field.value
-            
-            # If embed doesn't have the data and user is present, try to get from roles
-            if (user_rank_for_audit == "Неизвестно" or user_unit_for_audit == "Неизвестно") and not user_has_left_server:
-                try:
-                    if user_rank_for_audit == "Неизвестно":
-                        role_rank = sheets_manager.get_rank_from_roles(target_user)
-                        if role_rank != "Неизвестно":
-                            user_rank_for_audit = role_rank
-                    
-                    if user_unit_for_audit == "Неизвестно":
-                        role_unit = sheets_manager.get_department_from_roles(target_user, ping_settings)
-                        if role_unit != "Неизвестно":
-                            user_unit_for_audit = role_unit
-                except Exception as e:
-                    print(f"Error getting data from roles: {e}")
-            
-            print(f"Audit data - User: {target_user.display_name}, Rank: {user_rank_for_audit}, Unit: {user_unit_for_audit}, Left server: {user_has_left_server}")
+            user_rank_for_audit, user_unit_for_audit = self._extract_audit_data(embed, target_user, user_has_left_server, ping_settings)
             
             # Extract form data from embed fields
-            embed = interaction.message.embeds[0]
-            form_data = {}
-            is_automatic_report = False
-            
-            # Check if this is an automatic report by looking for specific indicators
-            if embed.description and "🚨 Автоматический рапорт на увольнение" in embed.description:
-                is_automatic_report = True
-            
-            for field in embed.fields:
-                if field.name == "Имя Фамилия":
-                    form_data['name'] = field.value
-                elif field.name == "Статик":
-                    # Check if static is missing (automatic report)
-                    if "Требуется ввод" in field.value:
-                        form_data['static'] = None  # Will be requested from moderator
-                        is_automatic_report = True
-                    else:
-                        form_data['static'] = field.value
-                elif field.name == "Подразделение":
-                    form_data['department'] = field.value
-                elif field.name == "Воинское звание":
-                    form_data['rank'] = field.value
-                elif field.name == "Причина увольнения":
-                    form_data['reason'] = field.value
-              # If this is an automatic report without static, request it from moderator FIRST
-            if is_automatic_report and not form_data.get('static'):
-                print(f"Automatic dismissal detected, requesting static from moderator")
-                
-                from .modals import StaticRequestModal
-                
-                # Show modal to request static before continuing
-                static_modal = StaticRequestModal(
-                    self._continue_dismissal_with_static,
-                    interaction, target_user, form_data,
-                    user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server
-                )
-                
-                await interaction.response.send_modal(static_modal)
-                return  # Processing will continue in modal callback
+            form_data, is_automatic_report = self._extract_form_data(embed)
             
             # CHECK AUTHORIZATION FIRST - before any processing or defer
             try:
@@ -230,11 +104,32 @@ class DismissalApprovalView(ui.View):
                 signed_by_name = auth_result["info"]
                 
             except Exception as e:
-                print(f"Error in authorization flow: {e}")
-                print(f"Falling back to display name")
-                # Fall back to display name
-                signed_by_name = interaction.user.display_name
-              
+                print(f"❌ CRITICAL ERROR in authorization flow: {e}")
+                import traceback
+                traceback.print_exc()
+                
+                # SECURITY FIX: Do NOT continue processing on authorization errors
+                await interaction.response.send_message(
+                    "❌ Ошибка проверки авторизации модератора. Обратитесь к администратору.",
+                    ephemeral=True
+                )
+                return  # DO NOT CONTINUE - return here to prevent unauthorized processing
+            
+            # After authorization check - handle automatic reports without static
+            if is_automatic_report and not form_data.get('static'):
+                print(f"Automatic dismissal detected, requesting static from moderator")
+                
+                from .modals import StaticRequestModal
+                
+                # Show modal to request static before continuing
+                static_modal = StaticRequestModal(
+                    self._continue_dismissal_with_static_after_auth,
+                    interaction, target_user, form_data,
+                    user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server, signed_by_name                )
+                
+                await interaction.response.send_modal(static_modal)
+                return  # Processing will continue in modal callback
+            
             # Now defer the interaction since we're continuing with normal processing
             await interaction.response.defer()
             
@@ -250,7 +145,7 @@ class DismissalApprovalView(ui.View):
             await self._process_dismissal_approval(
                 interaction, target_user, form_data,
                 user_rank_for_audit, user_unit_for_audit,
-                current_time, signed_by_name, override_moderator_info=None, user_has_left_server=user_has_left_server
+                current_time, signed_by_name, config, user_has_left_server=user_has_left_server
             )
         except Exception as e:
             print(f"Error in dismissal approval: {e}")
@@ -271,7 +166,7 @@ class DismissalApprovalView(ui.View):
         
     @discord.ui.button(label="❌ Отказать", style=discord.ButtonStyle.red, custom_id="reject_dismissal")
     async def reject_dismissal(self, interaction: discord.Interaction, button: discord.ui.Button):
-        try:            
+        try:
             # Check if user has moderator permissions
             config = load_config()
             if not is_moderator_or_admin(interaction.user, config):
@@ -281,7 +176,7 @@ class DismissalApprovalView(ui.View):
                 )
                 return
             
-            # First, quickly respond to avoid timeout
+            # Defer the interaction since we're continuing with normal processing
             await interaction.response.defer()
             
             # Immediately show "Processing..." state to give user feedback
@@ -292,24 +187,8 @@ class DismissalApprovalView(ui.View):
             # Update the message to show processing state
             embed = interaction.message.embeds[0]
             await interaction.followup.edit_message(interaction.message.id, embed=embed, view=processing_view)
-            
-            # Try to get user_id from the view, or extract from embed footer
-            target_user = None
-            
-            if self.user_id:
-                target_user = interaction.guild.get_member(self.user_id)
-            else:
-                # Try to extract user info from embed footer
-                embed = interaction.message.embeds[0]
-                if embed.footer and embed.footer.text:
-                    footer_text = embed.footer.text
-                    if "Отправлено:" in footer_text:
-                        username = footer_text.replace("Отправлено:", "").strip()
-                        # Try to find user by username
-                        for member in interaction.guild.members:
-                            if member.name == username or member.display_name == username:
-                                target_user = member
-                                break
+              # Try to get user_id from the view, or extract from embed footer
+            target_user, _ = self._extract_target_user(interaction)
               
             # Check hierarchical moderation permissions
             if target_user and not can_moderate_user(interaction.user, target_user, config):
@@ -375,10 +254,177 @@ class DismissalApprovalView(ui.View):
                 except:
                     pass
 
+    def _extract_target_user(self, interaction: discord.Interaction):
+        """Extract target user from view or embed footer, creating MockUser if user left server"""
+        target_user = None
+        
+        if self.user_id:
+            target_user = interaction.guild.get_member(self.user_id)
+        else:
+            # Try to extract user info from embed footer
+            embed = interaction.message.embeds[0]
+            if embed.footer and embed.footer.text:
+                footer_text = embed.footer.text
+                if "Отправлено:" in footer_text:
+                    username = footer_text.replace("Отправлено:", "").strip()
+                    # Try to find user by username
+                    for member in interaction.guild.members:
+                        if member.name == username or member.display_name == username:
+                            target_user = member
+                            break
+        
+        # Handle case when user has already left the server or doesn't exist
+        user_has_left_server = target_user is None
+        
+        if user_has_left_server:
+            # Create a comprehensive mock user class for users who left
+            class MockUser:
+                def __init__(self, name, user_id=None):
+                    self.display_name = name
+                    self.name = name
+                    self.id = user_id or 0
+                    self.mention = f"@{name}"
+                    self.roles = []  # Empty roles list for compatibility
+                    self.guild = None  # No guild reference
+                    self._is_mock = True  # Flag to identify mock users
+                    
+                def __str__(self):
+                    return self.display_name
+                    
+                # Add missing methods that might be called
+                async def remove_roles(self, *roles, reason=None):
+                    # Mock method - do nothing for users who left
+                    pass
+                    
+                async def edit(self, **kwargs):
+                    # Mock method - do nothing for users who left
+                    pass
+                    
+                async def send(self, content=None, **kwargs):
+                    # Mock method - do nothing for users who left
+                    pass
+            
+            # Extract user info from embed to create mock user
+            embed = interaction.message.embeds[0]
+            user_name_for_logging = "Покинул сервер"
+            user_id_for_logging = None
+            
+            # Try to extract user info from embed footer
+            if embed.footer and embed.footer.text:
+                footer_text = embed.footer.text
+                if "Отправлено:" in footer_text:
+                    user_name_for_logging = footer_text.replace("Отправлено:", "").strip()
+            
+            # Try to extract user ID from embed description or fields
+            if embed.description:
+                # Look for user ID in description (format: <@123456789>)
+                import re
+                user_id_match = re.search(r'<@(\d+)>', embed.description)
+                if user_id_match:
+                    user_id_for_logging = int(user_id_match.group(1))
+            
+            target_user = MockUser(user_name_for_logging, user_id_for_logging)
+            print(f"Created MockUser for left server user: {user_name_for_logging} (ID: {user_id_for_logging})")
+        
+        return target_user, user_has_left_server
+    
+    def _extract_form_data(self, embed):
+        """Extract form data from embed fields"""
+        form_data = {}
+        is_automatic_report = False
+        
+        # Check if this is an automatic report by looking for specific indicators
+        if embed.description and "🚨 Автоматический рапорт на увольнение" in embed.description:
+            is_automatic_report = True
+        
+        for field in embed.fields:
+            if field.name == "Имя Фамилия":
+                form_data['name'] = field.value
+            elif field.name == "Статик":
+                # Check if static is missing (automatic report)
+                if "Требуется ввод" in field.value:
+                    form_data['static'] = None  # Will be requested from moderator
+                    is_automatic_report = True
+                else:
+                    form_data['static'] = field.value
+            elif field.name == "Подразделение":
+                form_data['department'] = field.value
+            elif field.name == "Воинское звание":
+                form_data['rank'] = field.value
+            elif field.name == "Причина увольнения":
+                form_data['reason'] = field.value
+            
+        return form_data, is_automatic_report
+    
+    def _extract_audit_data(self, embed, target_user, user_has_left_server, ping_settings):
+        """Extract rank and department data for audit"""
+        user_rank_for_audit = "Неизвестно"
+        user_unit_for_audit = "Неизвестно"
+        
+        # Extract from embed fields (works for both present and absent users)
+        for field in embed.fields:
+            if field.name == "Воинское звание":
+                user_rank_for_audit = field.value
+            elif field.name == "Подразделение":
+                user_unit_for_audit = field.value
+        
+        # If embed doesn't have the data and user is present, try to get from roles
+        if (user_rank_for_audit == "Неизвестно" or user_unit_for_audit == "Неизвестно") and not user_has_left_server:
+            try:
+                if user_rank_for_audit == "Неизвестно":
+                    role_rank = sheets_manager.get_rank_from_roles(target_user)
+                    if role_rank != "Неизвестно":
+                        user_rank_for_audit = role_rank
+                
+                if user_unit_for_audit == "Неизвестно":
+                    role_unit = sheets_manager.get_department_from_roles(target_user, ping_settings)
+                    if role_unit != "Неизвестно":
+                        user_unit_for_audit = role_unit
+            except Exception as e:
+                print(f"Error getting data from roles: {e}")
+        
+        print(f"Audit data - User: {target_user.display_name}, Rank: {user_rank_for_audit}, Unit: {user_unit_for_audit}, Left server: {user_has_left_server}")
+        
+        return user_rank_for_audit, user_unit_for_audit
+
     async def _continue_dismissal_with_manual_auth(self, interaction, moderator_data, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server=False):
         """Continue dismissal process with manually entered moderator data."""
         try:
-            # Immediately show "Processing..." state to give user feedback
+            # Use manually entered moderator info with full details
+            signed_by_name = moderator_data['full_info']  # "Имя Фамилия | Статик"
+            
+            # Check if we still need to request static (for automatic reports)
+            is_automatic_report = False
+            if not form_data.get('static'):
+                # Check if this is an automatic report by looking at the embed
+                embed = interaction.message.embeds[0]
+                if embed.description and "🚨 Автоматический рапорт на увольнение" in embed.description:
+                    is_automatic_report = True
+                
+                # Also check if any field indicates static is needed
+                for field in embed.fields:
+                    if field.name == "Статик" and "Требуется ввод" in field.value:
+                        is_automatic_report = True
+                        break
+            
+            # If we need static, show the modal first
+            if is_automatic_report and not form_data.get('static'):
+                print(f"Manual auth completed, but still need static for automatic dismissal")
+                
+                from .modals import StaticRequestModal
+                
+                # Show modal to request static with already authorized moderator info
+                static_modal = StaticRequestModal(
+                    self._continue_dismissal_with_static_after_auth,
+                    interaction, target_user, form_data,
+                    user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server, signed_by_name
+                )
+                
+                await interaction.response.send_modal(static_modal)
+                return  # Processing will continue in modal callback
+            
+            # If we have all needed data, continue with processing
+            # Show "Processing..." state to give user feedback
             processing_view = ui.View(timeout=None)
             processing_button = ui.Button(label="⏳ Обрабатывается...", style=discord.ButtonStyle.gray, disabled=True)
             processing_view.add_item(processing_button)
@@ -387,9 +433,7 @@ class DismissalApprovalView(ui.View):
             embed = interaction.message.embeds[0]
             await interaction.followup.edit_message(interaction.message.id, embed=embed, view=processing_view)
             
-            # Use manually entered moderator info with full details
-            signed_by_name = moderator_data['full_info']  # "Имя Фамилия | Статик"
-                # Process dismissal with manual auth data
+            # Process dismissal with manual auth data
             await self._process_dismissal_approval(
                 interaction, target_user, form_data,
                 user_rank_for_audit, user_unit_for_audit,
@@ -399,8 +443,8 @@ class DismissalApprovalView(ui.View):
             print(f"Error in manual auth dismissal continuation: {e}")
             await interaction.followup.send("❌ Произошла ошибка при обработке данных авторизации.", ephemeral=True)
 
-    async def _continue_dismissal_with_static(self, interaction, static, original_interaction, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server=False):
-        """Continue dismissal process after receiving static from moderator."""
+    async def _continue_dismissal_with_static_after_auth(self, interaction, static, original_interaction, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server, signed_by_name):
+        """Continue dismissal process after receiving static from moderator when authorization is already done."""
         try:
             # Update form_data with the provided static
             form_data['static'] = static
@@ -422,35 +466,14 @@ class DismissalApprovalView(ui.View):
             # Update the message
             await original_interaction.followup.edit_message(original_interaction.message.id, embed=embed, view=processing_view)
             
-            # Check moderator authorization like in normal flow
-            try:
-                print(f"Checking authorization for moderator: {original_interaction.user.display_name}")
-                auth_result = await sheets_manager.check_moderator_authorization(original_interaction.user)
-                
-                if not auth_result["found"]:
-                    # Moderator not found - show modal for authorization
-                    print(f"Moderator not found in system, showing authorization modal")
-                    
-                    from forms.moderator_auth_form import ModeratorAuthModal
-                    
-                    # Create modal with callback to continue processing
-                    modal = ModeratorAuthModal(
-                        self._continue_dismissal_with_manual_auth,
-                        target_user, form_data,
-                        user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server
-                    )
-                    
-                    # Show modal
-                    await interaction.response.send_modal(modal)
-                    return
-                
-                # Moderator found - continue with normal processing
-                signed_by_name = auth_result["info"]
-                
-            except Exception as e:
-                print(f"Error in authorization flow: {e}")
-                signed_by_name = original_interaction.user.display_name
-              # Continue with normal dismissal processing
+            # Send response to static input modal
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "✅ Статик получен, продолжаем обработку...",
+                    ephemeral=True
+                )
+            
+            # Continue with normal dismissal processing (authorization already done)
             await self._process_dismissal_approval(
                 original_interaction, target_user, form_data,
                 user_rank_for_audit, user_unit_for_audit,
@@ -458,13 +481,12 @@ class DismissalApprovalView(ui.View):
             )
             
         except Exception as e:
-            print(f"Error in dismissal continuation with static: {e}")
+            print(f"Error in dismissal continuation with static after auth: {e}")
             await interaction.followup.send("❌ Произошла ошибка при обработке увольнения.", ephemeral=True)
-
-    async def _process_dismissal_approval(self, interaction, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, signed_by_name, override_moderator_info=None, user_has_left_server=False):
+            
+    async def _process_dismissal_approval(self, interaction, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, signed_by_name, config, user_has_left_server=False):
         """Complete dismissal approval process with moderator information."""
         try:
-            config = load_config()
             excluded_roles_ids = config.get('excluded_roles', [])
             ping_settings = config.get('ping_settings', {})
             
@@ -483,7 +505,8 @@ class DismissalApprovalView(ui.View):
                 else:
                     print(f"Failed to log dismissal to Google Sheets for {target_user.display_name}")
             except Exception as e:
-                print(f"Error logging to Google Sheets: {e}")            # Remove all roles from the user (except @everyone and excluded roles)
+                print(f"Error logging to Google Sheets: {e}")
+            # Remove all roles from the user (except @everyone and excluded roles)
             # Skip if user has left the server or is a MockUser
             roles_removed = False
             if not user_has_left_server and not getattr(target_user, '_is_mock', False):

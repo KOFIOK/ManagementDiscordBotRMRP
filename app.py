@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 from utils.config_manager import load_config, create_backup, get_config_status
 from utils.google_sheets import sheets_manager
-from forms.dismissal_form import DismissalReportButton, DismissalApprovalView, send_dismissal_button_message, restore_dismissal_approval_views, restore_dismissal_button_views
+from forms.dismissal import DismissalReportButton, DismissalApprovalView, send_dismissal_button_message, restore_dismissal_approval_views, restore_dismissal_button_views
 from forms.settings_form import SettingsView
 from forms.role_assignment_form import RoleAssignmentView, send_role_assignment_message, restore_role_assignment_views, restore_approval_views
 from forms.welcome_system import setup_welcome_events
@@ -86,7 +86,7 @@ async def on_member_remove(member):
         print(f"👋 Member left: {member.name} (ID: {member.id})")
         
         # Import here to avoid circular imports
-        from forms.dismissal_form import should_create_automatic_dismissal, create_automatic_dismissal_report
+        from forms.dismissal.automatic import should_create_automatic_dismissal, create_automatic_dismissal_report
         
         # Get target role name from config
         config = load_config()

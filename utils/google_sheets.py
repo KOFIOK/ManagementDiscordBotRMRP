@@ -158,30 +158,40 @@ class GoogleSheetsManager:
                     return clean_name
           # If no specific format found, return as is
         return display_name
-    
     async def get_user_info_from_users_sheet(self, surname):
         """Search for user by surname in 'Пользователи' sheet and return full name with static from column J."""
         try:
+            print(f"📋 SHEET SEARCH: Looking for surname '{surname}' in 'Пользователи' sheet")
+            
             # Ensure connection
             if not self._ensure_connection():
+                print("❌ SHEET SEARCH: Failed to establish Google Sheets connection")
                 return None
             
             # Get the 'Пользователи' worksheet
             users_worksheet = None
-            for worksheet in self.spreadsheet.worksheets():
+            all_worksheets = self.spreadsheet.worksheets()
+            worksheet_names = [ws.title for ws in all_worksheets]
+            print(f"📋 SHEET SEARCH: Available worksheets: {worksheet_names}")
+            
+            for worksheet in all_worksheets:
                 if worksheet.title == "Пользователи":
                     users_worksheet = worksheet
                     break
             
             if not users_worksheet:
-                print("'Пользователи' sheet not found")
+                print("❌ SHEET SEARCH: 'Пользователи' sheet not found")
                 return None
+            
+            print("✅ SHEET SEARCH: Found 'Пользователи' worksheet")
             
             # Get all values from column B (full names) and column J (full info) using get_all_values
             all_values = users_worksheet.get_all_values()
-            
-            # Skip header row (row 0) and search in data rows
+            print(f"📋 SHEET SEARCH: Retrieved {len(all_values)} rows from sheet")
+              # Skip header row (row 0) and search in data rows
             surname_lower = surname.lower().strip()
+            found_surnames = []
+            
             for i, row in enumerate(all_values[1:], start=1):  # Start from row 1 (skip header)
                 if len(row) > 1:  # Ensure row has at least column B
                     cell_name = row[1] if len(row) > 1 else ""  # Column B (index 1)
@@ -190,18 +200,31 @@ class GoogleSheetsManager:
                         name_parts = cell_name.strip().split()
                         if len(name_parts) >= 2:
                             cell_surname = name_parts[-1].lower().strip()
+                            found_surnames.append(f"'{cell_name}' -> '{cell_surname}'")
+                            
                             if cell_surname == surname_lower:
+                                print(f"✅ SHEET SEARCH: MATCH FOUND in row {i+1}: '{cell_name}'")
+                                
                                 # Found match, return corresponding value from column J (index 9)
                                 if len(row) > 9 and row[9]:  # Column J exists and has value
+                                    print(f"✅ SHEET SEARCH: Returning column J value: '{row[9]}'")
                                     return row[9]
                                 else:
                                     # If column J is empty, construct from B and C
                                     static_value = row[2] if len(row) > 2 else ""  # Column C
                                     if static_value:
-                                        return f"{cell_name} | {static_value}"
+                                        result = f"{cell_name} | {static_value}"
+                                        print(f"✅ SHEET SEARCH: Column J empty, constructed: '{result}'")
+                                        return result
                                     else:
+                                        print(f"✅ SHEET SEARCH: No static found, returning name only: '{cell_name}'")
                                         return cell_name
             
+            print(f"❌ SHEET SEARCH: No match found for surname '{surname}'")
+            if found_surnames:
+                print(f"📋 SHEET SEARCH: Found {len(found_surnames)} names in sheet. First 5: {found_surnames[:5]}")
+            else:
+                print("📋 SHEET SEARCH: No valid names found in sheet at all")
             return None
         
         except Exception as e:
@@ -221,18 +244,25 @@ class GoogleSheetsManager:
                 "requires_manual_input": bool
             }
         """
-        try:
-            # Extract clean name from nickname
+        try:            # Extract clean name from nickname
             approved_by_clean_name = self.extract_name_from_nickname(approving_user.display_name)
+            print(f"🔍 AUTHORIZATION CHECK: User '{approving_user.display_name}' -> Clean name: '{approved_by_clean_name}'")
             
             if approved_by_clean_name:
                 # Extract surname (last word)
                 name_parts = approved_by_clean_name.strip().split()
+                print(f"🔍 AUTHORIZATION CHECK: Name parts: {name_parts}")
+                
                 if len(name_parts) >= 2:
                     surname = name_parts[-1]  # Last word as surname
+                    print(f"🔍 AUTHORIZATION CHECK: Searching for surname: '{surname}'")
+                    
                     # Search in 'Пользователи' sheet
                     full_user_info = await self.get_user_info_from_users_sheet(surname)
+                    print(f"🔍 AUTHORIZATION CHECK: Search result: {full_user_info}")
+                    
                     if full_user_info:
+                        print(f"✅ AUTHORIZATION CHECK: Moderator FOUND in system!")
                         return {
                             "found": True,
                             "info": full_user_info,
@@ -240,14 +270,23 @@ class GoogleSheetsManager:
                             "requires_manual_input": False
                         }
                     else:
+                        print(f"❌ AUTHORIZATION CHECK: Moderator NOT FOUND in system!")
                         return {
                             "found": False,
                             "info": None,
                             "clean_name": approved_by_clean_name,
                             "requires_manual_input": True
                         }
-            
-            # If we can't extract clean name, require manual input
+                else:
+                    print(f"❌ AUTHORIZATION CHECK: Not enough name parts (need at least 2, got {len(name_parts)})")
+                    return {
+                        "found": False,
+                        "info": None,
+                        "clean_name": approved_by_clean_name,
+                        "requires_manual_input": True
+                    }
+              # If we can't extract clean name, require manual input
+            print(f"❌ AUTHORIZATION CHECK: Could not extract clean name from '{approving_user.display_name}'")
             return {
                 "found": False,
                 "info": None,
@@ -256,11 +295,12 @@ class GoogleSheetsManager:
             }
             
         except Exception as e:
-            print(f"Error in check_moderator_authorization: {e}")
+            print(f"❌ AUTHORIZATION CHECK: Error in check_moderator_authorization: {e}")
             return {
                 "found": False,
                 "info": None,
-                "clean_name": approving_user.display_name,                "requires_manual_input": True
+                "clean_name": approving_user.display_name,
+                "requires_manual_input": True
             }
     
     async def add_dismissal_record(self, form_data, dismissed_user, approving_user, dismissal_time, ping_settings, override_moderator_info=None):

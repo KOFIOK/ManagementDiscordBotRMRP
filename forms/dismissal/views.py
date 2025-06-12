@@ -94,12 +94,14 @@ class DismissalApprovalView(ui.View):
             target_user, user_has_left_server = self._extract_target_user(interaction)
             if not await self._validate_hierarchical_permissions(interaction, target_user, user_has_left_server, config):
                 return
-                
-            # Get audit and form data
+                  # Get audit and form data
             current_time = discord.utils.utcnow()
             embed = interaction.message.embeds[0]
             user_rank_for_audit, user_unit_for_audit = self._extract_audit_data(embed, target_user, user_has_left_server, config.get('ping_settings', {}))
             form_data, is_automatic_report = self._extract_form_data(embed)
+            
+            # Add is_automatic_report to form_data for passing to modals
+            form_data['is_automatic_report'] = is_automatic_report
             
             # Handle authorization flow
             auth_result = await self._handle_moderator_authorization(interaction, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server)
@@ -270,56 +272,69 @@ class DismissalApprovalView(ui.View):
         print(f"Audit data - User: {target_user.display_name}, Rank: {user_rank_for_audit}, Unit: {user_unit_for_audit}, Left server: {user_has_left_server}")
         
         return user_rank_for_audit, user_unit_for_audit
-
+    
     async def _continue_dismissal_with_manual_auth(self, interaction, moderator_data, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server=False):
         """Continue dismissal process with manually entered moderator data."""
         try:
             print(f"DEBUG: _continue_dismissal_with_manual_auth called with moderator_data: {moderator_data}")
+              # First, try to save the moderator to Google Sheets
+            try:
+                print(f"🔄 Attempting to register moderator in Google Sheets...")
+                registration_success = await sheets_manager.register_moderator(
+                    email=moderator_data['email'],
+                    name=moderator_data['name'],
+                    static=moderator_data['static'],
+                    position=moderator_data['position']
+                )
+                
+                if registration_success:
+                    print(f"✅ Successfully registered moderator '{moderator_data['name']}' in Google Sheets!")
+                else:
+                    print(f"⚠️ Failed to register moderator in Google Sheets, but continuing with dismissal process...")
+            except Exception as reg_error:
+                print(f"⚠️ Error registering moderator: {reg_error}")
+                print("Continuing with dismissal process despite registration error...")
             
             # Use manually entered moderator info with full details
             signed_by_name = moderator_data['full_info']  # "Имя Фамилия | Статик"
             print(f"DEBUG: signed_by_name set to: {signed_by_name}")
+              # Check if we still need to request static (for automatic reports)
+            is_automatic_report = form_data.get('is_automatic_report', False)
             
-            # Check if we still need to request static (for automatic reports)
-            is_automatic_report = False
-            if not form_data.get('static'):
-                # Check if this is an automatic report by looking at the embed
-                embed = interaction.message.embeds[0]
-                if embed.description and DismissalConstants.AUTO_REPORT_INDICATOR in embed.description:
-                    is_automatic_report = True
-                  # Also check if any field indicates static is needed
-                for field in embed.fields:
-                    if field.name == DismissalConstants.FIELD_STATIC and DismissalConstants.STATIC_INPUT_REQUIRED in field.value:
-                        is_automatic_report = True
-                        break
-            
-            print(f"DEBUG: is_automatic_report: {is_automatic_report}, form_data static: {form_data.get('static')}")
-            
-            # If we need static, show the modal first
+            print(f"DEBUG: is_automatic_report: {is_automatic_report}, form_data static: {form_data.get('static')}")            # If we need static, inform user to click Approve again
             if is_automatic_report and not form_data.get('static'):
                 print(f"Manual auth completed, but still need static for automatic dismissal")
                 
-                from .modals import StaticRequestModal
+                # Since we can't open a second modal from a modal callback,
+                # we'll ask the user to click "Approve" again to enter static
+                try:
+                    await interaction.followup.send(
+                        "✅ **Авторизация модератора завершена успешно!**\n\n"
+                        "📋 **Следующий шаг:** Для автоматического рапорта на увольнение требуется указать статик покинувшего сервер пользователя.\n\n"
+                        "🔄 **Действие:** Нажмите кнопку \"✅ Одобрить\" ещё раз для ввода статика и завершения обработки увольнения.\n\n"
+                        "ℹ️ Это необходимо из-за ограничений Discord на открытие нескольких модальных окон подряд.",
+                        ephemeral=True
+                    )
+                except Exception as followup_error:
+                    print(f"Warning: Could not send followup message: {followup_error}")
                 
-                # Show modal to request static with already authorized moderator info
-                static_modal = StaticRequestModal(
-                    self._continue_dismissal_with_static_after_auth,
-                    interaction, target_user, form_data,
-                    user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server, signed_by_name
-                )
-                
-                await interaction.response.send_modal(static_modal)
-                return  # Processing will continue in modal callback
+                return  # User needs to click Approve again
             
             print(f"DEBUG: Proceeding with manual auth processing")
             
-            # If we have all needed data, continue with processing
-            # Show "Processing..." state to give user feedback
-            if not interaction.response.is_done():
-                await interaction.response.defer()
-            await self._show_processing_state_for_interaction(interaction)
+            # For modal interactions, response is already handled in the modal
+            # We should only send followup messages, not defer again
+            print(f"DEBUG: Interaction response is_done: {interaction.response.is_done()}")
             
-            # Process dismissal with manual auth data
+            # Send processing notification via followup (safer for modal interactions)
+            try:
+                await interaction.followup.send(
+                    "🔄 **Обработка увольнения...**\nПожалуйста, подождите...",
+                    ephemeral=True
+                )
+            except Exception as followup_error:
+                print(f"Warning: Could not send followup message: {followup_error}")
+                # Continue processing anyway# Process dismissal with manual auth data
             config = load_config()  # Load config for this method
             await self._process_dismissal_approval(
                 interaction, target_user, form_data,
@@ -372,7 +387,6 @@ class DismissalApprovalView(ui.View):
         except Exception as e:
             print(f"Error in dismissal continuation with static after auth: {e}")
             await interaction.followup.send("❌ Произошла ошибка при обработке увольнения.", ephemeral=True)
-
     async def _process_dismissal_approval(self, interaction, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, signed_by_name, config, override_moderator_info=None, user_has_left_server=False):
         """Complete dismissal approval process with moderator information."""
         try:
@@ -450,12 +464,21 @@ class DismissalApprovalView(ui.View):
                 value="\n".join(status_parts),
                 inline=False
             )
-            
-            # Create new view with only "Approved" button (disabled)
+              # Create new view with only "Approved" button (disabled)
             approved_view = ui.View(timeout=None)
             approved_button = ui.Button(label=DismissalConstants.APPROVED_LABEL, style=discord.ButtonStyle.green, disabled=True)
             approved_view.add_item(approved_button)
-            await interaction.followup.edit_message(interaction.message.id, content="", embed=embed, view=approved_view)
+            
+            # Safe message editing - check if interaction has message attribute
+            try:
+                if hasattr(interaction, 'message') and interaction.message:
+                    await interaction.followup.edit_message(interaction.message.id, content="", embed=embed, view=approved_view)
+                else:
+                    # This interaction is from modal, find original message via webhook
+                    # For now, we'll skip the message update and just log success
+                    print("✅ Dismissal processed successfully (message update skipped - modal interaction)")
+            except Exception as edit_error:
+                print(f"⚠️ Could not update message: {edit_error}")
             
             # Send notification to audit channel
             audit_message_url = None
@@ -778,7 +801,6 @@ class DismissalApprovalView(ui.View):
         try:
             # Check moderator authorization
             auth_result = await sheets_manager.check_moderator_authorization(interaction.user)
-            
             if not auth_result["found"]:
                 # Show manual auth modal (no defer needed here, modal will handle response)
                 from .modals import ModeratorAuthModal

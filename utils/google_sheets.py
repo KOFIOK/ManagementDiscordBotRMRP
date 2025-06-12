@@ -107,7 +107,8 @@ class GoogleSheetsManager:
             # Check full rank names first
             if role.name in ranks:
                 return role.name
-            # Check abbreviated rank names        elif role.name in rank_abbreviations:
+            # Check abbreviated rank names
+            elif role.name in rank_abbreviations:
                 return rank_abbreviations[role.name]
         
         return "Неизвестно"
@@ -683,6 +684,8 @@ class GoogleSheetsManager:
                 print(f"Response status: {e.response.status_code}")
                 print(f"Response text: {e.response.text}")
             return False
+    
+    
     async def register_moderator(self, email, name, static, position):
         """
         Register a new moderator in the 'Пользователи' sheet.
@@ -781,7 +784,8 @@ class GoogleSheetsManager:
             )
               # Check if append was successful
             if result:
-                print(f"✅ Successfully registered moderator: {name} | {static} ({email})")                  # Automatically add moderator as editor to spreadsheet
+                print(f"✅ Successfully registered moderator: {name} | {static} ({email})")
+                # Automatically add moderator as editor to spreadsheet
                 print(f"🔑 Attempting to add editor access to spreadsheet...")
                 
                 # First check if they already have access
@@ -871,12 +875,11 @@ class GoogleSheetsManager:
                     role = permission.get('role', '')
                     print(f"📋 {email} already has {role} access")
                     return True
-            
             return False
             
         except Exception as e:
             print(f"❌ Error checking editor access: {e}")
-            return False    # ...existing code...
+            return False
     
 
 # Global instance

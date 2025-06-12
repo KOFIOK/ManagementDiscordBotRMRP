@@ -360,8 +360,7 @@ class ModeratorAuthModal(ui.Modal, title="Регистрация модерат�
                     ephemeral=True
                 )
                 return
-            
-            # Prepare moderator data
+              # Prepare moderator data
             moderator_data = {
                 'email': email_value,
                 'name': name_value,
@@ -372,7 +371,13 @@ class ModeratorAuthModal(ui.Modal, title="Регистрация модерат�
             
             print(f"ModeratorAuthModal: Calling callback with data: {moderator_data}")
             
-            # Call the callback function with the moderator data
+            # First, respond to the modal interaction to avoid timeout
+            await interaction.response.send_message(
+                "✅ **Данные получены!**\nНачинаем обработку увольнения...",
+                ephemeral=True
+            )
+            
+            # Then call the callback function with the moderator data
             await self.callback_func(interaction, moderator_data, *self.callback_args, **self.callback_kwargs)
             
         except Exception as e:

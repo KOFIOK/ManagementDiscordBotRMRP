@@ -62,36 +62,58 @@ class RoleApplicationApprovalView(ui.View):
     
     async def _process_approval(self, interaction):
         """Process application approval with simplified logic"""
-        config = load_config()
-        guild = interaction.guild
-        user = guild.get_member(self.application_data["user_id"])
-        
-        if not user:
-            await interaction.response.send_message(
-                "❌ Пользователь не найден на сервере.",
-                ephemeral=True
-            )
-            return
-        
-        # Determine if this is automatic processing
-        is_auto_process = self._should_auto_process()
-        
-        # Assign roles
-        await self._assign_roles(user, guild, config)
-        
-        # Update embed and respond ONCE
-        embed = await self._create_approval_embed(interaction)
-        approved_view = ApprovedApplicationView()
-        
-        # This is the ONLY place we respond to the interaction
-        await interaction.response.edit_message(embed=embed, view=approved_view)
-        
-        # Only do additional processing for auto-process applications
-        if is_auto_process:
-            await self._handle_auto_processing(interaction, user, guild, config)
-        
-        # Send DM to user
-        await self._send_approval_dm(user)
+        try:
+            config = load_config()
+            guild = interaction.guild
+            user = guild.get_member(self.application_data["user_id"])
+            
+            if not user:
+                await interaction.response.send_message(
+                    "❌ Пользователь не найден на сервере.",
+                    ephemeral=True
+                )
+                return
+            
+            # Create embed first
+            embed = await self._create_approval_embed(interaction)
+            approved_view = ApprovedApplicationView()
+            
+            # Respond to interaction immediately to prevent timeout
+            await interaction.response.edit_message(embed=embed, view=approved_view)
+            
+            # Then do all the other processing
+            try:
+                # Assign roles and update nickname if needed
+                await self._assign_roles(user, guild, config)
+            except Exception as e:
+                print(f"Warning: Error in role assignment: {e}")
+                # Continue processing even if role assignment fails
+                
+            # Only do personnel processing for military recruits with rank 'рядовой'
+            if self._should_process_personnel():
+                try:
+                    await self._handle_auto_processing(interaction, user, guild, config)
+                except Exception as e:
+                    print(f"Warning: Error in personnel processing: {e}")
+                    # Continue processing even if personnel processing fails
+            
+            # Send DM to user
+            try:
+                await self._send_approval_dm(user)
+            except Exception as e:
+                print(f"Warning: Error sending DM: {e}")
+                # Continue even if DM fails
+                
+        except Exception as e:
+            print(f"Error in approval process: {e}")
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        "❌ Произошла ошибка при обработке заявки.",
+                        ephemeral=True
+                    )
+            except Exception as followup_error:
+                print(f"Failed to send error message: {followup_error}")
     
     async def _process_rejection(self, interaction):
         """Process application rejection with simplified logic"""
@@ -123,62 +145,92 @@ class RoleApplicationApprovalView(ui.View):
         else:  # civilian
             return True
     
+    def _should_change_nickname(self):
+        """Determine if nickname should be changed"""
+        if self.application_data["type"] == "military":
+            rank = self.application_data.get("rank", "").lower()
+            return rank == "рядовой"
+        return False  # Never change nickname for civilians
+    
+    def _should_process_personnel(self):
+        """Determine if personnel record should be processed"""
+        # Only process personnel records for military recruits with rank 'рядовой'
+        if self.application_data["type"] == "military":
+            rank = self.application_data.get("rank", "").lower()
+            return rank == "рядовой"
+        return False  # Never process personnel records for civilians
+    
     async def _assign_roles(self, user, guild, config):
         """Assign appropriate roles to user"""
-        if self.application_data["type"] == "military":
-            role_ids = config.get('military_roles', [])
-            opposite_role_ids = config.get('civilian_roles', [])
+        try:
+            if self.application_data["type"] == "military":
+                role_ids = config.get('military_roles', [])
+                opposite_role_ids = config.get('civilian_roles', [])
+                
+                # Set nickname for military recruits only
+                if self._should_change_nickname():
+                    try:
+                        await self._set_military_nickname(user)
+                    except Exception as e:
+                        print(f"Warning: Could not set military nickname: {e}")
+                        # Continue processing even if nickname change fails
+            else:
+                role_ids = config.get('civilian_roles', [])
+                opposite_role_ids = config.get('military_roles', [])
             
-            # Set nickname for military
-            if self._should_auto_process():
-                await self._set_military_nickname(user)
-        else:
-            role_ids = config.get('civilian_roles', [])
-            opposite_role_ids = config.get('military_roles', [])
-        
-        # Remove opposite roles
-        for role_id in opposite_role_ids:
-            role = guild.get_role(role_id)
-            if role and role in user.roles:
-                try:
-                    await user.remove_roles(role, reason="Переход на другую роль")
-                except discord.Forbidden:
-                    print(f"No permission to remove role {role.name}")
-                except Exception as e:
-                    print(f"Error removing role {role.name}: {e}")
-        
-        # Add new roles
-        for role_id in role_ids:
-            role = guild.get_role(role_id)
-            if role:
-                try:
-                    await user.add_roles(role, reason="Одобрение заявки на роль")
-                except discord.Forbidden:
-                    print(f"No permission to assign role {role.name}")
-                except Exception as e:
-                    print(f"Error assigning role {role.name}: {e}")
+            # Remove opposite roles
+            for role_id in opposite_role_ids:
+                role = guild.get_role(role_id)
+                if role and role in user.roles:
+                    try:
+                        await user.remove_roles(role, reason="Переход на другую роль")
+                    except discord.Forbidden:
+                        print(f"No permission to remove role {role.name}")
+                    except Exception as e:
+                        print(f"Error removing role {role.name}: {e}")
+            
+            # Add new roles
+            for role_id in role_ids:
+                role = guild.get_role(role_id)
+                if role:
+                    try:
+                        await user.add_roles(role, reason="Одобрение заявки на роль")
+                    except discord.Forbidden:
+                        print(f"No permission to assign role {role.name}")
+                    except Exception as e:
+                        print(f"Error assigning role {role.name}: {e}")
+                        
+        except Exception as e:
+            print(f"Error in role assignment: {e}")
+            raise  # Re-raise the exception to be caught by the caller
     
     async def _set_military_nickname(self, user):
         """Set nickname for military users"""
-        full_name = self.application_data['name']
-        full_nickname = f"ВА | {full_name}"
-        
-        if len(full_nickname) <= 32:
-            new_nickname = full_nickname
-        else:
-            # Shorten if too long
-            name_parts = full_name.split()
-            if len(name_parts) >= 2:
-                first_initial = name_parts[0][0] if name_parts[0] else "И"
-                last_name = name_parts[-1]
-                new_nickname = f"ВА | {first_initial}. {last_name}"
-            else:
-                new_nickname = f"ВА | {full_name[:25]}"
-        
         try:
+            full_name = self.application_data['name']
+            full_nickname = f"ВА | {full_name}"
+            
+            if len(full_nickname) <= 32:
+                new_nickname = full_nickname
+            else:
+                # Shorten if too long
+                name_parts = full_name.split()
+                if len(name_parts) >= 2:
+                    first_initial = name_parts[0][0] if name_parts[0] else "И"
+                    last_name = name_parts[-1]
+                    new_nickname = f"ВА | {first_initial}. {last_name}"
+                else:
+                    new_nickname = f"ВА | {full_name[:25]}"
+            
             await user.edit(nick=new_nickname, reason="Одобрение заявки на роль военнослужащего")
-        except discord.Forbidden:
-            print(f"No permission to change nickname for {user}")
+            print(f"✅ Successfully set nickname for {user} to {new_nickname}")
+            
+        except discord.Forbidden as e:
+            print(f"Warning: No permission to change nickname for {user}")
+            # Don't raise the error, just log it
+        except Exception as e:
+            print(f"Error setting nickname for {user}: {e}")
+            # Don't raise the error, just log it
     
     async def _create_approval_embed(self, interaction):
         """Create approval embed with status"""
@@ -186,7 +238,7 @@ class RoleApplicationApprovalView(ui.View):
         embed.color = discord.Color.green()
         
         if self.application_data["type"] == "military":
-            if self._should_auto_process():
+            if self._should_process_personnel():
                 status_message = f"Одобрено инструктором ВК {interaction.user.mention}"
             else:
                 status_message = f"Одобрено инструктором ВК {interaction.user.mention}\n⚠️ Требуется ручная обработка для звания {self.application_data.get('rank', 'Неизвестно')}"

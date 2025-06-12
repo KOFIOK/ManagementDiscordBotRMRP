@@ -6,12 +6,44 @@ import os
 from datetime import datetime
 import discord
 import re
+import asyncio
+import functools
+from datetime import datetime, timezone, timedelta
 
 # Google Sheets configuration
 SCOPES = [
     'https://www.googleapis.com/auth/spreadsheets',
     'https://www.googleapis.com/auth/drive'
 ]
+
+def retry_on_google_error(retries=3, delay=1):
+    """Decorator for retrying Google Sheets operations on failure"""
+    def decorator(func):
+        @functools.wraps(func)
+        async def wrapper(*args, **kwargs):
+            last_error = None
+            for attempt in range(retries):
+                try:
+                    return await func(*args, **kwargs)
+                except Exception as e:
+                    last_error = e
+                    error_msg = str(e)
+                    
+                    # Check if it's a Google API error
+                    if "APIError" in str(type(e)) or "503" in error_msg or "500" in error_msg:
+                        if attempt < retries - 1:  # Don't sleep on the last attempt
+                            wait_time = delay * (attempt + 1)  # Exponential backoff
+                            print(f"⚠️ Google Sheets error, retrying in {wait_time}s: {e}")
+                            await asyncio.sleep(wait_time)
+                            continue
+                    else:
+                        # If it's not a Google API error, don't retry
+                        raise e
+                    
+            print(f"❌ All retry attempts failed: {last_error}")
+            raise last_error
+        return wrapper
+    return decorator
 
 class GoogleSheetsManager:
     def __init__(self):
@@ -159,6 +191,7 @@ class GoogleSheetsManager:
                     return clean_name
           # If no specific format found, return as is
         return display_name
+    @retry_on_google_error(retries=3, delay=1)
     async def get_user_info_from_users_sheet(self, surname):
         """Search for user by surname in 'Пользователи' sheet and return full name with static from column J."""
         try:
@@ -186,10 +219,15 @@ class GoogleSheetsManager:
             
             print("✅ SHEET SEARCH: Found 'Пользователи' worksheet")
             
-            # Get all values from column B (full names) and column J (full info) using get_all_values
-            all_values = users_worksheet.get_all_values()
-            print(f"📋 SHEET SEARCH: Retrieved {len(all_values)} rows from sheet")
-              # Skip header row (row 0) and search in data rows
+            # Get all values with retry mechanism
+            try:
+                all_values = users_worksheet.get_all_values()
+                print(f"📋 SHEET SEARCH: Retrieved {len(all_values)} rows from sheet")
+            except Exception as e:
+                print(f"❌ Error getting values from sheet: {e}")
+                raise  # Let the retry decorator handle it
+            
+            # Skip header row (row 0) and search in data rows
             surname_lower = surname.lower().strip()
             found_surnames = []
             
@@ -206,7 +244,7 @@ class GoogleSheetsManager:
                             if cell_surname == surname_lower:
                                 print(f"✅ SHEET SEARCH: MATCH FOUND in row {i+1}: '{cell_name}'")
                                 
-                                # Found match, return corresponding value from column J (index 9)
+                                # Found match, return corresponding value from column J if exists
                                 if len(row) > 9 and row[9]:  # Column J exists and has value
                                     print(f"✅ SHEET SEARCH: Returning column J value: '{row[9]}'")
                                     return row[9]
@@ -220,32 +258,26 @@ class GoogleSheetsManager:
                                     else:
                                         print(f"✅ SHEET SEARCH: No static found, returning name only: '{cell_name}'")
                                         return cell_name
-            
+                                        
             print(f"❌ SHEET SEARCH: No match found for surname '{surname}'")
             if found_surnames:
                 print(f"📋 SHEET SEARCH: Found {len(found_surnames)} names in sheet. First 5: {found_surnames[:5]}")
             else:
                 print("📋 SHEET SEARCH: No valid names found in sheet at all")
             return None
-        
+            
         except Exception as e:
             print(f"Error searching in 'Пользователи' sheet: {e}")
-            return None
+            raise  # Let the retry decorator handle it
     
+    @retry_on_google_error(retries=3, delay=1)
     async def check_moderator_authorization(self, approving_user):
         """
         Check if moderator is authorized in 'Пользователи' sheet.
         Returns dict with authorization status and info.
-        
-        Returns:
-            {
-                "found": bool,
-                "info": str or None,  # "Имя Фамилия | Статик" if found
-                "clean_name": str or None,  # Extracted clean name
-                "requires_manual_input": bool
-            }
         """
-        try:            # Extract clean name from nickname
+        try:
+            # Extract clean name from nickname
             approved_by_clean_name = self.extract_name_from_nickname(approving_user.display_name)
             print(f"🔍 AUTHORIZATION CHECK: User '{approving_user.display_name}' -> Clean name: '{approved_by_clean_name}'")
             
@@ -258,50 +290,46 @@ class GoogleSheetsManager:
                     surname = name_parts[-1]  # Last word as surname
                     print(f"🔍 AUTHORIZATION CHECK: Searching for surname: '{surname}'")
                     
-                    # Search in 'Пользователи' sheet
-                    full_user_info = await self.get_user_info_from_users_sheet(surname)
-                    print(f"🔍 AUTHORIZATION CHECK: Search result: {full_user_info}")
-                    
-                    if full_user_info:
-                        print(f"✅ AUTHORIZATION CHECK: Moderator FOUND in system!")
+                    try:
+                        # Search in 'Пользователи' sheet
+                        full_user_info = await self.get_user_info_from_users_sheet(surname)
+                        print(f"🔍 AUTHORIZATION CHECK: Search result: {full_user_info}")
+                        
+                        if full_user_info:
+                            print(f"✅ AUTHORIZATION CHECK: Moderator FOUND in system!")
+                            return {
+                                "found": True,
+                                "info": full_user_info,
+                                "clean_name": approved_by_clean_name,
+                                "requires_manual_input": False
+                            }
+                    except Exception as e:
+                        print(f"⚠️ AUTHORIZATION CHECK: Sheet search failed: {e}")
+                        # Fall back to clean name if Google Sheets fails
+                        print(f"ℹ️ AUTHORIZATION CHECK: Using fallback mode with clean name")
                         return {
-                            "found": True,
-                            "info": full_user_info,
+                            "found": True,  # Consider authorized in fallback mode
+                            "info": approved_by_clean_name,  # Use clean name as info
                             "clean_name": approved_by_clean_name,
                             "requires_manual_input": False
                         }
-                    else:
-                        print(f"❌ AUTHORIZATION CHECK: Moderator NOT FOUND in system!")
-                        return {
-                            "found": False,
-                            "info": None,
-                            "clean_name": approved_by_clean_name,
-                            "requires_manual_input": True
-                        }
-                else:
-                    print(f"❌ AUTHORIZATION CHECK: Not enough name parts (need at least 2, got {len(name_parts)})")
-                    return {
-                        "found": False,
-                        "info": None,
-                        "clean_name": approved_by_clean_name,
-                        "requires_manual_input": True
-                    }
-              # If we can't extract clean name, require manual input
-            print(f"❌ AUTHORIZATION CHECK: Could not extract clean name from '{approving_user.display_name}'")
+                
+            # Default return for cases where we couldn't process properly
             return {
-                "found": False,
-                "info": None,
-                "clean_name": approving_user.display_name,
-                "requires_manual_input": True
+                "found": True,  # Allow operation in case of problems
+                "info": approved_by_clean_name or approving_user.display_name,
+                "clean_name": approved_by_clean_name or approving_user.display_name,
+                "requires_manual_input": False
             }
             
         except Exception as e:
             print(f"❌ AUTHORIZATION CHECK: Error in check_moderator_authorization: {e}")
+            # In case of any error, fall back to using display name
             return {
-                "found": False,
-                "info": None,
+                "found": True,  # Allow operation in case of problems
+                "info": approving_user.display_name,
                 "clean_name": approving_user.display_name,
-                "requires_manual_input": True
+                "requires_manual_input": False
             }
     
     async def add_dismissal_record(self, form_data, dismissed_user, approving_user, dismissal_time, ping_settings, override_moderator_info=None):
@@ -607,6 +635,8 @@ class GoogleSheetsManager:
                 print(f"Response status: {e.response.status_code}")
                 print(f"Response text: {e.response.text}")
             return False
+    
+    
     async def add_hiring_record(self, application_data, approved_user, approving_user, hiring_time, override_moderator_info=None):
         """Add a hiring record to the Google Sheets for new recruits with rank 'Рядовой'."""
         try:

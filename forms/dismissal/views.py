@@ -11,6 +11,58 @@ from utils.config_manager import load_config, is_moderator_or_admin, can_moderat
 from utils.google_sheets import sheets_manager
 
 
+# Constants for UI elements and messages
+class DismissalConstants:
+    # UI Labels
+    PROCESSING_LABEL = "⏳ Обрабатывается..."
+    APPROVED_LABEL = "✅ Одобрено"
+    REJECTED_LABEL = "❌ Отказано"
+      # Error Messages
+    NO_PERMISSION_APPROVAL = "❌ У вас нет прав для одобрения рапортов на увольнение. Только модераторы могут выполнять это действие."
+    NO_PERMISSION_REJECTION = "❌ У вас нет прав для отказа рапортов на увольнение. Только модераторы могут выполнять это действие."
+    AUTHORIZATION_ERROR = "❌ Ошибка проверки авторизации модератора. Обратитесь к администратору."
+    PROCESSING_ERROR_APPROVAL = "❌ Произошла ошибка при обработке одобрения заявки."
+    PROCESSING_ERROR_REJECTION = "❌ Произошла ошибка при обработке отказа"
+    AUTH_DATA_ERROR = "❌ Произошла ошибка при обработке данных авторизации."
+    DISMISSAL_PROCESSING_ERROR = "❌ Произошла ошибка при обработке увольнения."
+    
+    # Success Messages
+    STATIC_RECEIVED = "✅ Статик получен, продолжаем обработку..."
+    
+    # Form Field Names
+    FIELD_NAME = "Имя Фамилия"
+    FIELD_STATIC = "Статик"
+    FIELD_DEPARTMENT = "Подразделение"
+    FIELD_RANK = "Воинское звание"
+    FIELD_REASON = "Причина увольнения"
+    
+    # Automatic Report Indicators
+    AUTO_REPORT_INDICATOR = "🚨 Автоматический рапорт на увольнение"
+    STATIC_INPUT_REQUIRED = "Требуется ввод"
+    
+    # Nickname Prefixes
+    DISMISSED_PREFIX = "Уволен | "
+    
+    # Self-moderation errors
+    SELF_APPROVAL_ERROR = "Вы не можете одобрить свой собственный рапорт на увольнение."
+    SELF_REJECTION_ERROR = "Вы не можете отклонить свой собственный рапорт на увольнение."
+    MODERATOR_HIERARCHY_APPROVAL = "Вы не можете одобрить рапорт модератора того же или более высокого уровня."
+    MODERATOR_HIERARCHY_REJECTION = "Вы не можете отклонить рапорт модератора того же или более высокого уровня."
+    INSUFFICIENT_PERMISSIONS_APPROVAL = "У вас недостаточно прав для одобрения этого рапорта."
+    INSUFFICIENT_PERMISSIONS_REJECTION = "У вас недостаточно прав для отклонения этого рапорта."
+    
+    # Footer and audit text patterns
+    REPORT_SENDER_PREFIX = "Отправлено:"
+    AUDIT_NAME_STATIC_FIELD = "Имя Фамилия | 6 цифр статика"
+    BLACKLIST_SHEET_NAME = "Отправлено (НЕ РЕДАКТИРОВАТЬ)"
+    
+    # Default values
+    UNKNOWN_VALUE = "Неизвестно"
+    
+    # Rejection button label
+    REJECT_BUTTON_LABEL = "❌ Отказать"
+
+
 class DismissalReportButton(ui.View):
     """Simple button view for creating dismissal reports"""
     
@@ -25,233 +77,73 @@ class DismissalReportButton(ui.View):
 
 class DismissalApprovalView(ui.View):
     """Approval/Rejection view for dismissal reports with complex processing logic"""
-    
     def __init__(self, user_id=None, is_automatic=False):
         super().__init__(timeout=None)
         self.user_id = user_id
         self.is_automatic = is_automatic  # Flag for automatic dismissal reports
+    
     @discord.ui.button(label="✅ Одобрить", style=discord.ButtonStyle.green, custom_id="approve_dismissal")
     async def approve_dismissal(self, interaction: discord.Interaction, button: discord.ui.Button):
-        try:            
-            # Load configuration once for the entire operation
+        try:
+            # Load configuration and validate permissions
             config = load_config()
-            excluded_roles_ids = config.get('excluded_roles', [])
-            ping_settings = config.get('ping_settings', {})
-            
-            # Check if user has moderator permissions FIRST
-            if not is_moderator_or_admin(interaction.user, config):
-                await interaction.response.send_message(
-                    "❌ У вас нет прав для одобрения рапортов на увольнение. Только модераторы могут выполнять это действие.",
-                    ephemeral=True
-                )
+            if not await self._validate_moderator_permissions(interaction, config):
                 return
-            
-            print(f"User {interaction.user.display_name} found in config moderators - proceeding")
-            
-            # Extract target user and check if they left the server
-            target_user, user_has_left_server = self._extract_target_user(interaction)
-            
-            # Check hierarchical moderation permissions (skip for users who left server)
-            if not user_has_left_server and not can_moderate_user(interaction.user, target_user, config):
-                # Determine the reason for denial
-                if interaction.user.id == target_user.id:
-                    reason = "Вы не можете одобрить свой собственный рапорт на увольнение."
-                elif is_moderator_or_admin(target_user, config):
-                    reason = "Вы не можете одобрить рапорт модератора того же или более высокого уровня."
-                else:
-                    reason = "У вас недостаточно прав для одобрения этого рапорта."
                 
-                await interaction.response.send_message(
-                    f"❌ {reason}",
-                    ephemeral=True
-                )
+            # Extract all required data
+            target_user, user_has_left_server = self._extract_target_user(interaction)
+            if not await self._validate_hierarchical_permissions(interaction, target_user, user_has_left_server, config):
                 return
-              # Get user data for audit notification - handle missing users gracefully
+                
+            # Get audit and form data
             current_time = discord.utils.utcnow()
-            
-            # Extract rank and department data for audit
             embed = interaction.message.embeds[0]
-            user_rank_for_audit, user_unit_for_audit = self._extract_audit_data(embed, target_user, user_has_left_server, ping_settings)
-            
-            # Extract form data from embed fields
+            user_rank_for_audit, user_unit_for_audit = self._extract_audit_data(embed, target_user, user_has_left_server, config.get('ping_settings', {}))
             form_data, is_automatic_report = self._extract_form_data(embed)
             
-            # CHECK AUTHORIZATION FIRST - before any processing or defer
-            try:
-                # Check if moderator is authorized in system
-                print(f"Checking authorization for moderator: {interaction.user.display_name}")
-                auth_result = await sheets_manager.check_moderator_authorization(interaction.user)
+            # Handle authorization flow
+            auth_result = await self._handle_moderator_authorization(interaction, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server)
+            if not auth_result:
+                return  # Authorization handled via modal or error occurred
                 
-                if not auth_result["found"]:
-                    # Moderator not found - show modal immediately (before defer)
-                    print(f"Moderator not found in system, showing authorization modal")
-                    
-                    from forms.moderator_auth_form import ModeratorAuthModal
-                    
-                    # Create modal with callback to continue processing
-                    modal = ModeratorAuthModal(
-                        self._continue_dismissal_with_manual_auth,
-                        target_user, form_data,
-                        user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server
-                    )
-                    
-                    # Show modal immediately (this will consume the interaction response)
-                    await interaction.response.send_modal(modal)
-                    return  # Exit here, processing will continue in modal callback
-                
-                # Moderator found in system - continue normally
-                print(f"Moderator authorized: {auth_result['info']}")
-                signed_by_name = auth_result["info"]
-                
-            except Exception as e:
-                print(f"❌ CRITICAL ERROR in authorization flow: {e}")
-                import traceback
-                traceback.print_exc()
-                
-                # SECURITY FIX: Do NOT continue processing on authorization errors
-                await interaction.response.send_message(
-                    "❌ Ошибка проверки авторизации модератора. Обратитесь к администратору.",
-                    ephemeral=True
-                )
-                return  # DO NOT CONTINUE - return here to prevent unauthorized processing
+            signed_by_name = auth_result
             
-            # After authorization check - handle automatic reports without static
-            if is_automatic_report and not form_data.get('static'):
-                print(f"Automatic dismissal detected, requesting static from moderator")
+            # Handle automatic reports requiring static
+            if await self._handle_automatic_report_static(interaction, is_automatic_report, form_data, target_user, user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server, signed_by_name):
+                return  # Static request handled via modal
                 
-                from .modals import StaticRequestModal
-                
-                # Show modal to request static before continuing
-                static_modal = StaticRequestModal(
-                    self._continue_dismissal_with_static_after_auth,
-                    interaction, target_user, form_data,
-                    user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server, signed_by_name                )
-                
-                await interaction.response.send_modal(static_modal)
-                return  # Processing will continue in modal callback
+            # Continue with normal processing
+            await self._finalize_approval_processing(interaction, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, signed_by_name, config, user_has_left_server)
             
-            # Now defer the interaction since we're continuing with normal processing
-            await interaction.response.defer()
-            
-            # Immediately show "Processing..." state to give user feedback
-            processing_view = ui.View(timeout=None)
-            processing_button = ui.Button(label="⏳ Обрабатывается...", style=discord.ButtonStyle.gray, disabled=True)
-            processing_view.add_item(processing_button)
-            
-            # Update the message to show processing state
-            embed = interaction.message.embeds[0]
-            await interaction.followup.edit_message(interaction.message.id, embed=embed, view=processing_view)            # Continue with processing using authorized moderator info
-            await self._process_dismissal_approval(
-                interaction, target_user, form_data,
-                user_rank_for_audit, user_unit_for_audit,
-                current_time, signed_by_name, config, override_moderator_info=None, user_has_left_server=user_has_left_server
-            )
         except Exception as e:
-            print(f"Error in dismissal approval: {e}")
-            try:
-                await interaction.followup.send(
-                    f"Произошла ошибка при обработке одобрения: {e}", 
-                    ephemeral=True
-                )
-            except:
-                # If followup fails, try response (in case defer didn't work)
-                try:
-                    await interaction.response.send_message(
-                        f"Произошла ошибка при обработке одобрения: {e}", 
-                        ephemeral=True
-                    )
-                except:
-                    pass
-        
-    @discord.ui.button(label="❌ Отказать", style=discord.ButtonStyle.red, custom_id="reject_dismissal")
+            await self._handle_approval_error(interaction, e)
+    
+
+    @discord.ui.button(label=DismissalConstants.REJECT_BUTTON_LABEL, style=discord.ButtonStyle.red, custom_id="reject_dismissal")
     async def reject_dismissal(self, interaction: discord.Interaction, button: discord.ui.Button):
-        try:
-            # Check if user has moderator permissions
+        try:            # Validate moderator permissions
             config = load_config()
             if not is_moderator_or_admin(interaction.user, config):
                 await interaction.response.send_message(
-                    "❌ У вас нет прав для отказа рапортов на увольнение. Только модераторы могут выполнять это действие.",
+                    DismissalConstants.NO_PERMISSION_REJECTION,
                     ephemeral=True
                 )
                 return
             
-            # Defer the interaction since we're continuing with normal processing
+            # Show processing state
             await interaction.response.defer()
+            await self._show_processing_state(interaction)
             
-            # Immediately show "Processing..." state to give user feedback
-            processing_view = ui.View(timeout=None)
-            processing_button = ui.Button(label="⏳ Обрабатывается...", style=discord.ButtonStyle.gray, disabled=True)
-            processing_view.add_item(processing_button)
-            
-            # Update the message to show processing state
-            embed = interaction.message.embeds[0]
-            await interaction.followup.edit_message(interaction.message.id, embed=embed, view=processing_view)
-              # Try to get user_id from the view, or extract from embed footer
+            # Extract target user and validate permissions
             target_user, _ = self._extract_target_user(interaction)
-              
-            # Check hierarchical moderation permissions
-            if target_user and not can_moderate_user(interaction.user, target_user, config):
-                # Restore original buttons since permission check failed
-                original_view = DismissalApprovalView(self.user_id)
-                embed = interaction.message.embeds[0]  # Get current embed
-                await interaction.followup.edit_message(interaction.message.id, embed=embed, view=original_view)
-                  
-                # Determine the reason for denial
-                if interaction.user.id == target_user.id:
-                    reason = "Вы не можете отклонить свой собственный рапорт на увольнение."
-                elif is_moderator_or_admin(target_user, config):
-                    reason = "Вы не можете отклонить рапорт модератора того же или более высокого уровня."
-                else:
-                    reason = "У вас недостаточно прав для отклонения этого рапорта."
-                
-                await interaction.followup.send(
-                    f"❌ {reason}",
-                    ephemeral=True
-                )
+            if not await self._validate_rejection_permissions(interaction, target_user, config):
                 return
             
-            # Update the embed
-            embed = interaction.message.embeds[0]
-            embed.color = discord.Color.red()
-            
-            embed.add_field(
-                name="Обработано", 
-                value=f"Сотрудник: {interaction.user.mention}\nВремя: {discord.utils.format_dt(discord.utils.utcnow(), 'F')}", 
-                inline=False
-            )
-            
-            # Create new view with only "Rejected" button (disabled)
-            rejected_view = ui.View(timeout=None)
-            rejected_button = ui.Button(label="❌ Отказано", style=discord.ButtonStyle.red, disabled=True)
-            rejected_view.add_item(rejected_button)
-            
-            await interaction.followup.edit_message(interaction.message.id, content="", embed=embed, view=rejected_view)
-            
-            # Send DM to the user if they're still on the server
-            if target_user:
-                try:
-                    await target_user.send(
-                        f"## Ваш рапорт на увольнение был **отклонён** сотрудником {interaction.user.mention}."
-                    )
-                except discord.Forbidden:
-                    pass  # User has DMs disabled
+            # Process rejection
+            await self._finalize_rejection(interaction, target_user)
                     
         except Exception as e:
-            print(f"Error in dismissal rejection: {e}")
-            try:
-                await interaction.followup.send(
-                    f"Произошла ошибка при обработке отказа: {e}", 
-                    ephemeral=True
-                )
-            except:
-                # If followup fails, try response (in case defer didn't work)
-                try:
-                    await interaction.response.send_message(
-                        f"Произошла ошибка при обработке отказа: {e}", 
-                        ephemeral=True
-                    )
-                except:
-                    pass
+            await self._handle_rejection_error(interaction, e)
 
     def _extract_target_user(self, interaction: discord.Interaction):
         """Extract target user from view or embed footer, creating MockUser if user left server"""
@@ -264,8 +156,8 @@ class DismissalApprovalView(ui.View):
             embed = interaction.message.embeds[0]
             if embed.footer and embed.footer.text:
                 footer_text = embed.footer.text
-                if "Отправлено:" in footer_text:
-                    username = footer_text.replace("Отправлено:", "").strip()
+                if DismissalConstants.REPORT_SENDER_PREFIX in footer_text:
+                    username = footer_text.replace(DismissalConstants.REPORT_SENDER_PREFIX, "").strip()
                     # Try to find user by username
                     for member in interaction.guild.members:
                         if member.name == username or member.display_name == username:
@@ -307,12 +199,11 @@ class DismissalApprovalView(ui.View):
             embed = interaction.message.embeds[0]
             user_name_for_logging = "Покинул сервер"
             user_id_for_logging = None
-            
-            # Try to extract user info from embed footer
+              # Try to extract user info from embed footer
             if embed.footer and embed.footer.text:
                 footer_text = embed.footer.text
-                if "Отправлено:" in footer_text:
-                    user_name_for_logging = footer_text.replace("Отправлено:", "").strip()
+                if DismissalConstants.REPORT_SENDER_PREFIX in footer_text:
+                    user_name_for_logging = footer_text.replace(DismissalConstants.REPORT_SENDER_PREFIX, "").strip()
             
             # Try to extract user ID from embed description or fields
             if embed.description:
@@ -331,53 +222,49 @@ class DismissalApprovalView(ui.View):
         """Extract form data from embed fields"""
         form_data = {}
         is_automatic_report = False
-        
-        # Check if this is an automatic report by looking for specific indicators
-        if embed.description and "🚨 Автоматический рапорт на увольнение" in embed.description:
+          # Check if this is an automatic report by looking for specific indicators
+        if embed.description and DismissalConstants.AUTO_REPORT_INDICATOR in embed.description:
             is_automatic_report = True
         
         for field in embed.fields:
-            if field.name == "Имя Фамилия":
+            if field.name == DismissalConstants.FIELD_NAME:
                 form_data['name'] = field.value
-            elif field.name == "Статик":
+            elif field.name == DismissalConstants.FIELD_STATIC:
                 # Check if static is missing (automatic report)
-                if "Требуется ввод" in field.value:
+                if DismissalConstants.STATIC_INPUT_REQUIRED in field.value:
                     form_data['static'] = None  # Will be requested from moderator
                     is_automatic_report = True
                 else:
                     form_data['static'] = field.value
-            elif field.name == "Подразделение":
+            elif field.name == DismissalConstants.FIELD_DEPARTMENT:
                 form_data['department'] = field.value
-            elif field.name == "Воинское звание":
+            elif field.name == DismissalConstants.FIELD_RANK:
                 form_data['rank'] = field.value
-            elif field.name == "Причина увольнения":
+            elif field.name == DismissalConstants.FIELD_REASON:
                 form_data['reason'] = field.value
             
         return form_data, is_automatic_report
-    
     def _extract_audit_data(self, embed, target_user, user_has_left_server, ping_settings):
         """Extract rank and department data for audit"""
-        user_rank_for_audit = "Неизвестно"
-        user_unit_for_audit = "Неизвестно"
-        
-        # Extract from embed fields (works for both present and absent users)
+        user_rank_for_audit = DismissalConstants.UNKNOWN_VALUE
+        user_unit_for_audit = DismissalConstants.UNKNOWN_VALUE
+          # Extract from embed fields (works for both present and absent users)
         for field in embed.fields:
-            if field.name == "Воинское звание":
+            if field.name == DismissalConstants.FIELD_RANK:
                 user_rank_for_audit = field.value
-            elif field.name == "Подразделение":
+            elif field.name == DismissalConstants.FIELD_DEPARTMENT:
                 user_unit_for_audit = field.value
-        
-        # If embed doesn't have the data and user is present, try to get from roles
-        if (user_rank_for_audit == "Неизвестно" or user_unit_for_audit == "Неизвестно") and not user_has_left_server:
+          # If embed doesn't have the data and user is present, try to get from roles
+        if (user_rank_for_audit == DismissalConstants.UNKNOWN_VALUE or user_unit_for_audit == DismissalConstants.UNKNOWN_VALUE) and not user_has_left_server:
             try:
-                if user_rank_for_audit == "Неизвестно":
+                if user_rank_for_audit == DismissalConstants.UNKNOWN_VALUE:
                     role_rank = sheets_manager.get_rank_from_roles(target_user)
-                    if role_rank != "Неизвестно":
+                    if role_rank != DismissalConstants.UNKNOWN_VALUE:
                         user_rank_for_audit = role_rank
                 
-                if user_unit_for_audit == "Неизвестно":
+                if user_unit_for_audit == DismissalConstants.UNKNOWN_VALUE:
                     role_unit = sheets_manager.get_department_from_roles(target_user, ping_settings)
-                    if role_unit != "Неизвестно":
+                    if role_unit != DismissalConstants.UNKNOWN_VALUE:
                         user_unit_for_audit = role_unit
             except Exception as e:
                 print(f"Error getting data from roles: {e}")
@@ -397,12 +284,11 @@ class DismissalApprovalView(ui.View):
             if not form_data.get('static'):
                 # Check if this is an automatic report by looking at the embed
                 embed = interaction.message.embeds[0]
-                if embed.description and "🚨 Автоматический рапорт на увольнение" in embed.description:
+                if embed.description and DismissalConstants.AUTO_REPORT_INDICATOR in embed.description:
                     is_automatic_report = True
-                
-                # Also check if any field indicates static is needed
+                  # Also check if any field indicates static is needed
                 for field in embed.fields:
-                    if field.name == "Статик" and "Требуется ввод" in field.value:
+                    if field.name == DismissalConstants.FIELD_STATIC and DismissalConstants.STATIC_INPUT_REQUIRED in field.value:
                         is_automatic_report = True
                         break
             
@@ -421,17 +307,11 @@ class DismissalApprovalView(ui.View):
                 
                 await interaction.response.send_modal(static_modal)
                 return  # Processing will continue in modal callback
-            
-            # If we have all needed data, continue with processing
+              # If we have all needed data, continue with processing
             # Show "Processing..." state to give user feedback
-            processing_view = ui.View(timeout=None)
-            processing_button = ui.Button(label="⏳ Обрабатывается...", style=discord.ButtonStyle.gray, disabled=True)
-            processing_view.add_item(processing_button)
+            await self._show_processing_state_for_interaction(interaction)
             
-            # Update the message to show processing state
-            embed = interaction.message.embeds[0]
-            await interaction.followup.edit_message(interaction.message.id, embed=embed, view=processing_view)
-              # Process dismissal with manual auth data
+            # Process dismissal with manual auth data
             config = load_config()  # Load config for this method
             await self._process_dismissal_approval(
                 interaction, target_user, form_data,
@@ -440,7 +320,7 @@ class DismissalApprovalView(ui.View):
             )
         except Exception as e:
             print(f"Error in manual auth dismissal continuation: {e}")
-            await interaction.followup.send("❌ Произошла ошибка при обработке данных авторизации.", ephemeral=True)
+            await interaction.followup.send(DismissalConstants.AUTH_DATA_ERROR, ephemeral=True)
 
     async def _continue_dismissal_with_static_after_auth(self, interaction, static, original_interaction, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server, signed_by_name):
         """Continue dismissal process after receiving static from moderator when authorization is already done."""
@@ -456,14 +336,8 @@ class DismissalApprovalView(ui.View):
                 if field.name == "Статик":
                     embed.set_field_at(i, name="Статик", value=static, inline=True)
                     break
-            
-            # Show processing state
-            processing_view = ui.View(timeout=None)
-            processing_button = ui.Button(label="⏳ Обрабатывается...", style=discord.ButtonStyle.gray, disabled=True)
-            processing_view.add_item(processing_button)
-            
-            # Update the message
-            await original_interaction.followup.edit_message(original_interaction.message.id, embed=embed, view=processing_view)
+              # Show processing state
+            await self._show_processing_state_for_original_interaction(original_interaction, embed)
             
             # Send response to static input modal
             if not interaction.response.is_done():
@@ -533,42 +407,7 @@ class DismissalApprovalView(ui.View):
                     # Extract name from current nickname or username
                     current_name = target_user.display_name
                     
-                    # Extract name part based on different nickname formats
-                    name_part = None
-                    
-                    # Format 1: "{Подразделение} | Имя Фамилия"
-                    if " | " in current_name:
-                        name_part = current_name.split(" | ", 1)[1]
-                    # Format 2: "[Должность] Имя Фамилия" or "!![Должность] Имя Фамилия" or "![Должность] Имя Фамилия"
-                    elif "]" in current_name:
-                        # Find the last occurrence of "]" to handle nested brackets
-                        bracket_end = current_name.rfind("]")
-                        if bracket_end != -1:
-                            # Extract everything after "]", removing leading exclamation marks and spaces
-                            after_bracket = current_name[bracket_end + 1:]
-                            # Remove leading exclamation marks and spaces
-                            name_part = re.sub(r'^[!\s]+', '', after_bracket).strip()
-                    
-                    # If no specific format found, use the display name as is
-                    if not name_part or not name_part.strip():
-                        name_part = target_user.display_name
-                    
-                    # Smart nickname formatting - check length
-                    full_nickname = f"Уволен | {name_part}"
-                    
-                    # Discord nickname limit is 32 characters
-                    if len(full_nickname) <= 32:
-                        new_nickname = full_nickname
-                    else:
-                        # Format as "Уволен | И. Фамилия" if too long
-                        name_parts = name_part.split()
-                        if len(name_parts) >= 2:
-                            first_name_initial = name_parts[0][0] if name_parts[0] else "И"
-                            last_name = name_parts[-1]
-                            new_nickname = f"Уволен | {first_name_initial}. {last_name}"
-                        else:
-                            # Fallback if name format is unusual
-                            new_nickname = f"Уволен | {name_part[:23]}"  # Truncate to fit ("Уволен | " is 9 chars)
+                    new_nickname = self._format_dismissal_nickname(current_name)
                     
                     await target_user.edit(nick=new_nickname, reason="Рапорт на увольнение одобрен")
                     nickname_changed = True
@@ -583,8 +422,7 @@ class DismissalApprovalView(ui.View):
               # Update the embed
             embed = interaction.message.embeds[0]
             embed.color = discord.Color.green()
-            
-            # Create status message based on what actions were performed
+              # Create status message based on what actions were performed
             status_parts = [f"Сотрудник: {interaction.user.mention}", f"Время: {discord.utils.format_dt(discord.utils.utcnow(), 'F')}"]
             
             if not user_has_left_server:
@@ -603,7 +441,7 @@ class DismissalApprovalView(ui.View):
             
             # Create new view with only "Approved" button (disabled)
             approved_view = ui.View(timeout=None)
-            approved_button = ui.Button(label="✅ Одобрено", style=discord.ButtonStyle.green, disabled=True)
+            approved_button = ui.Button(label=DismissalConstants.APPROVED_LABEL, style=discord.ButtonStyle.green, disabled=True)
             approved_view.add_item(approved_button)
             await interaction.followup.edit_message(interaction.message.id, content="", embed=embed, view=approved_view)
             
@@ -623,11 +461,9 @@ class DismissalApprovalView(ui.View):
                         
                         # Format date as dd-MM-yyyy
                         action_date = discord.utils.utcnow().strftime('%d-%m-%Y')
-                        
-                        # Combine name and static for "Имя Фамилия | 6 цифр статика" field
-                        name_with_static = f"{form_data.get('name', 'Неизвестно')} | {form_data.get('static', '')}"
-                        
-                        # Set fields according to template
+                          # Combine name and static for "Имя Фамилия | 6 цифр статика" field
+                        name_with_static = f"{form_data.get('name', DismissalConstants.UNKNOWN_VALUE)} | {form_data.get('static', '')}"
+                          # Set fields according to template
                         audit_embed.add_field(name="Кадровую отписал", value=signed_by_name, inline=False)
                         audit_embed.add_field(name="Имя Фамилия | 6 цифр статика", value=name_with_static, inline=False)
                         audit_embed.add_field(name="Действие", value="Уволен со службы", inline=False)
@@ -752,7 +588,9 @@ class DismissalApprovalView(ui.View):
             except Exception as e:
                 print(f"❌ Error checking for early dismissal: {e}")
                 import traceback
-                traceback.print_exc()            # Send DM to the user (only if they're still on the server and not a MockUser)
+                traceback.print_exc()
+            
+            # Send DM to the user (only if they're still on the server and not a MockUser)
             if not user_has_left_server and not getattr(target_user, '_is_mock', False):
                 try:
                     await target_user.send(
@@ -764,13 +602,158 @@ class DismissalApprovalView(ui.View):
                         f"> - *Самостоятельно по территории В/Ч разгуливать запрещено!*"
                     )
                 except discord.Forbidden:
-                    pass  # User has DMs disabled
-            else:
+                    pass  # User has DMs disabled            else:
                 print(f"Skipping DM to {target_user.display_name} - user has left server or is MockUser")
             
         except Exception as e:
             print(f"Error in _process_dismissal_approval: {e}")
             await interaction.followup.send(
-                "❌ Произошла ошибка при обработке одобрения заявки.",
+                DismissalConstants.PROCESSING_ERROR_APPROVAL,
                 ephemeral=True
             )
+    
+    async def _validate_moderator_permissions(self, interaction: discord.Interaction, config: dict) -> bool:
+        """Validate basic moderator permissions."""
+        if not is_moderator_or_admin(interaction.user, config):
+            await interaction.response.send_message(
+                DismissalConstants.NO_PERMISSION_APPROVAL,
+                ephemeral=True
+            )
+            return False
+        
+        print(f"User {interaction.user.display_name} found in config moderators - proceeding")
+        return True
+    
+    async def _validate_hierarchical_permissions(self, interaction: discord.Interaction, target_user, user_has_left_server: bool, config: dict) -> bool:
+        """Validate hierarchical moderation permissions."""
+        if not user_has_left_server and not can_moderate_user(interaction.user, target_user, config):
+            # Determine the reason for denial
+            if interaction.user.id == target_user.id:
+                reason = "Вы не можете одобрить свой собственный рапорт на увольнение."
+            elif is_moderator_or_admin(target_user, config):
+                reason = "Вы не можете одобрить рапорт модератора того же или более высокого уровня."
+            else:
+                reason = "У вас недостаточно прав для одобрения этого рапорта."
+            
+            await interaction.response.send_message(f"❌ {reason}", ephemeral=True)
+            return False
+        return True
+    
+    async def _validate_rejection_permissions(self, interaction: discord.Interaction, target_user, config: dict) -> bool:
+        """Validate hierarchical permissions for rejection."""
+        if target_user and not can_moderate_user(interaction.user, target_user, config):
+            # Restore original buttons since permission check failed
+            original_view = DismissalApprovalView(self.user_id)
+            embed = interaction.message.embeds[0]
+            await interaction.followup.edit_message(interaction.message.id, embed=embed, view=original_view)
+            
+            # Determine the reason for denial
+            if interaction.user.id == target_user.id:
+                reason = "Вы не можете отклонить свой собственный рапорт на увольнение."
+            elif is_moderator_or_admin(target_user, config):
+                reason = "Вы не можете отклонить рапорт модератора того же или более высокого уровня."
+            else:
+                reason = "У вас недостаточно прав для отклонения этого рапорта."
+            
+            await interaction.followup.send(f"❌ {reason}", ephemeral=True)
+            return False
+        return True
+    
+    async def _finalize_rejection(self, interaction: discord.Interaction, target_user):
+        """Finalize the rejection process with UI updates and notifications."""
+        # Update the embed
+        embed = interaction.message.embeds[0]
+        embed.color = discord.Color.red()
+        
+        embed.add_field(
+            name="Обработано", 
+            value=f"Сотрудник: {interaction.user.mention}\nВремя: {discord.utils.format_dt(discord.utils.utcnow(), 'F')}", 
+            inline=False
+        )
+          # Create new view with only "Rejected" button (disabled)
+        rejected_view = ui.View(timeout=None)
+        rejected_button = ui.Button(label=DismissalConstants.REJECTED_LABEL, style=discord.ButtonStyle.red, disabled=True)
+        rejected_view.add_item(rejected_button)
+        
+        await interaction.followup.edit_message(interaction.message.id, content="", embed=embed, view=rejected_view)
+        
+        # Send DM to the user if they're still on the server
+        if target_user:
+            try:
+                await target_user.send(
+                    f"## Ваш рапорт на увольнение был **отклонён** сотрудником {interaction.user.mention}."
+                )
+            except discord.Forbidden:
+                pass  # User has DMs disabled
+    
+    async def _handle_rejection_error(self, interaction: discord.Interaction, error: Exception):
+        """Handle errors in rejection process with fallback responses."""
+        print(f"Error in dismissal rejection: {error}")
+        try:
+            await interaction.followup.send(
+                f"Произошла ошибка при обработке отказа: {error}", 
+                ephemeral=True
+            )
+        except:
+            try:
+                await interaction.response.send_message(
+                    f"Произошла ошибка при обработке отказа: {error}", 
+                    ephemeral=True
+                )
+            except:
+                pass
+
+    def _format_dismissal_nickname(self, current_name: str) -> str:
+        """Format nickname for dismissed user: 'Уволен | Имя Фамилия'."""
+        # Extract name part based on different nickname formats
+        name_part = None
+        
+        # Format 1: "{Подразделение} | Имя Фамилия"
+        if " | " in current_name:
+            name_part = current_name.split(" | ", 1)[1]
+        # Format 2: "[Должность] Имя Фамилия" or "!![Должность] Имя Фамилия" or "![Должность] Имя Фамилия"
+        elif "]" in current_name:
+            # Find the last occurrence of "]" to handle nested brackets
+            bracket_end = current_name.rfind("]")
+            if bracket_end != -1:
+                # Extract everything after "]", removing leading exclamation marks and spaces
+                after_bracket = current_name[bracket_end + 1:]
+                # Remove leading exclamation marks and spaces
+                name_part = re.sub(r'^[!\s]+', '', after_bracket).strip()
+        
+        # If no specific format found, use the display name as is
+        if not name_part or not name_part.strip():
+            name_part = current_name
+        
+        # Smart nickname formatting - check length
+        full_nickname = f"Уволен | {name_part}"
+        
+        # Discord nickname limit is 32 characters
+        if len(full_nickname) <= 32:
+            return full_nickname
+        else:            # Format as "Уволен | И. Фамилия" if too long
+            name_parts = name_part.split()
+            if len(name_parts) >= 2:
+                first_name_initial = name_parts[0][0] if name_parts[0] else "И"
+                last_name = name_parts[-1]
+                return f"Уволен | {first_name_initial}. {last_name}"
+            else:
+                # Fallback if name format is unusual
+                return f"Уволен | {name_part[:23]}"  # Truncate to fit ("Уволен | " is 9 chars)
+    
+    async def _show_processing_state_for_interaction(self, interaction: discord.Interaction):
+        """Show processing UI state for regular interaction."""
+        processing_view = ui.View(timeout=None)
+        processing_button = ui.Button(label=DismissalConstants.PROCESSING_LABEL, style=discord.ButtonStyle.gray, disabled=True)
+        processing_view.add_item(processing_button)
+        
+        embed = interaction.message.embeds[0]
+        await interaction.followup.edit_message(interaction.message.id, embed=embed, view=processing_view)
+    
+    async def _show_processing_state_for_original_interaction(self, original_interaction: discord.Interaction, embed):
+        """Show processing UI state for original interaction with custom embed."""
+        processing_view = ui.View(timeout=None)
+        processing_button = ui.Button(label=DismissalConstants.PROCESSING_LABEL, style=discord.ButtonStyle.gray, disabled=True)
+        processing_view.add_item(processing_button)
+        
+        await original_interaction.followup.edit_message(original_interaction.message.id, embed=embed, view=processing_view)

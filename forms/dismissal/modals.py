@@ -260,3 +260,155 @@ class DismissalReportModal(ui.Modal, title="Рапорт на увольнени
             "Произошла ошибка при обработке формы. Пожалуйста, попробуйте еще раз или обратитесь к администратору.",
             ephemeral=True
         )
+
+
+class ModeratorAuthModal(ui.Modal, title="Регистрация модератора в системе"):
+    """Modal for moderator registration when not found in 'Пользователи' sheet."""
+    
+    email = ui.TextInput(
+        label="Email (для доступа к кадровому)",
+        placeholder="example@gmail.com",
+        min_length=5,
+        max_length=100,
+        required=True
+    )
+    
+    name = ui.TextInput(
+        label="Имя Фамилия",
+        placeholder="Введите ваше имя и фамилию через пробел",
+        min_length=3,
+        max_length=50,
+        required=True
+    )
+    
+    static = ui.TextInput(
+        label="Статик (123-456)",
+        placeholder="Введите ваш статик в любом формате",
+        min_length=5,
+        max_length=7,
+        required=True
+    )
+    
+    position = ui.TextInput(
+        label="Должность",
+        placeholder="Комиссар. Если без должности - укажите звание",
+        min_length=2,
+        max_length=50,
+        required=True
+    )
+    
+    def __init__(self, callback_func, *args, **kwargs):
+        """
+        Initialize the modal with a callback function for dismissal system.
+        
+        Args:
+            callback_func: Function to call with the result data
+        """
+        super().__init__()
+        self.callback_func = callback_func
+        self.callback_args = args
+        self.callback_kwargs = kwargs
+    
+    def format_static(self, static_input: str) -> str:
+        """Auto-format static number to standard format"""
+        digits_only = re.sub(r'\D', '', static_input.strip())
+        
+        if len(digits_only) == 5:
+            return f"{digits_only[:2]}-{digits_only[2:]}"
+        elif len(digits_only) == 6:
+            return f"{digits_only[:3]}-{digits_only[3:]}"
+        else:
+            return ""
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            # Validate inputs
+            email_value = self.email.value.strip()
+            name_value = self.name.value.strip()
+            static_value = self.static.value.strip()
+            position_value = self.position.value.strip()
+            
+            # Validate email format
+            email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+            if not re.match(email_pattern, email_value):
+                await interaction.response.send_message(
+                    "❌ **Ошибка валидации email**\n"
+                    "Пожалуйста, введите корректный email адрес.\n"
+                    "**Пример:** `example@gmail.com`",
+                    ephemeral=True
+                )
+                return
+            
+            # Validate name format (should have at least first name and last name)
+            name_parts = name_value.split()
+            if len(name_parts) < 2:
+                await interaction.response.send_message(
+                    "❌ **Ошибка валидации имени**\n"
+                    "Пожалуйста, введите имя и фамилию через пробел.\n"
+                    "**Пример:** `Иван Петров`",
+                    ephemeral=True
+                )
+                return
+            
+            # Format and validate static
+            formatted_static = self.format_static(static_value)
+            if not formatted_static:
+                await interaction.response.send_message(
+                    "❌ **Ошибка валидации статика**\n"
+                    "Статик должен содержать ровно 5 или 6 цифр.\n"
+                    "**Примеры:** `123456` → `123-456`, `12345` → `12-345`",
+                    ephemeral=True
+                )
+                return
+            
+            # Prepare moderator data
+            moderator_data = {
+                'email': email_value,
+                'name': name_value,
+                'static': formatted_static,
+                'position': position_value,
+                'full_info': f"{name_value} | {formatted_static}"  # Format for signing
+            }
+            
+            print(f"ModeratorAuthModal: Calling callback with data: {moderator_data}")
+            
+            # Call the callback function with the moderator data
+            await self.callback_func(interaction, moderator_data, *self.callback_args, **self.callback_kwargs)
+            
+        except Exception as e:
+            print(f"Error in ModeratorAuthModal.on_submit: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        "❌ Произошла ошибка при обработке данных модератора. Пожалуйста, попробуйте еще раз.",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.followup.send(
+                        "❌ Произошла ошибка при обработке данных модератора. Пожалуйста, попробуйте еще раз.",
+                        ephemeral=True
+                    )
+            except Exception as follow_error:
+                print(f"Failed to send error message: {follow_error}")
+    
+    async def on_error(self, interaction: discord.Interaction, error: Exception):
+        print(f"ModeratorAuthModal error: {error}")
+        import traceback
+        traceback.print_exc()
+        
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "Произошла ошибка при обработке формы регистрации модератора. Пожалуйста, попробуйте еще раз или обратитесь к администратору.",
+                    ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    "Произошла ошибка при обработке формы регистрации модератора. Пожалуйста, попробуйте еще раз или обратитесь к администратору.",
+                    ephemeral=True
+                )
+        except Exception as follow_error:
+            print(f"Failed to send error message in on_error: {follow_error}")

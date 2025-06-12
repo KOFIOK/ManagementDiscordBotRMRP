@@ -117,11 +117,10 @@ class DismissalApprovalView(ui.View):
             
         except Exception as e:
             await self._handle_approval_error(interaction, e)
-    
-
     @discord.ui.button(label=DismissalConstants.REJECT_BUTTON_LABEL, style=discord.ButtonStyle.red, custom_id="reject_dismissal")
     async def reject_dismissal(self, interaction: discord.Interaction, button: discord.ui.Button):
-        try:            # Validate moderator permissions
+        try:
+            # Validate moderator permissions
             config = load_config()
             if not is_moderator_or_admin(interaction.user, config):
                 await interaction.response.send_message(
@@ -132,7 +131,7 @@ class DismissalApprovalView(ui.View):
             
             # Show processing state
             await interaction.response.defer()
-            await self._show_processing_state(interaction)
+            await self._show_processing_state_for_interaction(interaction)
             
             # Extract target user and validate permissions
             target_user, _ = self._extract_target_user(interaction)
@@ -268,7 +267,6 @@ class DismissalApprovalView(ui.View):
                         user_unit_for_audit = role_unit
             except Exception as e:
                 print(f"Error getting data from roles: {e}")
-        
         print(f"Audit data - User: {target_user.display_name}, Rank: {user_rank_for_audit}, Unit: {user_unit_for_audit}, Left server: {user_has_left_server}")
         
         return user_rank_for_audit, user_unit_for_audit
@@ -276,8 +274,11 @@ class DismissalApprovalView(ui.View):
     async def _continue_dismissal_with_manual_auth(self, interaction, moderator_data, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server=False):
         """Continue dismissal process with manually entered moderator data."""
         try:
+            print(f"DEBUG: _continue_dismissal_with_manual_auth called with moderator_data: {moderator_data}")
+            
             # Use manually entered moderator info with full details
             signed_by_name = moderator_data['full_info']  # "Имя Фамилия | Статик"
+            print(f"DEBUG: signed_by_name set to: {signed_by_name}")
             
             # Check if we still need to request static (for automatic reports)
             is_automatic_report = False
@@ -291,6 +292,8 @@ class DismissalApprovalView(ui.View):
                     if field.name == DismissalConstants.FIELD_STATIC and DismissalConstants.STATIC_INPUT_REQUIRED in field.value:
                         is_automatic_report = True
                         break
+            
+            print(f"DEBUG: is_automatic_report: {is_automatic_report}, form_data static: {form_data.get('static')}")
             
             # If we need static, show the modal first
             if is_automatic_report and not form_data.get('static'):
@@ -307,8 +310,13 @@ class DismissalApprovalView(ui.View):
                 
                 await interaction.response.send_modal(static_modal)
                 return  # Processing will continue in modal callback
-              # If we have all needed data, continue with processing
+            
+            print(f"DEBUG: Proceeding with manual auth processing")
+            
+            # If we have all needed data, continue with processing
             # Show "Processing..." state to give user feedback
+            if not interaction.response.is_done():
+                await interaction.response.defer()
             await self._show_processing_state_for_interaction(interaction)
             
             # Process dismissal with manual auth data
@@ -320,7 +328,16 @@ class DismissalApprovalView(ui.View):
             )
         except Exception as e:
             print(f"Error in manual auth dismissal continuation: {e}")
-            await interaction.followup.send(DismissalConstants.AUTH_DATA_ERROR, ephemeral=True)
+            import traceback
+            traceback.print_exc()
+            
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(DismissalConstants.AUTH_DATA_ERROR, ephemeral=True)
+                else:
+                    await interaction.followup.send(DismissalConstants.AUTH_DATA_ERROR, ephemeral=True)
+            except Exception as follow_error:
+                print(f"Failed to send auth error message: {follow_error}")
 
     async def _continue_dismissal_with_static_after_auth(self, interaction, static, original_interaction, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server, signed_by_name):
         """Continue dismissal process after receiving static from moderator when authorization is already done."""
@@ -425,13 +442,8 @@ class DismissalApprovalView(ui.View):
               # Create status message based on what actions were performed
             status_parts = [f"Сотрудник: {interaction.user.mention}", f"Время: {discord.utils.format_dt(discord.utils.utcnow(), 'F')}"]
             
-            if not user_has_left_server:
-                if roles_removed:
-                    status_parts.append("✅ Роли сняты")
-                if nickname_changed:
-                    status_parts.append("✅ Никнейм изменён")
-                if not roles_removed and not nickname_changed:
-                    status_parts.append("⚠️ Роли и никнейм не изменены")
+            if user_has_left_server:
+                status_parts.append("⚠️ Роли и никнейм не изменены")
             
             embed.add_field(
                 name="Обработано", 
@@ -757,3 +769,93 @@ class DismissalApprovalView(ui.View):
         processing_view.add_item(processing_button)
         
         await original_interaction.followup.edit_message(original_interaction.message.id, embed=embed, view=processing_view)
+    
+    async def _show_processing_state(self, interaction: discord.Interaction):
+        """Show processing UI state (generic method for compatibility)."""
+        await self._show_processing_state_for_interaction(interaction)
+    async def _handle_moderator_authorization(self, interaction, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server):
+        """Handle moderator authorization flow and return signed_by_name if successful."""
+        try:
+            # Check moderator authorization
+            auth_result = await sheets_manager.check_moderator_authorization(interaction.user)
+            
+            if not auth_result["found"]:
+                # Show manual auth modal (no defer needed here, modal will handle response)
+                from .modals import ModeratorAuthModal
+                
+                auth_modal = ModeratorAuthModal(
+                    self._continue_dismissal_with_manual_auth,
+                    target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server
+                )
+                
+                await interaction.response.send_modal(auth_modal)
+                return None  # Processing will continue in modal callback
+            else:
+                # Show processing state and continue
+                await interaction.response.defer()
+                await self._show_processing_state_for_interaction(interaction)
+                
+                signed_by_name = auth_result["info"]
+                return signed_by_name
+                
+        except Exception as e:
+            print(f"Error in moderator authorization: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    DismissalConstants.AUTHORIZATION_ERROR,
+                    ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    DismissalConstants.AUTHORIZATION_ERROR,
+                    ephemeral=True
+                )
+            return None
+    async def _handle_automatic_report_static(self, interaction, is_automatic_report, form_data, target_user, user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server, signed_by_name):
+        """Handle static input for automatic reports and return True if modal was shown."""
+        if is_automatic_report and not form_data.get('static'):
+            print(f"Automatic dismissal detected, requesting static from moderator")
+            
+            from .modals import StaticRequestModal
+            
+            # Show modal to request static
+            static_modal = StaticRequestModal(
+                self._continue_dismissal_with_static_after_auth,
+                interaction, target_user, form_data,
+                user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server, signed_by_name
+            )
+            
+            # Check if we need to send modal or use followup
+            if not interaction.response.is_done():
+                await interaction.response.send_modal(static_modal)
+            else:
+                # This shouldn't happen in normal flow, but let's handle it gracefully
+                await interaction.followup.send("Требуется ввод статика. Попробуйте еще раз.", ephemeral=True)
+            return True  # Modal was shown, processing will continue in callback
+        
+        return False  # No modal needed
+    
+    async def _finalize_approval_processing(self, interaction, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, signed_by_name, config, user_has_left_server):
+        """Finalize the approval processing."""
+        await self._process_dismissal_approval(
+            interaction, target_user, form_data,
+            user_rank_for_audit, user_unit_for_audit,
+            current_time, signed_by_name, config, override_moderator_info=None, user_has_left_server=user_has_left_server
+        )
+    
+    async def _handle_approval_error(self, interaction: discord.Interaction, error: Exception):
+        """Handle errors in approval process with fallback responses."""
+        print(f"Error in dismissal approval: {error}")
+        try:
+            await interaction.followup.send(
+                DismissalConstants.PROCESSING_ERROR_APPROVAL,
+                ephemeral=True
+            )
+        except:
+            try:
+                await interaction.response.send_message(
+                    DismissalConstants.PROCESSING_ERROR_APPROVAL,
+                    ephemeral=True
+                )
+            except:
+                pass

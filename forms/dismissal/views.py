@@ -795,53 +795,27 @@ class DismissalApprovalView(ui.View):
     async def _show_processing_state(self, interaction: discord.Interaction):
         """Show processing UI state (generic method for compatibility)."""
         await self._show_processing_state_for_interaction(interaction)
-
+    
     async def _handle_moderator_authorization(self, interaction, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server):
         """Handle moderator authorization flow and return signed_by_name if successful."""
-        try:
-            print(f"🔍 Checking moderator authorization for user: {interaction.user.name} (ID: {interaction.user.id})")
-            
-            # Check moderator authorization
-            auth_result = await sheets_manager.check_moderator_authorization(interaction.user)
-            print(f"🔍 Authorization result: {auth_result}")
-            
-            if not auth_result["found"]:
-                print(f"❌ Moderator {interaction.user.name} not found in Google Sheets, showing auth modal")
-                # Show manual auth modal (no defer needed here, modal will handle response)
-                from .modals import ModeratorAuthModal
-                
-                auth_modal = ModeratorAuthModal(
-                    self._continue_dismissal_with_manual_auth,
-                    target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server
-                )
-                
-                await interaction.response.send_modal(auth_modal)
-                return None  # Processing will continue in modal callback
-            else:
-                print(f"✅ Moderator {interaction.user.name} found in Google Sheets: {auth_result['info']}")
-                # Show processing state and continue
-                await interaction.response.defer()
-                await self._show_processing_state_for_interaction(interaction)
-                
-                signed_by_name = auth_result["info"]
-                return signed_by_name
-                
-        except Exception as e:
-            print(f"❌ Error in moderator authorization: {e}")
-            import traceback
-            traceback.print_exc()
-            
-            if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    DismissalConstants.AUTHORIZATION_ERROR,
-                    ephemeral=True
-                )
-            else:
-                await interaction.followup.send(
-                    DismissalConstants.AUTHORIZATION_ERROR,
-                    ephemeral=True
-                )
-            return None
+        from utils.moderator_auth import ModeratorAuthHandler
+        
+        # Use unified authorization handler
+        signed_by_name = await ModeratorAuthHandler.handle_moderator_authorization(
+            interaction,
+            self._continue_dismissal_with_manual_auth,
+            target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server
+        )
+        
+        if signed_by_name:
+            # Show processing state and continue
+            await ModeratorAuthHandler.show_processing_state(
+                interaction, 
+                "🔄 Обработка увольнения...", 
+                "Рапорт на увольнение обрабатывается, пожалуйста подождите..."
+            )
+        
+        return signed_by_name
     async def _handle_automatic_report_static(self, interaction, is_automatic_report, form_data, target_user, user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server, signed_by_name):
         """Handle static input for automatic reports and return True if modal was shown."""
         if is_automatic_report and not form_data.get('static'):

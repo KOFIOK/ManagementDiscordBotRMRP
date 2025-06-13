@@ -50,7 +50,7 @@ class RoleApplicationApprovalView(ui.View):
             return
         
         try:
-            await self._process_rejection(interaction)
+            await self._request_rejection_reason(interaction)
         except Exception as e:
             print(f"Error in rejection process: {e}")
             await self._send_error_message(interaction, "Произошла ошибка при отклонении заявки.")
@@ -61,7 +61,7 @@ class RoleApplicationApprovalView(ui.View):
         return is_moderator_or_admin(interaction.user, config)
     
     async def _process_approval(self, interaction):
-        """Process application approval with simplified logic"""
+        """Process application approval with Google Sheets authorization"""
         try:
             config = load_config()
             guild = interaction.guild
@@ -74,35 +74,14 @@ class RoleApplicationApprovalView(ui.View):
                 )
                 return
             
-            # Create embed first
-            embed = await self._create_approval_embed(interaction)
-            approved_view = ApprovedApplicationView()
+            # Handle moderator authorization first
+            signed_by_name = await self._handle_moderator_authorization(interaction, user, guild, config)
+            if signed_by_name is None:
+                # Authorization failed or modal was shown, processing will continue in callback
+                return
             
-            # Respond to interaction immediately to prevent timeout
-            await interaction.response.edit_message(embed=embed, view=approved_view)
-            
-            # Then do all the other processing
-            try:
-                # Assign roles and update nickname if needed
-                await self._assign_roles(user, guild, config)
-            except Exception as e:
-                print(f"Warning: Error in role assignment: {e}")
-                # Continue processing even if role assignment fails
-                
-            # Only do personnel processing for military recruits with rank 'рядовой'
-            if self._should_process_personnel():
-                try:
-                    await self._handle_auto_processing(interaction, user, guild, config)
-                except Exception as e:
-                    print(f"Warning: Error in personnel processing: {e}")
-                    # Continue processing even if personnel processing fails
-            
-            # Send DM to user
-            try:
-                await self._send_approval_dm(user)
-            except Exception as e:
-                print(f"Warning: Error sending DM: {e}")
-                # Continue even if DM fails
+            # Continue with approval processing if authorization was successful
+            await self._continue_approval_process(interaction, user, guild, config, signed_by_name)
                 
         except Exception as e:
             print(f"Error in approval process: {e}")
@@ -115,7 +94,7 @@ class RoleApplicationApprovalView(ui.View):
             except Exception as followup_error:
                 print(f"Failed to send error message: {followup_error}")
     
-    async def _process_rejection(self, interaction):
+    async def _process_rejection(self, interaction, rejection_reason=None):
         """Process application rejection with simplified logic"""
         guild = interaction.guild
         user = guild.get_member(self.application_data["user_id"])
@@ -129,13 +108,106 @@ class RoleApplicationApprovalView(ui.View):
             inline=False
         )
         
+        # Add rejection reason if provided
+        if rejection_reason:
+            embed.add_field(
+                name="Причина отказа",
+                value=rejection_reason,
+                inline=False
+            )
+        
         # Clear ping content and respond ONCE
         rejected_view = RejectedApplicationView()
         await interaction.response.edit_message(content="", embed=embed, view=rejected_view)
         
         # Send DM to user
         if user:
-            await self._send_rejection_dm(user)
+            if rejection_reason:
+                await self._send_rejection_dm_with_reason(user, rejection_reason)
+            else:
+                await self._send_rejection_dm(user)
+    
+    async def _request_rejection_reason(self, interaction):
+        """Request rejection reason from moderator via modal."""
+        try:
+            from .modals import RoleRejectionReasonModal
+            
+            # Store the original message for later reference
+            original_message = interaction.message
+            
+            # Create modal to request rejection reason
+            reason_modal = RoleRejectionReasonModal(
+                self._finalize_rejection_with_reason,
+                original_message
+            )
+            
+            # Send modal
+            await interaction.response.send_modal(reason_modal)
+            
+        except Exception as e:
+            print(f"Error in _request_rejection_reason: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "❌ Произошла ошибка при запросе причины отказа.",
+                    ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    "❌ Произошла ошибка при запросе причины отказа.",
+                    ephemeral=True
+                )
+
+    async def _finalize_rejection_with_reason(self, interaction, rejection_reason, original_message):
+        """Finalize the rejection process with the provided reason."""
+        try:
+            guild = interaction.guild
+            user = guild.get_member(self.application_data["user_id"])
+            
+            # Update embed with rejection reason
+            embed = original_message.embeds[0]
+            embed.color = discord.Color.red()
+            embed.add_field(
+                name="❌ Статус",
+                value=f"Отклонено сотрудником {interaction.user.mention}",
+                inline=False
+            )
+            embed.add_field(
+                name="Причина отказа",
+                value=rejection_reason,
+                inline=False
+            )
+            
+            # Update message with rejected view
+            rejected_view = RejectedApplicationView()
+            await original_message.edit(content="", embed=embed, view=rejected_view)
+              # Send DM to user with rejection reason
+            if user:
+                await self._send_rejection_dm_with_reason(user, rejection_reason)
+            
+        except Exception as e:
+            print(f"Error in _finalize_rejection_with_reason: {e}")
+            await interaction.followup.send(
+                "❌ Произошла ошибка при финализации отказа.",
+                ephemeral=True
+            )
+    
+    async def _send_rejection_dm_with_reason(self, user, rejection_reason):
+        """Send rejection DM to user with specified reason"""
+        try:
+            app_type = "военную" if self.application_data.get("type") == "military" else "гражданскую"
+            
+            dm_content = (
+                f"## ❌ Ваша заявка на получение ролей была **отклонена**\n"
+                f"**Причина отказа:** {rejection_reason}\n\n"
+                "Вы можете подать новую заявку, устранив указанные недостатки."
+            )
+            
+            await user.send(dm_content)
+        except discord.Forbidden:
+            # User has DMs disabled
+            pass
+        except Exception as e:
+            print(f"Error sending rejection DM: {e}")
     
     def _should_auto_process(self):
         """Determine if this application should be automatically processed"""
@@ -378,3 +450,115 @@ class RoleApplicationApprovalView(ui.View):
                     await interaction.followup.send(f"❌ {message}", ephemeral=True)
                 except:
                     pass  # Give up
+    
+    async def _handle_moderator_authorization(self, interaction, user, guild, config):
+        """Handle moderator authorization flow and return signed_by_name if successful."""
+        from utils.moderator_auth import ModeratorAuthHandler
+        
+        # Use unified authorization handler
+        signed_by_name = await ModeratorAuthHandler.handle_moderator_authorization(
+            interaction,
+            self._continue_approval_with_manual_auth,
+            user, guild, config
+        )
+        
+        if signed_by_name:
+            # Show processing state and continue
+            await ModeratorAuthHandler.show_processing_state(
+                interaction, 
+                "🔄 Обработка заявки...", 
+                "Заявка на получение роли обрабатывается, пожалуйста подождите..."
+            )
+        
+        return signed_by_name
+    
+    async def _continue_approval_with_manual_auth(self, interaction, signed_by_name, user, guild, config):
+        """Continue approval process after manual moderator authorization"""
+        try:
+            await self._continue_approval_process(interaction, user, guild, config, signed_by_name)
+        except Exception as e:
+            print(f"Error in manual auth continuation: {e}")
+            await interaction.followup.send(
+                "❌ Произошла ошибка при продолжении обработки заявки.",
+                ephemeral=True
+            )
+    
+    async def _continue_approval_process(self, interaction, user, guild, config, signed_by_name):
+        """Continue with approval processing after authorization is successful"""
+        try:
+            # Create embed first
+            embed = await self._create_approval_embed(interaction)
+            approved_view = ApprovedApplicationView()
+            
+            # Update message with approved state
+            if interaction.response.is_done():
+                await interaction.edit_original_response(embed=embed, view=approved_view)
+            else:
+                await interaction.response.edit_message(embed=embed, view=approved_view)
+            
+            # Then do all the other processing
+            try:
+                # Assign roles and update nickname if needed
+                await self._assign_roles(user, guild, config)
+            except Exception as e:
+                print(f"Warning: Error in role assignment: {e}")
+                # Continue processing even if role assignment fails
+                
+            # Only do personnel processing for military recruits with rank 'рядовой'
+            if self._should_process_personnel():
+                try:
+                    await self._handle_auto_processing_with_auth(user, guild, config, signed_by_name)
+                except Exception as e:
+                    print(f"Warning: Error in personnel processing: {e}")
+                    # Continue processing even if personnel processing fails
+            
+            # Send DM to user
+            try:
+                await self._send_approval_dm(user)
+            except Exception as e:
+                print(f"Warning: Error sending DM: {e}")
+                # Continue even if DM fails
+                
+        except Exception as e:
+            print(f"Error in approval process continuation: {e}")
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(
+                        "❌ Произошла ошибка при обработке заявки.",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.response.send_message(
+                        "❌ Произошла ошибка при обработке заявки.",
+                        ephemeral=True
+                    )
+            except Exception as followup_error:
+                print(f"Failed to send error message: {followup_error}")
+    
+    async def _handle_auto_processing_with_auth(self, user, guild, config, signed_by_name):
+        """Handle automatic processing with pre-authorized moderator"""
+        try:
+            hiring_time = datetime.now(timezone.utc)
+            
+            # Log to Google Sheets
+            sheets_success = await sheets_manager.add_hiring_record(
+                self.application_data,
+                user,
+                None,  # moderator_user not needed since we have signed_by_name
+                hiring_time,
+                override_moderator_info=signed_by_name
+            )
+            
+            if sheets_success:
+                print(f"✅ Successfully logged hiring for {self.application_data.get('name', 'Unknown')}")
+            
+            # Send audit notification
+            audit_channel_id = config.get('audit_channel')
+            if audit_channel_id:
+                audit_channel = await get_channel_with_fallback(guild, audit_channel_id, "audit channel")
+                if audit_channel:
+                    await self._send_audit_notification(audit_channel, user, signed_by_name)
+        
+        except Exception as e:
+            print(f"Warning: Error in auto processing with auth: {e}")
+            # Don't raise exception to prevent approval process from failing

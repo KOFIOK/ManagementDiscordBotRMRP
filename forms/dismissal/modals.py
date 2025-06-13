@@ -447,10 +447,17 @@ class RejectionReasonModal(ui.Modal, title="Причина отказа"):
                 
         except Exception as e:
             print(f"Error in RejectionReasonModal: {e}")
-            await interaction.followup.send(
-                "❌ Произошла ошибка при обработке причины отказа.",
-                ephemeral=True
-            )
+            # Check if we already responded to avoid errors
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "❌ Произошла ошибка при обработке причины отказа.",
+                    ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    "❌ Произошла ошибка при обработке причины отказа.",
+                    ephemeral=True
+                )
     
     async def on_error(self, interaction: discord.Interaction, error: Exception):
         print(f"RejectionReasonModal error: {error}")

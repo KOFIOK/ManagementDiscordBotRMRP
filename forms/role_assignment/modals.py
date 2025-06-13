@@ -363,3 +363,58 @@ class CivilianApplicationModal(ui.Modal):
                 "❌ Произошла ошибка при отправке заявки. Попробуйте позже.",
                 ephemeral=True
             )
+
+
+class RoleRejectionReasonModal(ui.Modal, title="Причина отказа"):
+    """Modal for requesting rejection reason when rejecting role applications"""
+    
+    reason_input = ui.TextInput(
+        label="Введите причину отказа:",
+        placeholder="Укажите причину отказа заявки на получение роли",
+        style=discord.TextStyle.paragraph,        min_length=0,
+        max_length=500,
+        required=True
+    )
+    
+    def __init__(self, callback_func, *args, **kwargs):
+        super().__init__()
+        self.callback_func = callback_func
+        self.callback_args = args
+        self.callback_kwargs = kwargs
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            reason = self.reason_input.value.strip()
+            
+            # Call the callback function with rejection reason
+            if self.callback_func:
+                await self.callback_func(interaction, reason, *self.callback_args, **self.callback_kwargs)
+                
+        except Exception as e:
+            print(f"Error in RoleRejectionReasonModal: {e}")
+            # Check if we already responded to avoid errors
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "❌ Произошла ошибка при обработке причины отказа.",
+                    ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    "❌ Произошла ошибка при обработке причины отказа.",
+                    ephemeral=True
+                )
+    
+    async def on_error(self, interaction: discord.Interaction, error: Exception):
+        print(f"RoleRejectionReasonModal error: {error}")
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "Произошла ошибка при обработке причины отказа. Пожалуйста, попробуйте еще раз или обратитесь к администратору.",
+                    ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    "Произошла ошибка при обработке причины отказа. Пожалуйста, попробуйте еще раз или обратитесь к администратору.",
+                    ephemeral=True
+                )
+        except Exception as follow_error:            print(f"Failed to send error message in RoleRejectionReasonModal.on_error: {follow_error}")

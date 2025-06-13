@@ -552,10 +552,10 @@ class RoleApplicationApprovalView(ui.View):
             except Exception as e:
                 print(f"Warning: Error sending DM: {e}")
                 # Continue even if DM fails
-              # Finally, create final embed and update to approved state
+                # # Finally, create final embed and update to approved state
             embed = await self._create_approval_embed(interaction)
             approved_view = ApprovedApplicationView()
-            await interaction.edit_original_response(embed=embed, view=approved_view)
+            await interaction.edit_original_response(content="", embed=embed, view=approved_view)
                 
         except Exception as e:
             print(f"Error in approval process continuation: {e}")
@@ -634,7 +634,7 @@ class RoleApplicationApprovalView(ui.View):
             # Finally, create final embed and update to approved state
             embed = await self._create_approval_embed(original_message=original_message, moderator_info=signed_by_name)
             approved_view = ApprovedApplicationView()
-            await original_message.edit(embed=embed, view=approved_view)
+            await original_message.edit(content="", embed=embed, view=approved_view)
                 
         except Exception as e:
             print(f"Error in approval process with message: {e}")

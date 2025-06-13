@@ -23,7 +23,8 @@ class DismissalConstants:
     # Error Messages
     NO_PERMISSION_APPROVAL = "❌ У вас нет прав для одобрения рапортов на увольнение. Только модераторы могут выполнять это действие."
     NO_PERMISSION_REJECTION = "❌ У вас нет прав для отказа рапортов на увольнение. Только модераторы могут выполнять это действие."
-    AUTHORIZATION_ERROR = "❌ Ошибка проверки авторизации модератора. Обратитесь к администратору."
+    AUTHORIZATION_ERROR = "❌ Ошибка проверки авторизации модератора."
+    GENERAL_ERROR = "❌ Произошла ошибка при обработке рапорта. Пожалуйста, обратитесь к администратору."
     PROCESSING_ERROR_APPROVAL = "❌ Произошла ошибка при обработке одобрения заявки."
     PROCESSING_ERROR_REJECTION = "❌ Произошла ошибка при обработке отказа"
     AUTH_DATA_ERROR = "❌ Произошла ошибка при обработке данных авторизации."
@@ -930,17 +931,19 @@ class DismissalApprovalView(ui.View):
                     "Пожалуйста, нажмите кнопку 'Отказать' еще раз для ввода причины отказа.",
                     ephemeral=True
                 )
-            
         except Exception as e:
             print(f"Error in _request_rejection_reason: {e}")
             await interaction.followup.send(
                 "❌ Произошла ошибка при запросе причины отказа.",
                 ephemeral=True
             )
-    
+
     async def _finalize_rejection_with_reason(self, interaction, rejection_reason, target_user, original_message):
         """Finalize the rejection process with the provided reason."""
         try:
+            # Respond to the modal interaction first
+            await interaction.response.defer()
+            
             # Show processing state
             processing_view = ui.View(timeout=None)
             processing_button = ui.Button(label=DismissalConstants.PROCESSING_LABEL, style=discord.ButtonStyle.gray, disabled=True)

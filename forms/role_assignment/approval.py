@@ -160,6 +160,9 @@ class RoleApplicationApprovalView(ui.View):
     async def _finalize_rejection_with_reason(self, interaction, rejection_reason, original_message):
         """Finalize the rejection process with the provided reason."""
         try:
+            # Respond to the modal interaction first
+            await interaction.response.defer()
+            
             guild = interaction.guild
             user = guild.get_member(self.application_data["user_id"])
             

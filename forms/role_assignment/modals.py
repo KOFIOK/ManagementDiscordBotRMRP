@@ -4,8 +4,10 @@ Application modals for role assignment system
 
 import discord
 import re
+from datetime import datetime, timezone, timedelta
 from discord import ui
 from utils.config_manager import load_config, has_pending_role_application
+from utils.google_sheets import sheets_manager, retry_on_google_error
 
 
 class MilitaryApplicationModal(ui.Modal):
@@ -78,12 +80,23 @@ class MilitaryApplicationModal(ui.Modal):
                 ephemeral=True
             )
             return
-        
-        # Validate recruitment type
+          # Validate recruitment type
         recruitment_type = self.recruitment_type_input.value.strip().lower()
         if recruitment_type not in ["экскурсия", "призыв"]:
             await interaction.response.send_message(
                 "❌ Порядок набора должен быть: 'Экскурсия' или 'Призыв'.",
+                ephemeral=True
+            )
+            return
+        
+        # Check blacklist status for military applications
+        blacklist_check = await self._check_blacklist_status(formatted_static)
+        if blacklist_check["is_blocked"]:
+            await interaction.response.send_message(
+                f"### ❌ **Доступ к подаче заявки временно ограничен — Вы в Чёрном Списке!**\n\n"
+                f"> **Причина:** {blacklist_check['reason']}\n"
+                f"> **Чёрный Список выдал:** {blacklist_check['officer']}\n"
+                f"> **Ограничение по (включительно):** {blacklist_check['end_date']}",
                 ephemeral=True
             )
             return
@@ -112,6 +125,91 @@ class MilitaryApplicationModal(ui.Modal):
             return f"{digits_only[:3]}-{digits_only[3:]}"
         else:
             return ""
+    
+    @retry_on_google_error(retries=3, delay=1)
+    async def _check_blacklist_status(self, static_formatted):
+        """Check if user is blacklisted based on static number"""
+        try:
+            # Check if Google Sheets manager is available
+            if not sheets_manager:
+                print("Google Sheets manager not available")
+                return {"is_blocked": False}
+            
+            # Ensure connection
+            if not sheets_manager._ensure_connection():
+                print("No Google Sheets connection for blacklist check")
+                return {"is_blocked": False}
+            
+            # Get the 'Отправлено (НЕ РЕДАКТИРОВАТЬ)' worksheet
+            blacklist_worksheet = None
+            for worksheet in sheets_manager.spreadsheet.worksheets():
+                if worksheet.title == "Отправлено (НЕ РЕДАКТИРОВАТЬ)":
+                    blacklist_worksheet = worksheet
+                    break
+            
+            if not blacklist_worksheet:
+                print("'Отправлено (НЕ РЕДАКТИРОВАТЬ)' sheet not found")
+                return {"is_blocked": False}
+            
+            # Get all values from the sheet
+            sheet_data = blacklist_worksheet.get_all_values()
+            if not sheet_data:
+                print("No data found in blacklist sheet")
+                return {"is_blocked": False}
+            
+            # Find records with matching static
+            found_records = []
+            for row_index, row_data in enumerate(sheet_data):
+                # Skip header row and empty rows
+                if row_index == 0 or len(row_data) < 6:
+                    continue
+                
+                # Check if column B ends with " | {static_formatted}"
+                column_b = str(row_data[1]) if len(row_data) > 1 else ""
+                if column_b.endswith(f" | {static_formatted}"):
+                    found_records.append((row_index, row_data))
+            
+            if not found_records:
+                return {"is_blocked": False}
+            
+            # Get the most recent record (smallest row index = closest to top)
+            latest_record = min(found_records, key=lambda x: x[0])
+            row_data = latest_record[1]
+            
+            # Parse end date from column E (format: DD.MM.YYYY)
+            end_date_str = str(row_data[4]) if len(row_data) > 4 else ""
+            if not end_date_str or end_date_str.strip() == "":
+                return {"is_blocked": False}
+            
+            try:
+                end_date = datetime.strptime(end_date_str.strip(), "%d.%m.%Y").date()
+            except ValueError:
+                print(f"Invalid date format in blacklist: {end_date_str}")
+                return {"is_blocked": False}
+            
+            # Get current date in Moscow timezone (UTC+3)
+            moscow_tz = timezone(timedelta(hours=3))
+            current_date = datetime.now(moscow_tz).date()
+            
+            if end_date >= current_date:
+                # Punishment is still active
+                reason = str(row_data[2]) if len(row_data) > 2 else "Не указана"
+                officer = str(row_data[5]) if len(row_data) > 5 else "Не указан"
+                
+                return {
+                    "is_blocked": True,
+                    "reason": reason,
+                    "officer": officer,
+                    "end_date": end_date_str
+                }
+            else:
+                # Punishment has expired
+                return {"is_blocked": False}
+                
+        except Exception as e:
+            print(f"Error checking blacklist status: {e}")
+            # Fail-safe: allow application submission if there's an error
+            return {"is_blocked": False}
     
     async def _send_application_for_approval(self, interaction, application_data):
         """Send application to moderation channel"""

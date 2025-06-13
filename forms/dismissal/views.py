@@ -5,6 +5,7 @@ Contains interactive components (buttons and views) for dismissal reports
 
 import discord
 from discord import ui
+import asyncio
 import re
 import traceback
 from datetime import datetime
@@ -248,7 +249,8 @@ class DismissalApprovalView(ui.View):
             if field.name == DismissalConstants.FIELD_RANK:
                 user_rank_for_audit = field.value
             elif field.name == DismissalConstants.FIELD_DEPARTMENT:
-                user_unit_for_audit = field.value        # If embed doesn't have the data and user is present, try to get from roles
+                user_unit_for_audit = field.value
+                # If embed doesn't have the data and user is present, try to get from roles
         if (user_rank_for_audit == DismissalConstants.UNKNOWN_VALUE or user_unit_for_audit == DismissalConstants.UNKNOWN_VALUE) and not user_has_left_server:
             try:
                 if user_rank_for_audit == DismissalConstants.UNKNOWN_VALUE:
@@ -315,7 +317,7 @@ class DismissalApprovalView(ui.View):
                 )
             except Exception as followup_error:
                 print(f"Warning: Could not send followup message: {followup_error}")
-                # Continue processing anyway# Process dismissal with manual auth data
+                # Continue processing anyway
             config = load_config()  # Load config for this method
             await self._process_dismissal_approval(
                 interaction, target_user, form_data,
@@ -348,9 +350,11 @@ class DismissalApprovalView(ui.View):
             for i, field in enumerate(embed.fields):
                 if field.name == "Статик":
                     embed.set_field_at(i, name="Статик", value=static, inline=True)
-                    break
-              # Show processing state
+                    break            # Show processing state
             await self._show_processing_state_for_original_interaction(original_interaction, embed)
+            
+            # Small delay to show processing state
+            await asyncio.sleep(0.5)
             
             # Send response to static input modal
             if not interaction.response.is_done():
@@ -796,15 +800,10 @@ class DismissalApprovalView(ui.View):
             interaction,
             self._continue_dismissal_with_manual_auth,
             target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server
-        )
-        
+        )        
         if signed_by_name:
-            # Show processing state and continue
-            await ModeratorAuthHandler.show_processing_state(
-                interaction, 
-                "🔄 Обработка увольнения...", 
-                "Рапорт на увольнение обрабатывается, пожалуйста подождите..."
-            )
+            # Show processing state with just button change
+            await self._show_processing_state_for_interaction(interaction)
         
         return signed_by_name
     async def _handle_automatic_report_static(self, interaction, is_automatic_report, form_data, target_user, user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server, signed_by_name):
@@ -880,6 +879,13 @@ class DismissalApprovalView(ui.View):
     
     async def _finalize_approval_processing(self, interaction, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, signed_by_name, config, user_has_left_server):
         """Finalize the approval processing."""
+        # Show processing state with button change
+        await self._show_processing_state_for_interaction(interaction)
+        
+        # Small delay to show processing state
+        await asyncio.sleep(0.5)
+        
+        # Continue with processing
         await self._process_dismissal_approval(
             interaction, target_user, form_data,
             user_rank_for_audit, user_unit_for_audit,
@@ -931,10 +937,19 @@ class DismissalApprovalView(ui.View):
                 "❌ Произошла ошибка при запросе причины отказа.",
                 ephemeral=True
             )
-
+    
     async def _finalize_rejection_with_reason(self, interaction, rejection_reason, target_user, original_message):
         """Finalize the rejection process with the provided reason."""
-        try:            
+        try:
+            # Show processing state
+            processing_view = ui.View(timeout=None)
+            processing_button = ui.Button(label=DismissalConstants.PROCESSING_LABEL, style=discord.ButtonStyle.gray, disabled=True)
+            processing_view.add_item(processing_button)
+            await original_message.edit(view=processing_view)
+            
+            # Small delay to show processing state
+            await asyncio.sleep(0.5)
+            
             embed = original_message.embeds[0]
             embed.color = discord.Color.red()
             

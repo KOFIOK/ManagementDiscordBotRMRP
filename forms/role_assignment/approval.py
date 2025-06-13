@@ -6,11 +6,12 @@ This module handles the approval/rejection workflow with proper interaction hand
 
 import discord
 from discord import ui
+import asyncio
 from datetime import datetime, timezone
 from utils.config_manager import load_config, is_moderator_or_admin
 from utils.google_sheets import sheets_manager
 from .base import get_channel_with_fallback
-from .views import ApprovedApplicationView, RejectedApplicationView
+from .views import ApprovedApplicationView, RejectedApplicationView, ProcessingApplicationView
 
 
 class RoleApplicationApprovalView(ui.View):
@@ -296,25 +297,58 @@ class RoleApplicationApprovalView(ui.View):
             await user.edit(nick=new_nickname, reason="Одобрение заявки на роль военнослужащего")
             print(f"✅ Successfully set nickname for {user} to {new_nickname}")
             
-        except discord.Forbidden as e:
-            print(f"Warning: No permission to change nickname for {user}")
+        except discord.Forbidden as e:            print(f"Warning: No permission to change nickname for {user}")
             # Don't raise the error, just log it
         except Exception as e:
             print(f"Error setting nickname for {user}: {e}")
             # Don't raise the error, just log it
     
-    async def _create_approval_embed(self, interaction):
+    async def _create_approval_embed(self, interaction=None, original_message=None, moderator_info=None):
         """Create approval embed with status"""
-        embed = interaction.message.embeds[0]
+        if interaction:
+            # Use interaction message and user
+            embed = interaction.message.embeds[0]
+            moderator_mention = interaction.user.mention
+        elif original_message:
+            # Use original message and moderator_info
+            embed = original_message.embeds[0] if original_message.embeds else None
+            if not embed:
+                # Fallback: create a basic embed
+                embed = discord.Embed(
+                    title="✅ Заявка одобрена",
+                    color=discord.Color.green(),
+                    timestamp=discord.utils.utcnow()
+                )
+                # Copy existing fields if we have original message
+                if original_message and original_message.embeds:
+                    original_embed = original_message.embeds[0]
+                    for field in original_embed.fields:
+                        embed.add_field(name=field.name, value=field.value, inline=field.inline)
+            else:
+                # Copy the original embed and modify it
+                new_embed = discord.Embed(
+                    title=embed.title,
+                    color=discord.Color.green(),
+                    timestamp=discord.utils.utcnow()
+                )
+                # Copy existing fields
+                for field in embed.fields:
+                    new_embed.add_field(name=field.name, value=field.value, inline=field.inline)
+                embed = new_embed
+            
+            moderator_mention = moderator_info if moderator_info else "неизвестным модератором"
+        else:
+            raise ValueError("Either interaction or original_message must be provided")
+        
         embed.color = discord.Color.green()
         
         if self.application_data["type"] == "military":
             if self._should_process_personnel():
-                status_message = f"Одобрено инструктором ВК {interaction.user.mention}"
+                status_message = f"Одобрено инструктором ВК {moderator_mention}"
             else:
-                status_message = f"Одобрено инструктором ВК {interaction.user.mention}\n⚠️ Требуется ручная обработка для звания {self.application_data.get('rank', 'Неизвестно')}"
+                status_message = f"Одобрено инструктором ВК {moderator_mention}\n⚠️ Требуется ручная обработка для звания {self.application_data.get('rank', 'Неизвестно')}"
         else:
-            status_message = f"Одобрено руководством бригады ( {interaction.user.mention} )"
+            status_message = f"Одобрено руководством бригады ( {moderator_mention} )"
         
         embed.add_field(
             name="✅ Статус",
@@ -433,8 +467,7 @@ class RoleApplicationApprovalView(ui.View):
     async def _send_error_message(self, interaction, message):
         """Send error message with proper interaction handling"""
         try:
-            if interaction.response.is_done():
-                # Interaction already responded, use followup
+            if interaction.response.is_done():                # Interaction already responded, use followup
                 await interaction.followup.send(f"❌ {message}", ephemeral=True)
             else:
                 # Interaction not responded yet, use response
@@ -449,6 +482,7 @@ class RoleApplicationApprovalView(ui.View):
                     await interaction.followup.send(f"❌ {message}", ephemeral=True)
                 except:
                     pass  # Give up
+    
     async def _handle_moderator_authorization(self, interaction, user, guild, config):
         """Handle moderator authorization flow and return signed_by_name if successful."""
         from utils.moderator_auth import ModeratorAuthHandler
@@ -461,12 +495,12 @@ class RoleApplicationApprovalView(ui.View):
         )
         
         if signed_by_name:
-            # Show processing state and continue
-            await ModeratorAuthHandler.show_processing_state(
-                interaction, 
-                "🔄 Обработка заявки...", 
-                "Заявка на получение роли обрабатывается, пожалуйста подождите..."
-            )        
+            # Show processing state with just button change
+            processing_view = ProcessingApplicationView()
+            if interaction.response.is_done():
+                await interaction.edit_original_response(view=processing_view)
+            else:
+                await interaction.response.edit_message(view=processing_view)
         return signed_by_name
     
     async def _continue_approval_with_manual_auth(self, interaction, moderator_data, user, guild, config, original_message):
@@ -481,21 +515,19 @@ class RoleApplicationApprovalView(ui.View):
                 "❌ Произошла ошибка при продолжении обработки заявки.",
                 ephemeral=True
             )
-    
     async def _continue_approval_process(self, interaction, user, guild, config, signed_by_name):
         """Continue with approval processing after authorization is successful"""
-        try:
-            # Create embed first
-            embed = await self._create_approval_embed(interaction)
-            approved_view = ApprovedApplicationView()
-            
-            # Update message with approved state
+        try:            # First show processing state
+            processing_view = ProcessingApplicationView()
             if interaction.response.is_done():
-                await interaction.edit_original_response(embed=embed, view=approved_view)
+                await interaction.edit_original_response(view=processing_view)
             else:
-                await interaction.response.edit_message(embed=embed, view=approved_view)
+                await interaction.response.edit_message(view=processing_view)
             
-            # Then do all the other processing
+            # Small delay to show processing state
+            await asyncio.sleep(0.5)
+            
+            # Then do all the processing
             try:
                 # Assign roles and update nickname if needed
                 await self._assign_roles(user, guild, config)
@@ -517,6 +549,10 @@ class RoleApplicationApprovalView(ui.View):
             except Exception as e:
                 print(f"Warning: Error sending DM: {e}")
                 # Continue even if DM fails
+              # Finally, create final embed and update to approved state
+            embed = await self._create_approval_embed(interaction)
+            approved_view = ApprovedApplicationView()
+            await interaction.edit_original_response(embed=embed, view=approved_view)
                 
         except Exception as e:
             print(f"Error in approval process continuation: {e}")
@@ -550,14 +586,12 @@ class RoleApplicationApprovalView(ui.View):
             
             if sheets_success:
                 print(f"✅ Successfully logged hiring for {self.application_data.get('name', 'Unknown')}")
-            
-            # Send audit notification
+              # Send audit notification
             audit_channel_id = config.get('audit_channel')
             if audit_channel_id:
                 audit_channel = await get_channel_with_fallback(guild, audit_channel_id, "audit channel")
                 if audit_channel:
                     await self._send_audit_notification(audit_channel, user, signed_by_name)
-        
         except Exception as e:
             print(f"Warning: Error in auto processing with auth: {e}")
             # Don't raise exception to prevent approval process from failing
@@ -565,12 +599,12 @@ class RoleApplicationApprovalView(ui.View):
     async def _continue_approval_process_with_message(self, original_message, user, guild, config, signed_by_name):
         """Continue with approval processing using original message instead of modal interaction"""
         try:
-            # Create embed first
-            embed = await self._create_approval_embed_for_message(original_message, user)
-            approved_view = ApprovedApplicationView()
+            # First show processing state
+            processing_view = ProcessingApplicationView()
+            await original_message.edit(view=processing_view)
             
-            # Update the ORIGINAL message with approved state
-            await original_message.edit(embed=embed, view=approved_view)
+            # Small delay to show processing state
+            await asyncio.sleep(0.5)
             
             # Then do all the other processing
             try:
@@ -587,61 +621,19 @@ class RoleApplicationApprovalView(ui.View):
                 except Exception as e:
                     print(f"Warning: Error in personnel processing: {e}")
                     # Continue processing even if personnel processing fails
-            
-            # Send DM to user
+              # Send DM to user
             try:
                 await self._send_approval_dm(user)
             except Exception as e:
                 print(f"Warning: Error sending DM: {e}")
                 # Continue even if DM fails
+            
+            # Finally, create final embed and update to approved state
+            embed = await self._create_approval_embed(original_message=original_message, moderator_info=signed_by_name)
+            approved_view = ApprovedApplicationView()
+            await original_message.edit(embed=embed, view=approved_view)
                 
         except Exception as e:
             print(f"Error in approval process with message: {e}")
             # Can't send error message to user since we don't have interaction here
             # Error is already logged
-    
-    async def _create_approval_embed_for_message(self, original_message, user):
-        """Create approval embed using original message data"""
-        try:
-            # Get the original embed from the message
-            original_embed = original_message.embeds[0] if original_message.embeds else None
-            if not original_embed:
-                # Fallback: create a basic embed
-                embed = discord.Embed(
-                    title="✅ Заявка одобрена",
-                    color=discord.Color.green(),
-                    timestamp=discord.utils.utcnow()
-                )
-                embed.add_field(name="👤 Пользователь", value=user.mention, inline=False)
-                return embed
-            
-            # Copy the original embed and modify it
-            embed = discord.Embed(
-                title=original_embed.title,
-                color=discord.Color.green(),
-                timestamp=discord.utils.utcnow()
-            )
-            
-            # Copy existing fields
-            for field in original_embed.fields:
-                embed.add_field(name=field.name, value=field.value, inline=field.inline)
-            
-            # Add approval status
-            embed.add_field(
-                name="✅ Статус",
-                value="Одобрено",
-                inline=False
-            )
-            
-            return embed
-            
-        except Exception as e:
-            print(f"Error creating approval embed: {e}")
-            # Fallback embed
-            embed = discord.Embed(
-                title="✅ Заявка одобрена",
-                color=discord.Color.green(),
-                timestamp=discord.utils.utcnow()
-            )
-            embed.add_field(name="👤 Пользователь", value=user.mention, inline=False)
-            return embed

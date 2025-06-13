@@ -126,89 +126,66 @@ class MilitaryApplicationModal(ui.Modal):
         else:
             return ""
     
-    @retry_on_google_error(retries=3, delay=1)
-    async def _check_blacklist_status(self, static_formatted):
-        """Check if user is blacklisted based on static number"""
+    @retry_on_google_error(max_retries=3, delay=1.0)
+    async def _check_blacklist_status(self, static: str):
+        """Check if user is in blacklist using Google Sheets"""
         try:
-            # Check if Google Sheets manager is available
-            if not sheets_manager:
-                print("Google Sheets manager not available")
+            if not sheets_manager.credentials_file:
+                print("Google Sheets credentials not found, allowing application")
                 return {"is_blocked": False}
             
-            # Ensure connection
-            if not sheets_manager._ensure_connection():
-                print("No Google Sheets connection for blacklist check")
-                return {"is_blocked": False}
-            
-            # Get the 'Отправлено (НЕ РЕДАКТИРОВАТЬ)' worksheet
-            blacklist_worksheet = None
-            for worksheet in sheets_manager.spreadsheet.worksheets():
-                if worksheet.title == "Отправлено (НЕ РЕДАКТИРОВАТЬ)":
-                    blacklist_worksheet = worksheet
-                    break
-            
-            if not blacklist_worksheet:
-                print("'Отправлено (НЕ РЕДАКТИРОВАТЬ)' sheet not found")
-                return {"is_blocked": False}
-            
-            # Get all values from the sheet
-            sheet_data = blacklist_worksheet.get_all_values()
+            # Get data from sheet
+            sheet_data = sheets_manager.get_sheet_data("Отправлено (НЕ РЕДАКТИРОВАТЬ)")
             if not sheet_data:
-                print("No data found in blacklist sheet")
+                print("Could not access blacklist sheet, allowing application")
                 return {"is_blocked": False}
             
-            # Find records with matching static
-            found_records = []
-            for row_index, row_data in enumerate(sheet_data):
-                # Skip header row and empty rows
-                if row_index == 0 or len(row_data) < 6:
-                    continue
-                
-                # Check if column B ends with " | {static_formatted}"
-                column_b = str(row_data[1]) if len(row_data) > 1 else ""
-                if column_b.endswith(f" | {static_formatted}"):
-                    found_records.append((row_index, row_data))
+            # Find the most recent entry for this static (first match from top)
+            for row in sheet_data:
+                if len(row) >= 2 and row[1] == static:  # Column B (index 1) contains static
+                    if len(row) >= 5 and row[4]:  # Column E (index 4) contains end date
+                        try:
+                            # Parse end date (DD.MM.YYYY format)
+                            end_date_str = row[4].strip()
+                            end_date = datetime.strptime(end_date_str, "%d.%m.%Y")
+                            
+                            # Set timezone to Moscow
+                            moscow_tz = timezone(timedelta(hours=3))
+                            end_date = end_date.replace(hour=23, minute=59, second=59, tzinfo=moscow_tz)
+                            
+                            # Check if punishment is still active
+                            current_time = datetime.now(moscow_tz)
+                            
+                            if current_time <= end_date:
+                                # Punishment is still active
+                                reason = row[2] if len(row) >= 3 else "Не указана"
+                                officer = row[3] if len(row) >= 4 else "Не указан"
+                                
+                                return {
+                                    "is_blocked": True,
+                                    "reason": reason,
+                                    "officer": officer,
+                                    "end_date": end_date_str
+                                }
+                            else:
+                                # Punishment expired, but this is the most recent entry
+                                print(f"Found expired punishment for {static}, allowing application")
+                                return {"is_blocked": False}
+                        except ValueError as e:
+                            print(f"Error parsing date for static {static}: {e}")
+                            continue
+                    else:
+                        # Entry found but no end date, assume not blocked
+                        print(f"Found entry for {static} but no end date, allowing application")
+                        return {"is_blocked": False}
             
-            if not found_records:
-                return {"is_blocked": False}
+            # No entry found for this static
+            print(f"No blacklist entry found for static {static}, allowing application")
+            return {"is_blocked": False}
             
-            # Get the most recent record (smallest row index = closest to top)
-            latest_record = min(found_records, key=lambda x: x[0])
-            row_data = latest_record[1]
-            
-            # Parse end date from column E (format: DD.MM.YYYY)
-            end_date_str = str(row_data[4]) if len(row_data) > 4 else ""
-            if not end_date_str or end_date_str.strip() == "":
-                return {"is_blocked": False}
-            
-            try:
-                end_date = datetime.strptime(end_date_str.strip(), "%d.%m.%Y").date()
-            except ValueError:
-                print(f"Invalid date format in blacklist: {end_date_str}")
-                return {"is_blocked": False}
-            
-            # Get current date in Moscow timezone (UTC+3)
-            moscow_tz = timezone(timedelta(hours=3))
-            current_date = datetime.now(moscow_tz).date()
-            
-            if end_date >= current_date:
-                # Punishment is still active
-                reason = str(row_data[2]) if len(row_data) > 2 else "Не указана"
-                officer = str(row_data[5]) if len(row_data) > 5 else "Не указан"
-                
-                return {
-                    "is_blocked": True,
-                    "reason": reason,
-                    "officer": officer,
-                    "end_date": end_date_str
-                }
-            else:
-                # Punishment has expired
-                return {"is_blocked": False}
-                
         except Exception as e:
             print(f"Error checking blacklist status: {e}")
-            # Fail-safe: allow application submission if there's an error
+            # If there's an error, allow the application to proceed
             return {"is_blocked": False}
     
     async def _send_application_for_approval(self, interaction, application_data):
@@ -320,8 +297,8 @@ class CivilianApplicationModal(ui.Modal):
         self.add_item(self.purpose_input)
         
         self.proof_input = ui.TextInput(
-            label="Доказательства (ссылка)",
-            placeholder="Ссылка на доказательства",
+            label="Удостоверение (ссылка)",
+            placeholder="Ссылка на удостоверение",
             min_length=5,
             max_length=200,
             required=True
@@ -429,7 +406,7 @@ class CivilianApplicationModal(ui.Modal):
             embed.add_field(name="🔢 Статик", value=application_data["static"], inline=True)
             embed.add_field(name="🏛️ Фракция, звание, должность", value=application_data["faction"], inline=False)
             embed.add_field(name="🎯 Цель получения роли", value=application_data["purpose"], inline=False)
-            embed.add_field(name="🔗 Доказательства", value=f"[Ссылка]({application_data['proof']})", inline=False)
+            embed.add_field(name="🔗 Удостоверение", value=f"[Ссылка]({application_data['proof']})", inline=False)
             
             # Create approval view
             from .base import create_approval_view
@@ -497,8 +474,8 @@ class SupplierApplicationModal(ui.Modal):
         self.add_item(self.faction_input)
         
         self.proof_input = ui.TextInput(
-            label="Доказательства (ссылка)",
-            placeholder="Ссылка на доказательства",
+            label="Удостоверение (ссылка)",
+            placeholder="Ссылка на удостоверение",
             min_length=5,
             max_length=200,
             required=True
@@ -532,8 +509,7 @@ class SupplierApplicationModal(ui.Modal):
                 ephemeral=True
             )
             return
-        
-        # Validate proof URL
+          # Validate proof URL
         proof = self.proof_input.value.strip()
         if not self._validate_url(proof):
             await interaction.response.send_message(
@@ -566,7 +542,6 @@ class SupplierApplicationModal(ui.Modal):
             return f"{digits_only[:3]}-{digits_only[3:]}"
         else:
             return ""
-    
     def _validate_url(self, url):
         """Basic URL validation"""
         url_pattern = r'https?://[^\s/$.?#].[^\s]*'
@@ -604,7 +579,7 @@ class SupplierApplicationModal(ui.Modal):
             embed.add_field(name="📝 Имя Фамилия", value=application_data["name"], inline=True)
             embed.add_field(name="🔢 Статик", value=application_data["static"], inline=True)
             embed.add_field(name="🏛️ Фракция, звание, должность", value=application_data["faction"], inline=False)
-            embed.add_field(name="🔗 Доказательства", value=f"[Ссылка]({application_data['proof']})", inline=False)
+            embed.add_field(name="🔗 Удостоверение", value=f"[Ссылка]({application_data['proof']})", inline=False)
             
             # Create approval view
             from .base import create_approval_view

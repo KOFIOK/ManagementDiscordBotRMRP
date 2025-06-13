@@ -1,14 +1,11 @@
-# filepath: g:\GitHub\repos\army discord bot\utils\google_sheets.py
 import gspread
-from google.oauth2.service_account import Credentials
-import json
 import os
 from datetime import datetime
 import discord
 import re
 import asyncio
 import functools
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 
 # Google Sheets configuration
 SCOPES = [
@@ -190,12 +187,13 @@ class GoogleSheetsManager:
                 if clean_name:
                     return clean_name
           # If no specific format found, return as is
-        return display_name
+            return display_name
+    
     @retry_on_google_error(retries=3, delay=1)
-    async def get_user_info_from_users_sheet(self, surname):
-        """Search for user by surname in 'Пользователи' sheet and return full name with static from column J."""
+    async def get_user_info_by_discord_id(self, discord_id):
+        """Search for user by Discord ID in 'Пользователи' sheet and return full name with static from column J."""
         try:
-            print(f"📋 SHEET SEARCH: Looking for surname '{surname}' in 'Пользователи' sheet")
+            print(f"📋 SHEET SEARCH: Looking for Discord ID '{discord_id}' in 'Пользователи' sheet")
             
             # Ensure connection
             if not self._ensure_connection():
@@ -228,42 +226,33 @@ class GoogleSheetsManager:
                 raise  # Let the retry decorator handle it
             
             # Skip header row (row 0) and search in data rows
-            surname_lower = surname.lower().strip()
-            found_surnames = []
+            discord_id_str = str(discord_id)
             
             for i, row in enumerate(all_values[1:], start=1):  # Start from row 1 (skip header)
-                if len(row) > 1:  # Ensure row has at least column B
-                    cell_name = row[1] if len(row) > 1 else ""  # Column B (index 1)
-                    if cell_name and cell_name.strip():
-                        # Extract surname from "Имя Фамилия" (last word)
-                        name_parts = cell_name.strip().split()
-                        if len(name_parts) >= 2:
-                            cell_surname = name_parts[-1].lower().strip()
-                            found_surnames.append(f"'{cell_name}' -> '{cell_surname}'")
-                            
-                            if cell_surname == surname_lower:
-                                print(f"✅ SHEET SEARCH: MATCH FOUND in row {i+1}: '{cell_name}'")
-                                
-                                # Found match, return corresponding value from column J if exists
-                                if len(row) > 9 and row[9]:  # Column J exists and has value
-                                    print(f"✅ SHEET SEARCH: Returning column J value: '{row[9]}'")
-                                    return row[9]
-                                else:
-                                    # If column J is empty, construct from B and C
-                                    static_value = row[2] if len(row) > 2 else ""  # Column C
-                                    if static_value:
-                                        result = f"{cell_name} | {static_value}"
-                                        print(f"✅ SHEET SEARCH: Column J empty, constructed: '{result}'")
-                                        return result
-                                    else:
-                                        print(f"✅ SHEET SEARCH: No static found, returning name only: '{cell_name}'")
-                                        return cell_name
-                                        
-            print(f"❌ SHEET SEARCH: No match found for surname '{surname}'")
-            if found_surnames:
-                print(f"📋 SHEET SEARCH: Found {len(found_surnames)} names in sheet. First 5: {found_surnames[:5]}")
-            else:
-                print("📋 SHEET SEARCH: No valid names found in sheet at all")
+                if len(row) > 5:  # Ensure row has at least column F (Discord ID)
+                    cell_discord_id = row[5] if len(row) > 5 else ""  # Column F (index 5)
+                    if cell_discord_id and cell_discord_id.strip() == discord_id_str:
+                        print(f"✅ SHEET SEARCH: MATCH FOUND in row {i+1} for Discord ID: '{discord_id}'")
+                        
+                        # Found match, return corresponding value from column J if exists
+                        if len(row) > 9 and row[9]:  # Column J exists and has value
+                            print(f"✅ SHEET SEARCH: Returning column J value: '{row[9]}'")
+                            return row[9]
+                        else:
+                            # If column J is empty, construct from B and C
+                            name_value = row[1] if len(row) > 1 else ""  # Column B
+                            static_value = row[2] if len(row) > 2 else ""  # Column C
+                            if name_value and static_value:
+                                result = f"{name_value} | {static_value}"
+                                print(f"✅ SHEET SEARCH: Column J empty, constructed: '{result}'")
+                                return result
+                            elif name_value:
+                                print(f"✅ SHEET SEARCH: No static found, returning name only: '{name_value}'")
+                                return name_value
+                            else:
+                                print(f"⚠️ SHEET SEARCH: Found Discord ID but no name data")
+                                return None                                        
+            print(f"❌ SHEET SEARCH: No match found for Discord ID '{discord_id}'")
             return None
             
         except Exception as e:
@@ -273,62 +262,44 @@ class GoogleSheetsManager:
     @retry_on_google_error(retries=3, delay=1)
     async def check_moderator_authorization(self, approving_user):
         """
-        Check if moderator is authorized in 'Пользователи' sheet.
+        Check if moderator is authorized in 'Пользователи' sheet by Discord ID.
         Returns dict with authorization status and info.
         """
         try:
-            # Extract clean name from nickname
-            approved_by_clean_name = self.extract_name_from_nickname(approving_user.display_name)
-            print(f"🔍 AUTHORIZATION CHECK: User '{approving_user.display_name}' -> Clean name: '{approved_by_clean_name}'")
+            print(f"🔍 AUTHORIZATION CHECK: User '{approving_user.display_name}' (ID: {approving_user.id})")
             
-            if approved_by_clean_name:
-                # Extract surname (last word)
-                name_parts = approved_by_clean_name.strip().split()
-                print(f"🔍 AUTHORIZATION CHECK: Name parts: {name_parts}")
+            try:
+                # Search in 'Пользователи' sheet by Discord ID
+                full_user_info = await self.get_user_info_by_discord_id(approving_user.id)
+                print(f"🔍 AUTHORIZATION CHECK: Search result: {full_user_info}")
                 
-                if len(name_parts) >= 2:
-                    surname = name_parts[-1]  # Last word as surname
-                    print(f"🔍 AUTHORIZATION CHECK: Searching for surname: '{surname}'")
-                    
-                    try:                        # Search in 'Пользователи' sheet
-                        full_user_info = await self.get_user_info_from_users_sheet(surname)
-                        print(f"🔍 AUTHORIZATION CHECK: Search result: {full_user_info}")
-                        
-                        if full_user_info:
-                            print(f"✅ AUTHORIZATION CHECK: Moderator FOUND in system!")
-                            return {
-                                "found": True,
-                                "info": full_user_info,
-                                "clean_name": approved_by_clean_name,
-                                "requires_manual_input": False
-                            }
-                        else:
-                            print(f"❌ AUTHORIZATION CHECK: Moderator NOT FOUND in system!")
-                            return {
-                                "found": False,  # Moderator not found - need manual registration
-                                "info": None,
-                                "clean_name": approved_by_clean_name,
-                                "requires_manual_input": True
-                            }
-                    except Exception as e:
-                        print(f"⚠️ AUTHORIZATION CHECK: Sheet search failed: {e}")
-                        # Fall back to requiring manual auth if Google Sheets fails
-                        print(f"ℹ️ AUTHORIZATION CHECK: Using fallback mode - requiring manual auth")
-                        return {
-                            "found": False,  # Require manual auth in fallback mode
-                            "info": None,
-                            "clean_name": approved_by_clean_name,
-                            "requires_manual_input": True
-                        }
+                if full_user_info:
+                    print(f"✅ AUTHORIZATION CHECK: Moderator FOUND in system!")
+                    return {
+                        "found": True,
+                        "info": full_user_info,
+                        "clean_name": approving_user.display_name,
+                        "requires_manual_input": False
+                    }
+                else:
+                    print(f"❌ AUTHORIZATION CHECK: Moderator NOT FOUND in system!")
+                    return {
+                        "found": False,  # Moderator not found - need manual registration
+                        "info": None,
+                        "clean_name": approving_user.display_name,
+                        "requires_manual_input": True
+                    }
+            except Exception as e:
+                print(f"⚠️ AUTHORIZATION CHECK: Sheet search failed: {e}")
+                # Fall back to requiring manual auth if Google Sheets fails
+                print(f"ℹ️ AUTHORIZATION CHECK: Using fallback mode - requiring manual auth")
+                return {
+                    "found": False,  # Require manual auth in fallback mode
+                    "info": None,
+                    "clean_name": approving_user.display_name,
+                    "requires_manual_input": True
+                }
                 
-            # Default return for cases where we couldn't process properly
-            print(f"❌ AUTHORIZATION CHECK: Could not process name properly")
-            return {
-                "found": False,  # Require manual auth for safety
-                "info": None,
-                "clean_name": approved_by_clean_name or approving_user.display_name,
-                "requires_manual_input": True
-            }
         except Exception as e:
             print(f"❌ AUTHORIZATION CHECK: Error in check_moderator_authorization: {e}")
             # In case of any error, require manual auth for safety
@@ -759,7 +730,7 @@ class GoogleSheetsManager:
             if not users_worksheet:
                 print("'Пользователи' sheet not found")
                 return False
-              # Check if moderator already exists (by email or name+static)
+            # Check if moderator already exists (by Discord ID, email, or name+static)
             try:
                 # Use get_all_values instead of get_all_records to avoid header issues
                 all_values = users_worksheet.get_all_values()
@@ -767,6 +738,11 @@ class GoogleSheetsManager:
                 # Skip header row and check existing data
                 for row in all_values[1:]:  # Skip first row (headers)
                     if len(row) > 0:
+                        # Check by Discord ID (column F, index 5) - primary check
+                        if len(row) > 5 and row[5].strip() == str(discord_user.id):
+                            print(f"Moderator with Discord ID {discord_user.id} already exists")
+                            return True  # Already registered, consider it success
+                        
                         # Check by email (column A, index 0)
                         if len(row) > 0 and row[0].strip().lower() == email.lower():
                             print(f"Moderator with email {email} already exists")
@@ -784,27 +760,27 @@ class GoogleSheetsManager:
                 # Continue with registration anyway
                 # # Format registration date
             registration_date = datetime.now().strftime('%d.%m.%Y %H:%M')
-            
-            # Prepare row data for 'Пользователи' sheet (only columns A-E):
+              # Prepare row data for 'Пользователи' sheet (columns A-F):
             # Column A: Email
             # Column B: Имя Фамилия  
             # Column C: Статик
             # Column D: Должность
             # Column E: Дата регистрации
+            # Column F: Discord ID
             # Note: Column J with "Имя Фамилия | Статик" is auto-generated by table formula
             row_data = [
                 email,              # Column A: Email
                 name,               # Column B: Имя Фамилия
                 static,             # Column C: Статик
                 position,           # Column D: Должность
-                registration_date   # Column E: Дата регистрации
-            ]            # Find the next empty row safely (avoiding formula conflicts)
+                registration_date,  # Column E: Дата регистрации
+                str(discord_user.id)  # Column F: Discord ID
+            ]# Find the next empty row safely (avoiding formula conflicts)
             all_data = users_worksheet.get_all_values()
-            
-            # Find the last row with actual data in columns A-E
+              # Find the last row with actual data in columns A-F
             last_data_row = 0
             for i, row in enumerate(all_data):
-                if any(cell.strip() for cell in row[:5] if cell):  # Check if first 5 columns have data
+                if any(cell.strip() for cell in row[:6] if cell):  # Check if first 6 columns have data
                     last_data_row = i + 1
             
             # Add new data after the last data row (not at the very end to avoid formula conflicts)
@@ -812,12 +788,12 @@ class GoogleSheetsManager:
             
             # Safety check: ensure we don't overwrite existing data
             while next_row <= len(all_data):
-                if next_row > len(all_data) or not any(cell.strip() for cell in all_data[next_row-1][:5] if cell):
+                if next_row > len(all_data) or not any(cell.strip() for cell in all_data[next_row-1][:6] if cell):
                     break
                 next_row += 1
             
             # Use batch update with exact range to avoid formula interference
-            range_name = f"A{next_row}:E{next_row}"
+            range_name = f"A{next_row}:F{next_row}"
             print(f"📝 Registering moderator in range {range_name}")
             
             # Use batch update instead of single cell updates
@@ -825,10 +801,9 @@ class GoogleSheetsManager:
                 values=[row_data], 
                 range_name=range_name,
                 value_input_option='RAW'  # Use RAW to prevent formula interpretation
-            )
-              # Check if append was successful
+            )            # Check if append was successful
             if result:
-                print(f"✅ Successfully registered moderator: {name} | {static} ({email})")
+                print(f"✅ Successfully registered moderator: {name} | {static} ({email}) [Discord ID: {discord_user.id}]")
                 # Automatically add moderator as editor to spreadsheet
                 print(f"🔑 Attempting to add editor access to spreadsheet...")
                 

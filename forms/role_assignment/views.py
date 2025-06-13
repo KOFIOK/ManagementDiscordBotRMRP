@@ -4,7 +4,7 @@ Views for role assignment system
 
 import discord
 from discord import ui
-from .modals import MilitaryApplicationModal, CivilianApplicationModal
+from .modals import MilitaryApplicationModal, CivilianApplicationModal, SupplierApplicationModal
 
 
 class RoleAssignmentView(ui.View):
@@ -12,14 +12,19 @@ class RoleAssignmentView(ui.View):
     
     def __init__(self):
         super().__init__(timeout=None)
-    
-    @discord.ui.button(label="Призыв / Экскурсия", style=discord.ButtonStyle.green, custom_id="role_military")
+    @discord.ui.button(label="📜 Призыв / Экскурсия", style=discord.ButtonStyle.green, custom_id="role_military")
     async def military_application(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Open military service application form"""
         modal = MilitaryApplicationModal()
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="Я госслужащий", style=discord.ButtonStyle.secondary, custom_id="role_civilian")
+    @discord.ui.button(label="📦 Я поставщик", style=discord.ButtonStyle.primary, custom_id="role_supplier")
+    async def supplier_application(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Open supplier application form"""
+        modal = SupplierApplicationModal()
+        await interaction.response.send_modal(modal)
+    
+    @discord.ui.button(label="👨‍⚕️ Я госслужащий", style=discord.ButtonStyle.secondary, custom_id="role_civilian")
     async def civilian_application(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Open civilian application form"""
         modal = CivilianApplicationModal()

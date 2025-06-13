@@ -20,8 +20,10 @@ default_config = {
     'role_assignment_channel': None,
     'moderator_registration_channel': None,  # Channel for moderator registration
     'military_roles': [],  # Military roles (updated to array)
+    'supplier_roles': [],  # Supplier roles
     'civilian_roles': [],  # Civilian roles (updated to array)
     'military_role_assignment_ping_roles': [],  # Roles to ping for military applications
+    'supplier_role_assignment_ping_roles': [],  # Roles to ping for supplier applications
     'civilian_role_assignment_ping_roles': [],  # Roles to ping for civilian applications
     'excluded_roles': [],
     'ping_settings': {},

@@ -183,10 +183,11 @@ class RoleApplicationApprovalView(ui.View):
             # Update message with rejected view
             rejected_view = RejectedApplicationView()
             await original_message.edit(content="", embed=embed, view=rejected_view)
-              # Send DM to user with rejection reason
+            
+            # Send DM to user with rejection reason
             if user:
                 await self._send_rejection_dm_with_reason(user, rejection_reason)
-            
+                
         except Exception as e:
             print(f"Error in _finalize_rejection_with_reason: {e}")
             await interaction.followup.send(
@@ -197,8 +198,6 @@ class RoleApplicationApprovalView(ui.View):
     async def _send_rejection_dm_with_reason(self, user, rejection_reason):
         """Send rejection DM to user with specified reason"""
         try:
-            app_type = "военную" if self.application_data.get("type") == "military" else "гражданскую"
-            
             dm_content = (
                 f"## ❌ Ваша заявка на получение ролей была **отклонена**\n"
                 f"**Причина отказа:** {rejection_reason}\n\n"
@@ -217,6 +216,8 @@ class RoleApplicationApprovalView(ui.View):
         if self.application_data["type"] == "military":
             rank = self.application_data.get("rank", "").lower()
             return rank == "рядовой"
+        elif self.application_data["type"] == "supplier":
+            return True  # Auto-process supplier applications
         else:  # civilian
             return True
     
@@ -225,7 +226,7 @@ class RoleApplicationApprovalView(ui.View):
         if self.application_data["type"] == "military":
             rank = self.application_data.get("rank", "").lower()
             return rank == "рядовой"
-        return False  # Never change nickname for civilians
+        return False  # Never change nickname for suppliers or civilians
     
     def _should_process_personnel(self):
         """Determine if personnel record should be processed"""
@@ -233,14 +234,13 @@ class RoleApplicationApprovalView(ui.View):
         if self.application_data["type"] == "military":
             rank = self.application_data.get("rank", "").lower()
             return rank == "рядовой"
-        return False  # Never process personnel records for civilians
+        return False  # Never process personnel records for suppliers or civilians
     
     async def _assign_roles(self, user, guild, config):
         """Assign appropriate roles to user"""
         try:
             if self.application_data["type"] == "military":
                 role_ids = config.get('military_roles', [])
-                opposite_role_ids = config.get('civilian_roles', [])
                 
                 # Set nickname for military recruits only
                 if self._should_change_nickname():
@@ -249,25 +249,16 @@ class RoleApplicationApprovalView(ui.View):
                     except Exception as e:
                         print(f"Warning: Could not set military nickname: {e}")
                         # Continue processing even if nickname change fails
-            else:
+            elif self.application_data["type"] == "supplier":
+                # Suppliers get their own roles
+                role_ids = config.get('supplier_roles', [])
+            else:  # civilian
                 role_ids = config.get('civilian_roles', [])
-                opposite_role_ids = config.get('military_roles', [])
             
-            # Remove opposite roles
-            for role_id in opposite_role_ids:
-                role = guild.get_role(role_id)
-                if role and role in user.roles:
-                    try:
-                        await user.remove_roles(role, reason="Переход на другую роль")
-                    except discord.Forbidden:
-                        print(f"No permission to remove role {role.name}")
-                    except Exception as e:
-                        print(f"Error removing role {role.name}: {e}")
-            
-            # Add new roles
+            # Add new roles only (do not remove existing roles)
             for role_id in role_ids:
                 role = guild.get_role(role_id)
-                if role:
+                if role and role not in user.roles:
                     try:
                         await user.add_roles(role, reason="Одобрение заявки на роль")
                     except discord.Forbidden:

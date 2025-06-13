@@ -507,7 +507,7 @@ class RolePingButtonsView(BaseSettingsView):
     @discord.ui.button(label="📦 Пинг доступа к поставкам", style=discord.ButtonStyle.secondary)
     async def set_supplier_ping(self, interaction: discord.Interaction, button: discord.ui.Button):
         from .role_config import SetMultipleRolesModal
-        modal = SetMultipleRolesModal("supplier_role_assignment_ping_roles", "📦 Пинг-роли для доступа к поставкам", "Укажите роли для уведомлений о заявках поставщиков")
+        modal = SetMultipleRolesModal("supplier_role_assignment_ping_roles", "📦 Пинг-роли для доступа к поставкам", "Укажите роли для уведомлений о заявках доступа к поставкам")
         await interaction.response.send_modal(modal)
     
     @discord.ui.button(label="👨‍⚕️ Пинг госслужащих", style=discord.ButtonStyle.secondary)

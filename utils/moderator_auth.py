@@ -131,8 +131,7 @@ class ModeratorAuthModal(ui.Modal, title="Регистрация модерат�
                 "Регистрируем модератора и продолжаем обработку...",
                 ephemeral=True
             )
-            
-            # Register moderator in Google Sheets
+              # Register moderator in Google Sheets
             success = await sheets_manager.register_moderator(moderator_data, interaction.user)
             
             if success:
@@ -143,7 +142,7 @@ class ModeratorAuthModal(ui.Modal, title="Регистрация модерат�
                 if self.callback_func:
                     await self.callback_func(
                         interaction, 
-                        signed_by_name, 
+                        moderator_data,  # Pass full moderator_data instead of just signed_by_name
                         *self.callback_args, 
                         **self.callback_kwargs
                     )

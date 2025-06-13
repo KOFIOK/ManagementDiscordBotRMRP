@@ -466,13 +466,14 @@ class RoleApplicationApprovalView(ui.View):
                 interaction, 
                 "🔄 Обработка заявки...", 
                 "Заявка на получение роли обрабатывается, пожалуйста подождите..."
-            )
-        
+            )        
         return signed_by_name
     
-    async def _continue_approval_with_manual_auth(self, interaction, signed_by_name, user, guild, config, original_message):
+    async def _continue_approval_with_manual_auth(self, interaction, moderator_data, user, guild, config, original_message):
         """Continue approval process after manual moderator authorization"""
         try:
+            # Extract signed_by_name from moderator_data
+            signed_by_name = moderator_data['full_info'] if isinstance(moderator_data, dict) else moderator_data
             await self._continue_approval_process_with_message(original_message, user, guild, config, signed_by_name)
         except Exception as e:
             print(f"Error in manual auth continuation: {e}")

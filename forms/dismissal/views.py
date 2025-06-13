@@ -248,8 +248,7 @@ class DismissalApprovalView(ui.View):
             if field.name == DismissalConstants.FIELD_RANK:
                 user_rank_for_audit = field.value
             elif field.name == DismissalConstants.FIELD_DEPARTMENT:
-                user_unit_for_audit = field.value
-          # If embed doesn't have the data and user is present, try to get from roles
+                user_unit_for_audit = field.value        # If embed doesn't have the data and user is present, try to get from roles
         if (user_rank_for_audit == DismissalConstants.UNKNOWN_VALUE or user_unit_for_audit == DismissalConstants.UNKNOWN_VALUE) and not user_has_left_server:
             try:
                 if user_rank_for_audit == DismissalConstants.UNKNOWN_VALUE:
@@ -263,6 +262,7 @@ class DismissalApprovalView(ui.View):
                         user_unit_for_audit = role_unit
             except Exception as e:
                 print(f"Error getting data from roles: {e}")
+        
         print(f"Audit data - User: {target_user.display_name}, Rank: {user_rank_for_audit}, Unit: {user_unit_for_audit}, Left server: {user_has_left_server}")
         
         return user_rank_for_audit, user_unit_for_audit
@@ -270,28 +270,19 @@ class DismissalApprovalView(ui.View):
     async def _continue_dismissal_with_manual_auth(self, interaction, moderator_data, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server=False):
         """Continue dismissal process with manually entered moderator data."""
         try:
-            print(f"DEBUG: _continue_dismissal_with_manual_auth called with moderator_data: {moderator_data}")            # First, try to save the moderator to Google Sheets
-            try:
-                print(f"🔄 Attempting to register moderator in Google Sheets...")
-                registration_success = await sheets_manager.register_moderator(
-                    moderator_data, interaction.user
-                )
-                
-                if registration_success:
-                    print(f"✅ Successfully registered moderator '{moderator_data['name']}' in Google Sheets!")
-                else:
-                    print(f"⚠️ Failed to register moderator in Google Sheets, but continuing with dismissal process...")
-            except Exception as reg_error:
-                print(f"⚠️ Error registering moderator: {reg_error}")
-                print("Continuing with dismissal process despite registration error...")
+            print(f"DEBUG: _continue_dismissal_with_manual_auth called with moderator_data: {moderator_data}")
             
-            # Use manually entered moderator info with full details
+            # Moderator is already registered in Google Sheets by the unified auth module
+            # Just extract the signed_by_name
             signed_by_name = moderator_data['full_info']  # "Имя Фамилия | Статик"
             print(f"DEBUG: signed_by_name set to: {signed_by_name}")
-              # Check if we still need to request static (for automatic reports)
+            
+            # Check if we still need to request static (for automatic reports)
             is_automatic_report = form_data.get('is_automatic_report', False)
             
-            print(f"DEBUG: is_automatic_report: {is_automatic_report}, form_data static: {form_data.get('static')}")            # If we need static, inform user to click Approve again
+            print(f"DEBUG: is_automatic_report: {is_automatic_report}, form_data static: {form_data.get('static')}")
+            
+            # If we need static, inform user to click Approve again
             if is_automatic_report and not form_data.get('static'):
                 print(f"Manual auth completed, but still need static for automatic dismissal")
                 

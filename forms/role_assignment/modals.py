@@ -3,9 +3,12 @@ Application modals for role assignment system
 """
 
 import discord
+import os
 import re
+from datetime import datetime, timezone, timedelta
 from discord import ui
 from utils.config_manager import load_config, has_pending_role_application
+from utils.google_sheets import sheets_manager, retry_on_google_error
 
 
 class MilitaryApplicationModal(ui.Modal):
@@ -78,12 +81,23 @@ class MilitaryApplicationModal(ui.Modal):
                 ephemeral=True
             )
             return
-        
-        # Validate recruitment type
+          # Validate recruitment type
         recruitment_type = self.recruitment_type_input.value.strip().lower()
         if recruitment_type not in ["экскурсия", "призыв"]:
             await interaction.response.send_message(
                 "❌ Порядок набора должен быть: 'Экскурсия' или 'Призыв'.",
+                ephemeral=True
+            )
+            return
+        
+        # Check blacklist status for military applications
+        blacklist_check = await self._check_blacklist_status(formatted_static)
+        if blacklist_check["is_blocked"]:
+            await interaction.response.send_message(
+                f"### ❌ **Доступ к подаче заявки временно ограничен — Вы в Чёрном Списке!**\n\n"
+                f"> **Причина:** {blacklist_check['reason']}\n"
+                f"> **Чёрный Список выдал:** {blacklist_check['officer']}\n"
+                f"> **Ограничение по (включительно):** {blacklist_check['end_date']}",
                 ephemeral=True
             )
             return
@@ -111,7 +125,90 @@ class MilitaryApplicationModal(ui.Modal):
         elif len(digits_only) == 6:
             return f"{digits_only[:3]}-{digits_only[3:]}"
         else:
-            return ""
+            return ""      @retry_on_google_error(retries=3, delay=1.0)
+    async def _check_blacklist_status(self, static: str):
+        """Check if user is in blacklist using Google Sheets"""
+        try:
+            # Check if Google Sheets credentials exist
+            if not os.path.exists(sheets_manager.credentials_path):
+                print("Google Sheets credentials not found, allowing application")
+                return {"is_blocked": False}
+            
+            # Ensure connection
+            if not sheets_manager._ensure_connection():
+                print("Could not connect to Google Sheets, allowing application")
+                return {"is_blocked": False}
+            
+            # Get the 'Отправлено (НЕ РЕДАКТИРОВАТЬ)' worksheet
+            blacklist_worksheet = None
+            for worksheet in sheets_manager.spreadsheet.worksheets():
+                if worksheet.title == "Отправлено (НЕ РЕДАКТИРОВАТЬ)":
+                    blacklist_worksheet = worksheet
+                    break
+            
+            if not blacklist_worksheet:
+                print("'Отправлено (НЕ РЕДАКТИРОВАТЬ)' sheet not found, allowing application")
+                return {"is_blocked": False}
+              # Get all values from the sheet
+            sheet_data = blacklist_worksheet.get_all_values()
+            if not sheet_data:
+                print("No data found in blacklist sheet, allowing application")
+                return {"is_blocked": False}
+              # Find the most recent entry for this static (first match from top)
+            print(f"🔍 Searching for static {static} in blacklist...")
+            for row_index, row in enumerate(sheet_data):
+                if len(row) >= 2:  # Check if column B exists
+                    column_b = row[1].strip()  # Column B (index 1) contains "Name | Static"
+                    # Debug: Print first few rows to see the format
+                    if row_index < 5:
+                        print(f"  Row {row_index}: Column B = '{column_b}'")
+                    # Check if column B ends with " | {static}"
+                    if column_b.endswith(f" | {static}"):
+                        print(f"✅ Found matching entry: '{column_b}'")
+                        if len(row) >= 5 and row[4]:  # Column E (index 4) contains end date
+                            try:
+                                # Parse end date (DD.MM.YYYY format)
+                                end_date_str = row[4].strip()
+                                end_date = datetime.strptime(end_date_str, "%d.%m.%Y")
+                                
+                                # Set timezone to Moscow
+                                moscow_tz = timezone(timedelta(hours=3))
+                                end_date = end_date.replace(hour=23, minute=59, second=59, tzinfo=moscow_tz)
+                                
+                                # Check if punishment is still active
+                                current_time = datetime.now(moscow_tz)
+                                
+                                if current_time <= end_date:
+                                    # Punishment is still active
+                                    reason = row[2] if len(row) >= 3 else "Не указана"
+                                    officer = row[5] if len(row) >= 4 else "Не указан"
+                                    
+                                    return {
+                                        "is_blocked": True,
+                                        "reason": reason,
+                                        "officer": officer,
+                                        "end_date": end_date_str
+                                    }
+                                else:
+                                    # Punishment expired, but this is the most recent entry
+                                    print(f"Found expired punishment for {static}, allowing application")
+                                    return {"is_blocked": False}
+                            except ValueError as e:
+                                print(f"Error parsing date for static {static}: {e}")
+                                continue
+                        else:
+                            # Entry found but no end date, assume not blocked
+                            print(f"Found entry for {static} but no end date, allowing application")
+                            return {"is_blocked": False}
+            
+            # No entry found for this static
+            print(f"No blacklist entry found for static {static}, allowing application")
+            return {"is_blocked": False}
+            
+        except Exception as e:
+            print(f"Error checking blacklist status: {e}")
+            # If there's an error, allow the application to proceed
+            return {"is_blocked": False}
     
     async def _send_application_for_approval(self, interaction, application_data):
         """Send application to moderation channel"""
@@ -205,7 +302,7 @@ class CivilianApplicationModal(ui.Modal):
         
         self.faction_input = ui.TextInput(
             label="Фракция, звание, должность",
-            placeholder="Например: МВД, Старший лейтенант, Следователь",
+            placeholder="Например: ФСВНГ, Подполковник, Нач. Упр. Вневедомственной Охраны",
             min_length=1,
             max_length=100,
             required=True
@@ -214,7 +311,7 @@ class CivilianApplicationModal(ui.Modal):
         
         self.purpose_input = ui.TextInput(
             label="Цель получения роли",
-            placeholder="Например: доступ к поставкам",
+            placeholder="Например: доступ к пропуску (на территорию в/ч)",
             min_length=1,
             max_length=100,
             required=True
@@ -222,8 +319,8 @@ class CivilianApplicationModal(ui.Modal):
         self.add_item(self.purpose_input)
         
         self.proof_input = ui.TextInput(
-            label="Доказательства (ссылка)",
-            placeholder="Ссылка на доказательства",
+            label="Удостоверение (ссылка)",
+            placeholder="Ссылка на удостоверение",
             min_length=5,
             max_length=200,
             required=True
@@ -331,7 +428,7 @@ class CivilianApplicationModal(ui.Modal):
             embed.add_field(name="🔢 Статик", value=application_data["static"], inline=True)
             embed.add_field(name="🏛️ Фракция, звание, должность", value=application_data["faction"], inline=False)
             embed.add_field(name="🎯 Цель получения роли", value=application_data["purpose"], inline=False)
-            embed.add_field(name="🔗 Доказательства", value=f"[Ссылка]({application_data['proof']})", inline=False)
+            embed.add_field(name="🔗 Удостоверение", value=f"[Ссылка]({application_data['proof']})", inline=False)
             
             # Create approval view
             from .base import create_approval_view
@@ -359,6 +456,179 @@ class CivilianApplicationModal(ui.Modal):
             
         except Exception as e:
             print(f"Error sending civilian application: {e}")
+            await interaction.response.send_message(
+                "❌ Произошла ошибка при отправке заявки. Попробуйте позже.",
+                ephemeral=True
+            )
+
+
+class SupplierApplicationModal(ui.Modal):
+    """Modal for supplier role applications"""
+    
+    def __init__(self):
+        super().__init__(title="Заявка на получение роли доступа к поставкам")
+        
+        self.name_input = ui.TextInput(
+            label="Имя Фамилия",
+            placeholder="Например: Иван Иванов",
+            min_length=2,
+            max_length=50,
+            required=True
+        )
+        self.add_item(self.name_input)
+        
+        self.static_input = ui.TextInput(
+            label="Статик",
+            placeholder="123-456 (допускается 5-6 цифр)",
+            min_length=5,
+            max_length=7,
+            required=True
+        )
+        self.add_item(self.static_input)
+        
+        self.faction_input = ui.TextInput(
+            label="Фракция, звание, должность",
+            placeholder="Например: ФСВНГ, Подполковник",
+            min_length=1,
+            max_length=100,
+            required=True
+        )
+        self.add_item(self.faction_input)
+        
+        self.proof_input = ui.TextInput(
+            label="Удостоверение (ссылка)",
+            placeholder="Ссылка на удостоверение",
+            min_length=5,
+            max_length=200,
+            required=True
+        )
+        self.add_item(self.proof_input)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        """Process supplier application submission"""
+        # Check for pending applications
+        config = load_config()
+        role_assignment_channel_id = config.get('role_assignment_channel')
+        
+        if role_assignment_channel_id:
+            has_pending = await has_pending_role_application(interaction.client, interaction.user.id, role_assignment_channel_id)
+            if has_pending:
+                await interaction.response.send_message(
+                    "❌ **У вас уже есть заявка на получение роли, которая находится на рассмотрении.**\n\n"
+                    "Пожалуйста, дождитесь решения по текущей заявке, прежде чем подавать новую.\n"
+                    "Это поможет избежать путаницы и ускорить обработку вашего запроса.",
+                    ephemeral=True
+                )
+                return
+        
+        # Validate and format static
+        static = self.static_input.value.strip()
+        formatted_static = self._format_static(static)
+        if not formatted_static:
+            await interaction.response.send_message(
+                "❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.\n"
+                "Примеры: 123456, 123-456, 12345, 12-345, 123 456",
+                ephemeral=True
+            )
+            return
+          # Validate proof URL
+        proof = self.proof_input.value.strip()
+        if not self._validate_url(proof):
+            await interaction.response.send_message(
+                "❌ Пожалуйста, укажите корректную ссылку в поле доказательств.",
+                ephemeral=True
+            )
+            return
+        
+        # Create application data
+        application_data = {
+            "type": "supplier",
+            "name": self.name_input.value.strip(),
+            "static": formatted_static,
+            "faction": self.faction_input.value.strip(),
+            "proof": proof,
+            "user_id": interaction.user.id,
+            "user_mention": interaction.user.mention
+        }
+        
+        # Send for approval
+        await self._send_application_for_approval(interaction, application_data)
+    
+    def _format_static(self, static_input: str) -> str:
+        """Auto-format static number to standard format"""
+        digits_only = re.sub(r'\D', '', static_input.strip())
+        
+        if len(digits_only) == 5:
+            return f"{digits_only[:2]}-{digits_only[2:]}"
+        elif len(digits_only) == 6:
+            return f"{digits_only[:3]}-{digits_only[3:]}"
+        else:
+            return ""
+    def _validate_url(self, url):
+        """Basic URL validation"""
+        url_pattern = r'https?://[^\s/$.?#].[^\s]*'
+        return bool(re.match(url_pattern, url))
+    
+    async def _send_application_for_approval(self, interaction, application_data):
+        """Send application to moderation channel"""
+        try:
+            config = load_config()
+            moderation_channel_id = config.get('role_assignment_channel')
+            
+            if not moderation_channel_id:
+                await interaction.response.send_message(
+                    "❌ Канал модерации не настроен. Обратитесь к администратору.",
+                    ephemeral=True
+                )
+                return
+            
+            moderation_channel = interaction.guild.get_channel(moderation_channel_id)
+            if not moderation_channel:
+                await interaction.response.send_message(
+                    "❌ Канал модерации не найден. Обратитесь к администратору.",
+                    ephemeral=True
+                )
+                return
+            
+            # Create embed
+            embed = discord.Embed(
+                title="📦 Заявка на получение роли доступа к поставкам",
+                color=discord.Color.orange(),
+                timestamp=discord.utils.utcnow()
+            )
+            
+            embed.add_field(name="👤 Заявитель", value=application_data["user_mention"], inline=False)
+            embed.add_field(name="📝 Имя Фамилия", value=application_data["name"], inline=True)
+            embed.add_field(name="🔢 Статик", value=application_data["static"], inline=True)
+            embed.add_field(name="🏛️ Фракция, звание, должность", value=application_data["faction"], inline=False)
+            embed.add_field(name="🔗 Удостоверение", value=f"[Ссылка]({application_data['proof']})", inline=False)
+            
+            # Create approval view
+            from .base import create_approval_view
+            approval_view = create_approval_view(application_data)
+            
+            # Get ping roles
+            ping_role_ids = config.get('supplier_role_assignment_ping_roles', [])
+            ping_content = ""
+            if ping_role_ids:
+                ping_mentions = []
+                for ping_role_id in ping_role_ids:
+                    ping_role = moderation_channel.guild.get_role(ping_role_id)
+                    if ping_role:
+                        ping_mentions.append(ping_role.mention)
+                if ping_mentions:
+                    ping_content = f"-# {' '.join(ping_mentions)}"
+            
+            # Send to moderation channel
+            await moderation_channel.send(content=ping_content, embed=embed, view=approval_view)
+            
+            await interaction.response.send_message(
+                "✅ Ваша заявка отправлена на рассмотрение военнослужащим. Ожидайте решения.",
+                ephemeral=True
+            )
+            
+        except Exception as e:
+            print(f"Error sending supplier application: {e}")
             await interaction.response.send_message(
                 "❌ Произошла ошибка при отправке заявки. Попробуйте позже.",
                 ephemeral=True
@@ -417,4 +687,5 @@ class RoleRejectionReasonModal(ui.Modal, title="Причина отказа"):
                     "Произошла ошибка при обработке причины отказа. Пожалуйста, попробуйте еще раз или обратитесь к администратору.",
                     ephemeral=True
                 )
-        except Exception as follow_error:            print(f"Failed to send error message in RoleRejectionReasonModal.on_error: {follow_error}")
+        except Exception as follow_error:
+            print(f"Failed to send error message in RoleRejectionReasonModal.on_error: {follow_error}")

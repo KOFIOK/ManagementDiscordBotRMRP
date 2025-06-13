@@ -530,6 +530,47 @@ class ChannelManagementCog(commands.Cog):
             )
             print(f"List administrators error: {e}")
 
+    @app_commands.command(name="send_welcome_message", description="📨 Отправить приветственное сообщение пользователю")
+    @app_commands.describe(user="Пользователь, которому отправить приветственное сообщение")
+    async def send_welcome_message(self, interaction: discord.Interaction, user: discord.Member):
+        """Send welcome message to a specific user (admin only)"""
+        try:
+            # Check if user has administrator permissions
+            from utils.config_manager import is_administrator
+            config = load_config()
+            
+            if not (interaction.user.guild_permissions.administrator or is_administrator(interaction.user, config)):
+                await interaction.response.send_message(
+                    "❌ У вас нет прав для выполнения этой команды. Требуются права администратора.", 
+                    ephemeral=True
+                )
+                return
+            
+            # Import welcome system
+            from forms.welcome_system import WelcomeSystem
+            
+            # Send welcome message
+            success = await WelcomeSystem.send_welcome_message(user)
+            
+            if success:
+                await interaction.response.send_message(
+                    f"✅ Приветственное сообщение успешно отправлено пользователю {user.mention}",
+                    ephemeral=True
+                )
+            else:
+                await interaction.response.send_message(
+                    f"⚠️ Не удалось отправить приветственное сообщение пользователю {user.mention}. "
+                    f"Возможно, у пользователя закрыты личные сообщения.",
+                    ephemeral=True
+                )
+        
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Ошибка при отправке приветственного сообщения: {e}",
+                ephemeral=True
+            )
+            print(f"Send welcome message error: {e}")
+
 # Setup function for adding the cog to the bot
 async def setup(bot):
     await bot.add_cog(ChannelManagementCog(bot))

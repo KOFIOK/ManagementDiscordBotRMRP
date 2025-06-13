@@ -115,35 +115,27 @@ class DismissalApprovalView(ui.View):
             # Handle automatic reports requiring static
             if await self._handle_automatic_report_static(interaction, is_automatic_report, form_data, target_user, user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server, signed_by_name):
                 return  # Static request handled via modal
-                
-            # Continue with normal processing
+                  # Continue with normal processing
             await self._finalize_approval_processing(interaction, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, signed_by_name, config, user_has_left_server)
             
         except Exception as e:
             await self._handle_approval_error(interaction, e)
+    
     @discord.ui.button(label=DismissalConstants.REJECT_BUTTON_LABEL, style=discord.ButtonStyle.red, custom_id="reject_dismissal")
     async def reject_dismissal(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
-            # Validate moderator permissions
+            # Load configuration and validate permissions
             config = load_config()
-            if not is_moderator_or_admin(interaction.user, config):
-                await interaction.response.send_message(
-                    DismissalConstants.NO_PERMISSION_REJECTION,
-                    ephemeral=True
-                )
+            if not await self._validate_moderator_permissions(interaction, config):
                 return
-            
-            # Show processing state
-            await interaction.response.defer()
-            await self._show_processing_state_for_interaction(interaction)
-            
+                
             # Extract target user and validate permissions
-            target_user, _ = self._extract_target_user(interaction)
-            if not await self._validate_rejection_permissions(interaction, target_user, config):
+            target_user, user_has_left_server = self._extract_target_user(interaction)
+            if not await self._validate_hierarchical_permissions(interaction, target_user, user_has_left_server, config):
                 return
             
-            # Process rejection
-            await self._finalize_rejection(interaction, target_user)
+            # Directly request rejection reason without authorization check
+            await self._request_rejection_reason(interaction, target_user)
                     
         except Exception as e:
             await self._handle_rejection_error(interaction, e)
@@ -278,15 +270,11 @@ class DismissalApprovalView(ui.View):
     async def _continue_dismissal_with_manual_auth(self, interaction, moderator_data, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server=False):
         """Continue dismissal process with manually entered moderator data."""
         try:
-            print(f"DEBUG: _continue_dismissal_with_manual_auth called with moderator_data: {moderator_data}")
-              # First, try to save the moderator to Google Sheets
+            print(f"DEBUG: _continue_dismissal_with_manual_auth called with moderator_data: {moderator_data}")            # First, try to save the moderator to Google Sheets
             try:
                 print(f"🔄 Attempting to register moderator in Google Sheets...")
                 registration_success = await sheets_manager.register_moderator(
-                    email=moderator_data['email'],
-                    name=moderator_data['name'],
-                    static=moderator_data['static'],
-                    position=moderator_data['position']
+                    moderator_data, interaction.user
                 )
                 
                 if registration_success:
@@ -312,7 +300,7 @@ class DismissalApprovalView(ui.View):
                 try:
                     await interaction.followup.send(
                         "✅ **Авторизация модератора завершена успешно!**\n\n"
-                        "📋 **Следующий шаг:** Для автоматического рапорта на увольнение требуется указать статик покинувшего сервер пользователя.\n\n"
+                        "📋 **Следующий шаг:** Для автоматического рапорта на увольнение требуется указать статик покинувшего сервера пользователя.\n\n"
                         "🔄 **Действие:** Нажмите кнопку \"✅ Одобрить\" ещё раз для ввода статика и завершения обработки увольнения.\n\n"
                         "ℹ️ Это необходимо из-за ограничений Discord на открытие нескольких модальных окон подряд.",
                         ephemeral=True
@@ -690,13 +678,12 @@ class DismissalApprovalView(ui.View):
             elif is_moderator_or_admin(target_user, config):
                 reason = "Вы не можете отклонить рапорт модератора того же или более высокого уровня."
             else:
-                reason = "У вас недостаточно прав для отклонения этого рапорта."
-            
+                reason = "У вас недостаточно прав для отклонения этого рапорта."            
             await interaction.followup.send(f"❌ {reason}", ephemeral=True)
             return False
         return True
-    
-    async def _finalize_rejection(self, interaction: discord.Interaction, target_user):
+
+    async def _finalize_rejection(self, interaction: discord.Interaction, target_user, rejection_reason=None):
         """Finalize the rejection process with UI updates and notifications."""
         # Update the embed
         embed = interaction.message.embeds[0]
@@ -707,7 +694,16 @@ class DismissalApprovalView(ui.View):
             value=f"Сотрудник: {interaction.user.mention}\nВремя: {discord.utils.format_dt(discord.utils.utcnow(), 'F')}", 
             inline=False
         )
-          # Create new view with only "Rejected" button (disabled)
+        
+        # Add rejection reason if provided
+        if rejection_reason:
+            embed.add_field(
+                name="Причина отказа",
+                value=rejection_reason,
+                inline=False
+            )
+        
+        # Create new view with only "Rejected" button (disabled)
         rejected_view = ui.View(timeout=None)
         rejected_button = ui.Button(label=DismissalConstants.REJECTED_LABEL, style=discord.ButtonStyle.red, disabled=True)
         rejected_view.add_item(rejected_button)
@@ -715,11 +711,12 @@ class DismissalApprovalView(ui.View):
         await interaction.followup.edit_message(interaction.message.id, content="", embed=embed, view=rejected_view)
         
         # Send DM to the user if they're still on the server
-        if target_user:
+        if target_user and not getattr(target_user, '_is_mock', False):
             try:
-                await target_user.send(
-                    f"## Ваш рапорт на увольнение был **отклонён** сотрудником {interaction.user.mention}."
-                )
+                dm_content = f"## Ваш рапорт на увольнение был **отклонён** сотрудником {interaction.user.mention}."
+                if rejection_reason:
+                    dm_content += f"\n**Причина отказа:** {rejection_reason}"
+                await target_user.send(dm_content)
             except discord.Forbidden:
                 pass  # User has DMs disabled
     
@@ -798,12 +795,18 @@ class DismissalApprovalView(ui.View):
     async def _show_processing_state(self, interaction: discord.Interaction):
         """Show processing UI state (generic method for compatibility)."""
         await self._show_processing_state_for_interaction(interaction)
+
     async def _handle_moderator_authorization(self, interaction, target_user, form_data, user_rank_for_audit, user_unit_for_audit, current_time, user_has_left_server):
         """Handle moderator authorization flow and return signed_by_name if successful."""
         try:
+            print(f"🔍 Checking moderator authorization for user: {interaction.user.name} (ID: {interaction.user.id})")
+            
             # Check moderator authorization
             auth_result = await sheets_manager.check_moderator_authorization(interaction.user)
+            print(f"🔍 Authorization result: {auth_result}")
+            
             if not auth_result["found"]:
+                print(f"❌ Moderator {interaction.user.name} not found in Google Sheets, showing auth modal")
                 # Show manual auth modal (no defer needed here, modal will handle response)
                 from .modals import ModeratorAuthModal
                 
@@ -815,6 +818,7 @@ class DismissalApprovalView(ui.View):
                 await interaction.response.send_modal(auth_modal)
                 return None  # Processing will continue in modal callback
             else:
+                print(f"✅ Moderator {interaction.user.name} found in Google Sheets: {auth_result['info']}")
                 # Show processing state and continue
                 await interaction.response.defer()
                 await self._show_processing_state_for_interaction(interaction)
@@ -823,7 +827,10 @@ class DismissalApprovalView(ui.View):
                 return signed_by_name
                 
         except Exception as e:
-            print(f"Error in moderator authorization: {e}")
+            print(f"❌ Error in moderator authorization: {e}")
+            import traceback
+            traceback.print_exc()
+            
             if not interaction.response.is_done():
                 await interaction.response.send_message(
                     DismissalConstants.AUTHORIZATION_ERROR,
@@ -917,8 +924,7 @@ class DismissalApprovalView(ui.View):
     async def _handle_approval_error(self, interaction: discord.Interaction, error: Exception):
         """Handle errors in approval process with fallback responses."""
         print(f"Error in dismissal approval: {error}")
-        try:
-            await interaction.followup.send(
+        try:            await interaction.followup.send(
                 DismissalConstants.PROCESSING_ERROR_APPROVAL,
                 ephemeral=True
             )
@@ -930,3 +936,76 @@ class DismissalApprovalView(ui.View):
                 )
             except:
                 pass
+
+    async def _request_rejection_reason(self, interaction, target_user):
+        """Request rejection reason from moderator via modal."""
+        try:
+            from .modals import RejectionReasonModal
+            
+            # Store the original message for later reference
+            original_message = interaction.message
+              # Create modal to request rejection reason
+            reason_modal = RejectionReasonModal(
+                self._finalize_rejection_with_reason,
+                target_user, original_message
+            )
+            
+            # If interaction hasn't been responded to yet, send modal
+            if not interaction.response.is_done():
+                await interaction.response.send_modal(reason_modal)
+            else:
+                # Fallback case - ask user to try again
+                await interaction.followup.send(
+                    "Пожалуйста, нажмите кнопку 'Отказать' еще раз для ввода причины отказа.",
+                    ephemeral=True
+                )
+            
+        except Exception as e:
+            print(f"Error in _request_rejection_reason: {e}")
+            await interaction.followup.send(
+                "❌ Произошла ошибка при запросе причины отказа.",
+                ephemeral=True
+            )
+
+    async def _finalize_rejection_with_reason(self, interaction, rejection_reason, target_user, original_message):
+        """Finalize the rejection process with the provided reason."""
+        try:            
+            embed = original_message.embeds[0]
+            embed.color = discord.Color.red()
+            
+            embed.add_field(
+                name="Обработано", 
+                value=f"Сотрудник: {interaction.user.mention}\nВремя: {discord.utils.format_dt(discord.utils.utcnow(), 'F')}", 
+                inline=False
+            )
+            
+            embed.add_field(
+                name="Причина отказа",
+                value=rejection_reason,
+                inline=False
+            )
+            
+            # Create new view with only "Rejected" button (disabled)
+            rejected_view = ui.View(timeout=None)
+            rejected_button = ui.Button(label=DismissalConstants.REJECTED_LABEL, style=discord.ButtonStyle.red, disabled=True)
+            rejected_view.add_item(rejected_button)
+            
+            await original_message.edit(content="", embed=embed, view=rejected_view)
+            
+            # Send DM to the user if they're still on the server
+            if target_user and not getattr(target_user, '_is_mock', False):
+                try:
+                    await target_user.send(
+                        f"## ❌ Ваш рапорт на увольнение был **отклонён**\n"
+                        f"> **Сотрудник:** {interaction.user.mention}\n"
+                        f"> **Причина отказа:** {rejection_reason}"
+                    )
+                except discord.Forbidden:
+                    pass  # User has DMs disabled
+            
+        except Exception as e:
+            print(f"Error in _finalize_rejection_with_reason: {e}")
+            await interaction.followup.send(
+                "❌ Произошла ошибка при финализации отказа.",
+                ephemeral=True
+            )

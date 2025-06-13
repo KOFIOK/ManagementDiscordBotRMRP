@@ -290,8 +290,7 @@ class GoogleSheetsManager:
                     surname = name_parts[-1]  # Last word as surname
                     print(f"🔍 AUTHORIZATION CHECK: Searching for surname: '{surname}'")
                     
-                    try:
-                        # Search in 'Пользователи' sheet
+                    try:                        # Search in 'Пользователи' sheet
                         full_user_info = await self.get_user_info_from_users_sheet(surname)
                         print(f"🔍 AUTHORIZATION CHECK: Search result: {full_user_info}")
                         
@@ -303,33 +302,41 @@ class GoogleSheetsManager:
                                 "clean_name": approved_by_clean_name,
                                 "requires_manual_input": False
                             }
+                        else:
+                            print(f"❌ AUTHORIZATION CHECK: Moderator NOT FOUND in system!")
+                            return {
+                                "found": False,  # Moderator not found - need manual registration
+                                "info": None,
+                                "clean_name": approved_by_clean_name,
+                                "requires_manual_input": True
+                            }
                     except Exception as e:
                         print(f"⚠️ AUTHORIZATION CHECK: Sheet search failed: {e}")
-                        # Fall back to clean name if Google Sheets fails
-                        print(f"ℹ️ AUTHORIZATION CHECK: Using fallback mode with clean name")
+                        # Fall back to requiring manual auth if Google Sheets fails
+                        print(f"ℹ️ AUTHORIZATION CHECK: Using fallback mode - requiring manual auth")
                         return {
-                            "found": True,  # Consider authorized in fallback mode
-                            "info": approved_by_clean_name,  # Use clean name as info
+                            "found": False,  # Require manual auth in fallback mode
+                            "info": None,
                             "clean_name": approved_by_clean_name,
-                            "requires_manual_input": False
+                            "requires_manual_input": True
                         }
                 
             # Default return for cases where we couldn't process properly
+            print(f"❌ AUTHORIZATION CHECK: Could not process name properly")
             return {
-                "found": True,  # Allow operation in case of problems
-                "info": approved_by_clean_name or approving_user.display_name,
+                "found": False,  # Require manual auth for safety
+                "info": None,
                 "clean_name": approved_by_clean_name or approving_user.display_name,
-                "requires_manual_input": False
+                "requires_manual_input": True
             }
-            
         except Exception as e:
             print(f"❌ AUTHORIZATION CHECK: Error in check_moderator_authorization: {e}")
-            # In case of any error, fall back to using display name
+            # In case of any error, require manual auth for safety
             return {
-                "found": True,  # Allow operation in case of problems
-                "info": approving_user.display_name,
+                "found": False,  # Require manual auth in case of problems
+                "info": None,
                 "clean_name": approving_user.display_name,
-                "requires_manual_input": False
+                "requires_manual_input": True
             }
     
     async def add_dismissal_record(self, form_data, dismissed_user, approving_user, dismissal_time, ping_settings, override_moderator_info=None):
@@ -716,20 +723,27 @@ class GoogleSheetsManager:
             return False
     
     
-    async def register_moderator(self, email, name, static, position):
+    async def register_moderator(self, moderator_data, discord_user):
         """
         Register a new moderator in the 'Пользователи' sheet.
         
         Args:
-            email: Moderator's email address
-            name: Moderator's full name (Имя Фамилия)
-            static: Moderator's static number (formatted)
-            position: Moderator's position/rank
+            moderator_data: Dict containing moderator information
+                - email: Moderator's email address
+                - name: Moderator's full name (Имя Фамилия)
+                - static: Moderator's static number (formatted)
+                - position: Moderator's position/rank
+            discord_user: Discord user object for access management
             
         Returns:
             bool: True if registration successful, False otherwise
         """
         try:
+            # Extract data from moderator_data dict
+            email = moderator_data['email']
+            name = moderator_data['name']
+            static = moderator_data['static']
+            position = moderator_data['position']
             # Ensure connection
             if not self._ensure_connection():
                 print("Failed to establish Google Sheets connection for moderator registration")

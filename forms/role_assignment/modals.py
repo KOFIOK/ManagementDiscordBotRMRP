@@ -3,6 +3,7 @@ Application modals for role assignment system
 """
 
 import discord
+import os
 import re
 from datetime import datetime, timezone, timedelta
 from discord import ui
@@ -124,60 +125,81 @@ class MilitaryApplicationModal(ui.Modal):
         elif len(digits_only) == 6:
             return f"{digits_only[:3]}-{digits_only[3:]}"
         else:
-            return ""
-    
-    @retry_on_google_error(max_retries=3, delay=1.0)
+            return ""      @retry_on_google_error(retries=3, delay=1.0)
     async def _check_blacklist_status(self, static: str):
         """Check if user is in blacklist using Google Sheets"""
         try:
-            if not sheets_manager.credentials_file:
+            # Check if Google Sheets credentials exist
+            if not os.path.exists(sheets_manager.credentials_path):
                 print("Google Sheets credentials not found, allowing application")
                 return {"is_blocked": False}
             
-            # Get data from sheet
-            sheet_data = sheets_manager.get_sheet_data("Отправлено (НЕ РЕДАКТИРОВАТЬ)")
-            if not sheet_data:
-                print("Could not access blacklist sheet, allowing application")
+            # Ensure connection
+            if not sheets_manager._ensure_connection():
+                print("Could not connect to Google Sheets, allowing application")
                 return {"is_blocked": False}
             
-            # Find the most recent entry for this static (first match from top)
-            for row in sheet_data:
-                if len(row) >= 2 and row[1] == static:  # Column B (index 1) contains static
-                    if len(row) >= 5 and row[4]:  # Column E (index 4) contains end date
-                        try:
-                            # Parse end date (DD.MM.YYYY format)
-                            end_date_str = row[4].strip()
-                            end_date = datetime.strptime(end_date_str, "%d.%m.%Y")
-                            
-                            # Set timezone to Moscow
-                            moscow_tz = timezone(timedelta(hours=3))
-                            end_date = end_date.replace(hour=23, minute=59, second=59, tzinfo=moscow_tz)
-                            
-                            # Check if punishment is still active
-                            current_time = datetime.now(moscow_tz)
-                            
-                            if current_time <= end_date:
-                                # Punishment is still active
-                                reason = row[2] if len(row) >= 3 else "Не указана"
-                                officer = row[3] if len(row) >= 4 else "Не указан"
+            # Get the 'Отправлено (НЕ РЕДАКТИРОВАТЬ)' worksheet
+            blacklist_worksheet = None
+            for worksheet in sheets_manager.spreadsheet.worksheets():
+                if worksheet.title == "Отправлено (НЕ РЕДАКТИРОВАТЬ)":
+                    blacklist_worksheet = worksheet
+                    break
+            
+            if not blacklist_worksheet:
+                print("'Отправлено (НЕ РЕДАКТИРОВАТЬ)' sheet not found, allowing application")
+                return {"is_blocked": False}
+              # Get all values from the sheet
+            sheet_data = blacklist_worksheet.get_all_values()
+            if not sheet_data:
+                print("No data found in blacklist sheet, allowing application")
+                return {"is_blocked": False}
+              # Find the most recent entry for this static (first match from top)
+            print(f"🔍 Searching for static {static} in blacklist...")
+            for row_index, row in enumerate(sheet_data):
+                if len(row) >= 2:  # Check if column B exists
+                    column_b = row[1].strip()  # Column B (index 1) contains "Name | Static"
+                    # Debug: Print first few rows to see the format
+                    if row_index < 5:
+                        print(f"  Row {row_index}: Column B = '{column_b}'")
+                    # Check if column B ends with " | {static}"
+                    if column_b.endswith(f" | {static}"):
+                        print(f"✅ Found matching entry: '{column_b}'")
+                        if len(row) >= 5 and row[4]:  # Column E (index 4) contains end date
+                            try:
+                                # Parse end date (DD.MM.YYYY format)
+                                end_date_str = row[4].strip()
+                                end_date = datetime.strptime(end_date_str, "%d.%m.%Y")
                                 
-                                return {
-                                    "is_blocked": True,
-                                    "reason": reason,
-                                    "officer": officer,
-                                    "end_date": end_date_str
-                                }
-                            else:
-                                # Punishment expired, but this is the most recent entry
-                                print(f"Found expired punishment for {static}, allowing application")
-                                return {"is_blocked": False}
-                        except ValueError as e:
-                            print(f"Error parsing date for static {static}: {e}")
-                            continue
-                    else:
-                        # Entry found but no end date, assume not blocked
-                        print(f"Found entry for {static} but no end date, allowing application")
-                        return {"is_blocked": False}
+                                # Set timezone to Moscow
+                                moscow_tz = timezone(timedelta(hours=3))
+                                end_date = end_date.replace(hour=23, minute=59, second=59, tzinfo=moscow_tz)
+                                
+                                # Check if punishment is still active
+                                current_time = datetime.now(moscow_tz)
+                                
+                                if current_time <= end_date:
+                                    # Punishment is still active
+                                    reason = row[2] if len(row) >= 3 else "Не указана"
+                                    officer = row[5] if len(row) >= 4 else "Не указан"
+                                    
+                                    return {
+                                        "is_blocked": True,
+                                        "reason": reason,
+                                        "officer": officer,
+                                        "end_date": end_date_str
+                                    }
+                                else:
+                                    # Punishment expired, but this is the most recent entry
+                                    print(f"Found expired punishment for {static}, allowing application")
+                                    return {"is_blocked": False}
+                            except ValueError as e:
+                                print(f"Error parsing date for static {static}: {e}")
+                                continue
+                        else:
+                            # Entry found but no end date, assume not blocked
+                            print(f"Found entry for {static} but no end date, allowing application")
+                            return {"is_blocked": False}
             
             # No entry found for this static
             print(f"No blacklist entry found for static {static}, allowing application")

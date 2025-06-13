@@ -58,7 +58,7 @@ class RoleAssignmentView(ui.View):
         if role_check["has_roles"]:
             await interaction.response.send_message(
                 f"❌ **У вас уже есть доступ к поставкам**\n"
-                f"> - **Ваши роли поставщика:**\n{role_check['role_list']}\n\n"
+                f"> - **Ваши роли:**\n{role_check['role_list']}\n\n"
                 f"> *Подача дополнительной заявки не требуется.*",
                 ephemeral=True
             )

@@ -18,7 +18,7 @@ class RoleAssignmentView(ui.View):
         modal = MilitaryApplicationModal()
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="📦 Я поставщик", style=discord.ButtonStyle.primary, custom_id="role_supplier")
+    @discord.ui.button(label="📦 Доступ к поставкам", style=discord.ButtonStyle.primary, custom_id="role_supplier")
     async def supplier_application(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Open supplier application form"""
         modal = SupplierApplicationModal()

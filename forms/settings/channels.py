@@ -103,7 +103,7 @@ class ChannelConfigSelect(ui.Select):
             inline=True
         )
         embed.add_field(
-            name="📦 Роли поставщиков:",
+            name="📦 Роли доступа к поставкам:",
             value=helper.format_roles_info(config, 'supplier_roles', interaction.guild),
             inline=True
         )
@@ -117,7 +117,7 @@ class ChannelConfigSelect(ui.Select):
             name="📢 Пинг роли:",
             value=(
                 f"🪖 Военные: {helper.format_roles_list(config, 'military_role_assignment_ping_roles', interaction.guild)}\n"
-                f"📦 Поставщики: {helper.format_roles_list(config, 'supplier_role_assignment_ping_roles', interaction.guild)}\n"
+                f"📦 Доступ к поставкам: {helper.format_roles_list(config, 'supplier_role_assignment_ping_roles', interaction.guild)}\n"
                 f"👤 Гражданские: {helper.format_roles_list(config, 'civilian_role_assignment_ping_roles', interaction.guild)}"
             ),
             inline=False
@@ -127,7 +127,7 @@ class ChannelConfigSelect(ui.Select):
             name="ℹ️ Доступные действия:",
             value=(
                 "• **Настроить канал** - установить канал для получения ролей\n"
-                "• **Настроить роли** - настроить роли для военных, поставщиков и гражданских\n"
+                "• **Настроить роли** - настроить роли для военных, доступа к поставкам и госслужащих\n"
                 "• **Настроить пинги** - настроить роли для уведомлений\n"
                 "• **Полная настройка** - настроить всё сразу"
             ),
@@ -329,10 +329,10 @@ class RoleAssignmentChannelView(BaseSettingsView):
         modal = SetMultipleRolesModal("military_roles", "🪖 Настройка ролей военнослужащих", "Укажите роли для военнослужащих (через запятую)")
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="📦 Роли поставщиков", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="📦 Роли доступа к поставкам", style=discord.ButtonStyle.secondary)
     async def set_supplier_roles(self, interaction: discord.Interaction, button: discord.ui.Button):
         from .role_config import SetMultipleRolesModal
-        modal = SetMultipleRolesModal("supplier_roles", "📦 Настройка ролей поставщиков", "Укажите роли для поставщиков (через запятую)")
+        modal = SetMultipleRolesModal("supplier_roles", "📦 Настройка ролей доступа к поставкам", "Укажите роли для доступа к поставкам (через запятую)")
         await interaction.response.send_modal(modal)
     
     @discord.ui.button(label="👤 Роли гражданских", style=discord.ButtonStyle.secondary)
@@ -474,7 +474,7 @@ class RolePingConfigView(BaseSettingsView):
         )
         
         embed.add_field(
-            name="📦 Пинг-роли для заявок поставщиков:",
+            name="📦 Пинг-роли для заявок доступа к поставкам:",
             value=helper.format_roles_list(config, 'supplier_role_assignment_ping_roles', interaction.guild),
             inline=False
         )
@@ -504,10 +504,10 @@ class RolePingButtonsView(BaseSettingsView):
         modal = SetMultipleRolesModal("military_role_assignment_ping_roles", "🪖 Пинг-роли для военных", "Укажите роли для уведомлений о военных заявках")
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="📦 Пинг поставщиков", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="📦 Пинг доступа к поставкам", style=discord.ButtonStyle.secondary)
     async def set_supplier_ping(self, interaction: discord.Interaction, button: discord.ui.Button):
         from .role_config import SetMultipleRolesModal
-        modal = SetMultipleRolesModal("supplier_role_assignment_ping_roles", "📦 Пинг-роли для поставщиков", "Укажите роли для уведомлений о заявках поставщиков")
+        modal = SetMultipleRolesModal("supplier_role_assignment_ping_roles", "📦 Пинг-роли для доступа к поставкам", "Укажите роли для уведомлений о заявках поставщиков")
         await interaction.response.send_modal(modal)
     
     @discord.ui.button(label="👨‍⚕️ Пинг госслужащих", style=discord.ButtonStyle.secondary)

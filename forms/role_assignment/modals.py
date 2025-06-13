@@ -467,7 +467,7 @@ class SupplierApplicationModal(ui.Modal):
     """Modal for supplier role applications"""
     
     def __init__(self):
-        super().__init__(title="Заявка на получение роли поставщика")
+        super().__init__(title="Заявка на получение роли доступа к поставкам")
         
         self.name_input = ui.TextInput(
             label="Имя Фамилия",
@@ -595,7 +595,7 @@ class SupplierApplicationModal(ui.Modal):
             
             # Create embed
             embed = discord.Embed(
-                title="📦 Заявка на получение роли поставщика",
+                title="📦 Заявка на получение роли доступа к поставкам",
                 color=discord.Color.orange(),
                 timestamp=discord.utils.utcnow()
             )

@@ -90,12 +90,29 @@ class ChannelConfigSelect(ui.Select):
         
         config = load_config()
         helper = ConfigDisplayHelper()
-        
-        # Show current channel
+          # Show current channel and message
         embed.add_field(
             name="📂 Текущий канал:",
             value=helper.format_channel_info(config, 'role_assignment_channel', interaction.guild),
-            inline=False        )
+            inline=False
+        )
+        
+        # Show role assignment message info
+        message_id = config.get('role_assignment_message_id')
+        channel_id = config.get('role_assignment_channel')
+        if message_id and channel_id:
+            message_link = f"https://discord.com/channels/{interaction.guild.id}/{channel_id}/{message_id}"
+            embed.add_field(
+                name="📌 Сообщение с кнопками:",
+                value=f"[Перейти к сообщению]({message_link}) (ID: {message_id})",
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="📌 Сообщение с кнопками:",
+                value="❌ Не настроено или не найдено",
+                inline=False
+            )
           # Show current roles
         embed.add_field(
             name="🪖 Роли военнослужащих:",

@@ -15,14 +15,16 @@ class WelcomeSystem:
                 timestamp=discord.utils.utcnow()
             )
             embed.set_thumbnail(url="https://i.imgur.com/07MRSyl.png")  # Логотип ВС РФ
-            
-            # Получаем информацию о настроенном канале получения ролей
-            from utils.config_manager import load_config
+              # Получаем информацию о настроенном канале получения ролей
+            from utils.config_manager import load_config, get_role_assignment_message_link
             config = load_config()
             role_assignment_channel_id = config.get('role_assignment_channel')
             
-            # Формируем текст с упоминанием канала если он настроен
-            if role_assignment_channel_id:
+            # Формируем текст с прямой ссылкой на сообщение с кнопками или упоминанием канала
+            message_link = get_role_assignment_message_link(member.guild.id)
+            if message_link:
+                step_text = f"1. **[🎯 Подать заявку на роль]({message_link})**\n"
+            elif role_assignment_channel_id:
                 role_channel = member.guild.get_channel(role_assignment_channel_id)
                 if role_channel:
                     step_text = f"1. **Получите роль** - перейдите в {role_channel.mention}\n"
@@ -46,13 +48,15 @@ class WelcomeSystem:
                 name="👤 Являетесь госслужащим?",
                 value=(
                     "• Если вы работник **УВД, ФСБ, ЦГБ** или другого госоргана\n"
-                    "• Если вы **поставщик** или представитель организации\n"
-                    "• Получите соответствующую роль для доступа к ресурсам"
+                    "• Если вы представитель организации и нуждаетесь в **доступе к поставкам**\n"
+                    "• Получите соответствующую роль для доступа к каналам"
                 ),
                 inline=False            )
-            
-            # Формируем текст для полезных каналов
-            if role_assignment_channel_id:
+              # Формируем текст для полезных каналов
+            message_link = get_role_assignment_message_link(member.guild.id)
+            if message_link:
+                channels_text = f"• **[Получение ролей]({message_link})** - основной канал для начала\n"
+            elif role_assignment_channel_id:
                 role_channel = member.guild.get_channel(role_assignment_channel_id)
                 if role_channel:
                     channels_text = f"• {role_channel.mention} - основной канал для начала\n"

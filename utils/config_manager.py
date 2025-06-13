@@ -18,6 +18,7 @@ default_config = {
     'audit_channel': None,
     'blacklist_channel': None,
     'role_assignment_channel': None,
+    'role_assignment_message_id': None,  # ID of the pinned message with role assignment buttons
     'moderator_registration_channel': None,  # Channel for moderator registration
     'military_roles': [],  # Military roles (updated to array)
     'supplier_roles': [],  # Supplier roles
@@ -561,3 +562,29 @@ async def has_pending_role_application(bot, user_id, role_assignment_channel_id)
     except Exception as e:
         print(f"Error checking pending role applications: {e}")
         return False
+
+def save_role_assignment_message_id(message_id: int):
+    """Save the ID of the role assignment message with buttons"""
+    try:
+        config = load_config()
+        config['role_assignment_message_id'] = message_id
+        save_config(config)
+        print(f"✅ Saved role assignment message ID: {message_id}")
+        return True
+    except Exception as e:
+        print(f"❌ Error saving role assignment message ID: {e}")
+        return False
+
+def get_role_assignment_message_link(guild_id: int):
+    """Get the direct link to the role assignment message"""
+    try:
+        config = load_config()
+        message_id = config.get('role_assignment_message_id')
+        channel_id = config.get('role_assignment_channel')
+        
+        if message_id and channel_id:
+            return f"https://discord.com/channels/{guild_id}/{channel_id}/{message_id}"
+        return None
+    except Exception as e:
+        print(f"❌ Error getting role assignment message link: {e}")
+        return None

@@ -6,6 +6,7 @@ import discord
 import re
 from .views import RoleAssignmentView
 from .base import create_approval_view
+from utils.config_manager import save_role_assignment_message_id
 
 
 async def send_role_assignment_message(channel):
@@ -19,11 +20,12 @@ async def send_role_assignment_message(channel):
                 message.embeds and
                 message.embeds[0].title and
                 "Получение ролей" in message.embeds[0].title):
-                
-                # Found pinned role assignment message, restore the view
+                  # Found pinned role assignment message, restore the view
                 view = RoleAssignmentView()
                 try:
                     await message.edit(view=view)
+                    # Save the message ID for welcome system
+                    save_role_assignment_message_id(message.id)
                     print(f"Updated existing pinned role assignment message {message.id}")
                     return
                 except Exception as e:
@@ -79,16 +81,19 @@ async def send_role_assignment_message(channel):
         value=(
             "> • Работник государственного органа\n"
             "> • Гражданский специалист"
-        ), 
+        ),
         inline=True
     )
-
+    
     embed.set_footer(
         text="Нажмите на соответствующую кнопку ниже для подачи заявки"
     )
     
     view = RoleAssignmentView()
     message = await channel.send(embed=embed, view=view)
+    
+    # Save the message ID for welcome system
+    save_role_assignment_message_id(message.id)
     
     # Pin the new message for easy access
     try:
@@ -108,11 +113,12 @@ async def restore_role_assignment_views(bot, channel):
                 message.embeds and
                 message.embeds[0].title and
                 "Получение ролей" in message.embeds[0].title):
-                
-                # Add the view back to the pinned message
+                  # Add the view back to the pinned message
                 view = RoleAssignmentView()
                 try:
                     await message.edit(view=view)
+                    # Save the message ID for welcome system
+                    save_role_assignment_message_id(message.id)
                     print(f"Restored role assignment view for pinned message {message.id}")
                     return  # Found and restored pinned message
                 except discord.NotFound:

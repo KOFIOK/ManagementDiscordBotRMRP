@@ -11,6 +11,7 @@ from utils.google_sheets import sheets_manager
 from forms.dismissal import DismissalReportButton, DismissalApprovalView, send_dismissal_button_message, restore_dismissal_approval_views, restore_dismissal_button_views
 from forms.settings_form import SettingsView
 from forms.role_assignment_form import RoleAssignmentView, send_role_assignment_message, restore_role_assignment_views, restore_approval_views
+from forms.moderator_registration import ModeratorRegistrationView, ensure_moderator_registration_message
 from forms.welcome_system import setup_welcome_events
 
 # Load environment variables from .env file
@@ -48,14 +49,14 @@ async def on_ready():
         synced = await bot.tree.sync()
         print(f'Synced {len(synced)} command(s)')
     except Exception as e:
-        print(f'Failed to sync commands: {e}')
-      # Load configuration on startup
+        print(f'Failed to sync commands: {e}')      # Load configuration on startup
     config = load_config()
     print('Configuration loaded successfully')
     print(f'Dismissal channel: {config.get("dismissal_channel", "Not set")}')
     print(f'Audit channel: {config.get("audit_channel", "Not set")}')
     print(f'Blacklist channel: {config.get("blacklist_channel", "Not set")}')
     print(f'Role assignment channel: {config.get("role_assignment_channel", "Not set")}')
+    print(f'Moderator registration channel: {config.get("moderator_registration_channel", "Not set")}')
     print(f'Military role: {config.get("military_role", "Not set")}')
     print(f'Civilian role: {config.get("civilian_role", "Not set")}')
       # Initialize Google Sheets
@@ -68,6 +69,7 @@ async def on_ready():
     bot.add_view(DismissalReportButton())
     bot.add_view(SettingsView())
     bot.add_view(RoleAssignmentView())
+    bot.add_view(ModeratorRegistrationView())
     
     # Add a generic DismissalApprovalView for persistent approval buttons
     bot.add_view(DismissalApprovalView())
@@ -140,10 +142,17 @@ async def restore_channel_messages(config):
               # Restore role assignment views
             print(f"Restoring role assignment views in {channel.name}")
             await restore_role_assignment_views(bot, channel)
-            
-            # Restore approval views for existing applications
+              # Restore approval views for existing applications
             print(f"Restoring approval views for role applications in {channel.name}")
             await restore_approval_views(bot, channel)
+    
+    # Restore moderator registration channel message
+    moderator_registration_channel_id = config.get('moderator_registration_channel')
+    if moderator_registration_channel_id:
+        channel = bot.get_channel(moderator_registration_channel_id)
+        if channel:
+            print(f"Ensuring moderator registration message in {channel.name}")
+            await ensure_moderator_registration_message(bot.guilds[0], moderator_registration_channel_id)
     
     # Restore audit channel message
     audit_channel_id = config.get('audit_channel')

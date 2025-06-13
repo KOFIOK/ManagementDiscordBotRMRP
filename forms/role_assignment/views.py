@@ -38,6 +38,18 @@ class ApprovedApplicationView(ui.View):
         pass
 
 
+class ProcessingApplicationView(ui.View):
+    """View to show during application processing"""
+    
+    def __init__(self):
+        super().__init__(timeout=None)
+    
+    @discord.ui.button(label="🔄 Обрабатывается...", style=discord.ButtonStyle.secondary, custom_id="status_processing", disabled=True)
+    async def processing_status(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # This button is disabled and just for visual indication
+        pass
+
+
 class RejectedApplicationView(ui.View):
     """View to show after application is rejected"""
     

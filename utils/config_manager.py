@@ -18,6 +18,7 @@ default_config = {
     'audit_channel': None,
     'blacklist_channel': None,
     'role_assignment_channel': None,
+    'moderator_registration_channel': None,  # Channel for moderator registration
     'military_roles': [],  # Military roles (updated to array)
     'civilian_roles': [],  # Civilian roles (updated to array)
     'military_role_assignment_ping_roles': [],  # Roles to ping for military applications

@@ -44,8 +44,13 @@ class ChannelConfigSelect(ui.Select):
                 description="Настроить канал для выбора военной/гражданской роли",
                 emoji="🎖️",
                 value="role_assignment"
+            ),
+            discord.SelectOption(
+                label="Регистрация модераторов",
+                description="Настроить канал для регистрации модераторов в системе",                emoji="🔐",
+                value="moderator_registration"
             )
-    ]
+        ]
         
         super().__init__(
             placeholder="Выберите канал для настройки...",
@@ -67,6 +72,8 @@ class ChannelConfigSelect(ui.Select):
             await self.show_dismissal_config(interaction)
         elif config_type == "blacklist":
             await self.show_blacklist_config(interaction)
+        elif config_type == "moderator_registration":
+            await self.show_moderator_registration_config(interaction)
         else:
             # Create channel selection modal for other channel types
             modal = ChannelSelectionModal(config_type)
@@ -248,6 +255,59 @@ class ChannelConfigSelect(ui.Select):
         
         view = BlacklistChannelView()
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+    
+    async def show_moderator_registration_config(self, interaction: discord.Interaction):
+        """Show moderator registration channel configuration"""
+        config = load_config()
+        
+        embed = discord.Embed(
+            title="🔐 Настройка канала регистрации модераторов",
+            description="Управление каналом для регистрации модераторов в системе.",
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow()
+        )
+        
+        # Show current channel
+        channel_id = config.get('moderator_registration_channel')
+        if channel_id:
+            channel = interaction.guild.get_channel(channel_id)
+            if channel:
+                embed.add_field(
+                    name="📂 Текущий канал:",
+                    value=f"{channel.mention} (ID: {channel.id})",
+                    inline=False
+                )
+            else:
+                embed.add_field(
+                    name="❌ Текущий канал:",
+                    value=f"Канал не найден (ID: {channel_id})",
+                    inline=False
+                )
+        else:
+            embed.add_field(
+                name="❌ Канал не настроен",
+                value="Установите канал для регистрации модераторов",
+                inline=False
+            )
+        
+        embed.add_field(
+            name="ℹ️ Описание функции:",
+            value=(
+                "В этом канале будет размещено закреплённое сообщение с кнопкой "
+                "для регистрации модераторов в системе кадрового учёта.\n\n"
+                "**Регистрироваться могут только пользователи с правами модератора.**"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🔧 Доступные действия:",
+            value="• **Настроить канал** - установить канал для регистрации",
+            inline=False
+        )
+        
+        view = ModeratorRegistrationChannelView()
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
 class RoleAssignmentChannelView(BaseSettingsView):
@@ -285,7 +345,8 @@ class ChannelSelectionModal(BaseSettingsModal):
             "dismissal": "увольнений",
             "audit": "аудита", 
             "blacklist": "чёрного списка",
-            "role_assignment": "получения ролей"
+            "role_assignment": "получения ролей",
+            "moderator_registration": "регистрации модераторов"
         }
         
         super().__init__(title=f"Настройка канала {type_names.get(config_type, config_type)}")
@@ -327,13 +388,13 @@ class ChannelSelectionModal(BaseSettingsModal):
             config = load_config()
             config[f'{self.config_type}_channel'] = channel.id
             save_config(config)
-            
-            # Define type names and handle button messages
+              # Define type names and handle button messages
             type_names = {
                 "dismissal": "рапортов на увольнение",
                 "audit": "кадрового аудита",
                 "blacklist": "чёрного списка",
-                "role_assignment": "получения ролей"
+                "role_assignment": "получения ролей",
+                "moderator_registration": "регистрации модераторов"
             }
             type_name = type_names.get(self.config_type, self.config_type)
             
@@ -346,6 +407,11 @@ class ChannelSelectionModal(BaseSettingsModal):
                 # Import and send role assignment button message
                 from forms.role_assignment_form import send_role_assignment_message
                 await send_role_assignment_message(channel)
+                button_message_added = True
+            elif self.config_type == "moderator_registration":
+                # Import and send moderator registration message
+                from forms.moderator_registration import ensure_moderator_registration_message
+                await ensure_moderator_registration_message(interaction.guild, channel.id)
                 button_message_added = True
             
             success_message = f"Канал {type_name} успешно настроен на {channel.mention}!"
@@ -672,3 +738,12 @@ class AutoDismissalRoleModal(BaseSettingsModal):
                 "Ошибка",
                 f"Произошла ошибка при настройке роли: {str(e)}"
             )
+
+
+class ModeratorRegistrationChannelView(BaseSettingsView):
+    """View for moderator registration channel configuration"""
+    
+    @discord.ui.button(label="📂 Настроить канал", style=discord.ButtonStyle.green)
+    async def set_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = ChannelSelectionModal("moderator_registration")
+        await interaction.response.send_modal(modal)

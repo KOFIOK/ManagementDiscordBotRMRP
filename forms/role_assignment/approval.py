@@ -73,8 +73,7 @@ class RoleApplicationApprovalView(ui.View):
                     ephemeral=True
                 )
                 return
-            
-            # Handle moderator authorization first
+              # Handle moderator authorization first
             signed_by_name = await self._handle_moderator_authorization(interaction, user, guild, config)
             if signed_by_name is None:
                 # Authorization failed or modal was shown, processing will continue in callback
@@ -450,7 +449,6 @@ class RoleApplicationApprovalView(ui.View):
                     await interaction.followup.send(f"❌ {message}", ephemeral=True)
                 except:
                     pass  # Give up
-    
     async def _handle_moderator_authorization(self, interaction, user, guild, config):
         """Handle moderator authorization flow and return signed_by_name if successful."""
         from utils.moderator_auth import ModeratorAuthHandler
@@ -459,7 +457,7 @@ class RoleApplicationApprovalView(ui.View):
         signed_by_name = await ModeratorAuthHandler.handle_moderator_authorization(
             interaction,
             self._continue_approval_with_manual_auth,
-            user, guild, config
+            user, guild, config, interaction.message
         )
         
         if signed_by_name:
@@ -472,10 +470,10 @@ class RoleApplicationApprovalView(ui.View):
         
         return signed_by_name
     
-    async def _continue_approval_with_manual_auth(self, interaction, signed_by_name, user, guild, config):
+    async def _continue_approval_with_manual_auth(self, interaction, signed_by_name, user, guild, config, original_message):
         """Continue approval process after manual moderator authorization"""
         try:
-            await self._continue_approval_process(interaction, user, guild, config, signed_by_name)
+            await self._continue_approval_process_with_message(original_message, user, guild, config, signed_by_name)
         except Exception as e:
             print(f"Error in manual auth continuation: {e}")
             await interaction.followup.send(
@@ -562,3 +560,87 @@ class RoleApplicationApprovalView(ui.View):
         except Exception as e:
             print(f"Warning: Error in auto processing with auth: {e}")
             # Don't raise exception to prevent approval process from failing
+    
+    async def _continue_approval_process_with_message(self, original_message, user, guild, config, signed_by_name):
+        """Continue with approval processing using original message instead of modal interaction"""
+        try:
+            # Create embed first
+            embed = await self._create_approval_embed_for_message(original_message, user)
+            approved_view = ApprovedApplicationView()
+            
+            # Update the ORIGINAL message with approved state
+            await original_message.edit(embed=embed, view=approved_view)
+            
+            # Then do all the other processing
+            try:
+                # Assign roles and update nickname if needed
+                await self._assign_roles(user, guild, config)
+            except Exception as e:
+                print(f"Warning: Error in role assignment: {e}")
+                # Continue processing even if role assignment fails
+                
+            # Only do personnel processing for military recruits with rank 'рядовой'
+            if self._should_process_personnel():
+                try:
+                    await self._handle_auto_processing_with_auth(user, guild, config, signed_by_name)
+                except Exception as e:
+                    print(f"Warning: Error in personnel processing: {e}")
+                    # Continue processing even if personnel processing fails
+            
+            # Send DM to user
+            try:
+                await self._send_approval_dm(user)
+            except Exception as e:
+                print(f"Warning: Error sending DM: {e}")
+                # Continue even if DM fails
+                
+        except Exception as e:
+            print(f"Error in approval process with message: {e}")
+            # Can't send error message to user since we don't have interaction here
+            # Error is already logged
+    
+    async def _create_approval_embed_for_message(self, original_message, user):
+        """Create approval embed using original message data"""
+        try:
+            # Get the original embed from the message
+            original_embed = original_message.embeds[0] if original_message.embeds else None
+            if not original_embed:
+                # Fallback: create a basic embed
+                embed = discord.Embed(
+                    title="✅ Заявка одобрена",
+                    color=discord.Color.green(),
+                    timestamp=discord.utils.utcnow()
+                )
+                embed.add_field(name="👤 Пользователь", value=user.mention, inline=False)
+                return embed
+            
+            # Copy the original embed and modify it
+            embed = discord.Embed(
+                title=original_embed.title,
+                color=discord.Color.green(),
+                timestamp=discord.utils.utcnow()
+            )
+            
+            # Copy existing fields
+            for field in original_embed.fields:
+                embed.add_field(name=field.name, value=field.value, inline=field.inline)
+            
+            # Add approval status
+            embed.add_field(
+                name="✅ Статус",
+                value="Одобрено",
+                inline=False
+            )
+            
+            return embed
+            
+        except Exception as e:
+            print(f"Error creating approval embed: {e}")
+            # Fallback embed
+            embed = discord.Embed(
+                title="✅ Заявка одобрена",
+                color=discord.Color.green(),
+                timestamp=discord.utils.utcnow()
+            )
+            embed.add_field(name="👤 Пользователь", value=user.mention, inline=False)
+            return embed

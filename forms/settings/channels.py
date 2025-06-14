@@ -75,7 +75,7 @@ class ChannelConfigSelect(ui.Select):
     async def callback(self, interaction: discord.Interaction):
         selected_option = self.values[0]
         await self.show_channel_selection(interaction, selected_option)
-    
+
     async def show_channel_selection(self, interaction: discord.Interaction, config_type: str):
         """Show channel selection interface"""
         if config_type == "role_assignment":
@@ -89,9 +89,7 @@ class ChannelConfigSelect(ui.Select):
         elif config_type == "promotion_reports":
             await self.show_promotion_reports_config(interaction)
         elif config_type == "leave_requests":
-            # Create channel selection modal for leave requests
-            modal = ChannelSelectionModal(config_type)
-            await interaction.response.send_modal(modal)
+            await self.show_leave_requests_config(interaction)
         else:
             # Create channel selection modal for other channel types
             modal = ChannelSelectionModal(config_type)
@@ -387,7 +385,67 @@ class ChannelConfigSelect(ui.Select):
         
         view = PromotionReportsConfigView()
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-        
+
+    async def show_leave_requests_config(self, interaction: discord.Interaction):
+        """Show leave requests channel configuration with role management"""
+        try:
+            embed = discord.Embed(
+                title="🏖️ Настройка канала отгулов",
+                description="Управление каналом и ролями для системы заявок на отгул.",
+                color=discord.Color.blue(),
+                timestamp=discord.utils.utcnow()
+            )
+            
+            config = load_config()
+            helper = ConfigDisplayHelper()
+            
+            # Show current channel
+            embed.add_field(
+                name="📂 Текущий канал:",
+                value=helper.format_channel_info(config, 'leave_requests_channel', interaction.guild),
+                inline=False
+            )
+            
+            # Show allowed roles
+            allowed_roles = config.get('leave_requests_allowed_roles', [])
+            if allowed_roles:
+                role_mentions = []
+                for role_id in allowed_roles:
+                    role = interaction.guild.get_role(role_id)
+                    if role:
+                        role_mentions.append(role.mention)
+                
+                roles_text = "\n".join(role_mentions) if role_mentions else "❌ Настроенные роли не найдены"
+            else:
+                roles_text = "Все пользователи (роли не настроены)"
+            
+            embed.add_field(
+                name="👥 Кто может подавать заявки:",
+                value=roles_text,
+                inline=False
+            )
+            
+            embed.add_field(
+                name="🔧 Доступные действия:",
+                value="Выберите действие для настройки системы отгулов:",
+                inline=False            )
+            
+            view = LeaveRequestsConfigView()
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            
+        except Exception as e:
+            print(f"❌ ERROR in show_leave_requests_config: {e}")
+            import traceback
+            traceback.print_exc()
+            # Try to send error message if interaction hasn't been responded to yet
+            if not interaction.response.is_done():
+                error_embed = discord.Embed(
+                    title="❌ Ошибка",
+                    description=f"Произошла ошибка при загрузке настроек: {str(e)}",
+                    color=discord.Color.red()
+                )
+                await interaction.response.send_message(embed=error_embed, ephemeral=True)
+            raise
 
 
 class RoleAssignmentChannelView(BaseSettingsView):
@@ -976,6 +1034,7 @@ class PromotionDepartmentSelect(ui.Select):
         
         view = PromotionDepartmentConfigView(selected_department)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        
 
 
 class PromotionDepartmentConfigView(BaseSettingsView):
@@ -1222,8 +1281,137 @@ class PromotionNotificationModal(BaseSettingsModal):
                 "Ошибка",
                 f"Произошла ошибка при настройке уведомлений: {str(e)}"
             )
-    
     async def _ensure_scheduler_running(self):
         """Ensure the notification scheduler is running"""
         # This will be implemented when we add the scheduler to the main bot
         pass
+
+
+class LeaveRequestsConfigView(BaseSettingsView):
+    """View for leave requests channel configuration"""
+    
+    @discord.ui.button(label="📂 Настроить канал", style=discord.ButtonStyle.green)
+    async def set_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = ChannelSelectionModal("leave_requests")
+        await interaction.response.send_modal(modal)    
+    @discord.ui.button(label="👥 Кто может подать", style=discord.ButtonStyle.primary)
+    async def set_allowed_roles(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = LeaveRequestAllowedRolesModal()
+        await interaction.response.send_modal(modal)
+
+
+class LeaveRequestAllowedRolesModal(BaseSettingsModal):
+    """Modal for setting allowed roles for leave requests"""
+    
+    def __init__(self):
+        super().__init__(title="👥 Настройка ролей для отгулов")
+        
+        # Load current roles
+        config = load_config()
+        current_roles = config.get('leave_requests_allowed_roles', [])
+        current_value = ", ".join([str(role_id) for role_id in current_roles]) if current_roles else ""
+        
+        self.roles_input = ui.TextInput(
+            label="Роли (названия или ID через запятую)",
+            placeholder="Например: Администратор, 123456789012345678, @Модератор",
+            style=discord.TextStyle.paragraph,
+            default=current_value,
+            max_length=1000,
+            required=False
+        )
+        self.add_item(self.roles_input)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            roles_text = self.roles_input.value.strip()
+            
+            if not roles_text:
+                # Clear roles - everyone can submit
+                config = load_config()
+                config['leave_requests_allowed_roles'] = []
+                save_config(config)
+                
+                embed = discord.Embed(
+                    title="✅ Роли сброшены",
+                    description="Все пользователи теперь могут подавать заявки на отгул.",
+                    color=discord.Color.green()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+            
+            # Parse roles
+            parser = ChannelParser()
+            role_ids = []
+            
+            for role_text in roles_text.split(','):
+                role_text = role_text.strip()
+                if not role_text:
+                    continue
+                
+                # Try to find role by name or ID
+                role = None
+                
+                # Try by ID first
+                if role_text.isdigit():
+                    role = interaction.guild.get_role(int(role_text))
+                
+                # Try by mention
+                if not role and role_text.startswith('<@&') and role_text.endswith('>'):
+                    try:
+                        role_id = int(role_text[3:-1])
+                        role = interaction.guild.get_role(role_id)
+                    except ValueError:
+                        pass
+                
+                # Try by name
+                if not role:
+                    for guild_role in interaction.guild.roles:
+                        if guild_role.name.lower() == role_text.lower():
+                            role = guild_role
+                            break
+                
+                if role:
+                    role_ids.append(role.id)
+                else:
+                    embed = discord.Embed(
+                        title="❌ Ошибка",
+                        description=f"Роль '{role_text}' не найдена.",
+                        color=discord.Color.red()
+                    )
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+                    return
+            
+            # Save configuration
+            config = load_config()
+            config['leave_requests_allowed_roles'] = role_ids
+            save_config(config)
+            
+            # Show success message
+            if role_ids:
+                role_mentions = []
+                for role_id in role_ids:
+                    role = interaction.guild.get_role(role_id)
+                    if role:
+                        role_mentions.append(role.mention)
+                
+                embed = discord.Embed(
+                    title="✅ Роли обновлены",
+                    description=f"Подавать заявки на отгул могут пользователи с ролями:\n{chr(10).join(role_mentions)}",
+                    color=discord.Color.green()
+                )
+            else:
+                embed = discord.Embed(
+                    title="✅ Роли сброшены",
+                    description="Все пользователи теперь могут подавать заявки на отгул.",
+                    color=discord.Color.green()
+                )
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            embed = discord.Embed(
+                title="❌ Ошибка",
+                description=f"Произошла ошибка при настройке ролей: {str(e)}",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)

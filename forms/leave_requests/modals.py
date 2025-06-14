@@ -363,7 +363,7 @@ class RejectReasonModal(ui.Modal):
           
           embed.add_field(
               name="👤 Отклонил:",
-              value=str(interaction.user),
+              value=interaction.user.mention,
               inline=True
           )
           

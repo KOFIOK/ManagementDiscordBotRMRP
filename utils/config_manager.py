@@ -21,6 +21,7 @@ default_config = {
     'role_assignment_message_id': None,  # ID of the pinned message with role assignment buttons
     'moderator_registration_channel': None,  # Channel for moderator registration
     'leave_requests_channel': None,  # Channel for leave requests
+    'leave_requests_allowed_roles': [],  # Roles allowed to submit leave requests
     # Promotion report channels
     'promotion_report_channels': {
         'va': None,    # Отчёты ВА

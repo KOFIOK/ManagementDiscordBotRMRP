@@ -19,6 +19,33 @@ class LeaveRequestButton(ui.View):
         custom_id="leave_request_submit"
     )
     async def submit_request(self, interaction: discord.Interaction, button: ui.Button):
+        # Check if user has permission to submit leave requests
+        from utils.config_manager import load_config
+        
+        config = load_config()
+        allowed_roles = config.get('leave_requests_allowed_roles', [])
+        
+        # If roles are configured, check if user has any of them
+        if allowed_roles:
+            user_role_ids = [role.id for role in interaction.user.roles]
+            has_permission = any(role_id in user_role_ids for role_id in allowed_roles)
+            
+            if not has_permission:
+                role_mentions = []
+                for role_id in allowed_roles:
+                    role = interaction.guild.get_role(role_id)
+                    if role:
+                        role_mentions.append(role.mention)
+                
+                embed = discord.Embed(
+                    title="❌ Недостаточно прав",
+                    description=f"Подавать заявки на отгул могут только пользователи с ролями:\n{', '.join(role_mentions) if role_mentions else 'Настроенные роли'}",
+                    color=discord.Color.red(),
+                    timestamp=discord.utils.utcnow()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+        
         # Check if user already has a request today
         from .utils import LeaveRequestValidator
         
@@ -323,14 +350,8 @@ class LeaveRequestApprovalView(ui.View):
             
             embed.add_field(
                 name="👤 Одобрил:",
-                value=str(interaction.user),
+                value=interaction.user.mention,
                 inline=True
-            )
-            
-            embed.add_field(
-                name="ℹ️ Важно:",
-                value="Не забудьте уведомить о начале и окончании отгула в соответствии с регламентом.",
-                inline=False
             )
             
             await user.send(embed=embed)

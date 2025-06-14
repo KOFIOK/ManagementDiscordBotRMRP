@@ -55,7 +55,14 @@ class ChannelConfigSelect(ui.Select):
                 description="Настроить каналы для отчётов на повышение по подразделениям",
                 emoji="📈",
                 value="promotion_reports"
-            )        ]
+            ),
+            discord.SelectOption(
+                label="Канал отгулов",
+                description="Настроить канал для заявок на отгулы",
+                emoji="🏖️",
+                value="leave_requests"
+            )
+        ]
         
         super().__init__(
             placeholder="Выберите канал для настройки...",
@@ -81,6 +88,10 @@ class ChannelConfigSelect(ui.Select):
             await self.show_moderator_registration_config(interaction)
         elif config_type == "promotion_reports":
             await self.show_promotion_reports_config(interaction)
+        elif config_type == "leave_requests":
+            # Create channel selection modal for leave requests
+            modal = ChannelSelectionModal(config_type)
+            await interaction.response.send_modal(modal)
         else:
             # Create channel selection modal for other channel types
             modal = ChannelSelectionModal(config_type)
@@ -161,10 +172,10 @@ class ChannelConfigSelect(ui.Select):
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     
     async def show_dismissal_config(self, interaction: discord.Interaction):
-        """Show dismissal channel configuration with ping management"""
+        """Show dismissal channel configuration"""
         embed = discord.Embed(
             title="📝 Настройка канала увольнений",
-            description="Управление каналом увольнений и пингами для уведомлений по подразделениям.",
+            description="Управление каналом увольнений и ролью для автоматических увольнений.",
             color=discord.Color.red(),
             timestamp=discord.utils.utcnow()
         )
@@ -176,29 +187,6 @@ class ChannelConfigSelect(ui.Select):
         embed.add_field(
             name="📂 Текущий канал:",
             value=helper.format_channel_info(config, 'dismissal_channel', interaction.guild),
-            inline=False
-        )
-          # Show ping settings
-        ping_settings = config.get('ping_settings', {})
-        if ping_settings:
-            ping_text = ""
-            for department_role_id, ping_roles_ids in ping_settings.items():
-                department_role = interaction.guild.get_role(int(department_role_id))
-                if department_role:
-                    ping_roles = []
-                    for ping_role_id in ping_roles_ids:
-                        ping_role = interaction.guild.get_role(ping_role_id)
-                        if ping_role:
-                            ping_roles.append(ping_role.mention)
-                    if ping_roles:
-                        ping_text += f"• {department_role.mention} → {', '.join(ping_roles)}\n"
-            ping_text = ping_text or "❌ Настройки пингов не найдены"
-        else:
-            ping_text = "❌ Настройки пингов не настроены"
-        
-        embed.add_field(
-            name="📢 Настройки пингов по подразделениям:",
-            value=ping_text,
             inline=False
         )
         
@@ -218,13 +206,16 @@ class ChannelConfigSelect(ui.Select):
         )
         
         embed.add_field(
+            name="📢 Настройки пингов:",
+            value="Настройки пингов для уведомлений при увольнениях теперь находятся в отдельном разделе:\n`/settings` → **Настройки пингов**",
+            inline=False
+        )
+        
+        embed.add_field(
             name="ℹ️ Доступные действия:",
             value=(
                 "• **Настроить канал** - установить канал для рапортов на увольнение\n"
-                "• **Добавить пинг** - добавить настройку для подразделения\n"
-                "• **Удалить пинг** - убрать настройку пинга\n"
-                "• **Роль автоувольнений** - настроить роль для автоматических рапортов\n"
-                "• **Очистить пинги** - удалить все настройки пингов"
+                "• **Роль автоувольнений** - настроить роль для автоматических рапортов"
             ),
             inline=False
         )
@@ -442,7 +433,8 @@ class ChannelSelectionModal(BaseSettingsModal):
             "audit": "аудита", 
             "blacklist": "чёрного списка",
             "role_assignment": "получения ролей",
-            "moderator_registration": "регистрации модераторов"
+            "moderator_registration": "регистрации модераторов",
+            "leave_requests": "отгулов"
         }
         
         super().__init__(title=f"Настройка канала {type_names.get(config_type, config_type)}")
@@ -483,14 +475,14 @@ class ChannelSelectionModal(BaseSettingsModal):
             # Save configuration
             config = load_config()
             config[f'{self.config_type}_channel'] = channel.id
-            save_config(config)
-              # Define type names and handle button messages
+            save_config(config)            # Define type names and handle button messages
             type_names = {
                 "dismissal": "рапортов на увольнение",
                 "audit": "кадрового аудита",
                 "blacklist": "чёрного списка",
                 "role_assignment": "получения ролей",
-                "moderator_registration": "регистрации модераторов"
+                "moderator_registration": "регистрации модераторов",
+                "leave_requests": "отгулов"
             }
             type_name = type_names.get(self.config_type, self.config_type)
             
@@ -602,52 +594,17 @@ class RolePingButtonsView(BaseSettingsView):
 
 
 class DismissalChannelView(BaseSettingsView):
-    """View for dismissal channel and ping configuration"""
+    """View for dismissal channel configuration"""
     
     @discord.ui.button(label="📂 Настроить канал", style=discord.ButtonStyle.green)
     async def set_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = ChannelSelectionModal("dismissal")
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="➕ Добавить пинг", style=discord.ButtonStyle.secondary)
-    async def add_ping(self, interaction: discord.Interaction, button: discord.ui.Button):
-        from .ping_settings import AddPingSettingModal
-        modal = AddPingSettingModal()
-        await interaction.response.send_modal(modal)
-    
-    @discord.ui.button(label="➖ Удалить пинг", style=discord.ButtonStyle.red)
-    async def remove_ping(self, interaction: discord.Interaction, button: discord.ui.Button):
-        config = load_config()
-        ping_settings = config.get('ping_settings', {})
-        
-        if not ping_settings:
-            await self.send_error_message(
-                interaction,
-                "Нет настроек для удаления",
-                "Нет настроенных пингов для удаления."
-            )
-            return
-        
-        from .ping_settings import RemovePingSettingModal
-        modal = RemovePingSettingModal()
-        await interaction.response.send_modal(modal)
-    
     @discord.ui.button(label="⚙️ Роль автоувольнений", style=discord.ButtonStyle.secondary)
     async def set_auto_dismissal_role(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = AutoDismissalRoleModal()
         await interaction.response.send_modal(modal)
-    
-    @discord.ui.button(label="🗑️ Очистить пинги", style=discord.ButtonStyle.danger)
-    async def clear_pings(self, interaction: discord.Interaction, button: discord.ui.Button):
-        config = load_config()
-        config['ping_settings'] = {}
-        save_config(config)
-        
-        await self.send_success_message(
-            interaction,
-            "Настройки пингов очищены",
-            "Все настройки пингов были удалены. Теперь при подаче рапортов уведомления отправляться не будут."
-        )
 
 
 class BlacklistChannelView(BaseSettingsView):

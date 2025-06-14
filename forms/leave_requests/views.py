@@ -246,30 +246,14 @@ class LeaveRequestApprovalView(ui.View):
             # Delete request completely
             success = LeaveRequestStorage.delete_request(
                 self.request_id, 
-                interaction.user.id, 
+                interaction.user.id,
                 is_admin=(is_admin or is_mod)
             )
             
             if success:
-                # Update embed to show deletion
-                embed = interaction.message.embeds[0]
-                embed.title = "🗑️ Заявка удалена"
-                embed.color = discord.Color.greyple()
-                
-                # Update status field
-                deleter_text = "администратором" if (is_admin or is_mod) else "пользователем"
-                for i, field in enumerate(embed.fields):
-                    if field.name == "📢 Статус:":
-                        embed.set_field_at(
-                            i, 
-                            name="📢 Статус:",
-                            value=f"🗑️ УДАЛЕНА {deleter_text} {interaction.user.mention}\n⏰ {discord.utils.format_dt(discord.utils.utcnow(), 'f')}",
-                            inline=True
-                        )
-                        break
-                
-                # Remove buttons and update message
-                await interaction.response.edit_message(embed=embed, view=None)
+                # Delete the message completely
+                await interaction.response.defer()
+                await interaction.delete_original_response()
             else:
                 embed = discord.Embed(
                     title="❌ Ошибка удаления",

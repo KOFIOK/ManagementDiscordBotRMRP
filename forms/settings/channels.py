@@ -232,7 +232,7 @@ class ChannelConfigSelect(ui.Select):
         view = DismissalChannelView()
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     
-    async def show_blacklist_config(self, interaction: discord.Interaction):
+    async def show_blacklist_config(self, discord_interaction: discord.Interaction):
         """Show blacklist channel configuration with ping management"""
         embed = discord.Embed(
             title="🚫 Настройка канала чёрного списка",
@@ -247,7 +247,7 @@ class ChannelConfigSelect(ui.Select):
         # Show current channel
         embed.add_field(
             name="📂 Текущий канал:",
-            value=helper.format_channel_info(config, 'blacklist_channel', interaction.guild),
+            value=helper.format_channel_info(config, 'blacklist_channel', discord_interaction.guild),
             inline=False
         )
         
@@ -256,7 +256,7 @@ class ChannelConfigSelect(ui.Select):
         if blacklist_role_mentions:
             ping_roles = []
             for role_id in blacklist_role_mentions:
-                role = interaction.guild.get_role(role_id)
+                role = discord_interaction.guild.get_role(role_id)
                 if role:
                     ping_roles.append(role.mention)
                 else:
@@ -283,9 +283,9 @@ class ChannelConfigSelect(ui.Select):
         )
         
         view = BlacklistChannelView()
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await discord_interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     
-    async def show_moderator_registration_config(self, interaction: discord.Interaction):
+    async def show_moderator_registration_config(self, discord_interaction: discord.Interaction):
         """Show moderator registration channel configuration"""
         config = load_config()
         
@@ -299,7 +299,7 @@ class ChannelConfigSelect(ui.Select):
         # Show current channel
         channel_id = config.get('moderator_registration_channel')
         if channel_id:
-            channel = interaction.guild.get_channel(channel_id)
+            channel = discord_interaction.guild.get_channel(channel_id)
             if channel:
                 embed.add_field(
                     name="📂 Текущий канал:",
@@ -336,7 +336,7 @@ class ChannelConfigSelect(ui.Select):
         )
         
         view = ModeratorRegistrationChannelView()
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await discord_interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
     async def show_promotion_reports_config(self, interaction: discord.Interaction):
         """Show promotion reports channels configuration"""
@@ -349,16 +349,15 @@ class ChannelConfigSelect(ui.Select):
         
         config = load_config()
         helper = ConfigDisplayHelper()
-        
-        # Show current channels
+          # Show current channels
         promotion_channels = config.get('promotion_report_channels', {})
         department_names = {
-            'va': 'ВА (Военная Авиация)',
-            'vk': 'ВК (Военно-Космические силы)',
-            'uvp': 'УВП (Управление военной полиции)',
-            'sso': 'ССО (Силы специальных операций)',
-            'mr': 'МР (Морская разведка)',
-            'roio': 'РОиО (Разведка и охрана важных объектов)'
+            'va': 'ВА (Военная Академия)',
+            'vk': 'ВК (Военный Комиссариат)',
+            'uvp': 'УВП (Военная Полиция)',
+            'sso': 'ССО (Силы Спец. Операций)',
+            'mr': 'МР (Медицинская Рота)',
+            'roio': 'РОиО (Роты Охраны)'
         }
         
         channels_info = ""
@@ -873,37 +872,37 @@ class PromotionDepartmentSelect(ui.Select):
         options = [
             discord.SelectOption(
                 label="Отчёты ВА",
-                description="Военная Авиация",
+                description="Военная Академия",
                 emoji="✈️",
                 value="va"
             ),
             discord.SelectOption(
                 label="Отчёты ВК",
-                description="Военно-Космические силы",
+                description="Военный Комиссариат",
                 emoji="🚀",
                 value="vk"
             ),
             discord.SelectOption(
                 label="Отчёты УВП",
-                description="Управление военной полиции",
+                description="Управление Военной Полиции",
                 emoji="👮",
                 value="uvp"
             ),
             discord.SelectOption(
                 label="Отчёты ССО",
-                description="Силы специальных операций",
+                description="Силы Специальных Операций",
                 emoji="🔫",
                 value="sso"
             ),
             discord.SelectOption(
                 label="Отчёты МР",
-                description="Морская разведка",
+                description="Медицинская Рота",
                 emoji="⚓",
                 value="mr"
             ),
             discord.SelectOption(
                 label="Отчёты РОиО",
-                description="Разведка и охрана важных объектов",
+                description="Рота Охраны и Обеспечения",
                 emoji="🛡️",
                 value="roio"
             )
@@ -919,15 +918,14 @@ class PromotionDepartmentSelect(ui.Select):
     
     async def callback(self, interaction: discord.Interaction):
         selected_department = self.values[0]
-        
         # Show department configuration with buttons
         department_names = {
-            'va': 'ВА (Военная Авиация)',
-            'vk': 'ВК (Военно-Космические силы)',
-            'uvp': 'УВП (Управление военной полиции)',
-            'sso': 'ССО (Силы специальных операций)',
-            'mr': 'МР (Морская разведка)',
-            'roio': 'РОиО (Разведка и охрана важных объектов)'
+            'va': 'ВА (Военная Академия)',
+            'vk': 'ВК (Военный Комиссариат)',
+            'uvp': 'УВП (Управление Военной Полиции)',
+            'sso': 'ССО (Силы Специальных Операций)',
+            'mr': 'МР (Медицинская Рота)',
+            'roio': 'РОиО (Рота Охраны и Обеспечения)'
         }
         
         department_emojis = {
@@ -972,11 +970,39 @@ class PromotionDepartmentSelect(ui.Select):
                 inline=False
             )
         
+        # Show notification settings
+        notification_settings = config.get('promotion_notifications', {}).get(selected_department, {})
+        if notification_settings:
+            notification_text = notification_settings.get('text')
+            notification_image = notification_settings.get('image')
+            notification_enabled = notification_settings.get('enabled', False)
+            
+            status = "🟢 Включены" if notification_enabled else "🔴 Отключены"
+            content_parts = []
+            if notification_text:
+                content_parts.append("📝 Текст")
+            if notification_image:
+                content_parts.append(f"🖼️ {notification_image}")
+            
+            content_info = f" ({', '.join(content_parts)})" if content_parts else ""
+            
+            embed.add_field(
+                name="🔔 Ежедневные уведомления:",
+                value=f"{status}{content_info}\n{'*Отправка в 21:00 МСК*' if notification_enabled else ''}",
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="� Ежедневные уведомления:",
+                value="❌ Не настроены",
+                inline=False
+            )
+        
         embed.add_field(
-            name="🔧 Доступные действия:",
+            name="🦾 Доступные действия:",
             value=(
                 "• **Настроить канал** - установить канал для отчётов\n"
-                "• **Задать уведомление** - настроить уведомления (будет доступно позже)"
+                "• **Задать уведомление** - настроить ежедневные уведомления в 21:00 МСК"
             ),
             inline=False
         )
@@ -991,34 +1017,29 @@ class PromotionDepartmentConfigView(BaseSettingsView):
     def __init__(self, department_code: str):
         super().__init__()
         self.department_code = department_code
-    
     @discord.ui.button(label="📂 Настроить канал", style=discord.ButtonStyle.green)
     async def set_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = PromotionChannelModal(self.department_code)
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="🔔 Задать уведомление", style=discord.ButtonStyle.secondary, disabled=True)
+    @discord.ui.button(label="🔔 Задать уведомление", style=discord.ButtonStyle.secondary)
     async def set_notification(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Пока что отключено, будет реализовано позже
-        await interaction.response.send_message(
-            "⚠️ Эта функция будет доступна в следующих обновлениях.",
-            ephemeral=True
-        )
+        modal = PromotionNotificationModal(self.department_code)
+        await interaction.response.send_modal(modal)
 
 
 class PromotionChannelModal(BaseSettingsModal):
     """Modal for configuring promotion report channel for specific department"""
-    
     def __init__(self, department_code: str):
         self.department_code = department_code
         
         department_names = {
-            'va': 'ВА (Военная Авиация)',
-            'vk': 'ВК (Военно-Космические силы)',
-            'uvp': 'УВП (Управление военной полиции)',
-            'sso': 'ССО (Силы специальных операций)',
-            'mr': 'МР (Морская разведка)',
-            'roio': 'РОиО (Разведка и охрана важных объектов)'
+            'va': 'ВА (Военная Академия)',
+            'vk': 'ВК (Военный Комиссариат)',
+            'uvp': 'УВП (Военная Полиция)',
+            'sso': 'ССО (Спецоперации)',
+            'mr': 'МР (Медицинская Рота)',
+            'roio': 'РОиО (Рота Охраны и Обеспечения)'
         }
         
         dept_name = department_names.get(department_code, department_code.upper())
@@ -1055,12 +1076,12 @@ class PromotionChannelModal(BaseSettingsModal):
             save_config(config)
             
             department_names = {
-                'va': 'ВА (Военная Авиация)',
-                'vk': 'ВК (Военно-Космические силы)',
-                'uvp': 'УВП (Управление военной полиции)',
-                'sso': 'ССО (Силы специальных операций)',
-                'mr': 'МР (Морская разведка)',
-                'roio': 'РОиО (Разведка и охрана важных объектов)'
+                'va': 'ВА (Военная Академия)',
+                'vk': 'ВК (Военный Комиссариат)',
+                'uvp': 'УВП (Военная Полиция)',
+                'sso': 'ССО (Спецоперации)',
+                'mr': 'МР (Медицинская Рота)',
+                'roio': 'РОиО (Рота Охраны и Обеспечения)'
             }
             
             dept_name = department_names.get(self.department_code, self.department_code.upper())
@@ -1077,3 +1098,160 @@ class PromotionChannelModal(BaseSettingsModal):
                 "Ошибка",
                 f"Произошла ошибка при настройке канала: {str(e)}"
             )
+
+
+class PromotionNotificationModal(BaseSettingsModal):
+    """Modal for configuring promotion report daily notifications"""
+    
+    def __init__(self, department_code: str):
+        self.department_code = department_code
+        
+        department_names = {
+            'va': 'ВА (Военная Академия)',
+            'vk': 'ВК (Военный Комиссариат)',
+            'uvp': 'УВП (Военная Полиция)',
+            'sso': 'ССО (Спецоперации)',
+            'mr': 'МР (Медицинская Рота)',
+            'roio': 'РОиО (Рота Охраны и Обеспечения)'
+        }
+        
+        dept_name = department_names.get(department_code, department_code.upper())
+        super().__init__(title=f"Уведомления {dept_name}")
+        
+        # Load current settings
+        config = load_config()
+        current_notification = config.get('promotion_notifications', {}).get(department_code, {})
+        current_text = current_notification.get('text', '')
+        current_image = current_notification.get('image', '')
+        current_enabled = current_notification.get('enabled', False)
+        
+        self.text_input = ui.TextInput(
+            label="Текст уведомления",
+            placeholder="Введите текст для ежедневного уведомления...",
+            style=discord.TextStyle.paragraph,
+            min_length=0,
+            max_length=1000,
+            required=False,
+            default=current_text
+        )
+        self.add_item(self.text_input)
+        
+        self.image_input = ui.TextInput(
+            label="Название файла изображения",
+            placeholder="Например: report_va.png (файлы в папке files/reports/)",
+            min_length=0,
+            max_length=100,
+            required=False,
+            default=current_image
+        )
+        self.add_item(self.image_input)
+        
+        self.enabled_input = ui.TextInput(
+            label="Включить уведомления? (да/нет)",
+            placeholder="да - включить, нет - отключить",
+            min_length=2,
+            max_length=3,
+            required=True,
+            default="да" if current_enabled else "нет"
+        )
+        self.add_item(self.enabled_input)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            import os
+            
+            text = self.text_input.value.strip()
+            image_filename = self.image_input.value.strip()
+            enabled_str = self.enabled_input.value.strip().lower()
+            
+            # Validate enabled input
+            if enabled_str not in ['да', 'нет', 'yes', 'no']:
+                await self.send_error_message(
+                    interaction,
+                    "Неверное значение",
+                    "Введите 'да' для включения или 'нет' для отключения уведомлений."
+                )
+                return
+            
+            enabled = enabled_str in ['да', 'yes']
+            
+            # Validate that at least text or image is provided if enabled
+            if enabled and not text and not image_filename:
+                await self.send_error_message(
+                    interaction,
+                    "Пустое уведомление",
+                    "Для включения уведомлений укажите хотя бы текст или изображение."
+                )
+                return
+            
+            # Validate image file if provided
+            image_path = None
+            if image_filename:
+                image_path = os.path.join('files', 'reports', image_filename)
+                if not os.path.exists(image_path):
+                    await self.send_error_message(
+                        interaction,
+                        "Файл не найден",
+                        f"Изображение '{image_filename}' не найдено в папке files/reports/.\n"
+                        f"Убедитесь, что файл существует и название указано правильно."
+                    )
+                    return
+            
+            # Save configuration
+            config = load_config()
+            if 'promotion_notifications' not in config:
+                config['promotion_notifications'] = {}
+            
+            if self.department_code not in config['promotion_notifications']:
+                config['promotion_notifications'][self.department_code] = {}
+            
+            config['promotion_notifications'][self.department_code] = {
+                'text': text if text else None,
+                'image': image_filename if image_filename else None,
+                'enabled': enabled
+            }
+            
+            save_config(config)
+            
+            # Initialize scheduler if not exists
+            await self._ensure_scheduler_running()
+            department_names = {
+                'va': 'ВА (Военная Академия)',
+                'vk': 'ВК (Военный Комиссариат)',
+                'uvp': 'УВП (Военная Полиция)',
+                'sso': 'ССО (Спецоперации)',
+                'mr': 'МР (Медицинская Рота)',
+                'roio': 'РОиО (Рота Охраны и Обеспечения)'
+            }
+            
+            dept_name = department_names.get(self.department_code, self.department_code.upper())
+            
+            status = "включены" if enabled else "отключены"
+            content_info = []
+            if enabled:
+                if text:
+                    content_info.append("текст")
+                if image_filename:
+                    content_info.append("изображение")
+                content_desc = f" ({', '.join(content_info)})" if content_info else ""
+            else:
+                content_desc = ""
+            
+            await self.send_success_message(
+                interaction,
+                "Уведомления настроены",
+                f"Ежедневные уведомления для {dept_name} {status}{content_desc}.\n"
+                f"{'Отправка в 21:00 МСК.' if enabled else ''}"
+            )
+            
+        except Exception as e:
+            await self.send_error_message(
+                interaction,
+                "Ошибка",
+                f"Произошла ошибка при настройке уведомлений: {str(e)}"
+            )
+    
+    async def _ensure_scheduler_running(self):
+        """Ensure the notification scheduler is running"""
+        # This will be implemented when we add the scheduler to the main bot
+        pass

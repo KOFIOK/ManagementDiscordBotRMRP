@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 
 from utils.config_manager import load_config, create_backup, get_config_status
 from utils.google_sheets import sheets_manager
+from utils.notification_scheduler import PromotionNotificationScheduler
 from forms.dismissal import DismissalReportButton, DismissalApprovalView, send_dismissal_button_message, restore_dismissal_approval_views, restore_dismissal_button_views
 from forms.settings_form import SettingsView
 from forms.role_assignment_form import RoleAssignmentView, send_role_assignment_message, restore_role_assignment_views, restore_approval_views
@@ -24,6 +25,9 @@ intents.members = True
 
 # Initialize the bot with a command prefix and intents
 bot = commands.Bot(command_prefix='!', intents=intents)
+
+# Initialize notification scheduler
+notification_scheduler = PromotionNotificationScheduler(bot)
 
 @bot.event
 async def on_ready():
@@ -75,10 +79,13 @@ async def on_ready():
     bot.add_view(DismissalApprovalView())
     
     print('Persistent views added to bot')
-    
-    # Setup welcome system events
+      # Setup welcome system events
     setup_welcome_events(bot)
-      # Check channels and restore messages if needed
+    
+    # Start notification scheduler
+    notification_scheduler.start()
+    
+    # Check channels and restore messages if needed
     await restore_channel_messages(config)
 
 @bot.event

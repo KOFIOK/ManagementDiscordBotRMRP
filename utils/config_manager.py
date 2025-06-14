@@ -29,6 +29,15 @@ default_config = {
         'mr': None,    # Отчёты МР
         'roio': None   # Отчёты РОиО
     },
+    # Promotion notifications settings (daily at 21:00 MSK)
+    'promotion_notifications': {
+        'va': {'text': None, 'image': None, 'enabled': False},
+        'vk': {'text': None, 'image': None, 'enabled': False},
+        'uvp': {'text': None, 'image': None, 'enabled': False},
+        'sso': {'text': None, 'image': None, 'enabled': False},
+        'mr': {'text': None, 'image': None, 'enabled': False},
+        'roio': {'text': None, 'image': None, 'enabled': False}
+    },
     'military_roles': [],  # Military roles (updated to array)
     'supplier_roles': [],  # Supplier roles
     'civilian_roles': [],  # Civilian roles (updated to array)

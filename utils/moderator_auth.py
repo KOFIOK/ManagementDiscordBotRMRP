@@ -8,6 +8,47 @@ that can be used by both dismissal reports and role assignment systems.
 import discord
 from discord import ui
 from utils.google_sheets import sheets_manager
+from utils.config_manager import load_config
+
+
+async def is_moderator(user_id: int) -> bool:
+    """
+    Check if user is a moderator based on config
+    Returns True if user is in moderators list or has moderator role
+    """
+    try:
+        config = load_config()
+        moderators = config.get('moderators', {'users': [], 'roles': []})
+        
+        # Check if user ID is in moderators list
+        if user_id in moderators.get('users', []):
+            return True
+        
+        return False
+        
+    except Exception as e:
+        print(f"Error checking moderator status for user {user_id}: {e}")
+        return False
+
+
+async def is_administrator(user_id: int) -> bool:
+    """
+    Check if user is an administrator based on config
+    Returns True if user is in administrators list or has administrator role
+    """
+    try:
+        config = load_config()
+        administrators = config.get('administrators', {'users': [], 'roles': []})
+        
+        # Check if user ID is in administrators list
+        if user_id in administrators.get('users', []):
+            return True
+        
+        return False
+        
+    except Exception as e:
+        print(f"Error checking administrator status for user {user_id}: {e}")
+        return False
 
 
 class ModeratorAuthModal(ui.Modal, title="Регистрация модератора в системе"):

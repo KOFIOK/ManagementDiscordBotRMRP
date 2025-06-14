@@ -13,6 +13,7 @@ from forms.dismissal import DismissalReportButton, DismissalApprovalView, send_d
 from forms.settings_form import SettingsView
 from forms.role_assignment_form import RoleAssignmentView, send_role_assignment_message, restore_role_assignment_views, restore_approval_views
 from forms.moderator_registration import ModeratorRegistrationView, ensure_moderator_registration_message
+from forms.leave_request_form import LeaveRequestButton, LeaveRequestApprovalView, restore_leave_request_views
 from forms.welcome_system import setup_welcome_events
 
 # Load environment variables from .env file
@@ -74,16 +75,22 @@ async def on_ready():
     bot.add_view(SettingsView())
     bot.add_view(RoleAssignmentView())
     bot.add_view(ModeratorRegistrationView())
+    bot.add_view(LeaveRequestButton())
     
-    # Add a generic DismissalApprovalView for persistent approval buttons
+    # Add generic approval views for persistent buttons
     bot.add_view(DismissalApprovalView())
+    bot.add_view(LeaveRequestApprovalView("dummy"))  # Dummy ID for persistent view
     
     print('Persistent views added to bot')
       # Setup welcome system events
     setup_welcome_events(bot)
-    
-    # Start notification scheduler
+      # Start notification scheduler
     notification_scheduler.start()
+    
+    # Start leave requests daily cleanup
+    from utils.leave_request_storage import LeaveRequestStorage
+    asyncio.create_task(LeaveRequestStorage.start_daily_cleanup_task())
+    print("🧹 Leave requests daily cleanup task started")
     
     # Check channels and restore messages if needed
     await restore_channel_messages(config)
@@ -165,11 +172,24 @@ async def restore_channel_messages(config):
     audit_channel_id = config.get('audit_channel')
     if audit_channel_id:
         channel = bot.get_channel(audit_channel_id)
-    
-    # Restore blacklist channel message
+      # Restore blacklist channel message
     blacklist_channel_id = config.get('blacklist_channel')
     if blacklist_channel_id:
         channel = bot.get_channel(blacklist_channel_id)
+    
+    # Restore leave requests channel message
+    leave_requests_channel_id = config.get('leave_requests_channel')
+    if leave_requests_channel_id:
+        from forms.leave_request_form import send_leave_request_button_message
+        channel = bot.get_channel(leave_requests_channel_id)
+        if channel:
+            if not await check_for_button_message(channel, "Система подачи заявок на отгулы"):
+                print(f"Sending leave request button message to channel {channel.name}")
+                await send_leave_request_button_message(channel)
+    
+    # Restore leave request views
+    print("Restoring leave request views...")
+    await restore_leave_request_views(bot)
 
 async def check_for_button_message(channel, title_keyword):
     """Check if a channel already has a button message with the specified title."""

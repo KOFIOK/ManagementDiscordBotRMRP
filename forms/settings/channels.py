@@ -485,8 +485,7 @@ class ChannelSelectionModal(BaseSettingsModal):
                 "leave_requests": "отгулов"
             }
             type_name = type_names.get(self.config_type, self.config_type)
-            
-            # Send appropriate button message to the channel
+              # Send appropriate button message to the channel
             button_message_added = False
             if self.config_type == "dismissal":
                 await send_dismissal_button_message(channel)
@@ -500,6 +499,11 @@ class ChannelSelectionModal(BaseSettingsModal):
                 # Import and send moderator registration message
                 from forms.moderator_registration import ensure_moderator_registration_message
                 await ensure_moderator_registration_message(interaction.guild, channel.id)
+                button_message_added = True
+            elif self.config_type == "leave_requests":
+                # Import and send leave request button message
+                from forms.leave_request_form import send_leave_request_button_message
+                await send_leave_request_button_message(channel)
                 button_message_added = True
             
             success_message = f"Канал {type_name} успешно настроен на {channel.mention}!"

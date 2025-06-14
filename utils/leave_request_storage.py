@@ -143,26 +143,37 @@ class LeaveRequestStorage:
                         cls._save_data(data)
                         return True
         
-        return False
-    
+        return False    
     @classmethod
-    def delete_request(cls, request_id: str, user_id: int) -> bool:
+    def delete_request(cls, request_id: str, user_id: int, is_admin: bool = False) -> bool:
         """
-        Delete request (only by owner and only if pending)
+        Delete request completely from storage
+        Args:
+            request_id: ID of request to delete
+            user_id: ID of user requesting deletion
+            is_admin: True if user is admin (can delete any request)
         Returns: True if deleted successfully
         """
         data = cls._load_data()
         
         for date_data in data.values():
-            user_key = str(user_id)
-            if user_key in date_data:
-                user_requests = date_data[user_key]
+            for user_key, user_requests in date_data.items():
                 for i, request in enumerate(user_requests):
-                    if (request["id"] == request_id and 
-                        request["user_id"] == user_id and 
-                        request["status"] == "pending"):
+                    if request["id"] == request_id:
+                        # Check permissions
+                        if not is_admin and request["user_id"] != user_id:
+                            return False  # Not owner and not admin
                         
+                        if not is_admin and request["status"] != "pending":
+                            return False  # Only pending requests can be deleted by user
+                        
+                        # Admin can delete any request, user can only delete pending own requests
                         del user_requests[i]
+                        
+                        # Clean up empty user data
+                        if not user_requests:
+                            del date_data[user_key]
+                        
                         cls._save_data(data)
                         return True
         

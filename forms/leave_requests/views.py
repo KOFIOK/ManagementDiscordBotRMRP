@@ -213,8 +213,13 @@ class LeaveRequestApprovalView(ui.View):
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
             
-            # Check if user is the owner of the request
-            if request["user_id"] != interaction.user.id:
+            # Check permissions
+            is_admin = interaction.user.guild_permissions.administrator
+            is_mod = await is_moderator(interaction.user.id)
+            is_request_owner = request["user_id"] == interaction.user.id
+            
+            # Admin/mod can delete any request, user can only delete own pending requests
+            if not (is_admin or is_mod or is_request_owner):
                 embed = discord.Embed(
                     title="❌ Недостаточно прав",
                     description="Вы можете удалить только свою собственную заявку.",
@@ -223,8 +228,8 @@ class LeaveRequestApprovalView(ui.View):
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
             
-            # Check if request is still pending
-            if request["status"] != "pending":
+            # User can only delete pending requests, admin/mod can delete any
+            if is_request_owner and not (is_admin or is_mod) and request["status"] != "pending":
                 status_text = {
                     "approved": "одобрена",
                     "rejected": "отклонена"
@@ -238,8 +243,12 @@ class LeaveRequestApprovalView(ui.View):
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
             
-            # Delete request
-            success = LeaveRequestStorage.delete_request(self.request_id, interaction.user.id)
+            # Delete request completely
+            success = LeaveRequestStorage.delete_request(
+                self.request_id, 
+                interaction.user.id, 
+                is_admin=(is_admin or is_mod)
+            )
             
             if success:
                 # Update embed to show deletion
@@ -248,29 +257,23 @@ class LeaveRequestApprovalView(ui.View):
                 embed.color = discord.Color.greyple()
                 
                 # Update status field
+                deleter_text = "администратором" if (is_admin or is_mod) else "пользователем"
                 for i, field in enumerate(embed.fields):
                     if field.name == "📢 Статус:":
                         embed.set_field_at(
                             i, 
                             name="📢 Статус:",
-                            value=f"🗑️ УДАЛЕНА пользователем {interaction.user.mention}\n⏰ {discord.utils.format_dt(discord.utils.utcnow(), 'f')}",
+                            value=f"🗑️ УДАЛЕНА {deleter_text} {interaction.user.mention}\n⏰ {discord.utils.format_dt(discord.utils.utcnow(), 'f')}",
                             inline=True
                         )
                         break
                 
-                # Remove buttons
-                await interaction.message.edit(embed=embed, view=None)
-                
-                embed = discord.Embed(
-                    title="✅ Заявка удалена",
-                    description="Ваша заявка на отгул была успешно удалена.",
-                    color=discord.Color.green()
-                )
-                await interaction.response.send_message(embed=embed, ephemeral=True)
+                # Remove buttons and update message
+                await interaction.response.edit_message(embed=embed, view=None)
             else:
                 embed = discord.Embed(
-                    title="❌ Ошибка",
-                    description="Не удалось удалить заявку.",
+                    title="❌ Ошибка удаления",
+                    description="Не удалось удалить заявку. Возможно, она уже была обработана.",
                     color=discord.Color.red()
                 )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -282,7 +285,7 @@ class LeaveRequestApprovalView(ui.View):
                 color=discord.Color.red()
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
-    
+
     async def _update_request_embed(self, interaction):
         """Update the original request embed with approval info"""
         try:

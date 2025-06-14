@@ -49,7 +49,7 @@ class LeaveRequestValidator:
     
     @classmethod
     def is_work_hours(cls, start_time: str, end_time: str) -> bool:
-        """Check if requested time is within work hours (09:00-22:00)"""
+        """Check if requested time is within work hours"""
         start = cls.parse_time(start_time)
         end = cls.parse_time(end_time)
         
@@ -98,7 +98,7 @@ class LeaveRequestValidator:
         
         # Check work hours
         if not cls.is_work_hours(start_time, end_time):
-            return {"valid": False, "error": "Отгул можно взять только в рабочее время (09:00-22:00)", "duration_minutes": 0}
+            return {"valid": False, "error": "Отгул можно взять только в рабочее время ()", "duration_minutes": 0}
         
         # Calculate duration
         duration = cls.calculate_duration_minutes(start_time, end_time)
@@ -138,7 +138,7 @@ class LeaveRequestValidator:
         
         # Check work hours
         if not cls.is_work_hours(start_time, end_time):
-            return {"valid": False, "error": "Отгул можно взять только в рабочее время (09:00-22:00)", "duration_minutes": 0}
+            return {"valid": False, "error": "Отгул можно взять только в рабочее время ()", "duration_minutes": 0}
         
         # Calculate duration
         duration = cls.calculate_duration_minutes(start_time, end_time)
@@ -209,7 +209,6 @@ class LeaveRequestDepartmentDetector:
                 for role_name in role_names:
                     if pattern in role_name:
                         return dept_code
-        
         return 'unknown'
     
     @classmethod
@@ -227,5 +226,31 @@ class LeaveRequestDepartmentDetector:
                     if ping_role:
                         ping_roles.append(ping_role)
                 break
+        
+        return ping_roles    
+    @classmethod
+    def get_ping_roles_from_user(cls, user_roles: list, guild) -> list:
+        """
+        Get ping roles based on user's roles using ping_settings from config
+        Returns list of roles to ping
+        """
+        from utils.config_manager import load_config
+        
+        config = load_config()
+        ping_settings = config.get('ping_settings', {})
+        
+        ping_roles = []
+        user_role_ids = [role.id for role in user_roles]
+        
+        # Check each ping setting
+        for role_id_str, ping_role_ids in ping_settings.items():
+            role_id = int(role_id_str)
+            
+            # If user has this role, add corresponding ping roles
+            if role_id in user_role_ids:
+                for ping_role_id in ping_role_ids:
+                    ping_role = guild.get_role(ping_role_id)
+                    if ping_role and ping_role not in ping_roles:
+                        ping_roles.append(ping_role)
         
         return ping_roles

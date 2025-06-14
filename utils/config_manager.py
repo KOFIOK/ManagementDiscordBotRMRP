@@ -20,6 +20,15 @@ default_config = {
     'role_assignment_channel': None,
     'role_assignment_message_id': None,  # ID of the pinned message with role assignment buttons
     'moderator_registration_channel': None,  # Channel for moderator registration
+    # Promotion report channels
+    'promotion_report_channels': {
+        'va': None,    # Отчёты ВА
+        'vk': None,    # Отчёты ВК
+        'uvp': None,   # Отчёты УВП
+        'sso': None,   # Отчёты ССО
+        'mr': None,    # Отчёты МР
+        'roio': None   # Отчёты РОиО
+    },
     'military_roles': [],  # Military roles (updated to array)
     'supplier_roles': [],  # Supplier roles
     'civilian_roles': [],  # Civilian roles (updated to array)

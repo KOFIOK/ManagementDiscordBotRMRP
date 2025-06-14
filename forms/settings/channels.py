@@ -44,13 +44,18 @@ class ChannelConfigSelect(ui.Select):
                 description="Настроить канал для выбора военной/гражданской роли",
                 emoji="🎖️",
                 value="role_assignment"
+            ),            discord.SelectOption(
+                label="Регистрация модераторов",
+                description="Настроить канал для регистрации модераторов в системе",
+                emoji="🔐",
+                value="moderator_registration"
             ),
             discord.SelectOption(
-                label="Регистрация модераторов",
-                description="Настроить канал для регистрации модераторов в системе",                emoji="🔐",
-                value="moderator_registration"
-            )
-        ]
+                label="Каналы отчётов на повышение",
+                description="Настроить каналы для отчётов на повышение по подразделениям",
+                emoji="📈",
+                value="promotion_reports"
+            )        ]
         
         super().__init__(
             placeholder="Выберите канал для настройки...",
@@ -74,6 +79,8 @@ class ChannelConfigSelect(ui.Select):
             await self.show_blacklist_config(interaction)
         elif config_type == "moderator_registration":
             await self.show_moderator_registration_config(interaction)
+        elif config_type == "promotion_reports":
+            await self.show_promotion_reports_config(interaction)
         else:
             # Create channel selection modal for other channel types
             modal = ChannelSelectionModal(config_type)
@@ -330,6 +337,67 @@ class ChannelConfigSelect(ui.Select):
         
         view = ModeratorRegistrationChannelView()
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+    async def show_promotion_reports_config(self, interaction: discord.Interaction):
+        """Show promotion reports channels configuration"""
+        embed = discord.Embed(
+            title="📈 Настройка каналов отчётов на повышение",
+            description="Управление каналами для отчётов на повышение по подразделениям.",
+            color=discord.Color.gold(),
+            timestamp=discord.utils.utcnow()
+        )
+        
+        config = load_config()
+        helper = ConfigDisplayHelper()
+        
+        # Show current channels
+        promotion_channels = config.get('promotion_report_channels', {})
+        department_names = {
+            'va': 'ВА (Военная Авиация)',
+            'vk': 'ВК (Военно-Космические силы)',
+            'uvp': 'УВП (Управление военной полиции)',
+            'sso': 'ССО (Силы специальных операций)',
+            'mr': 'МР (Морская разведка)',
+            'roio': 'РОиО (Разведка и охрана важных объектов)'
+        }
+        
+        channels_info = ""
+        for dept_code, channel_id in promotion_channels.items():
+            dept_name = department_names.get(dept_code, dept_code.upper())
+            if channel_id:
+                channel = interaction.guild.get_channel(channel_id)
+                if channel:
+                    channels_info += f"• **{dept_name}**: {channel.mention}\n"
+                else:
+                    channels_info += f"• **{dept_name}**: ❌ Канал не найден (ID: {channel_id})\n"
+            else:
+                channels_info += f"• **{dept_name}**: ❌ Не настроено\n"
+        
+        embed.add_field(
+            name="📊 Настроенные каналы:",
+            value=channels_info or "❌ Каналы не настроены",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="ℹ️ Описание:",
+            value=(
+                "Каждый канал предназначен для отчётов на повышение в звании "
+                "для соответствующего подразделения. Настройте каналы для "
+                "автоматической отправки отчётов в нужные места."
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🔧 Доступные действия:",
+            value="Выберите подразделение для настройки канала и уведомлений:",
+            inline=False
+        )
+        
+        view = PromotionReportsConfigView()
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        
 
 
 class RoleAssignmentChannelView(BaseSettingsView):
@@ -788,3 +856,224 @@ class ModeratorRegistrationChannelView(BaseSettingsView):
     async def set_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = ChannelSelectionModal("moderator_registration")
         await interaction.response.send_modal(modal)
+
+
+class PromotionReportsConfigView(BaseSettingsView):
+    """View for promotion reports configuration with dropdown selection"""
+    
+    def __init__(self):
+        super().__init__()
+        self.add_item(PromotionDepartmentSelect())
+
+
+class PromotionDepartmentSelect(ui.Select):
+    """Select menu for choosing department to configure promotion reports"""
+    
+    def __init__(self):
+        options = [
+            discord.SelectOption(
+                label="Отчёты ВА",
+                description="Военная Авиация",
+                emoji="✈️",
+                value="va"
+            ),
+            discord.SelectOption(
+                label="Отчёты ВК",
+                description="Военно-Космические силы",
+                emoji="🚀",
+                value="vk"
+            ),
+            discord.SelectOption(
+                label="Отчёты УВП",
+                description="Управление военной полиции",
+                emoji="👮",
+                value="uvp"
+            ),
+            discord.SelectOption(
+                label="Отчёты ССО",
+                description="Силы специальных операций",
+                emoji="🔫",
+                value="sso"
+            ),
+            discord.SelectOption(
+                label="Отчёты МР",
+                description="Морская разведка",
+                emoji="⚓",
+                value="mr"
+            ),
+            discord.SelectOption(
+                label="Отчёты РОиО",
+                description="Разведка и охрана важных объектов",
+                emoji="🛡️",
+                value="roio"
+            )
+        ]
+        
+        super().__init__(
+            placeholder="Выберите подразделение для настройки...",
+            min_values=1,
+            max_values=1,
+            options=options,
+            custom_id="promotion_department_select"
+        )
+    
+    async def callback(self, interaction: discord.Interaction):
+        selected_department = self.values[0]
+        
+        # Show department configuration with buttons
+        department_names = {
+            'va': 'ВА (Военная Авиация)',
+            'vk': 'ВК (Военно-Космические силы)',
+            'uvp': 'УВП (Управление военной полиции)',
+            'sso': 'ССО (Силы специальных операций)',
+            'mr': 'МР (Морская разведка)',
+            'roio': 'РОиО (Разведка и охрана важных объектов)'
+        }
+        
+        department_emojis = {
+            'va': '✈️',
+            'vk': '🚀',
+            'uvp': '👮',
+            'sso': '🔫',
+            'mr': '⚓',
+            'roio': '🛡️'
+        }
+        
+        config = load_config()
+        promotion_channels = config.get('promotion_report_channels', {})
+        current_channel_id = promotion_channels.get(selected_department)
+        
+        embed = discord.Embed(
+            title=f"{department_emojis.get(selected_department, '📈')} Настройка отчётов {department_names.get(selected_department, selected_department.upper())}",
+            description=f"Управление каналом отчётов на повышение для подразделения {department_names.get(selected_department, selected_department.upper())}",
+            color=discord.Color.gold(),
+            timestamp=discord.utils.utcnow()
+        )
+        
+        # Show current channel
+        if current_channel_id:
+            channel = interaction.guild.get_channel(current_channel_id)
+            if channel:
+                embed.add_field(
+                    name="📂 Текущий канал:",
+                    value=f"{channel.mention} (ID: {channel.id})",
+                    inline=False
+                )
+            else:
+                embed.add_field(
+                    name="❌ Текущий канал:",
+                    value=f"Канал не найден (ID: {current_channel_id})",
+                    inline=False
+                )
+        else:
+            embed.add_field(
+                name="❌ Канал не настроен",
+                value="Установите канал для отчётов на повышение",
+                inline=False
+            )
+        
+        embed.add_field(
+            name="🔧 Доступные действия:",
+            value=(
+                "• **Настроить канал** - установить канал для отчётов\n"
+                "• **Задать уведомление** - настроить уведомления (будет доступно позже)"
+            ),
+            inline=False
+        )
+        
+        view = PromotionDepartmentConfigView(selected_department)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+
+class PromotionDepartmentConfigView(BaseSettingsView):
+    """View for configuring specific department promotion reports"""
+    
+    def __init__(self, department_code: str):
+        super().__init__()
+        self.department_code = department_code
+    
+    @discord.ui.button(label="📂 Настроить канал", style=discord.ButtonStyle.green)
+    async def set_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = PromotionChannelModal(self.department_code)
+        await interaction.response.send_modal(modal)
+    
+    @discord.ui.button(label="🔔 Задать уведомление", style=discord.ButtonStyle.secondary, disabled=True)
+    async def set_notification(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Пока что отключено, будет реализовано позже
+        await interaction.response.send_message(
+            "⚠️ Эта функция будет доступна в следующих обновлениях.",
+            ephemeral=True
+        )
+
+
+class PromotionChannelModal(BaseSettingsModal):
+    """Modal for configuring promotion report channel for specific department"""
+    
+    def __init__(self, department_code: str):
+        self.department_code = department_code
+        
+        department_names = {
+            'va': 'ВА (Военная Авиация)',
+            'vk': 'ВК (Военно-Космические силы)',
+            'uvp': 'УВП (Управление военной полиции)',
+            'sso': 'ССО (Силы специальных операций)',
+            'mr': 'МР (Морская разведка)',
+            'roio': 'РОиО (Разведка и охрана важных объектов)'
+        }
+        
+        dept_name = department_names.get(department_code, department_code.upper())
+        super().__init__(title=f"Настройка канала {dept_name}")
+        
+        self.channel_input = ui.TextInput(
+            label="ID или упоминание канала",
+            placeholder="Например: #отчёты-ва или 1234567890123456789",
+            min_length=1,
+            max_length=100,
+            required=True
+        )
+        self.add_item(self.channel_input)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            # Parse channel input
+            channel = ChannelParser.parse_channel_input(self.channel_input.value.strip(), interaction.guild)
+            
+            if not channel:
+                await self.send_error_message(
+                    interaction,
+                    "Канал не найден",
+                    "Канал не найден. Укажите корректный ID канала, упоминание канала или название канала."
+                )
+                return
+            
+            # Save configuration
+            config = load_config()
+            if 'promotion_report_channels' not in config:
+                config['promotion_report_channels'] = {}
+            
+            config['promotion_report_channels'][self.department_code] = channel.id
+            save_config(config)
+            
+            department_names = {
+                'va': 'ВА (Военная Авиация)',
+                'vk': 'ВК (Военно-Космические силы)',
+                'uvp': 'УВП (Управление военной полиции)',
+                'sso': 'ССО (Силы специальных операций)',
+                'mr': 'МР (Морская разведка)',
+                'roio': 'РОиО (Разведка и охрана важных объектов)'
+            }
+            
+            dept_name = department_names.get(self.department_code, self.department_code.upper())
+            
+            await self.send_success_message(
+                interaction,
+                "Канал настроен",
+                f"Канал для отчётов {dept_name} установлен: {channel.mention}"
+            )
+            
+        except Exception as e:
+            await self.send_error_message(
+                interaction,
+                "Ошибка",
+                f"Произошла ошибка при настройке канала: {str(e)}"
+            )

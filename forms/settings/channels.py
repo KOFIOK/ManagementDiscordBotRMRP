@@ -1059,7 +1059,21 @@ class PromotionChannelModal(BaseSettingsModal):
     def __init__(self, department_code: str):
         self.department_code = department_code
         
+        # Короткие названия для заголовков modal (лимит 45 символов)
         department_names = {
+            'va': 'ВА',
+            'vk': 'ВК', 
+            'uvp': 'УВП',
+            'sso': 'ССО',
+            'mr': 'МР',
+            'roio': 'РОиО'
+        }
+        
+        dept_name = department_names.get(department_code, department_code.upper())
+        super().__init__(title=f"📈 Настройка канала {dept_name}")
+        
+        # Полные названия для подсказок
+        full_department_names = {
             'va': 'ВА (Военная Академия)',
             'vk': 'ВК (Военный Комиссариат)',
             'uvp': 'УВП (Военная Полиция)',
@@ -1068,12 +1082,11 @@ class PromotionChannelModal(BaseSettingsModal):
             'roio': 'РОиО (Рота Охраны и Обеспечения)'
         }
         
-        dept_name = department_names.get(department_code, department_code.upper())
-        super().__init__(title=f"Настройка канала {dept_name}")
+        full_dept_name = full_department_names.get(department_code, department_code.upper())
         
         self.channel_input = ui.TextInput(
-            label="ID или упоминание канала",
-            placeholder="Например: #отчёты-ва или 1234567890123456789",
+            label=f"Канал для отчётов {dept_name}",
+            placeholder=f"Канал для отчётов {full_dept_name}",
             min_length=1,
             max_length=100,
             required=True
@@ -1132,17 +1145,18 @@ class PromotionNotificationModal(BaseSettingsModal):
     def __init__(self, department_code: str):
         self.department_code = department_code
         
+        # Короткие названия для заголовков modal
         department_names = {
-            'va': 'ВА (Военная Академия)',
-            'vk': 'ВК (Военный Комиссариат)',
-            'uvp': 'УВП (Военная Полиция)',
-            'sso': 'ССО (Спецоперации)',
-            'mr': 'МР (Медицинская Рота)',
-            'roio': 'РОиО (Рота Охраны и Обеспечения)'
+            'va': 'ВА',
+            'vk': 'ВК',
+            'uvp': 'УВП', 
+            'sso': 'ССО',
+            'mr': 'МР',
+            'roio': 'РОиО'
         }
         
         dept_name = department_names.get(department_code, department_code.upper())
-        super().__init__(title=f"Уведомления {dept_name}")
+        super().__init__(title=f"🔔 Уведомления {dept_name}")
         
         # Load current settings
         config = load_config()

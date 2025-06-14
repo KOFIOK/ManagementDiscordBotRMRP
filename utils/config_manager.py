@@ -28,8 +28,7 @@ default_config = {
         'sso': None,   # Отчёты ССО
         'mr': None,    # Отчёты МР
         'roio': None   # Отчёты РОиО
-    },
-    # Promotion notifications settings (daily at 21:00 MSK)
+    },    # Promotion notifications settings (daily notifications)
     'promotion_notifications': {
         'va': {'text': None, 'image': None, 'enabled': False},
         'vk': {'text': None, 'image': None, 'enabled': False},
@@ -37,6 +36,11 @@ default_config = {
         'sso': {'text': None, 'image': None, 'enabled': False},
         'mr': {'text': None, 'image': None, 'enabled': False},
         'roio': {'text': None, 'image': None, 'enabled': False}
+    },
+    # Notification schedule settings
+    'notification_schedule': {
+        'hour': 21,     # Hour in MSK (0-23)
+        'minute': 0     # Minute (0-59)
     },
     'military_roles': [],  # Military roles (updated to array)
     'supplier_roles': [],  # Supplier roles

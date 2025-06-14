@@ -34,11 +34,17 @@ class PromotionNotificationScheduler:
         """Main scheduler loop"""
         while True:
             try:
-                # Calculate seconds until next 21:00 MSK
-                now_moscow = datetime.now(self.moscow_tz)
-                target_time = now_moscow.replace(hour=21, minute=0, second=0, microsecond=0)
+                # Get configured notification time
+                config = load_config()
+                schedule_config = config.get('notification_schedule', {'hour': 21, 'minute': 0})
+                target_hour = schedule_config.get('hour', 21)
+                target_minute = schedule_config.get('minute', 0)
                 
-                # If it's already past 21:00 today, schedule for tomorrow
+                # Calculate seconds until next configured time MSK
+                now_moscow = datetime.now(self.moscow_tz)
+                target_time = now_moscow.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
+                
+                # If it's already past target time today, schedule for tomorrow
                 if now_moscow >= target_time:
                     target_time = target_time.replace(day=target_time.day + 1)
                 
@@ -84,8 +90,7 @@ class PromotionNotificationScheduler:
                 if not channel:
                     print(f"⚠️ Канал для {dept_code} не найден (ID: {channel_id})")
                     continue
-                
-                # Prepare notification content
+                  # Prepare notification content
                 text = notification_config.get('text')
                 image_filename = notification_config.get('image')
                 
@@ -93,29 +98,31 @@ class PromotionNotificationScheduler:
                     continue
                 
                 try:
-                    embed = discord.Embed(
-                        title="🔔 Ежедневное напоминание",
-                        color=discord.Color.gold(),
-                        timestamp=datetime.now()
-                    )
-                    
-                    if text:
-                        embed.description = text
-                    
-                    # Send with image if specified
+                    # Send content exactly as specified by admin, no extra formatting
                     file = None
+                    
+                    # Prepare image file if specified
                     if image_filename:
                         image_path = os.path.join('files', 'reports', image_filename)
                         if os.path.exists(image_path):
                             file = discord.File(image_path, filename=image_filename)
-                            embed.set_image(url=f"attachment://{image_filename}")
                         else:
                             print(f"⚠️ Изображение не найдено: {image_path}")
+                            image_filename = None  # Don't reference missing file
                     
-                    if file:
-                        await channel.send(embed=embed, file=file)
+                    # Send message based on what admin configured
+                    if text and file:
+                        # Both text and image
+                        await channel.send(content=text, file=file)
+                    elif text:
+                        # Only text
+                        await channel.send(content=text)
+                    elif file:
+                        # Only image
+                        await channel.send(file=file)
                     else:
-                        await channel.send(embed=embed)
+                        # Nothing to send (image file missing)
+                        continue
                     
                     sent_count += 1
                     print(f"✅ Уведомление отправлено в {channel.name} ({dept_code})")

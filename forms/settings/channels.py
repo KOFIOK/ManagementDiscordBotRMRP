@@ -983,26 +983,32 @@ class PromotionDepartmentSelect(ui.Select):
                 content_parts.append("📝 Текст")
             if notification_image:
                 content_parts.append(f"🖼️ {notification_image}")
-            
             content_info = f" ({', '.join(content_parts)})" if content_parts else ""
+            
+            # Get configured notification time
+            schedule_config = config.get('notification_schedule', {'hour': 21, 'minute': 0})
+            hour = schedule_config.get('hour', 21)
+            minute = schedule_config.get('minute', 0)
+            time_str = f"{hour:02d}:{minute:02d}"
             
             embed.add_field(
                 name="🔔 Ежедневные уведомления:",
-                value=f"{status}{content_info}\n{'*Отправка в 21:00 МСК*' if notification_enabled else ''}",
+                value=f"{status}{content_info}\n{'*Отправка в ' + time_str + ' МСК*' if notification_enabled else ''}",
                 inline=False
             )
         else:
             embed.add_field(
-                name="� Ежедневные уведомления:",
+                name="🕐 Ежедневные уведомления:",
                 value="❌ Не настроены",
                 inline=False
             )
         
         embed.add_field(
-            name="🦾 Доступные действия:",
+            name="🔧 Доступные действия:",
             value=(
                 "• **Настроить канал** - установить канал для отчётов\n"
-                "• **Задать уведомление** - настроить ежедневные уведомления в 21:00 МСК"
+                "• **Задать уведомление** - настроить ежедневные уведомления\n"
+                "*Время отправки: `/set_notification_time`*"
             ),
             inline=False
         )
@@ -1236,12 +1242,17 @@ class PromotionNotificationModal(BaseSettingsModal):
                 content_desc = f" ({', '.join(content_info)})" if content_info else ""
             else:
                 content_desc = ""
+              # Get configured notification time for success message
+            schedule_config = config.get('notification_schedule', {'hour': 21, 'minute': 0})
+            hour = schedule_config.get('hour', 21)
+            minute = schedule_config.get('minute', 0)
+            time_str = f"{hour:02d}:{minute:02d}"
             
             await self.send_success_message(
                 interaction,
                 "Уведомления настроены",
                 f"Ежедневные уведомления для {dept_name} {status}{content_desc}.\n"
-                f"{'Отправка в 21:00 МСК.' if enabled else ''}"
+                f"{'Отправка в ' + time_str + ' МСК.' if enabled else ''}"
             )
             
         except Exception as e:

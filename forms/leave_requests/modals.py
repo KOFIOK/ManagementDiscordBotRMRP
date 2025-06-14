@@ -17,7 +17,7 @@ class LeaveRequestModal(ui.Modal):
         
         self.name_input = ui.TextInput(
           label="Имя Фамилия",
-          placeholder="Например: Иван Иванов",
+          placeholder="Например: Олег Дубов",
           max_length=100,
           required=True
         )
@@ -25,7 +25,7 @@ class LeaveRequestModal(ui.Modal):
         
         self.static_input = ui.TextInput(
           label="Статик",
-          placeholder="Например: 123-456 или 123 456",
+          placeholder="Например: 123-456",
           max_length=20,
           required=True
         )
@@ -49,7 +49,7 @@ class LeaveRequestModal(ui.Modal):
         
         self.reason_input = ui.TextInput(
           label="Причина взятия отгула",
-          placeholder="Укажите причину...",
+          placeholder="Укажите IC причину, не пишите OOC информацию (\"в целях выполнения БП\" писать не стоит)",
           style=discord.TextStyle.paragraph,
           max_length=500,
           required=True

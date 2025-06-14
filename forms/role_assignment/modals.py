@@ -19,7 +19,7 @@ class MilitaryApplicationModal(ui.Modal):
         
         self.name_input = ui.TextInput(
             label="Имя Фамилия",
-            placeholder="Например: Иван Иванов",
+            placeholder="Например: Олег Дубов",
             min_length=2,
             max_length=50,
             required=True

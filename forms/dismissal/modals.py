@@ -75,7 +75,7 @@ class DismissalReportModal(ui.Modal, title="Рапорт на увольнени
     
     name = ui.TextInput(
         label="Имя Фамилия",
-        placeholder="Введите имя и фамилию через пробел",
+        placeholder="Например: Олег Дубов",
         min_length=3,
         max_length=50,
         required=True
@@ -83,7 +83,7 @@ class DismissalReportModal(ui.Modal, title="Рапорт на увольнени
     
     static = ui.TextInput(
         label="Статик (123-456)",
-        placeholder="Формат: 123-456",
+        placeholder="Например: 123-456",
         min_length=6,
         max_length=7,
         required=True

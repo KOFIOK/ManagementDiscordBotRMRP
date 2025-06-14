@@ -13,9 +13,9 @@ class RoleAssignmentView(ui.View):
     
     def __init__(self):
         super().__init__(timeout=None)
-
+    
     async def _check_existing_supplier_roles(self, interaction):
-        """Check if user already has supplier roles"""
+        """Check if user already has ALL supplier roles"""
         try:
             config = load_config()
             supplier_roles = config.get('supplier_roles', [])
@@ -26,17 +26,24 @@ class RoleAssignmentView(ui.View):
             
             user_roles = [role.id for role in interaction.user.roles]
             user_supplier_roles = []
+            missing_supplier_roles = []
             
+            # Check each supplier role
             for role_id in supplier_roles:
-                if role_id in user_roles:
-                    role = interaction.guild.get_role(role_id)
-                    if role:
-                        user_supplier_roles.append(f"> • {role.name}")
+                role = interaction.guild.get_role(role_id)
+                if role:
+                    if role_id in user_roles:
+                        user_supplier_roles.append(f"> • {role.name} ✅")
+                    else:
+                        missing_supplier_roles.append(f"> • {role.name} ❌")
             
-            if user_supplier_roles:
+            # User has ALL supplier roles only if missing_supplier_roles is empty
+            if not missing_supplier_roles:
+                # User has all roles
                 role_list = "\n".join(user_supplier_roles)
                 return {"has_roles": True, "role_list": role_list}
             else:
+                # User is missing some roles, allow application
                 return {"has_roles": False, "role_list": ""}
                 
         except Exception as e:

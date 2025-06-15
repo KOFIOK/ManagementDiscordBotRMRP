@@ -8,7 +8,7 @@ from discord.ext import commands
 from discord import app_commands
 from typing import List
 import asyncio
-from utils.config_manager import load_config, is_moderator_or_admin
+from utils.config_manager import load_config, is_administrator
 
 
 class RoleDisbandView(discord.ui.View):
@@ -280,9 +280,9 @@ class RoleDisband(commands.Cog):
         """Disband specified roles from all users"""
         print(f"🔧 /расформ command called by {interaction.user}")
         try:
-            # Check admin permissions
+            # Check admin permissions - ONLY ADMINISTRATORS can use this command
             config = load_config()
-            if not is_moderator_or_admin(interaction.user, config):
+            if not is_administrator(interaction.user, config):
                 embed = discord.Embed(
                     title="❌ Недостаточно прав",
                     description="Эта команда доступна только администраторам.",

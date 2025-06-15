@@ -60,10 +60,9 @@ class LeaveRequestButton(ui.View):
             embed.set_footer(text="Вы можете подать новую заявку завтра")
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
-        
-        # If no existing request, show modal
+          # If no existing request, show modal
         from .modals import LeaveRequestModal
-        modal = LeaveRequestModal()
+        modal = await LeaveRequestModal.create_with_user_data(interaction.user.id)
         await interaction.response.send_modal(modal)
 
 

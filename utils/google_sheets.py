@@ -101,6 +101,31 @@ class GoogleSheetsManager:
                 return False
         return True
     
+    def get_worksheet(self, worksheet_name):
+        """
+        Get a specific worksheet by name.
+        
+        Args:
+            worksheet_name (str): Name of the worksheet to get
+            
+        Returns:
+            gspread.Worksheet or None: The worksheet object if found, None otherwise
+        """
+        try:
+            if not self.client:
+                self.client = gspread.service_account(filename=self.credentials_path)
+            
+            if not self.spreadsheet:
+                self.spreadsheet = self.client.open(self.spreadsheet_name)
+            
+            return self.spreadsheet.worksheet(worksheet_name)
+        except gspread.WorksheetNotFound:
+            print(f"❌ Worksheet '{worksheet_name}' not found in spreadsheet")
+            return None
+        except Exception as e:
+            print(f"❌ Error getting worksheet '{worksheet_name}': {e}")
+            return None
+    
     def get_rank_from_roles(self, member):
         """Extract rank from user's Discord roles."""
         # Check if this is a MockUser (users who left the server)

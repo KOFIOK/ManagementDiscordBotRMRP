@@ -10,6 +10,7 @@ import asyncio
 from datetime import datetime, timezone
 from utils.config_manager import load_config, is_moderator_or_admin
 from utils.google_sheets import sheets_manager
+from utils.user_database import user_database
 from .base import get_channel_with_fallback
 from .views import ApprovedApplicationView, RejectedApplicationView, ProcessingApplicationView
 
@@ -364,8 +365,7 @@ class RoleApplicationApprovalView(ui.View):
             
             signed_by_name = auth_result["info"]
             hiring_time = datetime.now(timezone.utc)
-            
-            # Log to Google Sheets
+              # Log to Google Sheets
             sheets_success = await sheets_manager.add_hiring_record(
                 self.application_data,
                 user,
@@ -376,6 +376,23 @@ class RoleApplicationApprovalView(ui.View):
             
             if sheets_success:
                 print(f"✅ Successfully logged hiring for {self.application_data.get('name', 'Unknown')}")
+              # Update personnel registry (only for Призыв/Экскурсия applications)
+            recruitment_type = self.application_data.get("recruitment_type", "").lower()
+            if recruitment_type in ["призыв", "экскурсия"]:
+                registry_success = await user_database.add_or_update_user(
+                    self.application_data,
+                    user.id
+                )
+                
+                if registry_success:
+                    print(f"✅ Successfully updated personnel registry for {self.application_data.get('name', 'Unknown')}")
+                else:
+                    print(f"⚠️ Failed to update personnel registry for {self.application_data.get('name', 'Unknown')}")
+                    # Send error message to moderator
+                    await self._send_registry_error_message(interaction)
+            else:
+                print(f"📝 Skipping personnel registry update for recruitment type: {recruitment_type}")
+                registry_success = True  # Not an error, just not applicable
             
             # Send audit notification
             audit_channel_id = config.get('audit_channel')
@@ -568,8 +585,7 @@ class RoleApplicationApprovalView(ui.View):
         """Handle automatic processing with pre-authorized moderator"""
         try:
             hiring_time = datetime.now(timezone.utc)
-            
-            # Log to Google Sheets
+              # Log to Google Sheets
             sheets_success = await sheets_manager.add_hiring_record(
                 self.application_data,
                 user,
@@ -580,6 +596,22 @@ class RoleApplicationApprovalView(ui.View):
             
             if sheets_success:
                 print(f"✅ Successfully logged hiring for {self.application_data.get('name', 'Unknown')}")
+              # Update personnel registry (only for Призыв/Экскурсия applications)
+            recruitment_type = self.application_data.get("recruitment_type", "").lower()
+            if recruitment_type in ["призыв", "экскурсия"]:
+                registry_success = await user_database.add_or_update_user(
+                    self.application_data,
+                    user.id
+                )
+                
+                if registry_success:
+                    print(f"✅ Successfully updated personnel registry for {self.application_data.get('name', 'Unknown')}")
+                else:
+                    print(f"⚠️ Failed to update personnel registry for {self.application_data.get('name', 'Unknown')}")
+            else:
+                print(f"📝 Skipping personnel registry update for recruitment type: {recruitment_type}")
+                registry_success = True  # Not an error, just not applicable
+                
               # Send audit notification
             audit_channel_id = config.get('audit_channel')
             if audit_channel_id:
@@ -631,3 +663,24 @@ class RoleApplicationApprovalView(ui.View):
             print(f"Error in approval process with message: {e}")
             # Can't send error message to user since we don't have interaction here
             # Error is already logged
+
+    async def _send_registry_error_message(self, interaction):
+        """Send error message about personnel registry failure"""
+        try:
+            error_embed = discord.Embed(
+                title="⚠️ Ошибка персонального реестра",
+                description=(
+                    "Заявка была успешно одобрена и пользователь получил роль, "
+                    "но возникла ошибка при обновлении персонального реестра.\n\n"
+                    "**Пожалуйста, обратитесь к Руководству Бригады** для решения данной проблемы."
+                ),
+                color=discord.Color.orange()
+            )
+            
+            if not interaction.response.is_done():
+                await interaction.followup.send(embed=error_embed, ephemeral=True)
+            else:
+                await interaction.followup.send(embed=error_embed, ephemeral=True)
+                
+        except Exception as e:
+            print(f"❌ Failed to send registry error message: {e}")

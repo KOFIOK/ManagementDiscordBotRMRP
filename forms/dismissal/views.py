@@ -11,6 +11,7 @@ import traceback
 from datetime import datetime
 from utils.config_manager import load_config, is_moderator_or_admin, can_moderate_user
 from utils.google_sheets import sheets_manager
+from utils.user_database import UserDatabase
 
 
 # Constants for UI elements and messages
@@ -76,7 +77,8 @@ class DismissalReportButton(ui.View):
     @discord.ui.button(label="Отправить рапорт на увольнение", style=discord.ButtonStyle.red, custom_id="dismissal_report")
     async def dismissal_report(self, interaction: discord.Interaction, button: discord.ui.Button):
         from .modals import DismissalReportModal
-        await interaction.response.send_modal(DismissalReportModal())
+        modal = await DismissalReportModal.create_with_user_data(interaction.user.id)
+        await interaction.response.send_modal(modal)
 
 
 class DismissalApprovalView(ui.View):
@@ -378,8 +380,7 @@ class DismissalApprovalView(ui.View):
         try:
             excluded_roles_ids = config.get('excluded_roles', [])
             ping_settings = config.get('ping_settings', {})
-            
-            # Log to Google Sheets BEFORE removing roles (to capture rank and department correctly)
+              # Log to Google Sheets BEFORE removing roles (to capture rank and department correctly)
             try:
                 success = await sheets_manager.add_dismissal_record(
                     form_data=form_data,
@@ -395,6 +396,35 @@ class DismissalApprovalView(ui.View):
                     print(f"Failed to log dismissal to Google Sheets for {target_user.display_name}")
             except Exception as e:
                 print(f"Error logging to Google Sheets: {e}")
+            
+            # Remove user from personnel database
+            try:
+                user_id = getattr(target_user, 'id', None)
+                if user_id:
+                    registry_success = await UserDatabase.remove_user(user_id)
+                    if not registry_success:
+                        print(f"⚠️ Could not remove user {target_user.display_name} from personnel registry")
+                        # Send error notification to moderator
+                        try:
+                            await interaction.followup.send(
+                                "⚠️ **Внимание:** Не удалось удалить пользователя из реестра личного состава. Обратитесь к руководству бригады.",
+                                ephemeral=True
+                            )
+                        except:
+                            pass  # If followup fails, continue silently
+                else:
+                    print(f"⚠️ Could not get user ID for {target_user.display_name}")
+            except Exception as e:
+                print(f"❌ Error removing user from personnel registry: {e}")
+                # Send error notification to moderator
+                try:
+                    await interaction.followup.send(
+                        "⚠️ **Внимание:** Ошибка при удалении из реестра личного состава. Обратитесь к руководству бригады.",
+                        ephemeral=True
+                    )
+                except:
+                    pass  # If followup fails, continue silently
+            
             # Remove all roles from the user (except @everyone and excluded roles)
             # Skip if user has left the server or is a MockUser
             roles_removed = False

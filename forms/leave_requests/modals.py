@@ -6,18 +6,34 @@ from discord import ui
 from discord.ext import commands
 from utils.moderator_auth import is_moderator, is_administrator
 from utils.leave_request_storage import LeaveRequestStorage
+from utils.user_database import UserDatabase
 from .utils import LeaveRequestValidator, LeaveRequestDepartmentDetector
 
 
 class LeaveRequestModal(ui.Modal):
     """Modal for submitting leave requests"""
     
-    def __init__(self):
+    def __init__(self, user_id=None, user_data=None):
         super().__init__(title="🏖️ Заявка на отгул")
+        
+        # Pre-fill name and static if user data is available
+        name_value = ""
+        static_value = ""
+        name_placeholder = "Например: Олег Дубов"
+        static_placeholder = "Например: 123-456"
+        
+        if user_data:
+            name_value = user_data.get('full_name', '')
+            static_value = user_data.get('static', '')
+            if name_value:
+                name_placeholder = f"Данные из реестра: {name_value}"
+            if static_value:
+                static_placeholder = f"Данные из реестра: {static_value}"
         
         self.name_input = ui.TextInput(
           label="Имя Фамилия",
-          placeholder="Например: Олег Дубов",
+          placeholder=name_placeholder,
+          default=name_value,
           max_length=100,
           required=True
         )
@@ -25,7 +41,8 @@ class LeaveRequestModal(ui.Modal):
         
         self.static_input = ui.TextInput(
           label="Статик",
-          placeholder="Например: 123-456",
+          placeholder=static_placeholder,
+          default=static_value,
           max_length=20,
           required=True
         )
@@ -55,6 +72,26 @@ class LeaveRequestModal(ui.Modal):
           required=True
         )
         self.add_item(self.reason_input)
+    
+    @classmethod
+    async def create_with_user_data(cls, user_id):
+        """
+        Create LeaveRequestModal with auto-filled user data from database
+        
+        Args:
+            user_id: Discord user ID
+            
+        Returns:
+            LeaveRequestModal: Modal instance with pre-filled data
+        """
+        try:
+            # Try to get user data from personnel database
+            user_data = await UserDatabase.get_user_info(user_id)
+            return cls(user_id=user_id, user_data=user_data)
+        except Exception as e:
+            print(f"❌ Error loading user data for modal: {e}")
+            # Return modal without pre-filled data if error occurs
+            return cls(user_id=user_id, user_data=None)
     
     async def on_submit(self, interaction: discord.Interaction):
         try:
@@ -221,6 +258,26 @@ class RejectReasonModal(ui.Modal):
           required=True
         )
         self.add_item(self.reason_input)
+    
+    @classmethod
+    async def create_with_user_data(cls, user_id):
+        """
+        Create LeaveRequestModal with auto-filled user data from database
+        
+        Args:
+            user_id: Discord user ID
+            
+        Returns:
+            LeaveRequestModal: Modal instance with pre-filled data
+        """
+        try:
+            # Try to get user data from personnel database
+            user_data = await UserDatabase.get_user_info(user_id)
+            return cls(user_id=user_id, user_data=user_data)
+        except Exception as e:
+            print(f"❌ Error loading user data for modal: {e}")
+            # Return modal without pre-filled data if error occurs
+            return cls(user_id=user_id, user_data=None)
     
     async def on_submit(self, interaction: discord.Interaction):
         try:

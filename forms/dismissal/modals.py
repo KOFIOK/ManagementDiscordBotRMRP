@@ -8,6 +8,7 @@ from discord import ui
 import re
 from utils.config_manager import load_config, has_pending_dismissal_report
 from utils.google_sheets import sheets_manager
+from utils.user_database import UserDatabase
 
 
 class StaticRequestModal(ui.Modal, title="Укажите статик увольняемого"):
@@ -73,30 +74,72 @@ class StaticRequestModal(ui.Modal, title="Укажите статик уволь
 class DismissalReportModal(ui.Modal, title="Рапорт на увольнение"):
     """Main dismissal report modal form"""
     
-    name = ui.TextInput(
-        label="Имя Фамилия",
-        placeholder="Например: Олег Дубов",
-        min_length=3,
-        max_length=50,
-        required=True
-    )
+    def __init__(self, user_data=None):
+        super().__init__()
+        
+        # Pre-fill name and static if user data is available
+        name_value = ""
+        static_value = ""
+        name_placeholder = "Например: Олег Дубов"
+        static_placeholder = "Например: 123-456"
+        
+        if user_data:
+            name_value = user_data.get('full_name', '')
+            static_value = user_data.get('static', '')
+            if name_value:
+                name_placeholder = f"Данные из реестра: {name_value}"
+            if static_value:
+                static_placeholder = f"Данные из реестра: {static_value}"
+        
+        self.name = ui.TextInput(
+            label="Имя Фамилия",
+            placeholder=name_placeholder,
+            default=name_value,
+            min_length=3,
+            max_length=50,
+            required=True
+        )
+        self.add_item(self.name)
+        
+        self.static = ui.TextInput(
+            label="Статик (123-456)",
+            placeholder=static_placeholder,
+            default=static_value,
+            min_length=6,
+            max_length=7,
+            required=True
+        )
+        self.add_item(self.static)
+        
+        self.reason = ui.TextInput(
+            label="Причина увольнения",
+            placeholder="ПСЖ или Перевод",
+            style=discord.TextStyle.short,
+            min_length=3,
+            max_length=10,
+            required=True
+        )
+        self.add_item(self.reason)
     
-    static = ui.TextInput(
-        label="Статик (123-456)",
-        placeholder="Например: 123-456",
-        min_length=6,
-        max_length=7,
-        required=True
-    )
-    
-    reason = ui.TextInput(
-        label="Причина увольнения",
-        placeholder="ПСЖ или Перевод",
-        style=discord.TextStyle.short,
-        min_length=3,
-        max_length=10,
-        required=True
-    )
+    @classmethod
+    async def create_with_user_data(cls, user_id):
+        """
+        Create DismissalReportModal with auto-filled user data from database
+        
+        Args:
+            user_id: Discord user ID
+            
+        Returns:
+            DismissalReportModal: Modal instance with pre-filled data
+        """
+        try:
+            # Try to get user data from personnel database
+            user_data = await UserDatabase.get_user_info(user_id)
+            return cls(user_data=user_data)
+        except Exception as e:
+            print(f"❌ Error loading user data for dismissal modal: {e}")
+            # Return modal without pre-filled data if error occurs
+            return cls(user_data=None)
     
     def format_static(self, static_input: str) -> str:
         """

@@ -349,17 +349,33 @@ class GoogleSheetsManager:
               # Use name from form as primary, fallback to extracted from nickname
             real_name = name_from_form or self.extract_name_from_nickname(dismissed_user.display_name)
             discord_id = str(dismissed_user.id)
-            
-            # Handle MockUser case - use form data instead of roles
+              # Handle MockUser case or when user has left server - use form data instead of roles
             if getattr(dismissed_user, '_is_mock', False):
                 # For MockUser, get data from form instead of roles
                 rank = form_data.get('rank', 'Неизвестно')
                 department = form_data.get('department', 'Неизвестно')
                 print(f"Using form data for MockUser: rank={rank}, department={department}")
             else:
-                # For real users, get from roles
+                # For real users, try to get from roles first, then fallback to form data
                 rank = self.get_rank_from_roles(dismissed_user)
                 department = self.get_department_from_roles(dismissed_user, ping_settings)
+                
+                # If rank or department not found from roles (user may have left server), use form data
+                if rank == 'Неизвестно' and form_data.get('rank'):
+                    rank = form_data.get('rank', 'Неизвестно')
+                    print(f"Using form data for rank: {rank}")
+                
+                if department == 'Неизвестно' and form_data.get('department'):
+                    department = form_data.get('department', 'Неизвестно')
+                    print(f"Using form data for department: {department}")
+            
+            # Log the data sources for debugging
+            print(f"📊 DISMISSAL LOGGING DEBUG:")
+            print(f"   User: {dismissed_user.display_name} (ID: {dismissed_user.id})")
+            print(f"   Is MockUser: {getattr(dismissed_user, '_is_mock', False)}")
+            print(f"   Form data: {form_data}")
+            print(f"   Final rank: {rank}")
+            print(f"   Final department: {department}")
             
             # Get approved by info - use override if provided, otherwise use centralized method
             if override_moderator_info:

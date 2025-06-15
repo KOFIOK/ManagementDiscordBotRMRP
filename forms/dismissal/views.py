@@ -945,11 +945,11 @@ class DismissalApprovalView(ui.View):
             from .modals import RejectionReasonModal
             
             # Store the original message for later reference
-            original_message = interaction.message
-              # Create modal to request rejection reason
+            original_message = interaction.message            # Create modal to request rejection reason
             reason_modal = RejectionReasonModal(
                 self._finalize_rejection_with_reason,
-                target_user, original_message
+                original_message,
+                None  # No view instance for regular dismissals
             )
             
             # If interaction hasn't been responded to yet, send modal
@@ -1022,3 +1022,264 @@ class DismissalApprovalView(ui.View):
                 "❌ Произошла ошибка при финализации отказа.",
                 ephemeral=True
             )
+
+
+class AutomaticDismissalApprovalView(ui.View):
+    """
+    Special view for automatic dismissal reports with three buttons: Approve, Reject, Edit
+    
+    This view is persistent (survives bot restarts) due to:
+    - timeout=None (never expires)
+    - custom_id on all buttons
+    - Registration in app.py as persistent view
+    """
+    
+    def __init__(self, user_id=None):
+        super().__init__(timeout=None)
+        self.user_id = user_id
+    
+    @discord.ui.button(label="✅ Одобрить", style=discord.ButtonStyle.green, custom_id="auto_approve_dismissal")
+    async def approve_dismissal(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Handle approval of automatic dismissal report"""
+        try:
+            # Check moderator permissions
+            config = load_config()
+            if not is_moderator_or_admin(interaction.user, config):
+                embed = discord.Embed(
+                    title="❌ Недостаточно прав",
+                    description="У вас нет прав для рассмотрения автоматических рапортов на увольнение.",
+                    color=discord.Color.red()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+              # Extract user information from embed description
+            target_user = await self._extract_target_user_from_embed(interaction)
+            
+            if not target_user:
+                await interaction.response.send_message(
+                    "❌ Не удалось извлечь информацию о пользователе из рапорта.",
+                    ephemeral=True
+                )
+                return
+            
+            # Proceed with standard dismissal approval process
+            await self._process_automatic_dismissal_approval(interaction, target_user, config)
+            
+        except Exception as e:
+            print(f"Error in automatic dismissal approval: {e}")
+            await interaction.response.send_message(
+                "❌ Произошла ошибка при одобрении автоматического рапорта.",
+                ephemeral=True
+            )
+    
+    @discord.ui.button(label="❌ Отклонить", style=discord.ButtonStyle.red, custom_id="auto_reject_dismissal")
+    async def reject_dismissal(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Handle rejection of automatic dismissal report"""
+        try:
+            # Check moderator permissions
+            config = load_config()
+            if not is_moderator_or_admin(interaction.user, config):
+                embed = discord.Embed(
+                    title="❌ Недостаточно прав",
+                    description="У вас нет прав для рассмотрения автоматических рапортов на увольнение.",
+                    color=discord.Color.red()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+              # Request rejection reason
+            from .modals import RejectionReasonModal
+            modal = RejectionReasonModal(None, interaction.message, self)  # Pass message and view instead of callback
+            await interaction.response.send_modal(modal)
+            
+        except Exception as e:
+            print(f"Error in automatic dismissal rejection: {e}")
+            await interaction.response.send_message(
+                "❌ Произошла ошибка при отклонении автоматического рапорта.",
+                ephemeral=True
+            )
+    
+    @discord.ui.button(label="✏️ Изменить", style=discord.ButtonStyle.secondary, custom_id="auto_edit_dismissal")
+    async def edit_dismissal(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Handle editing of automatic dismissal report data"""
+        try:
+            # Check moderator permissions
+            config = load_config()
+            if not is_moderator_or_admin(interaction.user, config):
+                embed = discord.Embed(
+                    title="❌ Недостаточно прав",
+                    description="У вас нет прав для редактирования автоматических рапортов на увольнение.",
+                    color=discord.Color.red()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+              # Extract current data from embed
+            current_data = self._extract_current_data_from_embed(interaction)
+            
+            # Show edit modal
+            from .modals import AutomaticDismissalEditModal
+            modal = AutomaticDismissalEditModal(current_data, interaction.message, self)
+            await interaction.response.send_modal(modal)
+            
+        except Exception as e:
+            print(f"Error in automatic dismissal edit: {e}")
+            await interaction.response.send_message(
+                "❌ Произошла ошибка при редактировании автоматического рапорта.",
+                ephemeral=True
+            )
+    
+    async def _extract_target_user_from_embed(self, interaction):
+        """Extract target user from embed description (mention)"""
+        try:
+            embed = interaction.message.embeds[0]
+            description = embed.description
+            
+            # Extract user ID from mention in description
+            import re
+            user_mention_pattern = r'<@(\d+)>'
+            match = re.search(user_mention_pattern, description)
+            if match:
+                user_id = int(match.group(1))
+                # Try to get member object (may be None if user left)
+                target_user = interaction.guild.get_member(user_id)
+                
+                if not target_user:
+                    # Create mock user for users who left
+                    class MockUser:
+                        def __init__(self, user_id, name):
+                            self.id = user_id
+                            self.name = name
+                            self.display_name = name
+                            self.mention = f"<@{user_id}>"
+                            self.roles = []
+                            self._is_mock = True
+                        
+                        def __str__(self):
+                            return self.display_name
+                    
+                    target_user = MockUser(user_id, "Покинувший пользователь")
+                
+                return target_user
+            
+            return None
+            
+        except Exception as e:
+            print(f"Error extracting target user: {e}")
+            return None
+    
+    def _extract_current_data_from_embed(self, interaction):
+        """Extract current data from embed fields"""
+        try:
+            embed = interaction.message.embeds[0]
+            data = {}
+            
+            for field in embed.fields:
+                if field.name == "Имя Фамилия":
+                    data['name'] = field.value
+                elif field.name == "Статик":
+                    data['static'] = field.value
+                elif field.name == "Подразделение":
+                    data['department'] = field.value
+                elif field.name == "Воинское звание":
+                    data['rank'] = field.value
+            
+            return data
+            
+        except Exception as e:
+            print(f"Error extracting current data: {e}")
+            return {}
+    
+    async def _process_automatic_dismissal_approval(self, interaction, target_user, config):
+        """Process automatic dismissal approval (similar to standard approval but simplified)"""
+        try:
+            # Show processing state
+            await interaction.response.defer()
+              # Extract form data from embed
+            embed = interaction.message.embeds[0]
+            form_data = {}
+            
+            for field in embed.fields:
+                if field.name == "Имя Фамилия":
+                    form_data['name'] = field.value
+                elif field.name == "Статик":
+                    form_data['static'] = field.value
+                elif field.name == "Подразделение":
+                    form_data['department'] = field.value
+                elif field.name == "Воинское звание":
+                    form_data['rank'] = field.value
+                elif field.name == "Причина увольнения":
+                    form_data['reason'] = field.value
+            
+            # Process standard dismissal approval
+            current_time = discord.utils.utcnow()
+            ping_settings = config.get('ping_settings', {})
+            
+            # Get user info for audit
+            user_rank_for_audit = target_user and sheets_manager.get_rank_from_roles(target_user) or "Неизвестно"
+            user_unit_for_audit = target_user and sheets_manager.get_department_from_roles(target_user, ping_settings) or "Неизвестно"
+            
+            # Process dismissal with automatic approval logic
+            await self._finalize_automatic_approval(
+                interaction, target_user, form_data, user_rank_for_audit, 
+                user_unit_for_audit, current_time, config
+            )
+            
+        except Exception as e:
+            print(f"Error processing automatic dismissal approval: {e}")
+            await interaction.followup.send(
+                "❌ Произошла ошибка при обработке одобрения.",
+                ephemeral=True
+            )
+    
+    async def _finalize_automatic_approval(self, interaction, target_user, form_data, 
+                                         user_rank_for_audit, user_unit_for_audit, 
+                                         current_time, config):
+        """Finalize automatic dismissal approval"""
+        try:
+            ping_settings = config.get('ping_settings', {})
+            
+            # Log to Google Sheets
+            try:
+                success = await sheets_manager.add_dismissal_record(
+                    form_data=form_data,
+                    dismissed_user=target_user,
+                    approving_user=interaction.user,
+                    dismissal_time=current_time,
+                    ping_settings=ping_settings
+                )
+                if success:
+                    print(f"Successfully logged automatic dismissal to Google Sheets")
+                else:
+                    print(f"Failed to log automatic dismissal to Google Sheets")
+            except Exception as e:
+                print(f"Error logging automatic dismissal to Google Sheets: {e}")
+            
+            # Remove user from personnel database
+            try:
+                user_id = getattr(target_user, 'id', None)
+                if user_id:
+                    registry_success = await UserDatabase.remove_user(user_id)
+                    if not registry_success:
+                        print(f"⚠️ Could not remove user from personnel registry")
+            except Exception as e:
+                print(f"❌ Error removing user from personnel registry: {e}")
+            
+            # Update embed to show approval
+            embed = interaction.message.embeds[0]
+            embed.color = discord.Color.green()
+              # Add approval status field
+            embed.add_field(
+                name="✅ Обработано",
+                value=f"**Одобрено:** {interaction.user.mention}\n**Время:** {discord.utils.format_dt(current_time, 'F')}",
+                inline=False
+            )
+            
+            # Remove buttons
+            await interaction.edit_original_response(embed=embed, view=None)
+            
+        except Exception as e:
+            print(f"Error finalizing automatic approval: {e}")
+            await interaction.followup.send(
+                "❌ Произошла ошибка при финализации одобрения.",
+                ephemeral=True
+            )
+  

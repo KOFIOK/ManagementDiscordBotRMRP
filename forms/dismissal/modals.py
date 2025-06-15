@@ -173,7 +173,7 @@ class DismissalReportModal(ui.Modal, title="Рапорт на увольнени
                     await interaction.response.send_message(
                         "❌ **У вас уже есть рапорт на увольнение, который находится на рассмотрении.**\n\n"
                         "Пожалуйста, дождитесь решения по текущему рапорту, прежде чем подавать новый.\n"
-                        "Это поможет избежать путаницы и ускорить обработку вашего запроса.",
+                        "Это поможет избежать путаницы и ускорит обработку вашего запроса.",
                         ephemeral=True
                     )
                     return
@@ -463,7 +463,13 @@ class ModeratorAuthModal(ui.Modal, title="Регистрация модерат�
 
 
 class RejectionReasonModal(ui.Modal, title="Причина отказа"):
-    """Modal for requesting rejection reason when rejecting dismissal reports"""
+    """
+    Modal for requesting rejection reason when rejecting dismissal reports
+    
+    This modal supports two usage patterns:
+    1. Direct handling (for automatic dismissals): Pass original_message and view_instance
+    2. Callback handling (for regular dismissals): Pass callback_func and original_message
+    """
     
     reason_input = ui.TextInput(
         label="Введите причину отказа:",
@@ -474,19 +480,73 @@ class RejectionReasonModal(ui.Modal, title="Причина отказа"):
         required=True
     )
     
-    def __init__(self, callback_func, *args, **kwargs):
+    def __init__(self, callback_func, original_message=None, view_instance=None):
         super().__init__()
         self.callback_func = callback_func
-        self.callback_args = args
-        self.callback_kwargs = kwargs
+        self.original_message = original_message
+        self.view_instance = view_instance
     
     async def on_submit(self, interaction: discord.Interaction):
         try:
             reason = self.reason_input.value.strip()
             
-            # Call the callback function with rejection reason
-            if self.callback_func:
-                await self.callback_func(interaction, reason, *self.callback_args, **self.callback_kwargs)
+            # If we have original_message and view_instance, handle it directly
+            if self.original_message and self.view_instance:
+                # Respond to modal interaction first
+                await interaction.response.send_message(
+                    "✅ Рапорт отклонен!",
+                    ephemeral=True
+                )
+                
+                # Update embed to show rejection
+                embed = self.original_message.embeds[0]
+                embed.color = discord.Color.red()
+                
+                # Add rejection status field
+                embed.add_field(
+                    name="❌ Обработано",
+                    value=f"**Отклонено:** {interaction.user.mention}\n**Время:** {discord.utils.format_dt(discord.utils.utcnow(), 'F')}\n**Причина:** {reason}",
+                    inline=False
+                )
+                
+                # Remove buttons by setting view to None
+                await self.original_message.edit(embed=embed, view=None)
+                  # If we have a callback function, use it (backward compatibility for regular dismissals)
+            elif self.callback_func:
+                # For regular dismissals, we need to extract target_user from the original message
+                target_user = None
+                if self.original_message:
+                    # Try to extract target user info from embed or view
+                    try:
+                        embed = self.original_message.embeds[0]
+                        # Look for user mention in embed description
+                        import re
+                        user_mention_pattern = r'<@(\d+)>'
+                        if embed.description:
+                            match = re.search(user_mention_pattern, embed.description)
+                            if match:
+                                user_id = int(match.group(1))
+                                # Try to get member object from guild
+                                guild = interaction.guild
+                                target_user = guild.get_member(user_id)
+                                if not target_user:
+                                    # Create mock user if user left
+                                    class MockUser:
+                                        def __init__(self, user_id):
+                                            self.id = user_id
+                                            self.display_name = "Покинувший пользователь"
+                                            self._is_mock = True
+                                    target_user = MockUser(user_id)
+                    except Exception as e:
+                        print(f"Error extracting target user for rejection: {e}")
+                
+                await self.callback_func(interaction, reason, target_user, self.original_message)
+            else:
+                # Fallback case
+                await interaction.response.send_message(
+                    "✅ Причина отказа получена!",
+                    ephemeral=True
+                )
                 
         except Exception as e:
             print(f"Error in RejectionReasonModal: {e}")
@@ -517,3 +577,127 @@ class RejectionReasonModal(ui.Modal, title="Причина отказа"):
                 )
         except Exception as follow_error:
             print(f"Failed to send error message in RejectionReasonModal.on_error: {follow_error}")
+
+
+class AutomaticDismissalEditModal(ui.Modal, title="Редактирование автоматического рапорта"):
+    """Modal for editing automatic dismissal report data"""
+    
+    def __init__(self, current_data, original_message, view_instance):
+        super().__init__()
+        self.original_message = original_message
+        self.view_instance = view_instance
+        
+        # Pre-fill with current data
+        self.name_input = ui.TextInput(
+            label="Имя Фамилия",
+            placeholder="Например: Олег Дубов",
+            default=current_data.get('name', ''),
+            min_length=3,
+            max_length=50,
+            required=True
+        )
+        self.add_item(self.name_input)
+        
+        self.static_input = ui.TextInput(
+            label="Статик",
+            placeholder="Например: 123-456",
+            default=current_data.get('static', ''),
+            min_length=5,
+            max_length=20,
+            required=True
+        )
+        self.add_item(self.static_input)
+        
+        self.department_input = ui.TextInput(
+            label="Подразделение",
+            placeholder="Например: Военная Академия",
+            default=current_data.get('department', ''),
+            min_length=2,
+            max_length=50,
+            required=True
+        )
+        self.add_item(self.department_input)        
+        self.rank_input = ui.TextInput(
+            label="Воинское звание",
+            placeholder="Например: Рядовой",
+            default=current_data.get('rank', ''),
+            min_length=2,
+            max_length=30,
+            required=True
+        )
+        self.add_item(self.rank_input)
+    
+    def format_static(self, static_input: str) -> str:
+        """Auto-format static number to standard format"""
+        digits_only = re.sub(r'\D', '', static_input.strip())
+        
+        if len(digits_only) == 5:
+            return f"{digits_only[:2]}-{digits_only[2:]}"
+        elif len(digits_only) == 6:
+            return f"{digits_only[:3]}-{digits_only[3:]}"
+        else:
+            return static_input.strip()  # Return as-is if can't format
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            # Format and validate inputs
+            name = self.name_input.value.strip()
+            static = self.format_static(self.static_input.value)
+            department = self.department_input.value.strip()
+            rank = self.rank_input.value.strip()
+            
+            # Validate name format (should be 2 words)
+            name_parts = name.split()
+            if len(name_parts) != 2:
+                await interaction.response.send_message(
+                    "❌ Имя и фамилия должны состоять из 2 слов, разделенных пробелом.",
+                    ephemeral=True
+                )
+                return
+            
+            # Respond to modal interaction first
+            await interaction.response.send_message(
+                "✅ Данные успешно обновлены!",
+                ephemeral=True
+            )
+            
+            # Update the embed with new data
+            embed = self.original_message.embeds[0]
+            
+            # Update fields in the embed
+            for i, field in enumerate(embed.fields):
+                if field.name == "Имя Фамилия":
+                    embed.set_field_at(i, name="Имя Фамилия", value=name, inline=True)
+                elif field.name == "Статик":
+                    embed.set_field_at(i, name="Статик", value=static, inline=True)
+                elif field.name == "Подразделение":
+                    embed.set_field_at(i, name="Подразделение", value=department, inline=True)
+                elif field.name == "Воинское звание":
+                    embed.set_field_at(i, name="Воинское звание", value=rank, inline=True)
+            
+            # Add edit information to footer
+            embed.set_footer(
+                text=f"Отредактировано {interaction.user.display_name} • {discord.utils.format_dt(discord.utils.utcnow(), 'f')}"
+            )
+            
+            # Update the message with new embed and keep the same view
+            await self.original_message.edit(embed=embed, view=self.view_instance)
+            
+        except Exception as e:
+            print(f"Error in AutomaticDismissalEditModal: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "❌ Произошла ошибка при обработке изменений.",
+                    ephemeral=True
+                )
+    
+    async def on_error(self, interaction: discord.Interaction, error: Exception):
+        print(f"AutomaticDismissalEditModal error: {error}")
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "Произошла ошибка при редактировании рапорта. Пожалуйста, попробуйте еще раз.",
+                    ephemeral=True
+                )
+        except Exception as follow_error:
+            print(f"Failed to send error message in AutomaticDismissalEditModal.on_error: {follow_error}")

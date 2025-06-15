@@ -19,7 +19,8 @@ from .modals import (
 # Import all views
 from .views import (
     DismissalApprovalView,
-    DismissalReportButton
+    DismissalReportButton,
+    AutomaticDismissalApprovalView
 )
 
 # Import automatic dismissal functions
@@ -40,10 +41,10 @@ __all__ = [
     # Modals
     'StaticRequestModal',
     'DismissalReportModal',
-    
-    # Views
+      # Views
     'DismissalApprovalView', 
     'DismissalReportButton',
+    'AutomaticDismissalApprovalView',
     
     # Automatic dismissal functions
     'create_automatic_dismissal_report',

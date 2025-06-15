@@ -28,49 +28,60 @@ async def create_automatic_dismissal_report(guild, member, target_role_name="В�
         channel = guild.get_channel(dismissal_channel_id)
         if not channel:
             print(f"Dismissal channel {dismissal_channel_id} not found, skipping automatic report for {member.name}")
-            return False
-        
-        # Extract name from last 2 words of display name
-        display_name = getattr(member, 'display_name', member.name)
-        name_words = display_name.split()
-        
-        if len(name_words) >= 2:
-            extracted_name = f"{name_words[-2]} {name_words[-1]}"
-        else:
-            extracted_name = display_name
-        
-        # Get ping settings for department determination
+            return False        # Get ping settings for department determination (needed for both paths)
         ping_settings = config.get('ping_settings', {})
         
-        # Get department and rank from roles BEFORE member left
-        user_department = sheets_manager.get_department_from_roles(member, ping_settings)
-        user_rank = sheets_manager.get_rank_from_roles(member)
+        # Try to get user data from personnel database first
+        from utils.user_database import UserDatabase
+        user_data = await UserDatabase.get_user_info(member.id)
         
-        # Create embed for automatic dismissal report
+        if user_data:
+            # Use data from personnel database
+            extracted_name = user_data['full_name']
+            static_value = user_data['static']
+            user_department = user_data['department']
+            user_rank = user_data['rank']
+            print(f"✅ Auto-filled data from personnel database for {member.name}")
+        else:
+            # Fallback to extracting from roles and nickname
+            print(f"⚠️ User {member.name} not found in personnel database, using fallback")
+            
+            # Extract name from last 2 words of display name
+            display_name = getattr(member, 'display_name', member.name)
+            name_words = display_name.split()
+            
+            if len(name_words) >= 2:
+                extracted_name = f"{name_words[-2]} {name_words[-1]}"
+            else:
+                extracted_name = display_name
+            
+            static_value = "Не найден в реестре"
+            
+            # Get department and rank from roles BEFORE member left
+            user_department = sheets_manager.get_department_from_roles(member, ping_settings)
+            user_rank = sheets_manager.get_rank_from_roles(member)
+          # Create embed for automatic dismissal report
         embed = discord.Embed(
             description=f"## 🚨 Автоматический рапорт на увольнение\n**{member.mention} покинул сервер!**",
             color=discord.Color.orange(),  # Orange to distinguish from manual reports
             timestamp=discord.utils.utcnow()
         )
         
-        # Add fields - note: static requires moderator input
+        # Add fields with auto-filled data
         embed.add_field(name="Имя Фамилия", value=extracted_name, inline=True)
-        embed.add_field(name="Статик", value="**Требуется ввод**", inline=True)
+        embed.add_field(name="Статик", value=static_value, inline=True)
         embed.add_field(name="Подразделение", value=user_department, inline=True)
         embed.add_field(name="Воинское звание", value=user_rank, inline=True)
         embed.add_field(name="Причина увольнения", value="Потеря спец. связи", inline=False)
         
-        # Note: No "Тип рапорта" field for automatic reports as requested
-        
         embed.set_footer(text=f"Автоматически создан: {member.name} (ID: {member.id})")
         if member.avatar:
             embed.set_thumbnail(url=member.avatar.url)
+          # Import here to avoid circular imports
+        from .views import AutomaticDismissalApprovalView
         
-        # Import here to avoid circular imports
-        from .views import DismissalApprovalView
-        
-        # Create special approval view for automatic dismissals
-        approval_view = DismissalApprovalView(member.id, is_automatic=True)
+        # Create special approval view for automatic dismissals with three buttons
+        approval_view = AutomaticDismissalApprovalView(member.id)
         
         # Create ping content based on departed member's department (we have role info)
         ping_content = ""

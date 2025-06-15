@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from utils.config_manager import load_config, create_backup, get_config_status
 from utils.google_sheets import sheets_manager
 from utils.notification_scheduler import PromotionNotificationScheduler
-from forms.dismissal import DismissalReportButton, DismissalApprovalView, send_dismissal_button_message, restore_dismissal_approval_views, restore_dismissal_button_views
+from forms.dismissal import DismissalReportButton, DismissalApprovalView, AutomaticDismissalApprovalView, send_dismissal_button_message, restore_dismissal_approval_views, restore_dismissal_button_views
 from forms.settings_form import SettingsView
 from forms.role_assignment_form import RoleAssignmentView, send_role_assignment_message, restore_role_assignment_views, restore_approval_views
 from forms.moderator_registration import ModeratorRegistrationView, ensure_moderator_registration_message
@@ -79,6 +79,7 @@ async def on_ready():
     
     # Add generic approval views for persistent buttons
     bot.add_view(DismissalApprovalView())
+    bot.add_view(AutomaticDismissalApprovalView(None))  # Persistent view for automatic dismissals
     bot.add_view(LeaveRequestApprovalView("dummy"))  # Dummy ID for persistent view
     
     print('Persistent views added to bot')

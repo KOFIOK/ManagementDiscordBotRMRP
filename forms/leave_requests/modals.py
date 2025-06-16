@@ -4,7 +4,7 @@ Modals for leave request system
 import discord
 from discord import ui
 from discord.ext import commands
-from utils.moderator_auth import is_moderator, is_administrator
+from utils.config_manager import load_config, is_moderator_or_admin
 from utils.leave_request_storage import LeaveRequestStorage
 from utils.user_database import UserDatabase
 from .utils import LeaveRequestValidator, LeaveRequestDepartmentDetector
@@ -278,87 +278,86 @@ class RejectReasonModal(ui.Modal):
             print(f"❌ Error loading user data for modal: {e}")
             # Return modal without pre-filled data if error occurs
             return cls(user_id=user_id, user_data=None)
-    
+
     async def on_submit(self, interaction: discord.Interaction):
         try:
-          reason = self.reason_input.value.strip()
-            # Check permissions
-          is_admin = interaction.user.guild_permissions.administrator
-          is_mod = await is_moderator(interaction.user.id)
-          
-          if not (is_admin or is_mod):
-              embed = discord.Embed(
-                  title="❌ Недостаточно прав",
-                  description="У вас нет прав для рассмотрения заявок.",
-                  color=discord.Color.red()
-              )
-              await interaction.response.send_message(embed=embed, ephemeral=True)
-              return
-          
-          # Get request
-          request = LeaveRequestStorage.get_request_by_id(self.request_id)
-          if not request:
-              embed = discord.Embed(
-                  title="❌ Заявка не найдена",
-                  description="Заявка не существует или уже была обработана.",
-                  color=discord.Color.red()
-              )
-              await interaction.response.send_message(embed=embed, ephemeral=True)
-              return
-          
-          if request["status"] != "pending":
-              embed = discord.Embed(
-                  title="❌ Заявка уже обработана",
-                  description="Эта заявка уже была рассмотрена.",
-                  color=discord.Color.red()
-              )
-              await interaction.response.send_message(embed=embed, ephemeral=True)
-              return
+            reason = self.reason_input.value.strip()
+            # Check permissions - moderators and admins can approve/reject
+            config = load_config()
+            if not is_moderator_or_admin(interaction.user, config):
+                embed = discord.Embed(
+                    title="❌ Недостаточно прав",
+                    description="У вас нет прав для рассмотрения заявок.",
+                    color=discord.Color.red()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+            
+            # Get request
+            request = LeaveRequestStorage.get_request_by_id(self.request_id)
+            if not request:
+                embed = discord.Embed(
+                    title="❌ Заявка не найдена",
+                    description="Заявка не существует или уже была обработана.",
+                    color=discord.Color.red()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+            
+            if request["status"] != "pending":
+                embed = discord.Embed(
+                    title="❌ Заявка уже обработана",
+                    description="Эта заявка уже была рассмотрена.",
+                    color=discord.Color.red()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+            
             # Check if trying to reject own request (moderators can't, but admins can)
-          if (request["user_id"] == interaction.user.id and 
-              is_mod and not is_admin):
-              embed = discord.Embed(
-                  title="❌ Нельзя рассматривать свою заявку",
-                  description="Модераторы не могут рассматривать собственные заявки.",
-                  color=discord.Color.red()
-              )
-              await interaction.response.send_message(embed=embed, ephemeral=True)
-              return
-          
-          # Update request status
-          success = LeaveRequestStorage.update_request_status(
-              self.request_id, "rejected", interaction.user.id, 
-              str(interaction.user), reason
-          )
-          
-          if success:
-              # Update embed
-              await self._update_request_embed(interaction, request, reason)
-              
-              # Send DM to user
-              await self._send_dm_notification(interaction, request, reason)
-              
-              embed = discord.Embed(
-                  title="✅ Заявка отклонена",
-                  description=f"Заявка пользователя {request['name']} была отклонена.",
-                  color=discord.Color.red()
-              )
-              await interaction.response.send_message(embed=embed, ephemeral=True)
-          else:
-              embed = discord.Embed(
-                  title="❌ Ошибка",
-                  description="Не удалось отклонить заявку.",
-                  color=discord.Color.red()
-              )
-              await interaction.response.send_message(embed=embed, ephemeral=True)
-              
+            is_admin = interaction.user.guild_permissions.administrator
+            if (request["user_id"] == interaction.user.id and not is_admin):
+                embed = discord.Embed(
+                    title="❌ Нельзя рассматривать свою заявку",
+                    description="Модераторы не могут рассматривать собственные заявки.",
+                    color=discord.Color.red()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+            
+            # Update request status
+            success = LeaveRequestStorage.update_request_status(
+                self.request_id, "rejected", interaction.user.id, 
+                str(interaction.user), reason
+            )
+            
+            if success:
+                # Update embed
+                await self._update_request_embed(interaction, request, reason)
+                
+                # Send DM to user
+                await self._send_dm_notification(interaction, request, reason)
+                
+                embed = discord.Embed(
+                    title="✅ Заявка отклонена",
+                    description=f"Заявка пользователя {request['name']} была отклонена.",
+                    color=discord.Color.red()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+            else:
+                embed = discord.Embed(
+                    title="❌ Ошибка",
+                    description="Не удалось отклонить заявку.",
+                    color=discord.Color.red()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                
         except Exception as e:
-          embed = discord.Embed(
-              title="❌ Произошла ошибка",
-              description=f"Ошибка при отклонении заявки: {str(e)}",
-              color=discord.Color.red()
-          )
-          await interaction.response.send_message(embed=embed, ephemeral=True)
+            embed = discord.Embed(
+                title="❌ Произошла ошибка",
+                description=f"Ошибка при отклонении заявки: {str(e)}",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
     
     async def _update_request_embed(self, interaction, request, reason):
         """Update the original request embed with rejection info"""

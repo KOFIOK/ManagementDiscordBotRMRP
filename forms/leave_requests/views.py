@@ -3,7 +3,7 @@ Views for leave request system
 """
 import discord
 from discord import ui
-from utils.moderator_auth import is_moderator, is_administrator
+from utils.config_manager import load_config, is_moderator_or_admin
 from utils.leave_request_storage import LeaveRequestStorage
 
 
@@ -59,8 +59,7 @@ class LeaveRequestButton(ui.View):
             )
             embed.set_footer(text="Вы можете подать новую заявку завтра")
             await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
-          # If no existing request, show modal
+            return        # If no existing request, show modal
         from .modals import LeaveRequestModal
         modal = await LeaveRequestModal.create_with_user_data(interaction.user.id)
         await interaction.response.send_modal(modal)
@@ -71,7 +70,8 @@ class LeaveRequestApprovalView(ui.View):
     
     def __init__(self, request_id: str):
         super().__init__(timeout=None)
-        self.request_id = request_id    
+        self.request_id = request_id
+    
     @ui.button(
         label="✅ Одобрить",
         style=discord.ButtonStyle.green,
@@ -79,11 +79,9 @@ class LeaveRequestApprovalView(ui.View):
     )
     async def approve_request(self, interaction: discord.Interaction, button: ui.Button):
         try:
-            # Check permissions
-            is_admin = interaction.user.guild_permissions.administrator
-            is_mod = await is_moderator(interaction.user.id)
-            
-            if not (is_admin or is_mod):
+            # Check permissions - moderators and admins can approve/reject
+            config = load_config()
+            if not is_moderator_or_admin(interaction.user, config):
                 embed = discord.Embed(
                     title="❌ Недостаточно прав",
                     description="У вас нет прав для рассмотрения заявок.",
@@ -164,11 +162,9 @@ class LeaveRequestApprovalView(ui.View):
     )
     async def reject_request(self, interaction: discord.Interaction, button: ui.Button):
         try:
-            # Check permissions
-            is_admin = interaction.user.guild_permissions.administrator
-            is_mod = await is_moderator(interaction.user.id)
-            
-            if not (is_admin or is_mod):
+            # Check permissions - moderators and admins can approve/reject
+            config = load_config()
+            if not is_moderator_or_admin(interaction.user, config):
                 embed = discord.Embed(
                     title="❌ Недостаточно прав",
                     description="У вас нет прав для рассмотрения заявок.",
@@ -238,24 +234,24 @@ class LeaveRequestApprovalView(ui.View):
                 )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
-            
-            # Check permissions
+              # Check permissions
+            config = load_config()
             is_admin = interaction.user.guild_permissions.administrator
-            is_mod = await is_moderator(interaction.user.id)
+            is_mod = is_moderator_or_admin(interaction.user, config) and not is_admin  # Don't double-count admins
             is_request_owner = request["user_id"] == interaction.user.id
-            
-            # Admin/mod can delete any request, user can only delete own pending requests
-            if not (is_admin or is_mod or is_request_owner):
+              # Admin can delete any request, user can only delete own pending requests
+            # Moderators cannot delete requests (only admins and request owners)
+            if not (is_admin or is_request_owner):
                 embed = discord.Embed(
                     title="❌ Недостаточно прав",
-                    description="Вы можете удалить только свою собственную заявку.",
+                    description="Удалять заявки могут только администраторы или владелец заявки.",
                     color=discord.Color.red()
                 )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
             
-            # User can only delete pending requests, admin/mod can delete any
-            if is_request_owner and not (is_admin or is_mod) and request["status"] != "pending":
+            # User can only delete pending requests, admin can delete any
+            if is_request_owner and not is_admin and request["status"] != "pending":
                 status_text = {
                     "approved": "одобрена",
                     "rejected": "отклонена"
@@ -268,12 +264,11 @@ class LeaveRequestApprovalView(ui.View):
                 )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
-            
-            # Delete request completely
+              # Delete request completely
             success = LeaveRequestStorage.delete_request(
                 self.request_id, 
                 interaction.user.id,
-                is_admin=(is_admin or is_mod)
+                is_admin=is_admin
             )
             
             if success:

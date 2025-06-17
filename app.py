@@ -82,6 +82,10 @@ async def on_ready():
     bot.add_view(AutomaticDismissalApprovalView(None))  # Persistent view for automatic dismissals
     bot.add_view(LeaveRequestApprovalView("dummy"))  # Dummy ID for persistent view
     
+    # Add role assignment approval view for persistent buttons
+    from forms.role_assignment_form import RoleApplicationApprovalView
+    bot.add_view(RoleApplicationApprovalView({}))  # Empty data for persistent view
+    
     print('Persistent views added to bot')
       # Setup welcome system events
     setup_welcome_events(bot)

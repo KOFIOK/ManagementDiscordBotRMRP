@@ -61,6 +61,12 @@ class ChannelConfigSelect(ui.Select):
                 description="Настроить канал для заявок на отгулы",
                 emoji="🏖️",
                 value="leave_requests"
+            ),
+            discord.SelectOption(
+                label="Запись к врачу",
+                description="Настроить канал для записи к врачу медицинской роты",
+                emoji="🏥",
+                value="medical_registration"
             )
         ]
         
@@ -90,6 +96,8 @@ class ChannelConfigSelect(ui.Select):
             await self.show_promotion_reports_config(interaction)
         elif config_type == "leave_requests":
             await self.show_leave_requests_config(interaction)
+        elif config_type == "medical_registration":
+            await self.show_medical_registration_config(interaction)
         else:
             # Create channel selection modal for other channel types
             modal = ChannelSelectionModal(config_type)
@@ -447,6 +455,109 @@ class ChannelConfigSelect(ui.Select):
                 await interaction.response.send_message(embed=error_embed, ephemeral=True)
             raise
 
+    async def show_medical_registration_config(self, interaction: discord.Interaction):
+        """Show medical registration channel configuration"""
+        try:
+            embed = discord.Embed(
+                title="🏥 Настройка канала записи к врачу",
+                description="Управление каналом для записи к врачу медицинской роты.",
+                color=discord.Color.blue(),
+                timestamp=discord.utils.utcnow()
+            )
+            
+            config = load_config()
+            helper = ConfigDisplayHelper()
+            
+            # Show current channel
+            embed.add_field(
+                name="📂 Текущий канал:",
+                value=helper.format_channel_info(config, 'medical_registration_channel', interaction.guild),
+                inline=False
+            )
+            
+            # Show medical role ID (for pings)
+            medic_role_id = config.get('medical_role_id')
+            if medic_role_id:
+                role = interaction.guild.get_role(medic_role_id)
+                if role:
+                    embed.add_field(
+                        name="👩‍⚕️ Роль медицинской роты:",
+                        value=role.mention,
+                        inline=True
+                    )
+                else:
+                    embed.add_field(
+                        name="👩‍⚕️ Роль медицинской роты:",
+                        value="❌ Роль не найдена",
+                        inline=True
+                    )
+            else:
+                embed.add_field(
+                    name="👩‍⚕️ Роль медицинской роты:",
+                    value="❌ Не настроена",
+                    inline=True
+                )
+              # Show allowed roles for VVK
+            vvk_roles = config.get('medical_vvk_allowed_roles', [])
+            if vvk_roles:
+                role_mentions = []
+                for role_id in vvk_roles:
+                    role = interaction.guild.get_role(role_id)
+                    if role:
+                        role_mentions.append(role.mention)
+                
+                vvk_text = "\n".join(role_mentions) if role_mentions else "❌ Настроенные роли не найдены"
+            else:
+                vvk_text = "Все пользователи (роли не настроены)"
+            
+            embed.add_field(
+                name="🩺 Доступ к ВВК:",
+                value=vvk_text,
+                inline=True
+            )
+            
+            # Show allowed roles for lectures
+            lecture_roles = config.get('medical_lecture_allowed_roles', [])
+            if lecture_roles:
+                role_mentions = []
+                for role_id in lecture_roles:
+                    role = interaction.guild.get_role(role_id)
+                    if role:
+                        role_mentions.append(role.mention)
+                
+                lecture_text = "\n".join(role_mentions) if role_mentions else "❌ Настроенные роли не найдены"
+            else:
+                lecture_text = "Все пользователи (роли не настроены)"
+            
+            embed.add_field(
+                name="📚 Доступ к лекциям:",
+                value=lecture_text,
+                inline=True
+            )
+            
+            embed.add_field(
+                name="🔧 Доступные действия:",
+                value="Выберите действие для настройки медицинского канала:",
+                inline=False
+            )
+            
+            view = MedicalRegistrationConfigView()
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            
+        except Exception as e:
+            print(f"❌ ERROR in show_medical_registration_config: {e}")
+            import traceback
+            traceback.print_exc()
+            # Try to send error message if interaction hasn't been responded to yet
+            if not interaction.response.is_done():
+                error_embed = discord.Embed(
+                    title="❌ Ошибка",
+                    description=f"Произошла ошибка при загрузке настроек: {str(e)}",
+                    color=discord.Color.red()
+                )
+                await interaction.response.send_message(embed=error_embed, ephemeral=True)
+            raise
+
 
 class RoleAssignmentChannelView(BaseSettingsView):
     """View for role assignment channel configuration"""
@@ -492,7 +603,8 @@ class ChannelSelectionModal(BaseSettingsModal):
             "blacklist": "чёрного списка",
             "role_assignment": "получения ролей",
             "moderator_registration": "регистрации модераторов",
-            "leave_requests": "отгулов"
+            "leave_requests": "отгулов",
+            "medical_registration": "записи к врачу"
         }
         
         super().__init__(title=f"Настройка канала {type_names.get(config_type, config_type)}")
@@ -540,11 +652,13 @@ class ChannelSelectionModal(BaseSettingsModal):
                 "blacklist": "чёрного списка",
                 "role_assignment": "получения ролей",
                 "moderator_registration": "регистрации модераторов",
-                "leave_requests": "отгулов"
+                "leave_requests": "отгулов",
+                "medical_registration": "записи к врачу"
             }
             type_name = type_names.get(self.config_type, self.config_type)
               # Send appropriate button message to the channel
             button_message_added = False
+            
             if self.config_type == "dismissal":
                 await send_dismissal_button_message(channel)
                 button_message_added = True
@@ -563,6 +677,13 @@ class ChannelSelectionModal(BaseSettingsModal):
                 from forms.leave_request_form import send_leave_request_button_message
                 await send_leave_request_button_message(channel)
                 button_message_added = True
+            elif self.config_type == "medical_registration":
+                # Import and send medical registration button message
+                print(f"[DEBUG] Setting up medical registration channel: {channel.name} (ID: {channel.id})")
+                from forms.medical_registration import send_medical_registration_message
+                await send_medical_registration_message(channel)
+                button_message_added = True
+                print(f"[DEBUG] Medical registration message sending completed")
             
             success_message = f"Канал {type_name} успешно настроен на {channel.mention}!"
             if button_message_added:
@@ -1426,6 +1547,473 @@ class LeaveRequestAllowedRolesModal(BaseSettingsModal):
             embed = discord.Embed(
                 title="❌ Ошибка",
                 description=f"Произошла ошибка при настройке ролей: {str(e)}",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+class MedicalRegistrationConfigView(BaseSettingsView):
+    """View for medical registration channel configuration"""
+    
+    @discord.ui.button(label="📂 Настроить канал", style=discord.ButtonStyle.green)
+    async def set_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = ChannelSelectionModal("medical_registration")
+        await interaction.response.send_modal(modal)
+    @discord.ui.button(label="👩‍⚕️ Роль медицинской роты", style=discord.ButtonStyle.primary)
+    async def set_medical_role(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = MedicalRoleModal()
+        await interaction.response.send_modal(modal)
+    
+    @discord.ui.button(label="🩺 Роли доступа ВВК", style=discord.ButtonStyle.secondary)
+    async def set_vvk_roles(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = MedicalVVKRolesModal()
+        await interaction.response.send_modal(modal)
+    
+    @discord.ui.button(label="📚 Роли доступа лекций", style=discord.ButtonStyle.secondary)
+    async def set_lecture_roles(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = MedicalLectureRolesModal()
+        await interaction.response.send_modal(modal)
+
+
+class MedicalVVKRolesModal(BaseSettingsModal):
+    """Modal for setting allowed roles for VVK"""
+    
+    def __init__(self):
+        super().__init__(title="🩺 Настройка ролей доступа к ВВК")
+        
+        # Load current roles
+        config = load_config()
+        current_roles = config.get('medical_vvk_allowed_roles', [])
+        current_value = ", ".join([str(role_id) for role_id in current_roles]) if current_roles else ""
+        
+        self.roles_input = ui.TextInput(
+            label="Роли (названия или ID через запятую)",
+            placeholder="Например: Военнослужащий ВС РФ, 123456789012345678, @Офицер",
+            style=discord.TextStyle.paragraph,
+            default=current_value,
+            max_length=1000,
+            required=False
+        )
+        self.add_item(self.roles_input)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            roles_text = self.roles_input.value.strip()
+            
+            if not roles_text:
+                # Clear roles - everyone can use VVK
+                config = load_config()
+                config['medical_vvk_allowed_roles'] = []
+                save_config(config)
+                
+                embed = discord.Embed(
+                    title="✅ Роли ВВК сброшены",
+                    description="Теперь все пользователи могут записываться на ВВК.",
+                    color=discord.Color.green()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+            
+            # Parse roles
+            role_ids = []
+            
+            for role_text in roles_text.split(','):
+                role_text = role_text.strip()
+                if not role_text:
+                    continue
+                
+                role = None
+                
+                # Try by ID
+                if role_text.isdigit():
+                    role = interaction.guild.get_role(int(role_text))
+                
+                # Try by mention
+                if not role and role_text.startswith('<@&') and role_text.endswith('>'):
+                    try:
+                        role_id = int(role_text[3:-1])
+                        role = interaction.guild.get_role(role_id)
+                    except ValueError:
+                        pass
+                
+                # Try by name
+                if not role:
+                    for guild_role in interaction.guild.roles:
+                        if guild_role.name.lower() == role_text.lower():
+                            role = guild_role
+                            break
+                
+                if role:
+                    role_ids.append(role.id)
+                else:
+                    embed = discord.Embed(
+                        title="❌ Роль не найдена",
+                        description=f"Роль '{role_text}' не найдена на сервере.",
+                        color=discord.Color.red()
+                    )
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+                    return
+            
+            if not role_ids:
+                embed = discord.Embed(
+                    title="❌ Роли не найдены",
+                    description="Ни одна из указанных ролей не найдена.",
+                    color=discord.Color.red()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+            
+            # Save roles
+            config = load_config()
+            config['medical_vvk_allowed_roles'] = role_ids
+            save_config(config)
+            
+            role_mentions = []
+            for role_id in role_ids:
+                role = interaction.guild.get_role(role_id)
+                if role:
+                    role_mentions.append(role.mention)
+            
+            embed = discord.Embed(
+                title="✅ Роли ВВК обновлены",
+                description=f"К ВВК имеют доступ роли:\n{chr(10).join(role_mentions)}",
+                color=discord.Color.green()
+            )
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            embed = discord.Embed(
+                title="❌ Ошибка",
+                description=f"Произошла ошибка при настройке ролей: {str(e)}",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+class MedicalLectureRolesModal(BaseSettingsModal):
+    """Modal for setting allowed roles for lectures"""
+    
+    def __init__(self):
+        super().__init__(title="📚 Настройка ролей доступа к лекциям")
+        
+        # Load current roles
+        config = load_config()
+        current_roles = config.get('medical_lecture_allowed_roles', [])
+        current_value = ", ".join([str(role_id) for role_id in current_roles]) if current_roles else ""
+        
+        self.roles_input = ui.TextInput(
+            label="Роли (названия или ID через запятую)",
+            placeholder="Например: Военнослужащий ВС РФ, 123456789012345678, @Офицер",
+            style=discord.TextStyle.paragraph,
+            default=current_value,
+            max_length=1000,
+            required=False
+        )
+        self.add_item(self.roles_input)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            roles_text = self.roles_input.value.strip()
+            
+            if not roles_text:
+                # Clear roles - everyone can use lectures
+                config = load_config()
+                config['medical_lecture_allowed_roles'] = []
+                save_config(config)
+                
+                embed = discord.Embed(
+                    title="✅ Роли лекций сброшены",
+                    description="Теперь все пользователи могут записываться на лекции.",
+                    color=discord.Color.green()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+            
+            # Parse roles (same logic as VVK)
+            role_ids = []
+            
+            for role_text in roles_text.split(','):
+                role_text = role_text.strip()
+                if not role_text:
+                    continue
+                
+                role = None
+                
+                # Try by ID
+                if role_text.isdigit():
+                    role = interaction.guild.get_role(int(role_text))
+                
+                # Try by mention
+                if not role and role_text.startswith('<@&') and role_text.endswith('>'):
+                    try:
+                        role_id = int(role_text[3:-1])
+                        role = interaction.guild.get_role(role_id)
+                    except ValueError:
+                        pass
+                
+                # Try by name
+                if not role:
+                    for guild_role in interaction.guild.roles:
+                        if guild_role.name.lower() == role_text.lower():
+                            role = guild_role
+                            break
+                
+                if role:
+                    role_ids.append(role.id)
+                else:
+                    embed = discord.Embed(
+                        title="❌ Роль не найдена",
+                        description=f"Роль '{role_text}' не найдена на сервере.",
+                        color=discord.Color.red()
+                    )
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+                    return
+            
+            if not role_ids:
+                embed = discord.Embed(
+                    title="❌ Роли не найдены",
+                    description="Ни одна из указанных ролей не найдена.",
+                    color=discord.Color.red()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+            
+            # Save roles
+            config = load_config()
+            config['medical_lecture_allowed_roles'] = role_ids
+            save_config(config)
+            
+            role_mentions = []
+            for role_id in role_ids:
+                role = interaction.guild.get_role(role_id)
+                if role:
+                    role_mentions.append(role.mention)
+            
+            embed = discord.Embed(
+                title="✅ Роли лекций обновлены",
+                description=f"К лекциям имеют доступ роли:\n{chr(10).join(role_mentions)}",
+                color=discord.Color.green()
+            )
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            embed = discord.Embed(
+                title="❌ Ошибка",
+                description=f"Произошла ошибка при настройке ролей: {str(e)}",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+class MedicalAllowedRolesModal(BaseSettingsModal):
+    """Modal for setting allowed roles for medical services (DEPRECATED - for compatibility)"""
+    
+    def __init__(self):
+        super().__init__(title="🩺 Настройка ролей доступа к ВВК и лекциям")
+        
+        # Load current roles
+        config = load_config()
+        current_roles = config.get('medical_allowed_roles', [])
+        current_value = ", ".join([str(role_id) for role_id in current_roles]) if current_roles else ""
+        
+        self.roles_input = ui.TextInput(
+            label="Роли (названия или ID через запятую)",
+            placeholder="Например: Военнослужащий ВС РФ, 123456789012345678, @Офицер",
+            style=discord.TextStyle.paragraph,
+            default=current_value,
+            max_length=1000,
+            required=False
+        )
+        self.add_item(self.roles_input)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            roles_text = self.roles_input.value.strip()
+            
+            if not roles_text:
+                # Clear roles - everyone can use VVK/lectures
+                config = load_config()
+                config['medical_allowed_roles'] = []
+                save_config(config)
+                
+                embed = discord.Embed(
+                    title="✅ Роли сброшены",
+                    description="Теперь все пользователи могут записываться на ВВК и лекции.",
+                color=discord.Color.green()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+            
+            # Parse roles
+            role_ids = []
+            
+            for role_text in roles_text.split(','):
+                role_text = role_text.strip()
+                if not role_text:
+                    continue
+                
+                role = None
+                
+                # Try by ID
+                if role_text.isdigit():
+                    role = interaction.guild.get_role(int(role_text))
+                
+                # Try by mention
+                if not role and role_text.startswith('<@&') and role_text.endswith('>'):
+                    try:
+                        role_id = int(role_text[3:-1])
+                        role = interaction.guild.get_role(role_id)
+                    except ValueError:
+                        pass
+                
+                # Try by name
+                if not role:
+                    for guild_role in interaction.guild.roles:
+                        if guild_role.name.lower() == role_text.lower():
+                            role = guild_role
+                            break
+                
+                if role:
+                    role_ids.append(role.id)
+                else:
+                    embed = discord.Embed(
+                        title="❌ Роль не найдена",
+                        description=f"Роль '{role_text}' не найдена на сервере.",
+                        color=discord.Color.red()
+                    )
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+                    return
+            
+            if not role_ids:
+                embed = discord.Embed(
+                    title="❌ Роли не найдены",
+                    description="Ни одна из указанных ролей не найдена.",
+                    color=discord.Color.red()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+            
+            # Save roles
+            config = load_config()
+            config['medical_allowed_roles'] = role_ids
+            save_config(config)
+            
+            role_mentions = []
+            for role_id in role_ids:
+                role = interaction.guild.get_role(role_id)
+                if role:
+                    role_mentions.append(role.mention)
+            
+            if role_mentions:
+                embed = discord.Embed(
+                    title="✅ Роли обновлены",
+                    description=f"К ВВК и лекциям имеют доступ роли:\n{chr(10).join(role_mentions)}",
+                    color=discord.Color.green()
+                )
+            else:
+                embed = discord.Embed(
+                    title="✅ Роли сброшены",
+                    description="Все пользователи могут записываться на ВВК и лекции.",
+                    color=discord.Color.green()
+                )
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            embed = discord.Embed(
+                title="❌ Ошибка",
+                description=f"Произошла ошибка при настройке ролей: {str(e)}",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+class MedicalRoleModal(BaseSettingsModal):
+    """Modal for setting medical role"""
+    
+    def __init__(self):
+        super().__init__(title="👩‍⚕️ Настройка роли медицинской роты")
+        
+        # Load current role
+        config = load_config()
+        current_role_id = config.get('medical_role_id')
+        current_value = str(current_role_id) if current_role_id else ""
+        
+        self.role_input = ui.TextInput(
+            label="Роль медицинской роты (название или ID)",
+            placeholder="Например: Медицинская Рота или 123456789012345678",
+            style=discord.TextStyle.short,
+            default=current_value,
+            max_length=100,
+            required=False
+        )
+        self.add_item(self.role_input)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            role_text = self.role_input.value.strip()
+            
+            config = load_config()
+            
+            if not role_text:
+                # Clear role
+                config['medical_role_id'] = None
+                save_config(config)
+                
+                embed = discord.Embed(
+                    title="✅ Роль сброшена",
+                    description="Роль медицинской роты удалена из настроек.",
+                    color=discord.Color.green()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+              # Parse role
+            role = None
+            
+            # Try by ID
+            if role_text.isdigit():
+                role = interaction.guild.get_role(int(role_text))
+            
+            # Try by mention
+            if not role and role_text.startswith('<@&') and role_text.endswith('>'):
+                try:
+                    role_id = int(role_text[3:-1])
+                    role = interaction.guild.get_role(role_id)
+                except ValueError:
+                    pass
+            
+            # Try by name
+            if not role:
+                for guild_role in interaction.guild.roles:
+                    if guild_role.name.lower() == role_text.lower():
+                        role = guild_role
+                        break
+            
+            if not role:
+                embed = discord.Embed(
+                    title="❌ Роль не найдена",
+                    description=f"Роль '{role_text}' не найдена на сервере.",
+                    color=discord.Color.red()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+            
+            # Save role
+            config['medical_role_id'] = role.id
+            save_config(config)
+            
+            embed = discord.Embed(
+                title="✅ Роль настроена",
+                description=f"Роль медицинской роты: {role.mention}",
+                color=discord.Color.green()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            embed = discord.Embed(
+                title="❌ Ошибка",
+                description=f"Произошла ошибка при настройке роли: {str(e)}",
                 color=discord.Color.red()
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)

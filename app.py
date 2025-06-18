@@ -14,6 +14,7 @@ from forms.settings_form import SettingsView
 from forms.role_assignment_form import RoleAssignmentView, send_role_assignment_message, restore_role_assignment_views, restore_approval_views
 from forms.moderator_registration import ModeratorRegistrationView, ensure_moderator_registration_message
 from forms.leave_request_form import LeaveRequestButton, LeaveRequestApprovalView, restore_leave_request_views
+from forms.medical_registration import MedicalRegistrationView
 from forms.welcome_system import setup_welcome_events
 
 # Load environment variables from .env file
@@ -46,15 +47,17 @@ async def on_ready():
         print(f"📊 Config status: {status['backup_count']} backups available")
     else:
         print("⚠️  Configuration issues detected - check /config-backup status")
-    
-    # Load all extension cogs
+      # Load all extension cogs
     await load_extensions()
-      # Sync commands with Discord
+    
+    # Sync commands with Discord
     try:
         synced = await bot.tree.sync()
         print(f'Synced {len(synced)} command(s)')
     except Exception as e:
-        print(f'Failed to sync commands: {e}')      # Load configuration on startup
+        print(f'Failed to sync commands: {e}')
+    
+    # Load configuration on startup
     config = load_config()
     print('Configuration loaded successfully')
     print(f'Dismissal channel: {config.get("dismissal_channel", "Not set")}')
@@ -64,18 +67,22 @@ async def on_ready():
     print(f'Moderator registration channel: {config.get("moderator_registration_channel", "Not set")}')
     print(f'Military role: {config.get("military_role", "Not set")}')
     print(f'Civilian role: {config.get("civilian_role", "Not set")}')
-      # Initialize Google Sheets
+    
+    # Initialize Google Sheets
     print('Initializing Google Sheets...')
     sheets_success = sheets_manager.initialize()
     if sheets_success:
         print('✅ Google Sheets initialized successfully')
     else:
-        print('⚠️ Google Sheets initialization failed - dismissal logging will not work')    # Create persistent button views
+        print('⚠️ Google Sheets initialization failed - dismissal logging will not work')
+    
+    # Create persistent button views
     bot.add_view(DismissalReportButton())
     bot.add_view(SettingsView())
     bot.add_view(RoleAssignmentView())
     bot.add_view(ModeratorRegistrationView())
     bot.add_view(LeaveRequestButton())
+    bot.add_view(MedicalRegistrationView())
     
     # Add generic approval views for persistent buttons
     bot.add_view(DismissalApprovalView())
@@ -181,8 +188,7 @@ async def restore_channel_messages(config):
     blacklist_channel_id = config.get('blacklist_channel')
     if blacklist_channel_id:
         channel = bot.get_channel(blacklist_channel_id)
-    
-    # Restore leave requests channel message
+      # Restore leave requests channel message
     leave_requests_channel_id = config.get('leave_requests_channel')
     if leave_requests_channel_id:
         from forms.leave_request_form import send_leave_request_button_message
@@ -191,6 +197,15 @@ async def restore_channel_messages(config):
             if not await check_for_button_message(channel, "Система подачи заявок на отгулы"):
                 print(f"Sending leave request button message to channel {channel.name}")
                 await send_leave_request_button_message(channel)
+    
+    # Restore medical registration channel message
+    medical_registration_channel_id = config.get('medical_registration_channel')
+    if medical_registration_channel_id:
+        from forms.medical_registration import send_medical_registration_message
+        channel = bot.get_channel(medical_registration_channel_id)
+        if channel:
+            print(f"Sending medical registration message to channel {channel.name}")
+            await send_medical_registration_message(channel)
     
     # Restore leave request views
     print("Restoring leave request views...")

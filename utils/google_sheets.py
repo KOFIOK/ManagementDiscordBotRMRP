@@ -213,7 +213,6 @@ class GoogleSheetsManager:
                     return clean_name
           # If no specific format found, return as is
             return display_name
-    
     @retry_on_google_error(retries=3, delay=1)
     async def get_user_info_by_discord_id(self, discord_id):
         """Search for user by Discord ID in 'Пользователи' sheet and return full name with static from column J."""
@@ -276,14 +275,15 @@ class GoogleSheetsManager:
                                 return name_value
                             else:
                                 print(f"⚠️ SHEET SEARCH: Found Discord ID but no name data")
-                                return None                                        
+                                return None
+                                                        
             print(f"❌ SHEET SEARCH: No match found for Discord ID '{discord_id}'")
             return None
             
         except Exception as e:
             print(f"Error searching in 'Пользователи' sheet: {e}")
             raise  # Let the retry decorator handle it
-    
+
     @retry_on_google_error(retries=3, delay=1)
     async def check_moderator_authorization(self, approving_user):
         """

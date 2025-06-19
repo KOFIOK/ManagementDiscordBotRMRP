@@ -1274,8 +1274,8 @@ class AutomaticDismissalApprovalView(ui.View):
             )
             
             # Remove buttons
-            await interaction.edit_original_response(embed=embed, view=None)
-            
+            await interaction.edit_original_response(content='', embed=embed, view=None)
+
         except Exception as e:
             print(f"Error finalizing automatic approval: {e}")
             await interaction.followup.send(

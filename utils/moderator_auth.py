@@ -51,6 +51,66 @@ async def is_administrator(user_id: int) -> bool:
         return False
 
 
+async def has_moderator_permissions(user: discord.Member, guild: discord.Guild) -> bool:
+    """
+    Check if user has moderator permissions
+    Returns True if user is a moderator based on roles or config
+    """
+    try:
+        config = load_config()
+        moderators = config.get('moderators', {'users': [], 'roles': []})
+        
+        # Check if user ID is in moderators list
+        if user.id in moderators.get('users', []):
+            return True
+        
+        # Check if user has any of the moderator roles
+        moderator_role_ids = moderators.get('roles', [])
+        for role in user.roles:
+            if role.id in moderator_role_ids:
+                return True
+        
+        # Check if user has administrator permissions
+        if user.guild_permissions.administrator:
+            return True
+        
+        return False
+        
+    except Exception as e:
+        print(f"Error checking moderator permissions for user {user.id}: {e}")
+        return False
+
+
+async def has_admin_permissions(user: discord.Member, guild: discord.Guild) -> bool:
+    """
+    Check if user has admin permissions
+    Returns True if user is an administrator based on roles or config
+    """
+    try:
+        config = load_config()
+        administrators = config.get('administrators', {'users': [], 'roles': []})
+        
+        # Check if user ID is in administrators list
+        if user.id in administrators.get('users', []):
+            return True
+        
+        # Check if user has any of the administrator roles
+        admin_role_ids = administrators.get('roles', [])
+        for role in user.roles:
+            if role.id in admin_role_ids:
+                return True
+        
+        # Check if user has administrator permissions
+        if user.guild_permissions.administrator:
+            return True
+        
+        return False
+        
+    except Exception as e:
+        print(f"Error checking admin permissions for user {user.id}: {e}")
+        return False
+
+
 class ModeratorAuthModal(ui.Modal, title="Регистрация модератора в системе"):
     """Universal modal for moderator registration/authorization"""
     

@@ -75,37 +75,94 @@ async def on_ready():
         print('✅ Google Sheets initialized successfully')
     else:
         print('⚠️ Google Sheets initialization failed - dismissal logging will not work')
-    
-    # Create persistent button views
+      # Create persistent button views
+    print("🔄 Adding persistent button views...")
     bot.add_view(DismissalReportButton())
     bot.add_view(SettingsView())
     bot.add_view(RoleAssignmentView())
     bot.add_view(ModeratorRegistrationView())
     bot.add_view(LeaveRequestButton())
     bot.add_view(MedicalRegistrationView())
+    print("✅ Basic persistent views added")
     
     # Add generic approval views for persistent buttons
+    print("🔄 Adding approval views...")
     bot.add_view(DismissalApprovalView())
     bot.add_view(AutomaticDismissalApprovalView(None))  # Persistent view for automatic dismissals
     bot.add_view(LeaveRequestApprovalView("dummy"))  # Dummy ID for persistent view
-    
-    # Add role assignment approval view for persistent buttons
+    print("✅ Approval views added")
+      # Add role assignment approval view for persistent buttons    print("🔄 Adding role assignment approval view...")
     from forms.role_assignment_form import RoleApplicationApprovalView
     bot.add_view(RoleApplicationApprovalView({}))  # Empty data for persistent view
+    print("✅ Role assignment approval view added")
     
-    print('Persistent views added to bot')
+    print("🔄 Adding warehouse persistent views...")
+    try:
+        from forms.warehouse_request import (
+            WarehousePinMessageView, WarehousePersistentRequestView, WarehousePersistentMultiRequestView,
+            WarehouseStatusView
+        )
+        print("✅ Warehouse request views imported successfully")
+    except Exception as e:
+        print(f"❌ Error importing warehouse request views: {e}")
+        import traceback
+        print(f"🔍 Import traceback: {traceback.format_exc()}")
+    
+    try:
+        from forms.warehouse_audit import WarehouseAuditPinMessageView
+        print("✅ Warehouse audit view imported successfully")
+    except Exception as e:
+        print(f"❌ Error importing warehouse audit view: {e}")
+        import traceback
+        print(f"🔍 Import traceback: {traceback.format_exc()}")
+    
+    try:
+        # Add persistent warehouse views - БЕЗ DUMMY ДАННЫХ
+        bot.add_view(WarehousePinMessageView())  # Persistent pin message view - БЕЗ ПАРАМЕТРОВ
+        print("✅ WarehousePinMessageView added")
+        
+        bot.add_view(WarehousePersistentRequestView())  # Persistent single request moderation
+        print("✅ WarehousePersistentRequestView added")
+        bot.add_view(WarehousePersistentMultiRequestView())  # Persistent multi request moderation
+        print("✅ WarehousePersistentMultiRequestView added")
+        
+        # Skip WarehouseStatusView as it requires parameters - it's created dynamically
+        # bot.add_view(WarehouseStatusView())  # This requires 'status' parameter
+        print("ℹ️ WarehouseStatusView skipped (requires parameters)")
+        
+        bot.add_view(WarehouseAuditPinMessageView())  # Persistent audit pin message view
+        print("✅ WarehouseAuditPinMessageView added")
+        
+        print('✅ All persistent views added to bot')
+    except Exception as e:
+        print(f"❌ Error adding warehouse views to bot: {e}")
+        import traceback
+        print(f"🔍 Add view traceback: {traceback.format_exc()}")
       # Setup welcome system events
+    print("🔄 Setting up welcome system...")
     setup_welcome_events(bot)
+    print("✅ Welcome system events setup complete")
       # Start notification scheduler
+    print("🔄 Starting notification scheduler...")
     notification_scheduler.start()
+    print("✅ Notification scheduler started")
     
     # Start leave requests daily cleanup
+    print("🔄 Starting leave requests cleanup...")
     from utils.leave_request_storage import LeaveRequestStorage
     asyncio.create_task(LeaveRequestStorage.start_daily_cleanup_task())
     print("🧹 Leave requests daily cleanup task started")
     
+    # 🚀 ЗАПУСК СИСТЕМЫ ПРЕДЗАГРУЗКИ КЭША ДЛЯ СКЛАДА
+    print("🔄 Starting warehouse cache preloader...")
+    from utils.warehouse_cache_preloader import start_cache_preloading
+    start_cache_preloading(bot)
+    print("🚀 Warehouse cache preloader started")
+    
     # Check channels and restore messages if needed
+    print("🔄 Starting channel messages restoration...")
     await restore_channel_messages(config)
+    print("✅ Channel messages restoration complete")
 
 @bot.event
 async def on_member_remove(member):
@@ -197,15 +254,55 @@ async def restore_channel_messages(config):
             if not await check_for_button_message(channel, "Система подачи заявок на отгулы"):
                 print(f"Sending leave request button message to channel {channel.name}")
                 await send_leave_request_button_message(channel)
-    
-    # Restore medical registration channel message
+      # Restore medical registration channel message
     medical_registration_channel_id = config.get('medical_registration_channel')
     if medical_registration_channel_id:
         from forms.medical_registration import send_medical_registration_message
         channel = bot.get_channel(medical_registration_channel_id)
         if channel:
             print(f"Sending medical registration message to channel {channel.name}")
-            await send_medical_registration_message(channel)
+            await send_medical_registration_message(channel)      # Restore warehouse channels - ИСПРАВЛЕННАЯ ВЕРСИЯ
+    warehouse_request_channel_id = config.get('warehouse_request_channel')
+    if warehouse_request_channel_id:
+        from utils.warehouse_utils import send_warehouse_message, restore_warehouse_request_views, restore_warehouse_pinned_message
+        channel = bot.get_channel(warehouse_request_channel_id)
+        if channel:
+            # Сначала пытаемся восстановить существующее закрепленное сообщение
+            pinned_restored = await restore_warehouse_pinned_message(channel)
+            
+            # Если не удалось восстановить, проверяем нужно ли создать новое
+            if not pinned_restored and not await check_for_button_message(channel, "Запрос складского имущества"):
+                print(f"Sending warehouse message to channel {channel.name}")
+                try:
+                    await send_warehouse_message(channel)
+                except Exception as e:
+                    print(f"❌ Ошибка при создании сообщения склада: {e}")
+            
+            # Восстанавливаем views для существующих заявок
+            print(f"Restoring warehouse request views in {channel.name}")
+            await restore_warehouse_request_views(channel)
+        else:
+            print(f"⚠️ Канал склада не найден (ID: {warehouse_request_channel_id})")    # Restore warehouse audit channel
+    warehouse_audit_channel_id = config.get('warehouse_audit_channel')
+    if warehouse_audit_channel_id:
+        from forms.warehouse_audit import send_warehouse_audit_message, restore_warehouse_audit_views, restore_warehouse_audit_pinned_message
+        channel = bot.get_channel(warehouse_audit_channel_id)
+        if channel:
+            # Сначала пытаемся восстановить существующее закрепленное сообщение
+            pinned_restored = await restore_warehouse_audit_pinned_message(channel)
+            
+            # Если не удалось восстановить, проверяем нужно ли создать новое
+            if not pinned_restored and not await check_for_button_message(channel, "Аудит склада"):
+                print(f"Sending warehouse audit message to channel #{channel.name}")
+                try:
+                    await send_warehouse_audit_message(channel)
+                except Exception as e:
+                    print(f"❌ Ошибка при создании сообщения аудита склада: {e}")
+            
+            # Восстанавливаем views для аудита
+            await restore_warehouse_audit_views(channel)
+        else:
+            print(f"⚠️ Канал аудита склада не найден (ID: {warehouse_audit_channel_id})")
     
     # Restore leave request views
     print("Restoring leave request views...")
@@ -226,13 +323,21 @@ async def check_for_button_message(channel, title_keyword):
 
 async def load_extensions():
     """Load all extension cogs from the cogs directory."""
+    # Список исключений - cogs которые не нужно загружать
+    excluded_cogs = {'warehouse_commands', 'cache_admin'}  # warehouse_commands удален, cache_admin заменен на slash-версию
+    
     for filename in os.listdir('./cogs'):
         if filename.endswith('.py') and not filename.startswith('_'):
+            cog_name = filename[:-3]
+            if cog_name in excluded_cogs:
+                print(f'Skipped extension (excluded): {cog_name}')
+                continue
+                
             try:
-                await bot.load_extension(f'cogs.{filename[:-3]}')
-                print(f'Loaded extension: {filename[:-3]}')
+                await bot.load_extension(f'cogs.{cog_name}')
+                print(f'Loaded extension: {cog_name}')
             except Exception as e:
-                print(f'Failed to load extension {filename[:-3]}: {e}')
+                print(f'Failed to load extension {cog_name}: {e}')
 
 async def shutdown_handler():
     """Gracefully shutdown the bot."""

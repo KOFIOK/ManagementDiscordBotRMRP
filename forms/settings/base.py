@@ -147,6 +147,15 @@ class ChannelParser:
         if channel_text.isdigit():
             return guild.get_channel(int(channel_text))
         
+        # Remove # if present for name-based search
+        if channel_text.startswith('#'):
+            channel_text = channel_text[1:]
+        
+        # Try to find channel by exact name first
+        channel = discord.utils.get(guild.text_channels, name=channel_text)
+        if channel:
+            return channel
+        
         # Try to find channel by name (with smart normalization)
         return ChannelParser._find_channel_by_name(guild, channel_text)
     

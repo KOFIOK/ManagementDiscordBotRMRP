@@ -6,7 +6,7 @@ from discord import ui
 from discord.ext import commands
 from utils.config_manager import load_config, is_moderator_or_admin
 from utils.leave_request_storage import LeaveRequestStorage
-from utils.user_database import UserDatabase
+from utils.user_cache import get_cached_user_info
 from .utils import LeaveRequestValidator, LeaveRequestDepartmentDetector
 
 
@@ -86,7 +86,7 @@ class LeaveRequestModal(ui.Modal):
         """
         try:
             # Try to get user data from personnel database
-            user_data = await UserDatabase.get_user_info(user_id)
+            user_data = await get_cached_user_info(user_id)
             return cls(user_id=user_id, user_data=user_data)
         except Exception as e:
             print(f"❌ Error loading user data for modal: {e}")
@@ -272,7 +272,7 @@ class RejectReasonModal(ui.Modal):
         """
         try:
             # Try to get user data from personnel database
-            user_data = await UserDatabase.get_user_info(user_id)
+            user_data = await get_cached_user_info(user_id)
             return cls(user_id=user_id, user_data=user_data)
         except Exception as e:
             print(f"❌ Error loading user data for modal: {e}")

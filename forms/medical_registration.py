@@ -7,7 +7,7 @@ import discord
 from discord.ui import Button, View, Modal, TextInput
 from datetime import datetime, timezone, timedelta
 from utils.config_manager import load_config
-from utils.user_database import UserDatabase
+from utils.user_cache import get_cached_user_info
 
 
 class MedicalRegistrationView(View):
@@ -33,7 +33,7 @@ class MedicalRegistrationView(View):
           # Get autofill data
         autofill_data = ""
         try:
-            user_info = await UserDatabase.get_user_info(str(interaction.user.id))
+            user_info = await get_cached_user_info(str(interaction.user.id))
             if user_info and user_info.get('full_name') and user_info.get('static'):
                 autofill_data = f"{user_info['full_name']} | {user_info['static']}"
         except Exception as e:
@@ -59,7 +59,7 @@ class MedicalRegistrationView(View):
           # Get autofill data
         autofill_data = ""
         try:
-            user_info = await UserDatabase.get_user_info(str(interaction.user.id))
+            user_info = await get_cached_user_info(str(interaction.user.id))
             if user_info and user_info.get('full_name') and user_info.get('static'):
                 autofill_data = f"{user_info['full_name']} | {user_info['static']}"
         except Exception as e:
@@ -73,7 +73,7 @@ class MedicalRegistrationView(View):
         """Документы - доступно всем"""        # Get autofill data
         autofill_data = ""
         try:
-            user_info = await UserDatabase.get_user_info(str(interaction.user.id))
+            user_info = await get_cached_user_info(str(interaction.user.id))
             if user_info and user_info.get('full_name') and user_info.get('static'):
                 autofill_data = f"{user_info['full_name']} | {user_info['static']}"
         except Exception as e:
@@ -87,7 +87,7 @@ class MedicalRegistrationView(View):
         """Психолог - доступно всем"""        # Get autofill data
         autofill_data = ""
         try:
-            user_info = await UserDatabase.get_user_info(str(interaction.user.id))
+            user_info = await get_cached_user_info(str(interaction.user.id))
             if user_info and user_info.get('full_name') and user_info.get('static'):
                 autofill_data = f"{user_info['full_name']} | {user_info['static']}"
         except Exception as e:

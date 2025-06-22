@@ -32,8 +32,8 @@ async def create_automatic_dismissal_report(guild, member, target_role_name="Ð’Ð
         ping_settings = config.get('ping_settings', {})
         
         # Try to get user data from personnel database first
-        from utils.user_database import UserDatabase
-        user_data = await UserDatabase.get_user_info(member.id)
+        from utils.user_cache import get_cached_user_info
+        user_data = await get_cached_user_info(member.id)
         
         if user_data:
             # Use data from personnel database

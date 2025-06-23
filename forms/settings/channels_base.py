@@ -73,8 +73,7 @@ class ChannelSelectionModal(BaseSettingsModal):
                 "medical_registration": "записи к врачу"
             }
             type_name = type_names.get(self.config_type, self.config_type)
-            
-            # Send appropriate button message to the channel
+              # Send appropriate button message to the channel
             button_message_added = False
             
             if self.config_type == "dismissal":
@@ -94,8 +93,8 @@ class ChannelSelectionModal(BaseSettingsModal):
                 await send_leave_request_button_message(channel)
                 button_message_added = True
             elif self.config_type == "medical_registration":
-                from forms.medical_registration import send_medical_registration_button_message
-                await send_medical_registration_button_message(channel)
+                from forms.medical_registration import send_medical_registration_message
+                await send_medical_registration_message(channel)
                 button_message_added = True
             
             success_message = f"Канал {type_name} успешно настроен на {channel.mention}!"

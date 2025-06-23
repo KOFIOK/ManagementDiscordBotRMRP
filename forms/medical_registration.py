@@ -10,7 +10,21 @@ from utils.config_manager import load_config
 from utils.user_cache import get_cached_user_info
 
 
-class MedicalRegistrationView(View):
+class BaseMedicalView(View):
+    """Base view with common autofill functionality"""
+    
+    async def get_autofill_data(self, user_id: str) -> str:
+        """Get autofill data for user"""
+        try:
+            user_info = await get_cached_user_info(user_id)
+            if user_info and user_info.get('full_name') and user_info.get('static'):
+                return f"{user_info['full_name']} | {user_info['static']}"
+        except Exception as e:
+            print(f"Error getting autofill data: {e}")
+        return ""
+
+
+class MedicalRegistrationView(BaseMedicalView):
     """View with buttons for medical services"""
     
     def __init__(self):
@@ -30,16 +44,8 @@ class MedicalRegistrationView(View):
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
-          # Get autofill data
-        autofill_data = ""
-        try:
-            user_info = await get_cached_user_info(str(interaction.user.id))
-            if user_info and user_info.get('full_name') and user_info.get('static'):
-                autofill_data = f"{user_info['full_name']} | {user_info['static']}"
-        except Exception as e:
-            print(f"Error getting autofill data for VVK: {e}")
-            autofill_data = ""
         
+        autofill_data = await self.get_autofill_data(str(interaction.user.id))
         await interaction.response.send_modal(VVKModal(autofill_data))
     
     @discord.ui.button(label="Лекция по медподготовке", style=discord.ButtonStyle.secondary, custom_id="lecture_button", emoji="📚")
@@ -56,44 +62,20 @@ class MedicalRegistrationView(View):
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
-          # Get autofill data
-        autofill_data = ""
-        try:
-            user_info = await get_cached_user_info(str(interaction.user.id))
-            if user_info and user_info.get('full_name') and user_info.get('static'):
-                autofill_data = f"{user_info['full_name']} | {user_info['static']}"
-        except Exception as e:
-            print(f"Error getting autofill data for lecture: {e}")
-            autofill_data = ""
         
+        autofill_data = await self.get_autofill_data(str(interaction.user.id))
         await interaction.response.send_modal(LectureModal(autofill_data))
     
     @discord.ui.button(label="Обновление документов", style=discord.ButtonStyle.success, custom_id="docs_button", emoji="📄")
     async def docs_button(self, interaction: discord.Interaction, button: Button):
-        """Документы - доступно всем"""        # Get autofill data
-        autofill_data = ""
-        try:
-            user_info = await get_cached_user_info(str(interaction.user.id))
-            if user_info and user_info.get('full_name') and user_info.get('static'):
-                autofill_data = f"{user_info['full_name']} | {user_info['static']}"
-        except Exception as e:
-            print(f"Error getting autofill data for documents: {e}")
-            autofill_data = ""
-        
+        """Документы - доступно всем"""
+        autofill_data = await self.get_autofill_data(str(interaction.user.id))
         await interaction.response.send_modal(DocumentsModal(autofill_data))
     
     @discord.ui.button(label="Приём психолога", style=discord.ButtonStyle.danger, custom_id="psych_button", emoji="🧠")
     async def psych_button(self, interaction: discord.Interaction, button: Button):
-        """Психолог - доступно всем"""        # Get autofill data
-        autofill_data = ""
-        try:
-            user_info = await get_cached_user_info(str(interaction.user.id))
-            if user_info and user_info.get('full_name') and user_info.get('static'):
-                autofill_data = f"{user_info['full_name']} | {user_info['static']}"
-        except Exception as e:
-            print(f"Error getting autofill data for psychologist: {e}")
-            autofill_data = ""
-        
+        """Психолог - доступно всем"""
+        autofill_data = await self.get_autofill_data(str(interaction.user.id))
         await interaction.response.send_modal(PsychologistModal(autofill_data))
 
 
@@ -229,12 +211,6 @@ class LectureModal(BaseMedicalModal):
         self.add_item(self.time)
 
     async def on_submit(self, interaction: discord.Interaction):
-        # Try to autofill if name field is empty or default
-        if not self.name.value or self.name.value == "Пример: Иван Иванов | 000-000":
-            autofill_data = await self.get_autofill_data(interaction)
-            if autofill_data:
-                self.name.value = autofill_data
-        
         # Moscow timezone
         moscow_tz = timezone(timedelta(hours=3))
         now = datetime.now(moscow_tz)
@@ -290,12 +266,6 @@ class DocumentsModal(BaseMedicalModal):
         self.add_item(self.time)
 
     async def on_submit(self, interaction: discord.Interaction):
-        # Try to autofill if name field is empty or default
-        if not self.name.value or self.name.value == "Пример: Иван Иванов | 000-000":
-            autofill_data = await self.get_autofill_data(interaction)
-            if autofill_data:
-                self.name.value = autofill_data
-        
         # Moscow timezone
         moscow_tz = timezone(timedelta(hours=3))
         now = datetime.now(moscow_tz)
@@ -351,12 +321,6 @@ class PsychologistModal(BaseMedicalModal):
         self.add_item(self.time)
 
     async def on_submit(self, interaction: discord.Interaction):
-        # Try to autofill if name field is empty or default
-        if not self.name.value or self.name.value == "Пример: Иван Иванов | 000-000":
-            autofill_data = await self.get_autofill_data(interaction)
-            if autofill_data:
-                self.name.value = autofill_data
-        
         # Moscow timezone
         moscow_tz = timezone(timedelta(hours=3))
         now = datetime.now(moscow_tz)

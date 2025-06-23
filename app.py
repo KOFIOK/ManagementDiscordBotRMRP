@@ -211,9 +211,8 @@ async def on_member_update(before, after):
                 
                 moderator_role_ids = config.get('moderators', {}).get('roles', [])
                 administrator_role_ids = config.get('administrators', {}).get('roles', [])
-                
-                # Проверяем, была ли добавлена модераторская/администраторская роль
-                from cogs.channel_manager import (
+                  # Проверяем, была ли добавлена модераторская/администраторская роль
+                from utils.moderator_notifications import (
                     check_if_user_is_moderator, check_if_user_is_administrator,
                     send_moderator_welcome_dm, send_administrator_welcome_dm,
                     send_notification_to_channel

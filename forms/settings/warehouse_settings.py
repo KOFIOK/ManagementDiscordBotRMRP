@@ -61,8 +61,7 @@ class WarehouseChannelsView(discord.ui.View):
             description="Управление каналами системы складского учёта",
             color=discord.Color.blue()
         )
-        
-        # Канал запросов
+          # Канал запросов
         request_channel_id = config.get('warehouse_request_channel')
         if request_channel_id:
             channel = interaction.guild.get_channel(request_channel_id)
@@ -73,6 +72,20 @@ class WarehouseChannelsView(discord.ui.View):
         embed.add_field(
             name="📦 Канал запросов:",
             value=request_text,
+            inline=False
+        )
+        
+        # Канал отправки заявок
+        submission_channel_id = config.get('warehouse_submission_channel')
+        if submission_channel_id:
+            channel = interaction.guild.get_channel(submission_channel_id)
+            submission_text = channel.mention if channel else f"❌ Канал не найден (ID: {submission_channel_id})"
+        else:
+            submission_text = "📦 Используется канал запросов"
+        
+        embed.add_field(
+            name="📤 Канал отправки заявок:",
+            value=submission_text,
             inline=False
         )
         
@@ -109,7 +122,7 @@ class WarehouseChannelsView(discord.ui.View):
             curators_text = "❌ Не настроены"
         
         embed.add_field(
-            name="� Кураторы аудита:",
+            name="👑 Кураторы аудита:",
             value=curators_text,
             inline=False
         )
@@ -122,10 +135,16 @@ class WarehouseChannelsButtonsView(discord.ui.View):
     """Кнопки для настройки каналов склада"""
     
     def __init__(self):
-        super().__init__(timeout=300)    
+        super().__init__(timeout=300)
+    
     @discord.ui.button(label="📦 Канал запросов", style=discord.ButtonStyle.green)
     async def set_request_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = WarehouseChannelModal("warehouse_request_channel", "Канал запросов склада")
+        await interaction.response.send_modal(modal)
+    
+    @discord.ui.button(label="📤 Канал отправки заявок", style=discord.ButtonStyle.primary)
+    async def set_submission_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = WarehouseChannelModal("warehouse_submission_channel", "Канал отправки заявок")
         await interaction.response.send_modal(modal)
     
     @discord.ui.button(label="📊 Канал аудита", style=discord.ButtonStyle.secondary)
@@ -159,20 +178,9 @@ class WarehouseChannelModal(discord.ui.Modal):
         try:
             channel_text = self.channel_input.value.strip()
             
-            # Парсинг канала
-            channel = None
-            if channel_text.startswith('<#') and channel_text.endswith('>'):
-                # Упоминание канала
-                channel_id = int(channel_text[2:-1])
-                channel = interaction.guild.get_channel(channel_id)
-            elif channel_text.startswith('#'):
-                # Название канала
-                channel_name = channel_text[1:]
-                channel = discord.utils.get(interaction.guild.text_channels, name=channel_name)
-            elif channel_text.isdigit():
-                # ID канала
-                channel_id = int(channel_text)
-                channel = interaction.guild.get_channel(channel_id)
+            # Используем централизованный парсер каналов
+            from .base import ChannelParser
+            channel = ChannelParser.parse_channel_input(channel_text, interaction.guild)
             
             if not channel:
                 await interaction.response.send_message(
@@ -184,18 +192,21 @@ class WarehouseChannelModal(discord.ui.Modal):
             config = load_config()
             config[self.config_key] = channel.id
             save_config(config)
-            
-            # Специальная обработка для канала запросов
+              # Специальная обработка для различных типов каналов
             if self.config_key == "warehouse_request_channel":
                 try:
                     from utils.warehouse_utils import send_warehouse_message
                     await send_warehouse_message(channel)
-                    message = f"✅ Канал настроен: {channel.mention}\n📌 Закрепленное сообщение склада добавлено!"
+                    message = f"✅ Канал запросов настроен: {channel.mention}\n📌 Закрепленное сообщение склада добавлено!"
                 except Exception as e:
                     print(f"Ошибка создания сообщения склада: {e}")
-                    message = f"✅ Канал настроен: {channel.mention}\n❗ Ошибка при добавлении закрепленного сообщения: {str(e)}"
-            else:
+                    message = f"✅ Канал запросов настроен: {channel.mention}\n❗ Ошибка при добавлении закрепленного сообщения: {str(e)}"
+            elif self.config_key == "warehouse_submission_channel":
+                message = f"✅ Канал отправки заявок настроен: {channel.mention}\n📤 Все заявки склада будут отправляться в этот канал!"
+            elif self.config_key == "warehouse_audit_channel":
                 message = f"✅ Канал аудита настроен: {channel.mention}"
+            else:
+                message = f"✅ Канал настроен: {channel.mention}"
             
             await interaction.response.send_message(message, ephemeral=True)
             

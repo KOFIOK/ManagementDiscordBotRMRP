@@ -354,9 +354,9 @@ python app.py
     "civilian_role_assignment_ping_roles": [123456789012345696],
     "medical_role_id": 123456789012345697,
     "medical_vvk_allowed_roles": [123456789012345698, 123456789012345699],
-    "medical_lecture_allowed_roles": [123456789012345700, 123456789012345701],
-    "warehouse_request_channel": 123456789012345702,
+    "medical_lecture_allowed_roles": [123456789012345700, 123456789012345701],    "warehouse_request_channel": 123456789012345702,
     "warehouse_audit_channel": 123456789012345703,
+    "warehouse_submission_channel": 123456789012345704,
     "warehouse_cooldown_hours": 6,
     "warehouse_limits_mode": {
         "positions_enabled": true,
@@ -395,8 +395,9 @@ python app.py
 - **`civilian_role_assignment_ping_roles`** - роли для пинга при гражданских заявках
 - **`medical_registration_channel`** - канал для системы записи к врачу
 - **`medical_role_id`** - роль медицинского персонала для получения заявок
-- **`warehouse_request_channel`** - канал для запросов складского имущества
+- **`warehouse_request_channel`** - канал для запросов складского имущества (UI формы)
 - **`warehouse_audit_channel`** - канал для аудита выдач со склада
+- **`warehouse_submission_channel`** - канал для отправки готовых заявок модераторам
 - **`warehouse_cooldown_hours`** - кулдаун между запросами в часах
 - **`warehouse_limits_mode`** - режим работы лимитов (должности/звания)
 - **`warehouse_limits_positions`** - лимиты по должностям с ограничениями оружия

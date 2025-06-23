@@ -667,8 +667,7 @@ class WarehouseRequestModal(discord.ui.Modal):
 
     def _format_static(self, static: str) -> str:
         """Форматирование статика в стандартный вид"""
-        
-        # Удаляем все, кроме цифр
+          # Удаляем все, кроме цифр
         digits = re.sub(r'\D', '', static)
         
         # Проверяем длину
@@ -682,10 +681,10 @@ class WarehouseRequestModal(discord.ui.Modal):
     def _get_category_key(self, category: str) -> str:
         """Получить ключ категории"""
         category_mapping = {
-            "🔫 Оружие": "оружие",
-            "🦺 Бронежилеты": "бронежилеты", 
-            "💊 Медикаменты": "медикаменты",
-            "📦 Другое": "другое"
+            "Оружие": "оружие",
+            "Бронежилеты": "бронежилеты", 
+            "Медикаменты": "медикаменты",
+            "Другое": "другое"
         }
         return category_mapping.get(category, "другое")
 
@@ -789,16 +788,14 @@ class WarehouseQuantityModal(discord.ui.Modal):
             existing_quantity = cart.get_item_quantity(self.category, self.item_name)
             total_quantity = existing_quantity + quantity  # Суммарное количество после добавления
             
-            print(f"📊 ITEM CHECK: {self.item_name} - в корзине: {existing_quantity}, добавляем: {quantity}, итого: {total_quantity}")
-            
-            # ⚡ ВАЛИДАЦИЯ С УЧЕТОМ КОРЗИНЫ - проверяем лимиты на суммарное количество
+            print(f"📊 ITEM CHECK: {self.item_name} - в корзине: {existing_quantity}, добавляем: {quantity}, итого: {total_quantity}")            # ⚡ ВАЛИДАЦИЯ С УЧЕТОМ КОРЗИНЫ - проверяем лимиты на суммарное количество
             category_key = self._get_category_key(self.category)
             is_valid, corrected_total_quantity, validation_message = self.warehouse_manager.validate_item_request(
                 category_key, self.item_name, total_quantity, position, rank
             )
             
             if not is_valid:
-                # Если валидация не прошла - показываем ошибку
+                # Если валидация не прошла по критическим причинам (недоступное оружие и т.д.)
                 error_embed = discord.Embed(
                     title="❌ Ошибка валидации",
                     description=validation_message,
@@ -807,52 +804,41 @@ class WarehouseQuantityModal(discord.ui.Modal):
                 await loading_message.edit(embed=error_embed)
                 return
             
-            # Вычисляем, сколько реально можем добавить
-            max_can_add = corrected_total_quantity - existing_quantity
+            # Вычисляем, сколько реально нужно добавить
+            final_quantity_to_add = corrected_total_quantity - existing_quantity
+            warning_message = ""
             
-            if max_can_add <= 0:
-                # Уже достигнут максимум
-                error_embed = discord.Embed(
-                    title="❌ Лимит достигнут",
-                    description=f"В корзине уже есть максимальное количество **{self.item_name}**: {existing_quantity} ед.\n\n{validation_message}",
-                    color=discord.Color.red()
-                )
-                await loading_message.edit(embed=error_embed)
-                return
-            
-            # Устанавливаем финальные значения
-            final_quantity_to_add = min(quantity, max_can_add)
-            message = ""
-            
-            if final_quantity_to_add < quantity:
-                message = f"⚠️ Количество ограничено: добавлено {final_quantity_to_add} из {quantity} (лимит: {corrected_total_quantity})"
-            elif validation_message:
-                message = validation_message
-            
-            # Проверяем дубликаты по времени (быстрое добавление)
+            # Если лимит был превышен, показываем предупреждение
+            if "уменьшено" in validation_message:
+                warning_message = validation_message            # Проверяем дубликаты по времени (быстрое добавление)
             for existing_item in cart.items:
                 if (existing_item.category == self.category and 
                     existing_item.item_name == self.item_name and
                     (current_time - existing_item.timestamp).total_seconds() < 15):  # Увеличили до 15 сек
                     
-                    existing_item.quantity += final_quantity_to_add
-                    print(f"🔄 VALIDATED DUPLICATE: +{final_quantity_to_add} к {self.item_name} (лимит учтен)")
-                    await self._show_cart_ultra_fast(interaction, cart, message, loading_message)
-                    return            # 🚀 БЫСТРОЕ создание предмета с корректным количеством
+                    # Обновляем существующий предмет до corrected_total_quantity
+                    existing_item.quantity = corrected_total_quantity
+                    print(f"🔄 VALIDATED DUPLICATE: обновлено до {corrected_total_quantity} для {self.item_name}")
+                    await self._show_cart_ultra_fast(interaction, cart, warning_message, loading_message)
+                    return
+            
+            # Добавляем новый предмет с исправленным общим количеством
             item = WarehouseRequestItem(
                 category=self.category,
                 item_name=self.item_name,
-                quantity=final_quantity_to_add,
+                quantity=corrected_total_quantity,
                 user_name="",  # Будет заполнено позже
                 user_static="",  # Будет заполнено позже
                 position=position,
                 rank=rank
             )
-              # Мгновенное добавление в корзину
+            
+            # Добавление в корзину
             cart.add_item(item)
+            print(f"✅ NEW ITEM ADDED: {self.item_name} x{corrected_total_quantity}")
             
             # 🚀 СУПЕР быстрое отображение
-            await self._show_cart_ultra_fast(interaction, cart, message, loading_message)
+            await self._show_cart_ultra_fast(interaction, cart, warning_message, loading_message)
             
         except Exception as e:
             print(f"❌ CRITICAL ERROR в WarehouseQuantityModal: {e}")
@@ -879,21 +865,24 @@ class WarehouseQuantityModal(discord.ui.Modal):
     async def _show_cart_ultra_fast(self, interaction: discord.Interaction, cart: WarehouseRequestCart, validation_message: str = "", loading_message=None):
         """УЛЬТРА-БЫСТРОЕ отображение корзины для предотвращения таймаутов Discord"""
         try:
+            # Формируем описание с предупреждением, если есть
+            description = f"В корзине: **{len(cart.items)}** поз. | Всего: **{cart.get_total_items()}** ед."
+            if validation_message:
+                description += f"\n\n{validation_message}"
+            
             embed = discord.Embed(
                 title="📦 Корзина обновлена",
-                description=f"В корзине: **{len(cart.items)}** поз. | Всего: **{cart.get_total_items()}** ед.",
+                description=description,
                 color=discord.Color.green()
             )
-              # Краткий список последних предметов (максимум 3)
+            
+            # Краткий список последних предметов (максимум 3)
             recent_items = cart.items[-3:] if len(cart.items) > 3 else cart.items
             items_text = "\n".join([f"• {item.item_name} × {item.quantity}" for item in recent_items])
             if len(cart.items) > 3:
                 items_text += f"\n... и ещё {len(cart.items) - 3} предметов"
             
             embed.add_field(name="Последние добавленные", value=items_text or "Нет предметов", inline=False)
-            
-            if validation_message:
-                embed.add_field(name="ℹ️", value=validation_message, inline=False)
             
             # Быстрая view с минимальным функционалом
             view = WarehouseCartView(cart, self.warehouse_manager)
@@ -933,7 +922,6 @@ class WarehouseQuantityModal(discord.ui.Modal):
                 set_user_cart_message(interaction.user.id, message)
             except Exception:
                 await interaction.followup.send(f"✅ Добавлено: **{cart.items[-1].item_name}** × {cart.items[-1].quantity}", ephemeral=True)
-            
         except Exception as e:
             print(f"❌ Ошибка в _show_cart_ultra_fast: {e}")
             try:
@@ -944,10 +932,10 @@ class WarehouseQuantityModal(discord.ui.Modal):
     def _get_category_key(self, category: str) -> str:
         """Получить ключ категории"""
         category_mapping = {
-            "🔫 Оружие": "оружие",
-            "🦺 Бронежилеты": "бронежилеты", 
-            "💊 Медикаменты": "медикаменты",
-            "📦 Другое": "другое"
+            "Оружие": "оружие",
+            "Бронежилеты": "бронежилеты", 
+            "Медикаменты": "медикаменты",
+            "Другое": "другое"
         }
         return category_mapping.get(category, "другое")
 
@@ -999,11 +987,10 @@ class WarehouseCategorySelect(discord.ui.Select):
             from utils.google_sheets import GoogleSheetsManager
             sheets_manager = GoogleSheetsManager()
             warehouse_manager = WarehouseManager(sheets_manager)
-            
-            # Проверка кулдауна для всех пользователей (включая админов)
-            request_channel_id, _ = warehouse_manager.get_warehouse_channels()
-            if request_channel_id:
-                channel = interaction.guild.get_channel(request_channel_id)
+              # Проверка кулдауна для всех пользователей (включая админов)
+            submission_channel_id = warehouse_manager.get_warehouse_submission_channel()
+            if submission_channel_id:
+                channel = interaction.guild.get_channel(submission_channel_id)
                 if channel:
                     can_request, next_time = await warehouse_manager.check_user_cooldown(
                         interaction.user.id, channel
@@ -1022,14 +1009,12 @@ class WarehouseCategorySelect(discord.ui.Select):
                             f"⏰ Кулдаун! Вы можете подать следующий запрос через {hours}ч {minutes}мин",
                             ephemeral=True
                         )
-                        return
-            
-            # Преобразование value в полное название категории
+                        return            # Преобразование value в полное название категории
             category_mapping = {
-                "weapon": "🔫 Оружие",
-                "armor": "🦺 Бронежилеты",
-                "medical": "💊 Медикаменты",
-                "other": "📦 Другое"
+                "weapon": "Оружие",
+                "armor": "Бронежилеты",
+                "medical": "Медикаменты",
+                "other": "Другое"
             }
             
             selected_value = self.values[0]
@@ -1083,8 +1068,7 @@ class WarehouseItemSelectView(discord.ui.View):
         self.category = category
         self.category_info = category_info
         self.warehouse_manager = warehouse_manager
-        
-        # Добавление кнопок для каждого предмета
+          # Добавление кнопок для каждого предмета
         items = category_info["items"]
         for i, item in enumerate(items):
             if i < 20:  # Максимум 20 кнопок (4 ряда по 5)
@@ -1100,8 +1084,12 @@ class WarehouseItemSelectView(discord.ui.View):
     def _create_item_callback(self, item_name: str):
         """Создать callback для кнопки предмета"""
         async def callback(interaction: discord.Interaction):
-            # Создание упрощенного модального окна только для количества
-            modal = WarehouseQuantityModal(self.category, item_name, self.warehouse_manager)
+            # Специальная обработка для кастомного предмета "Прочее"
+            if item_name == "Прочее":
+                modal = WarehouseCustomItemModal(self.category, self.warehouse_manager)
+            else:
+                # Создание упрощенного модального окна только для количества
+                modal = WarehouseQuantityModal(self.category, item_name, self.warehouse_manager)
             await interaction.response.send_modal(modal)
             
         return callback
@@ -1143,11 +1131,10 @@ class WarehouseCartView(discord.ui.View):
                 ephemeral=True
             )
             return
-        
-        # ДОПОЛНИТЕЛЬНАЯ проверка кулдауна перед финальной отправкой
-        request_channel_id, _ = self.warehouse_manager.get_warehouse_channels()
-        if request_channel_id:
-            channel = interaction.guild.get_channel(request_channel_id)
+          # ДОПОЛНИТЕЛЬНАЯ проверка кулдауна перед финальной отправкой
+        submission_channel_id = self.warehouse_manager.get_warehouse_submission_channel()
+        if submission_channel_id:
+            channel = interaction.guild.get_channel(submission_channel_id)
             if channel:
                 can_request, next_time = await self.warehouse_manager.check_user_cooldown(
                     interaction.user.id, channel
@@ -1549,8 +1536,7 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
             print(f"❌ Ошибка фоновой обработки: {e}")
             import traceback
             traceback.print_exc()
-            
-            # Обновляем сообщение пользователю об ошибке
+              # Обновляем сообщение пользователю об ошибке
             await interaction.edit_original_response(
                 content="❌ Произошла ошибка при создании заявки. Обратитесь к администратору."
             )
@@ -1558,18 +1544,18 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
     async def _send_simple_warehouse_request(self, interaction: discord.Interaction):
         """Упрощенная отправка заявки склада"""
         try:
-            # Получение канала запросов
-            request_channel_id, _ = self.warehouse_manager.get_warehouse_channels()
-            if not request_channel_id:
+            # Получение канала отправки заявок (новая логика)
+            submission_channel_id = self.warehouse_manager.get_warehouse_submission_channel()
+            if not submission_channel_id:
                 await interaction.edit_original_response(
-                    content="❌ Канал запросов склада не настроен! Обратитесь к администратору."
+                    content="❌ Канал отправки заявок склада не настроен! Обратитесь к администратору."
                 )
                 return
 
-            channel = self.interaction_original.guild.get_channel(request_channel_id)
+            channel = self.interaction_original.guild.get_channel(submission_channel_id)
             if not channel:
                 await interaction.edit_original_response(
-                    content="❌ Канал запросов склада не найден! Обратитесь к администратору."
+                    content="❌ Канал отправки заявок склада не найден! Обратитесь к администратору."
                 )
                 return
 
@@ -1702,3 +1688,267 @@ class WarehouseSubmittedView(discord.ui.View):
     
     def __init__(self):
         super().__init__(timeout=None)  # Постоянный view без кнопок
+
+
+# =================== МОДАЛЬНОЕ ОКНО ДЛЯ КАСТОМНОГО ПРЕДМЕТА ===================
+
+class WarehouseCustomItemModal(discord.ui.Modal):
+    """Модальное окно для кастомного предмета 'Прочее' с полем описания"""
+    
+    def __init__(self, category: str, warehouse_manager: WarehouseManager):
+        super().__init__(title="Запрос: Прочее")
+        self.category = category
+        self.warehouse_manager = warehouse_manager
+        
+        # Поле для описания предмета (обязательное)
+        self.description_input = discord.ui.TextInput(
+            label="Описание предмета",
+            placeholder="Укажите, что именно вы запрашиваете",
+            style=discord.TextStyle.paragraph,
+            min_length=1,
+            max_length=500,
+            required=True
+        )
+        
+        # Поле для количества
+        self.quantity_input = discord.ui.TextInput(
+            label="Количество",
+            placeholder="Введите количество предметов",
+            min_length=1,
+            max_length=10,
+            required=True
+        )
+        
+        self.add_item(self.description_input)
+        self.add_item(self.quantity_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        """Обработка отправки формы для кастомного предмета"""
+        try:
+            # ⚡ МГНОВЕННЫЙ DEFER - самое первое действие!
+            await interaction.response.defer(ephemeral=True)
+            
+            # 🧹 Очистка старого сообщения корзины перед созданием нового loading_message
+            existing_message = get_user_cart_message(interaction.user.id)
+            if existing_message:
+                try:
+                    await existing_message.delete()
+                except (discord.NotFound, discord.HTTPException):
+                    pass
+                # Очищаем только ссылку на сообщение, но НЕ корзину
+                if interaction.user.id in user_cart_messages:
+                    del user_cart_messages[interaction.user.id]
+            
+            # 🔄 Показать быстрое сообщение о подготовке черновика
+            quick_embed = discord.Embed(
+                title="⏳ Подготовка формы запроса...",
+                description="Добавляем кастомный предмет в корзину...",
+                color=discord.Color.orange()
+            )
+            loading_message = await interaction.followup.send(embed=quick_embed, ephemeral=True)
+            
+            # ⚡ БЫСТРАЯ валидация количества (микросекунды)
+            try:
+                quantity = int(self.quantity_input.value.strip())
+                if quantity <= 0:
+                    raise ValueError("Количество должно быть больше 0")
+                if quantity > 999:  # Разумный лимит для предотвращения злоупотреблений
+                    raise ValueError("Слишком большое количество")
+            except ValueError as e:
+                error_embed = discord.Embed(
+                    title="❌ Ошибка валидации",
+                    description=f"Некорректное количество! {str(e)}",
+                    color=discord.Color.red()
+                )
+                await loading_message.edit(embed=error_embed)
+                return
+
+            # Валидация описания
+            description = self.description_input.value.strip()
+            if not description:
+                error_embed = discord.Embed(
+                    title="❌ Ошибка валидации",
+                    description="Описание предмета не может быть пустым!",
+                    color=discord.Color.red()
+                )
+                await loading_message.edit(embed=error_embed)
+                return
+
+            # 🚀 СУПЕР БЫСТРОЕ получение данных из кэша с fallback
+            print(f"⚡ ULTRA FAST: Обработка кастомного запроса для {interaction.user.display_name}")
+            
+            # Используем максимально быстрый путь
+            position = "Не указано"
+            rank = "Не указано"
+            
+            try:
+                # Попытка получить из кэша (наиболее быстро)
+                from utils.user_cache import get_cached_user_info
+                user_data = await get_cached_user_info(interaction.user.id, force_refresh=False)
+                
+                if user_data:
+                    position = user_data.get('position', 'Не указано')
+                    rank = user_data.get('rank', 'Не указано')
+                    print(f"✅ LIGHTNING CACHE: {position}, {rank}")
+                else:
+                    # Быстрый fallback через роли Discord (без обращения к БД)
+                    for role in interaction.user.roles:
+                        role_name = role.name.lower()
+                        if "офицер" in role_name or "командир" in role_name:
+                            position = "Офицер"
+                            break
+                        elif "сержант" in role_name:
+                            rank = "Сержант"
+                        elif "рядовой" in role_name:
+                            rank = "Рядовой"
+                    print(f"📋 ROLE FAST: {position}, {rank}")
+                        
+            except Exception as e:
+                print(f"⚠️ Fallback для данных: {e}")
+                # Используем безопасные значения по умолчанию
+
+            # 🛡️ ПОЛУЧАЕМ КОРЗИНУ И ПРОВЕРЯЕМ СУЩЕСТВУЮЩЕЕ КОЛИЧЕСТВО
+            cart = get_user_cart(interaction.user.id)
+            current_time = datetime.now()
+            
+            # Для кастомного предмета item_name включает описание
+            custom_item_name = f"Прочее ({description})"
+            
+            # Получаем текущее количество этого предмета в корзине
+            existing_quantity = cart.get_item_quantity(self.category, custom_item_name)
+            total_quantity = existing_quantity + quantity  # Суммарное количество после добавления
+            
+            print(f"📊 CUSTOM ITEM CHECK: {custom_item_name} - в корзине: {existing_quantity}, добавляем: {quantity}, итого: {total_quantity}")
+            
+            # ⚡ ВАЛИДАЦИЯ С УЧЕТОМ КОРЗИНЫ - для кастомных предметов лимиты не применяются
+            category_key = self._get_category_key(self.category)
+            
+            # Для кастомных предметов всегда разрешаем запрос
+            is_valid = True
+            final_quantity = total_quantity
+            validation_message = "✅ Кастомный запрос принят"
+            
+            # 🛒 ДОБАВЛЯЕМ В КОРЗИНУ
+            cart_item = WarehouseRequestItem(
+                category=self.category,
+                item_name=custom_item_name,
+                quantity=final_quantity - existing_quantity,  # Добавляем только разницу
+                user_name="",  # Будет заполнено при отправке
+                user_static="",  # Будет заполнено при отправке
+                position=position,
+                rank=rank
+            )
+            
+            # Обновляем существующий предмет или добавляем новый
+            if existing_quantity > 0:
+                # Обновляем существующий предмет
+                for item in cart.items:
+                    if item.category == self.category and item.item_name == custom_item_name:
+                        item.quantity = final_quantity
+                        break
+            else:
+                # Добавляем новый предмет
+                cart.add_item(cart_item)
+            
+            print(f"🛒 CART UPDATED: Кастомный предмет добавлен/обновлен в корзине")
+              # ⚡ БЫСТРОЕ ОБНОВЛЕНИЕ КОРЗИНЫ
+            await self._show_cart_ultra_fast(interaction, cart, validation_message, loading_message)
+            
+        except Exception as e:
+            print(f"❌ Ошибка в WarehouseCustomItemModal: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            try:
+                await interaction.edit_original_response(
+                    content="❌ Произошла ошибка при добавлении предмета. Попробуйте позже."
+                )
+            except:
+                pass
+
+    async def _show_cart_ultra_fast(self, interaction: discord.Interaction, cart: WarehouseRequestCart, 
+                                   validation_message: str = "", loading_message = None):
+        """Быстрое отображение корзины после добавления предмета - копия из WarehouseQuantityModal"""
+        try:
+            # Формируем описание с предупреждением, если есть
+            description = "Предметы готовы к отправке:"
+            if validation_message:
+                description += f"\n\n{validation_message}"
+            
+            # Создание embed для корзины
+            embed = discord.Embed(
+                title="🛒 Корзина складских запросов",
+                description=description,
+                color=discord.Color.green()
+            )
+            
+            # Добавление всех предметов из корзины
+            for i, item in enumerate(cart.items, 1):
+                embed.add_field(
+                    name=f"{i}. {item.item_name}",
+                    value=f"**Количество:** {item.quantity}\n**Категория:** {item.category}",
+                    inline=False
+                )
+            
+            embed.add_field(
+                name="📊 Статистика",
+                value=f"Предметов в корзине: **{len(cart.items)}**\nОбщее количество: **{cart.get_total_items()}**",
+                inline=False
+            )
+            
+            embed.set_footer(text="Выберите действие ниже или продолжите выбор снаряжения из закреплённого сообщения")
+            
+            view = WarehouseCartView(cart, self.warehouse_manager)
+            
+            # Приоритет 1: обновляем сообщение загрузки, если оно есть
+            if loading_message:
+                try:
+                    await loading_message.edit(embed=embed, view=view)
+                    
+                    # Удаляем старое сообщение корзины, если оно есть и отличается от loading_message
+                    existing_message = get_user_cart_message(interaction.user.id)
+                    if existing_message and existing_message.id != loading_message.id:
+                        try:
+                            await existing_message.delete()
+                        except (discord.NotFound, discord.HTTPException):
+                            pass
+                    
+                    # Устанавливаем loading_message как новое сообщение корзины
+                    set_user_cart_message(interaction.user.id, loading_message)
+                    return
+                except (discord.NotFound, discord.HTTPException):
+                    pass
+            
+            # Приоритет 2: обновляем существующее сообщение корзины
+            existing_message = get_user_cart_message(interaction.user.id)
+            
+            if existing_message:
+                try:
+                    await existing_message.edit(embed=embed, view=view)
+                    return
+                except (discord.NotFound, discord.HTTPException):
+                    pass
+            
+            # Приоритет 3: создаем новое сообщение корзины
+            try:
+                message = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                set_user_cart_message(interaction.user.id, message)
+            except Exception:
+                await interaction.followup.send(f"✅ Добавлено: **{cart.items[-1].item_name}** × {cart.items[-1].quantity}", ephemeral=True)
+            
+        except Exception as e:
+            print(f"❌ Ошибка в _show_cart_ultra_fast: {e}")
+            try:
+                await interaction.followup.send("✅ Предмет добавлен в корзину!", ephemeral=True)
+            except:
+                pass
+
+    def _get_category_key(self, category: str) -> str:
+        """Получить ключ категории"""
+        category_mapping = {
+            "Оружие": "оружие",
+            "Бронежилеты": "бронежилеты", 
+            "Медикаменты": "медикаменты",
+            "Другое": "другое"
+        }
+        return category_mapping.get(category, "другое")

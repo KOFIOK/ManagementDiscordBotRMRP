@@ -17,6 +17,11 @@ class WarehouseChannelsConfigView(BaseSettingsView):
     async def set_request_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = WarehouseChannelSelectionModal("warehouse_request_channel", "📦 Настройка канала запросов склада")
         await interaction.response.send_modal(modal)
+    
+    @discord.ui.button(label="📤 Канал отправки заявок", style=discord.ButtonStyle.primary, emoji="📤")
+    async def set_submission_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = WarehouseChannelSelectionModal("warehouse_submission_channel", "📤 Настройка канала отправки заявок")
+        await interaction.response.send_modal(modal)
         
     @discord.ui.button(label="📊 Канал аудита", style=discord.ButtonStyle.primary, emoji="📊")
     async def set_audit_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -62,14 +67,14 @@ class WarehouseChannelSelectionModal(BaseSettingsModal):
                     "Можно указывать только текстовые каналы."
                 )
                 return
-            
-            # Save configuration
+              # Save configuration
             config = load_config()
             config[self.config_key] = channel.id
             save_config(config)
             
             channel_names = {
                 "warehouse_request_channel": "запросов склада",
+                "warehouse_submission_channel": "отправки заявок склада",
                 "warehouse_audit_channel": "аудита склада"
             }
             
@@ -77,7 +82,7 @@ class WarehouseChannelSelectionModal(BaseSettingsModal):
             
             success_message = f"Канал {channel_name} успешно настроен на {channel.mention}!"
             
-            # Special handling for request channel - setup warehouse message
+            # Special handling for different channel types
             if self.config_key == "warehouse_request_channel":
                 try:
                     from utils.warehouse_utils import send_warehouse_message
@@ -86,6 +91,8 @@ class WarehouseChannelSelectionModal(BaseSettingsModal):
                 except Exception as e:
                     print(f"Ошибка при создании сообщения склада: {e}")
                     success_message += "\n\n⚠️ Канал настроен, но произошла ошибка при создании сообщения. Используйте `/warehouse_setup` в канале."
+            elif self.config_key == "warehouse_submission_channel":
+                success_message += "\n\n📤 Все заявки склада будут отправляться в этот канал!"
             
             await self.send_success_message(
                 interaction,

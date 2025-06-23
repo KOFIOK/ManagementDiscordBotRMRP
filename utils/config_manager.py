@@ -63,6 +63,7 @@ default_config = {
     },    # Warehouse system configuration
     'warehouse_request_channel': None,
     'warehouse_audit_channel': None,
+    'warehouse_submission_channel': None,
     'warehouse_cooldown_hours': 6,
     'warehouse_limits_mode': {
         'positions_enabled': True,
@@ -871,14 +872,17 @@ def ensure_warehouse_config():
     """Убедиться что конфигурация склада полная"""
     config = load_config()
     updated = False
-    
-    # Проверить наличие всех необходимых полей
+      # Проверить наличие всех необходимых полей
     if 'warehouse_request_channel' not in config:
         config['warehouse_request_channel'] = None
         updated = True
     
     if 'warehouse_audit_channel' not in config:
         config['warehouse_audit_channel'] = None
+        updated = True
+    
+    if 'warehouse_submission_channel' not in config:
+        config['warehouse_submission_channel'] = None
         updated = True
     
     if 'warehouse_cooldown_hours' not in config:

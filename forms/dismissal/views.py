@@ -1052,11 +1052,15 @@ class AutomaticDismissalApprovalView(ui.View):
                 )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
-              # Extract user information from embed description
+            
+            # Show processing state immediately
+            await self._show_processing_state(interaction)
+            
+            # Extract user information from embed description
             target_user = await self._extract_target_user_from_embed(interaction)
             
             if not target_user:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "❌ Не удалось извлечь информацию о пользователе из рапорта.",
                     ephemeral=True
                 )
@@ -1067,10 +1071,20 @@ class AutomaticDismissalApprovalView(ui.View):
             
         except Exception as e:
             print(f"Error in automatic dismissal approval: {e}")
-            await interaction.response.send_message(
-                "❌ Произошла ошибка при одобрении автоматического рапорта.",
-                ephemeral=True
-            )
+            # Try followup first, then response as fallback
+            try:
+                await interaction.followup.send(
+                    "❌ Произошла ошибка при одобрении автоматического рапорта.",
+                    ephemeral=True
+                )
+            except:
+                try:
+                    await interaction.response.send_message(
+                        "❌ Произошла ошибка при одобрении автоматического рапорта.",
+                        ephemeral=True
+                    )
+                except:
+                    pass
     
     @discord.ui.button(label="❌ Отклонить", style=discord.ButtonStyle.red, custom_id="auto_reject_dismissal")
     async def reject_dismissal(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1086,17 +1100,22 @@ class AutomaticDismissalApprovalView(ui.View):
                 )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
-              # Request rejection reason
+            
+            # Request rejection reason first (before showing processing state)
             from .modals import RejectionReasonModal
             modal = RejectionReasonModal(None, interaction.message, self)  # Pass message and view instead of callback
             await interaction.response.send_modal(modal)
             
         except Exception as e:
             print(f"Error in automatic dismissal rejection: {e}")
-            await interaction.response.send_message(
-                "❌ Произошла ошибка при отклонении автоматического рапорта.",
-                ephemeral=True
-            )
+            # Try response as fallback
+            try:
+                await interaction.response.send_message(
+                    "❌ Произошла ошибка при отклонении автоматического рапорта.",
+                    ephemeral=True
+                )
+            except:
+                pass
     
     @discord.ui.button(label="✏️ Изменить", style=discord.ButtonStyle.secondary, custom_id="auto_edit_dismissal")
     async def edit_dismissal(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1112,7 +1131,8 @@ class AutomaticDismissalApprovalView(ui.View):
                 )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
-              # Extract current data from embed
+            
+            # Extract current data from embed
             current_data = self._extract_current_data_from_embed(interaction)
             
             # Show edit modal
@@ -1122,10 +1142,20 @@ class AutomaticDismissalApprovalView(ui.View):
             
         except Exception as e:
             print(f"Error in automatic dismissal edit: {e}")
-            await interaction.response.send_message(
-                "❌ Произошла ошибка при редактировании автоматического рапорта.",
-                ephemeral=True
-            )
+            # Try followup first, then response as fallback
+            try:
+                await interaction.followup.send(
+                    "❌ Произошла ошибка при редактировании автоматического рапорта.",
+                    ephemeral=True
+                )
+            except:
+                try:
+                    await interaction.response.send_message(
+                        "❌ Произошла ошибка при редактировании автоматического рапорта.",
+                        ephemeral=True
+                    )
+                except:
+                    pass
     
     async def _extract_target_user_from_embed(self, interaction):
         """Extract target user from embed description (mention)"""
@@ -1157,7 +1187,6 @@ class AutomaticDismissalApprovalView(ui.View):
                             return self.display_name
                     
                     target_user = MockUser(user_id, "Покинувший пользователь")
-                
                 return target_user
             
             return None
@@ -1182,8 +1211,7 @@ class AutomaticDismissalApprovalView(ui.View):
                 elif field.name == "Воинское звание":
                     data['rank'] = field.value
             
-            return data
-            
+            return data            
         except Exception as e:
             print(f"Error extracting current data: {e}")
             return {}
@@ -1191,9 +1219,9 @@ class AutomaticDismissalApprovalView(ui.View):
     async def _process_automatic_dismissal_approval(self, interaction, target_user, config):
         """Process automatic dismissal approval (similar to standard approval but simplified)"""
         try:
-            # Show processing state
-            await interaction.response.defer()
-              # Extract form data from embed
+            # Processing state already shown by caller, no need to defer again
+            
+            # Extract form data from embed
             embed = interaction.message.embeds[0]
             form_data = {}
             
@@ -1213,14 +1241,57 @@ class AutomaticDismissalApprovalView(ui.View):
             current_time = discord.utils.utcnow()
             ping_settings = config.get('ping_settings', {})
             
-            # Get user info for audit
-            user_rank_for_audit = target_user and sheets_manager.get_rank_from_roles(target_user) or "Неизвестно"
-            user_unit_for_audit = target_user and sheets_manager.get_department_from_roles(target_user, ping_settings) or "Неизвестно"
+            # Get user info for audit - use the same logic as regular dismissals
+            # First try to get from embed fields, then from Google Sheets if user is still on server
+            user_rank_for_audit = form_data.get('rank', DismissalConstants.UNKNOWN_VALUE)
+            user_unit_for_audit = form_data.get('department', DismissalConstants.UNKNOWN_VALUE)
+            user_has_left_server = getattr(target_user, '_is_mock', False)            # Get user position for audit (from Google Sheets or empty)
+            user_position_for_audit = ""
             
+            # Always try to get position from Google Sheets, regardless of server status
+            try:
+                # Try to get user info from Google Sheets "Личный Состав" by Discord ID
+                user_info = await sheets_manager.get_user_info_from_personal_list(target_user.id)
+                if user_info:
+                    # Get position if available
+                    if user_info.get('position'):
+                        user_position_for_audit = user_info.get('position')
+                    
+                    # Also check if we need to update other missing data (only for users still on server)
+                    if not user_has_left_server:
+                        if user_rank_for_audit == DismissalConstants.UNKNOWN_VALUE and user_info.get('rank'):
+                            user_rank_for_audit = user_info.get('rank')
+                        if user_unit_for_audit == DismissalConstants.UNKNOWN_VALUE and user_info.get('department'):
+                            user_unit_for_audit = user_info.get('department')
+                    
+                    print(f"Got user info from Google Sheets: rank={user_rank_for_audit}, department={user_unit_for_audit}, position={user_position_for_audit}")
+                    
+                    # Also update form_data with the complete info from sheets if available
+                    if not form_data.get('name') and user_info.get('first_name') and user_info.get('last_name'):
+                        form_data['name'] = f"{user_info['first_name']} {user_info['last_name']}"
+                    if not form_data.get('static') and user_info.get('static'):
+                        form_data['static'] = user_info['static']
+            except Exception as e:
+                print(f"Error getting user info from Google Sheets: {e}")
+            # If data is still missing and user is still on server, try fallback to roles
+            if not user_has_left_server and (user_rank_for_audit == DismissalConstants.UNKNOWN_VALUE or user_unit_for_audit == DismissalConstants.UNKNOWN_VALUE):
+                try:
+                    if user_rank_for_audit == DismissalConstants.UNKNOWN_VALUE:
+                        role_rank = sheets_manager.get_rank_from_roles(target_user)
+                        if role_rank != DismissalConstants.UNKNOWN_VALUE:
+                            user_rank_for_audit = role_rank
+                    
+                    if user_unit_for_audit == DismissalConstants.UNKNOWN_VALUE:
+                        role_unit = sheets_manager.get_department_from_roles(target_user, ping_settings)
+                        if role_unit != DismissalConstants.UNKNOWN_VALUE:
+                            user_unit_for_audit = role_unit
+                    print(f"Fallback to roles: rank={user_rank_for_audit}, department={user_unit_for_audit}")
+                except Exception as e:
+                    print(f"Error getting data from roles: {e}")            
             # Process dismissal with automatic approval logic
             await self._finalize_automatic_approval(
                 interaction, target_user, form_data, user_rank_for_audit, 
-                user_unit_for_audit, current_time, config
+                user_unit_for_audit, current_time, config, user_position_for_audit
             )
             
         except Exception as e:
@@ -1232,7 +1303,7 @@ class AutomaticDismissalApprovalView(ui.View):
     
     async def _finalize_automatic_approval(self, interaction, target_user, form_data, 
                                          user_rank_for_audit, user_unit_for_audit, 
-                                         current_time, config):
+                                         current_time, config, user_position_for_audit=""):
         """Finalize automatic dismissal approval"""
         try:
             ping_settings = config.get('ping_settings', {})
@@ -1252,8 +1323,7 @@ class AutomaticDismissalApprovalView(ui.View):
                     print(f"Failed to log automatic dismissal to Google Sheets")
             except Exception as e:
                 print(f"Error logging automatic dismissal to Google Sheets: {e}")
-            
-            # Remove user from personnel database
+              # Remove user from personnel database
             try:
                 user_id = getattr(target_user, 'id', None)
                 if user_id:
@@ -1263,18 +1333,97 @@ class AutomaticDismissalApprovalView(ui.View):
             except Exception as e:
                 print(f"❌ Error removing user from personnel registry: {e}")
             
+            # Send notification to audit channel
+            audit_message_url = None
+            try:
+                audit_channel_id = config.get('audit_channel')
+                if audit_channel_id:
+                    audit_channel = interaction.guild.get_channel(audit_channel_id)
+                    if audit_channel:
+                        # Create audit notification embed
+                        audit_embed = discord.Embed(
+                            title="Кадровый аудит ВС РФ",
+                            color=0x055000,  # Green color as in template
+                            timestamp=discord.utils.utcnow()
+                        )
+                        
+                        # Format date as dd-MM-yyyy
+                        action_date = discord.utils.utcnow().strftime('%d-%m-%Y')
+                          # For automatic dismissals, get moderator info from Google Sheets "Пользователи" by Discord ID
+                        try:
+                            # Try to get moderator info from Google Sheets "Пользователи" sheet
+                            moderator_info = await sheets_manager.get_user_info_by_discord_id(interaction.user.id)
+                            if moderator_info:
+                                signed_by_name = moderator_info  # This should be "Имя Фамилия | Статик"
+                                print(f"Got moderator info from Google Sheets: {signed_by_name}")
+                            else:
+                                # Fallback: try to get from personal list
+                                personal_info = await sheets_manager.get_user_info_from_personal_list(interaction.user.id)
+                                if personal_info and personal_info.get('name') and personal_info.get('static'):
+                                    signed_by_name = f"{personal_info['name']} | {personal_info['static']}"
+                                    print(f"Got moderator info from personal list: {signed_by_name}")
+                                else:
+                                    signed_by_name = f"{interaction.user.display_name}"
+                                    print(f"Using fallback moderator info: {signed_by_name}")
+                        except Exception as e:
+                            print(f"Could not get moderator info for automatic dismissal: {e}")
+                            signed_by_name = f"{interaction.user.display_name}"
+                        
+                        # Combine name and static for "Имя Фамилия | 6 цифр статика" field
+                        name_with_static = f"{form_data.get('name', DismissalConstants.UNKNOWN_VALUE)} | {form_data.get('static', '')}"
+                        
+                        # Set fields according to template
+                        audit_embed.add_field(name="Кадровую отписал", value=signed_by_name, inline=False)
+                        audit_embed.add_field(name="Имя Фамилия | 6 цифр статика", value=name_with_static, inline=False)
+                        audit_embed.add_field(name="Действие", value="Уволен со службы", inline=False)
+                        
+                        # Add reason field only if reason exists
+                        reason = form_data.get('reason', '')
+                        if reason:
+                            audit_embed.add_field(name="Причина увольнения", value=reason, inline=False)
+                        
+                        audit_embed.add_field(name="Дата Действия", value=action_date, inline=False)
+                        audit_embed.add_field(name="Подразделение", value=user_unit_for_audit, inline=False)
+                        audit_embed.add_field(name="Воинское звание", value=user_rank_for_audit, inline=False)
+                        
+                        # Add position field if available
+                        print(f"🔍 POSITION DEBUG: user_position_for_audit = '{user_position_for_audit}' (type: {type(user_position_for_audit)})")
+                        if user_position_for_audit:
+                            print(f"✅ Adding position field: {user_position_for_audit}")
+                            audit_embed.add_field(name="Должность", value=user_position_for_audit, inline=False)
+                        else:
+                            print(f"❌ No position found, skipping position field")
+                        
+                        # Set thumbnail to default image as in template
+                        audit_embed.set_thumbnail(url="https://i.imgur.com/07MRSyl.png")
+                        
+                        # Send notification with user mention (the user who was dismissed)
+                        audit_message = await audit_channel.send(content=f"<@{target_user.id}>", embed=audit_embed)
+                        audit_message_url = audit_message.jump_url
+                        print(f"Sent audit notification for automatic dismissal of {target_user.display_name}")
+                    else:
+                        print(f"Audit channel not found: {audit_channel_id}")
+                else:
+                    print("Audit channel ID not configured")
+            except Exception as e:
+                print(f"Error sending audit notification: {e}")
+            
             # Update embed to show approval
             embed = interaction.message.embeds[0]
-            embed.color = discord.Color.green()
-              # Add approval status field
+            embed.color = discord.Color.green()            # Add approval status field
             embed.add_field(
                 name="✅ Обработано",
                 value=f"**Одобрено:** {interaction.user.mention}\n**Время:** {discord.utils.format_dt(current_time, 'F')}",
                 inline=False
             )
             
-            # Remove buttons
-            await interaction.edit_original_response(content='', embed=embed, view=None)
+            # Create new view with only "Approved" button (disabled)
+            approved_view = ui.View(timeout=None)
+            approved_button = ui.Button(label=DismissalConstants.APPROVED_LABEL, style=discord.ButtonStyle.green, disabled=True)
+            approved_view.add_item(approved_button)
+            
+            # Update message with approved state
+            await interaction.edit_original_response(content='', embed=embed, view=approved_view)
 
         except Exception as e:
             print(f"Error finalizing automatic approval: {e}")
@@ -1282,4 +1431,62 @@ class AutomaticDismissalApprovalView(ui.View):
                 "❌ Произошла ошибка при финализации одобрения.",
                 ephemeral=True
             )
-  
+    
+    async def _finalize_automatic_rejection(self, interaction, rejection_reason, original_message):
+        """Finalize automatic dismissal rejection with proper UI state."""
+        try:
+            # Show processing state first
+            processing_view = ui.View(timeout=None)
+            processing_button = ui.Button(label=DismissalConstants.PROCESSING_LABEL, style=discord.ButtonStyle.gray, disabled=True)
+            processing_view.add_item(processing_button)
+            await original_message.edit(view=processing_view)
+            
+            # Small delay to show processing state
+            await asyncio.sleep(0.5)
+            
+            # Update embed to show rejection
+            embed = original_message.embeds[0]
+            embed.color = discord.Color.red()
+            
+            # Add rejection status field
+            embed.add_field(
+                name="❌ Обработано",
+                value=f"**Отклонено:** {interaction.user.mention}\n**Время:** {discord.utils.format_dt(discord.utils.utcnow(), 'F')}\n**Причина:** {rejection_reason}",
+                inline=False
+            )
+            
+            # Create new view with only "Rejected" button (disabled)
+            rejected_view = ui.View(timeout=None)
+            rejected_button = ui.Button(label=DismissalConstants.REJECTED_LABEL, style=discord.ButtonStyle.red, disabled=True)
+            rejected_view.add_item(rejected_button)
+            
+            # Update message with rejected state
+            await original_message.edit(embed=embed, view=rejected_view)
+            
+        except Exception as e:
+            print(f"Error finalizing automatic rejection: {e}")
+    
+    async def _show_processing_state(self, interaction: discord.Interaction):
+        """Show processing UI state for automatic dismissal view."""
+        try:
+            # Defer the interaction first
+            await interaction.response.defer()
+            
+            # Create processing view
+            processing_view = ui.View(timeout=None)
+            processing_button = ui.Button(label=DismissalConstants.PROCESSING_LABEL, style=discord.ButtonStyle.gray, disabled=True)
+            processing_view.add_item(processing_button)
+            
+            # Update the message with processing state
+            embed = interaction.message.embeds[0]
+            await interaction.followup.edit_message(interaction.message.id, embed=embed, view=processing_view)
+            
+        except Exception as e:
+            print(f"Error showing processing state: {e}")
+            # Fallback - try to respond to interaction if not already done
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.defer()
+            except:
+                pass
+

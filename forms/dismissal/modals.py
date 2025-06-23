@@ -489,8 +489,7 @@ class RejectionReasonModal(ui.Modal, title="Причина отказа"):
     async def on_submit(self, interaction: discord.Interaction):
         try:
             reason = self.reason_input.value.strip()
-            
-            # If we have original_message and view_instance, handle it directly
+              # If we have original_message and view_instance, handle it directly (automatic dismissals)
             if self.original_message and self.view_instance:
                 # Respond to modal interaction first
                 await interaction.response.send_message(
@@ -498,19 +497,8 @@ class RejectionReasonModal(ui.Modal, title="Причина отказа"):
                     ephemeral=True
                 )
                 
-                # Update embed to show rejection
-                embed = self.original_message.embeds[0]
-                embed.color = discord.Color.red()
-                
-                # Add rejection status field
-                embed.add_field(
-                    name="❌ Обработано",
-                    value=f"**Отклонено:** {interaction.user.mention}\n**Время:** {discord.utils.format_dt(discord.utils.utcnow(), 'F')}\n**Причина:** {reason}",
-                    inline=False
-                )
-                
-                # Remove buttons by setting view to None
-                await self.original_message.edit(embed=embed, view=None)
+                # Use the proper finalization method with UI states
+                await self.view_instance._finalize_automatic_rejection(interaction, reason, self.original_message)
                   # If we have a callback function, use it (backward compatibility for regular dismissals)
             elif self.callback_func:
                 # For regular dismissals, we need to extract target_user from the original message

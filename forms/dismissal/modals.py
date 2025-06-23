@@ -8,7 +8,7 @@ from discord import ui
 import re
 from utils.config_manager import load_config, has_pending_dismissal_report
 from utils.google_sheets import sheets_manager
-from utils.user_database import UserDatabase
+from utils.user_cache import get_cached_user_info
 
 
 class StaticRequestModal(ui.Modal, title="Укажите статик увольняемого"):
@@ -134,7 +134,7 @@ class DismissalReportModal(ui.Modal, title="Рапорт на увольнени
         """
         try:
             # Try to get user data from personnel database
-            user_data = await UserDatabase.get_user_info(user_id)
+            user_data = await get_cached_user_info(user_id)
             return cls(user_data=user_data)
         except Exception as e:
             print(f"❌ Error loading user data for dismissal modal: {e}")

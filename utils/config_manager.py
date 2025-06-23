@@ -60,7 +60,16 @@ default_config = {
     'administrators': {
         'users': [],
         'roles': []
-    }
+    },    # Warehouse system configuration
+    'warehouse_request_channel': None,
+    'warehouse_audit_channel': None,
+    'warehouse_cooldown_hours': 6,
+    'warehouse_limits_mode': {
+        'positions_enabled': True,
+        'ranks_enabled': False
+    },
+    'warehouse_limits_positions': {},  # Will be populated with default limits when first accessed
+    'warehouse_limits_ranks': {}  # Will be populated with default limits when first accessed
 }
 
 def create_backup(reason: str = "auto") -> str:
@@ -612,3 +621,287 @@ def get_role_assignment_message_link(guild_id: int):
     except Exception as e:
         print(f"❌ Error getting role assignment message link: {e}")
         return None
+
+def get_default_warehouse_limits():
+    """Получить лимиты по умолчанию на основе приказа № 256"""
+    return {
+        # Силы Специальных Операций
+        "Оперативник ССО": {
+            "оружие": 3,
+            "бронежилеты": 10,
+            "аптечки": 20,
+            "обезболивающее": 8,
+            "дефибрилляторы": 4,
+            "weapon_restrictions": []
+        },
+        
+        # Рота Охраны и Обеспечения
+        "Старший сотрудник охраны": {
+            "оружие": 3,
+            "бронежилеты": 10,
+            "аптечки": 20,
+            "обезболивающее": 8,
+            "дефибрилляторы": 0,
+            "weapon_restrictions": []
+        },
+        "Сотрудник охраны": {
+            "оружие": 3,
+            "бронежилеты": 10,
+            "аптечки": 10,
+            "обезболивающее": 6,
+            "дефибрилляторы": 0,
+            "weapon_restrictions": ["Кольт М16", "Кольт 416 Канада", "ФН СКАР-Т", "Штейр АУГ-А3", "Таурус Бешеный бык"]
+        },
+        "Младший сотрудник охраны": {
+            "оружие": 3,
+            "бронежилеты": 5,
+            "аптечки": 5,
+            "обезболивающее": 4,
+            "дефибрилляторы": 0,
+            "weapon_restrictions": ["Кольт М16", "Кольт 416 Канада", "ФН СКАР-Т", "Штейр АУГ-А3", "Таурус Бешеный бык"]
+        },
+        
+        # Медицинская рота
+        "Военный врач": {
+            "оружие": 2,
+            "бронежилеты": 10,
+            "аптечки": 20,
+            "обезболивающее": 8,
+            "дефибрилляторы": 4,
+            "weapon_restrictions": []
+        },
+        "Помощник врача": {
+            "оружие": 3,
+            "бронежилеты": 5,
+            "аптечки": 20,
+            "обезболивающее": 8,
+            "дефибрилляторы": 3,
+            "weapon_restrictions": ["Кольт М16", "Кольт 416 Канада", "ФН СКАР-Т", "Штейр АУГ-А3", "Таурус Бешеный бык"]
+        },
+        
+        # Военная полиция
+        "Старший инспектор ВП": {
+            "оружие": 2,
+            "бронежилеты": 10,
+            "аптечки": 20,
+            "обезболивающее": 6,
+            "дефибрилляторы": 2,
+            "weapon_restrictions": []
+        },
+        "Дознаватель ВП": {
+            "оружие": 2,
+            "бронежилеты": 10,
+            "аптечки": 10,
+            "обезболивающее": 4,
+            "дефибрилляторы": 2,
+            "weapon_restrictions": ["Кольт М16", "Кольт 416 Канада", "ФН СКАР-Т", "Штейр АУГ-А3", "Таурус Бешеный бык"]
+        },
+        "Инспектор ВП": {
+            "оружие": 2,
+            "бронежилеты": 5,
+            "аптечки": 10,
+            "обезболивающее": 4,
+            "дефибрилляторы": 1,
+            "weapon_restrictions": ["Кольт М16", "Кольт 416 Канада", "ФН СКАР-Т", "Штейр АУГ-А3", "Таурус Бешеный бык"]
+        },
+        
+        # Военный Комиссариат
+        "Старший инструктор": {
+            "оружие": 2,
+            "бронежилеты": 5,
+            "аптечки": 10,
+            "обезболивающее": 4,
+            "дефибрилляторы": 0,
+            "weapon_restrictions": ["Кольт М16", "Кольт 416 Канада", "ФН СКАР-Т", "Штейр АУГ-А3", "Таурус Бешеный бык"]
+        }
+    }
+
+
+def get_default_warehouse_ranks_limits():
+    """Получить базовые лимиты по званиям"""
+    return {
+        # Рядовой состав
+        "Рядовой": {
+            "оружие": 2,
+            "бронежилеты": 5,
+            "аптечки": 10,
+            "обезболивающее": 4,
+            "дефибрилляторы": 0,
+            "weapon_restrictions": ["Кольт М16", "АК-74М"]
+        },
+        "Ефрейтор": {
+            "оружие": 2,
+            "бронежилеты": 5,
+            "аптечки": 10,
+            "обезболивающее": 4,
+            "дефибрилляторы": 0,
+            "weapon_restrictions": ["Кольт М16", "АК-74М", "Кольт 416 Канада"]
+        },
+        
+        # Сержантский состав
+        "Младший сержант": {
+            "оружие": 3,
+            "бронежилеты": 8,
+            "аптечки": 15,
+            "обезболивающее": 6,
+            "дефибрилляторы": 1,
+            "weapon_restrictions": []
+        },
+        "Сержант": {
+            "оружие": 3,
+            "бронежилеты": 8,
+            "аптечки": 15,
+            "обезболивающее": 6,
+            "дефибрилляторы": 1,
+            "weapon_restrictions": []
+        },
+        "Старший сержант": {
+            "оружие": 3,
+            "бронежилеты": 10,
+            "аптечки": 20,
+            "обезболивающее": 8,
+            "дефибрилляторы": 2,
+            "weapon_restrictions": []
+        },
+        "Старшина": {
+            "оружие": 3,
+            "бронежилеты": 10,
+            "аптечки": 20,
+            "обезболивающее": 8,
+            "дефибрилляторы": 2,
+            "weapon_restrictions": []
+        },
+        
+        # Прапорщики
+        "Прапорщик": {
+            "оружие": 3,
+            "бронежилеты": 10,
+            "аптечки": 20,
+            "обезболивающее": 8,
+            "дефибрилляторы": 3,
+            "weapon_restrictions": []
+        },
+        "Старший прапорщик": {
+            "оружие": 3,
+            "бронежилеты": 10,
+            "аптечки": 20,
+            "обезболивающее": 8,
+            "дефибрилляторы": 3,
+            "weapon_restrictions": []
+        },
+        
+        # Офицерский состав
+        "Младший лейтенант": {
+            "оружие": 3,
+            "бронежилеты": 10,
+            "аптечки": 20,
+            "обезболивающее": 8,
+            "дефибрилляторы": 4,
+            "weapon_restrictions": []
+        },
+        "Лейтенант": {
+            "оружие": 3,
+            "бронежилеты": 10,
+            "аптечки": 20,
+            "обезболивающее": 8,
+            "дефибрилляторы": 4,
+            "weapon_restrictions": []
+        },
+        "Старший лейтенант": {
+            "оружие": 3,
+            "бронежилеты": 10,
+            "аптечки": 20,
+            "обезболивающее": 8,
+            "дефибрилляторы": 4,
+            "weapon_restrictions": []
+        },
+        "Капитан": {
+            "оружие": 3,
+            "бронежилеты": 10,
+            "аптечки": 20,
+            "обезболивающее": 8,
+            "дефибрилляторы": 4,
+            "weapon_restrictions": []
+        },
+        "Майор": {
+            "оружие": 3,
+            "бронежилеты": 10,
+            "аптечки": 20,
+            "обезболивающее": 8,
+            "дефибрилляторы": 4,
+            "weapon_restrictions": []
+        },
+        "Подполковник": {
+            "оружие": 3,
+            "бронежилеты": 10,
+            "аптечки": 20,
+            "обезболивающее": 8,
+            "дефибрилляторы": 4,
+            "weapon_restrictions": []
+        },
+        "Полковник": {
+            "оружие": 3,
+            "бронежилеты": 10,
+            "аптечки": 20,
+            "обезболивающее": 8,
+            "дефибрилляторы": 4,
+            "weapon_restrictions": []
+        }
+    }
+
+def initialize_warehouse_limits():
+    """Инициализировать лимиты склада при первом использовании"""
+    config = load_config()
+    
+    # Инициализировать лимиты по должностям, если они пусты
+    if not config.get('warehouse_limits_positions'):
+        config['warehouse_limits_positions'] = get_default_warehouse_limits()
+        print("✅ Инициализированы лимиты склада по должностям")
+    
+    # Инициализировать лимиты по званиям, если они пусты
+    if not config.get('warehouse_limits_ranks'):
+        config['warehouse_limits_ranks'] = get_default_warehouse_ranks_limits()
+        print("✅ Инициализированы лимиты склада по званиям")
+    
+    save_config(config)
+    return config
+
+
+def ensure_warehouse_config():
+    """Убедиться что конфигурация склада полная"""
+    config = load_config()
+    updated = False
+    
+    # Проверить наличие всех необходимых полей
+    if 'warehouse_request_channel' not in config:
+        config['warehouse_request_channel'] = None
+        updated = True
+    
+    if 'warehouse_audit_channel' not in config:
+        config['warehouse_audit_channel'] = None
+        updated = True
+    
+    if 'warehouse_cooldown_hours' not in config:
+        config['warehouse_cooldown_hours'] = 6
+        updated = True
+    
+    if 'warehouse_limits_mode' not in config:
+        config['warehouse_limits_mode'] = {
+            'positions_enabled': True,
+            'ranks_enabled': False
+        }
+        updated = True
+    
+    if 'warehouse_limits_positions' not in config:
+        config['warehouse_limits_positions'] = {}
+        updated = True
+    
+    if 'warehouse_limits_ranks' not in config:
+        config['warehouse_limits_ranks'] = {}
+        updated = True
+    
+    if updated:
+        save_config(config)
+        print("✅ Конфигурация склада обновлена")
+    
+    return config

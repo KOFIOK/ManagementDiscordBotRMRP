@@ -114,8 +114,7 @@ class UserDatabase:
             # Find user in database
             existing_row = await cls._find_user_row(user_discord_id)
             
-            if existing_row:
-                # Remove the user
+            if existing_row:                # Remove the user
                 success = await cls._delete_user_row(existing_row)
                 if success:
                     print(f"✅ Successfully removed user {user_discord_id} from personnel database")
@@ -134,7 +133,7 @@ class UserDatabase:
     @classmethod
     async def get_user_info(cls, user_discord_id):
         """
-        Get user information from personnel database by Discord ID
+        Get user information from personnel database by Discord ID with caching
         
         Args:
             user_discord_id: Discord user ID to search for
@@ -151,6 +150,36 @@ class UserDatabase:
                 'position': str,
                 'discord_id': str
             }
+        """
+        try:
+            # Пытаемся получить из универсального кэша
+            from utils.user_cache import UserDataCache
+            cache = UserDataCache()
+            
+            cached_data = await cache.get_user_info(user_discord_id)
+            if cached_data is not None:
+                print(f"📋 UNIVERSAL CACHE HIT: {user_discord_id}")
+                return cached_data
+            
+            # Если нет в кэше - загружаем оригинальным способом
+            print(f"🔄 UNIVERSAL CACHE MISS: {user_discord_id}")
+            return await cls._get_user_info_original(user_discord_id)
+            
+        except Exception as e:
+            print(f"❌ CACHE ERROR, fallback для {user_discord_id}: {e}")
+            # Fallback на оригинальный метод
+            return await cls._get_user_info_original(user_discord_id)
+    
+    @classmethod
+    async def _get_user_info_original(cls, user_discord_id):
+        """
+        Original get_user_info method without caching
+        
+        Args:
+            user_discord_id: Discord user ID to search for
+            
+        Returns:
+            dict: User data if found, None otherwise
         """
         try:
             worksheet = sheets_manager.get_worksheet(cls.WORKSHEET_NAME)

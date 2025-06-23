@@ -213,7 +213,6 @@ class GoogleSheetsManager:
                     return clean_name
           # If no specific format found, return as is
             return display_name
-    
     @retry_on_google_error(retries=3, delay=1)
     async def get_user_info_by_discord_id(self, discord_id):
         """Search for user by Discord ID in 'Пользователи' sheet and return full name with static from column J."""
@@ -276,14 +275,15 @@ class GoogleSheetsManager:
                                 return name_value
                             else:
                                 print(f"⚠️ SHEET SEARCH: Found Discord ID but no name data")
-                                return None                                        
+                                return None
+                                                        
             print(f"❌ SHEET SEARCH: No match found for Discord ID '{discord_id}'")
             return None
             
         except Exception as e:
             print(f"Error searching in 'Пользователи' sheet: {e}")
             raise  # Let the retry decorator handle it
-    
+
     @retry_on_google_error(retries=3, delay=1)
     async def check_moderator_authorization(self, approving_user):
         """
@@ -941,6 +941,81 @@ class GoogleSheetsManager:
             print(f"❌ Error checking editor access: {e}")
             return False
     
+    @retry_on_google_error(retries=3, delay=1)
+    async def get_user_info_from_personal_list(self, discord_id):
+        """
+        Search for user by Discord ID in 'Личный Состав' sheet.
+        Returns user information including name, static, rank, department, position.
+        
+        Sheet structure: Имя | Фамилия | Статик | Звание | Подразделение | Должность | Discord ID
+        """
+        try:
+            print(f"📋 PERSONAL LIST SEARCH: Looking for Discord ID '{discord_id}' in 'Личный Состав' sheet")
+            
+            # Ensure connection
+            if not self._ensure_connection():
+                print("❌ PERSONAL LIST SEARCH: Failed to establish connection")
+                return None
+            
+            # Get the 'Личный Состав' worksheet
+            personal_worksheet = None
+            all_worksheets = self.spreadsheet.worksheets()
+            worksheet_names = [ws.title for ws in all_worksheets]
+            print(f"📋 PERSONAL LIST SEARCH: Available worksheets: {worksheet_names}")
+            
+            for worksheet in all_worksheets:
+                if worksheet.title == 'Личный Состав':
+                    personal_worksheet = worksheet
+                    break
+            
+            if not personal_worksheet:
+                print("❌ PERSONAL LIST SEARCH: 'Личный Состав' worksheet not found")
+                return None
+            
+            print("✅ PERSONAL LIST SEARCH: Found 'Личный Состав' worksheet")
+            
+            # Get all values with retry mechanism
+            try:
+                all_values = personal_worksheet.get_all_values()
+                print(f"📋 PERSONAL LIST SEARCH: Retrieved {len(all_values)} rows from sheet")
+            except Exception as e:
+                print(f"❌ PERSONAL LIST SEARCH: Failed to get sheet values: {e}")
+                raise
+            
+            # Skip header row (row 0) and search in data rows
+            discord_id_str = str(discord_id)
+            
+            for i, row in enumerate(all_values[1:], start=1):
+                # Ensure row has enough columns (A-G: 7 columns)
+                if len(row) >= 7:
+                    # Column G (index 6) contains Discord ID
+                    row_discord_id = str(row[6]).strip()
+                    
+                    if row_discord_id == discord_id_str:
+                        print(f"✅ PERSONAL LIST SEARCH: Found match at row {i+1}")
+                        
+                        # Extract data according to sheet structure:
+                        # A: Имя, B: Фамилия, C: Статик, D: Звание, E: Подразделение, F: Должность, G: Discord ID
+                        user_data = {
+                            'first_name': row[0].strip() if len(row) > 0 else '',
+                            'last_name': row[1].strip() if len(row) > 1 else '',
+                            'static': row[2].strip() if len(row) > 2 else '',
+                            'rank': row[3].strip() if len(row) > 3 else '',
+                            'department': row[4].strip() if len(row) > 4 else '',
+                            'position': row[5].strip() if len(row) > 5 else '',
+                            'discord_id': row[6].strip() if len(row) > 6 else ''
+                        }
+                        
+                        print(f"📋 PERSONAL LIST SEARCH: User data: {user_data}")
+                        return user_data
+                
+            print(f"❌ PERSONAL LIST SEARCH: No match found for Discord ID '{discord_id}'")
+            return None
+            
+        except Exception as e:
+            print(f"Error searching in 'Личный Состав' sheet: {e}")
+            raise  # Let the retry decorator handle it
+
 
 # Global instance
 sheets_manager = GoogleSheetsManager()

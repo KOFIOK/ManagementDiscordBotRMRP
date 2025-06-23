@@ -31,6 +31,12 @@ class MainSettingsSelect(ui.Select):
                 value="excluded_roles"
             ),
             discord.SelectOption(
+                label="Настройки склада",
+                description="Настроить систему запросов и выдачи складского имущества",
+                emoji="📦",
+                value="warehouse_settings"
+            ),
+            discord.SelectOption(
                 label="Показать текущие настройки",
                 description="Посмотреть все текущие настройки",
                 emoji="⚙️",
@@ -57,6 +63,8 @@ class MainSettingsSelect(ui.Select):
             await self.show_current_config(interaction)
         elif selected_option == "excluded_roles":
             await self.show_excluded_roles_config(interaction)
+        elif selected_option == "warehouse_settings":
+            await self.show_warehouse_settings_menu(interaction)
     
     async def show_channels_menu(self, interaction: discord.Interaction):
         """Show submenu for channel configuration"""
@@ -285,10 +293,45 @@ class MainSettingsSelect(ui.Select):
                 "• **Очистить список** - удалить все роли-исключения"
             ),
             inline=False
-        )
-        
+        )        
         view = ExcludedRolesView()
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+    async def show_warehouse_settings_menu(self, interaction: discord.Interaction):
+        """Show warehouse settings configuration menu"""
+        from .warehouse_settings import WarehouseSettingsView
+        
+        embed = discord.Embed(
+            title="📦 Настройки склада",
+            description="Управление системой запросов и выдачи складского имущества",
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow()
+        )
+        
+        embed.add_field(
+            name="📋 Доступные настройки:",
+            value=(
+                "• **📍 Каналы склада** - настройка каналов запросов и аудита\n"
+                "• **⚙️ Режим лимитов** - переключение между лимитами по должностям/званиям\n"
+                "• **📋 Управление лимитами** - настройка лимитов для должностей и званий\n"
+                "• **⏰ Кулдаун запросов** - настройка времени между запросами"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="ℹ️ Описание системы:",
+            value=(
+                "Система склада позволяет пользователям запрашивать складское имущество "
+                "с учетом их должности или звания. Модераторы могут одобрять или отклонять "
+                "запросы, а все выдачи автоматически логируются в канал аудита."
+            ),
+            inline=False
+        )
+        
+        view = WarehouseSettingsView()
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
 
 class SettingsView(BaseSettingsView):
     """Main settings view with persistent functionality"""

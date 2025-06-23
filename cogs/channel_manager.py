@@ -8,8 +8,69 @@ from utils.config_manager import load_config, save_config
 # Enhanced config manager for backup functionality
 from utils.config_manager import (
     create_backup, list_backups, restore_from_backup, 
-    export_config, import_config, get_config_status
+    export_config, get_config_status
 )
+# Импорт централизованных функций уведомлений
+from utils.moderator_notifications import (
+    send_moderator_welcome_dm, send_administrator_welcome_dm,
+    send_notification_to_channel, check_if_user_is_moderator,
+    check_if_user_is_administrator
+)
+
+
+# ===================== ОБРАБОТЧИКИ НАЗНАЧЕНИЯ РОЛЕЙ =====================
+
+async def handle_moderator_assignment(guild: discord.Guild, target: discord.Member | discord.Role, old_config: dict) -> None:
+    """Обработать назначение модератора: отправить уведомления новым модераторам"""
+    users_to_notify = set()
+    
+    if isinstance(target, discord.Member):
+        # Прямое назначение пользователя
+        if not check_if_user_is_moderator(target, old_config) and not check_if_user_is_administrator(target, old_config):
+            users_to_notify.add(target)
+    
+    elif isinstance(target, discord.Role):
+        # Назначение роли - уведомляем всех участников с этой ролью
+        for member in guild.members:
+            if target in member.roles:
+                if not check_if_user_is_moderator(member, old_config) and not check_if_user_is_administrator(member, old_config):
+                    users_to_notify.add(member)
+    
+    # Отправляем уведомления
+    for user in users_to_notify:
+        dm_sent = await send_moderator_welcome_dm(user)
+        channel_sent = await send_notification_to_channel(guild, user, 'moderator')
+        
+        status = "✅" if dm_sent else "❌"
+        print(f"{status} Уведомление модератору {user.display_name}: DM {status}")
+
+
+async def handle_administrator_assignment(guild: discord.Guild, target: discord.Member | discord.Role, old_config: dict) -> None:
+    """Обработать назначение администратора: отправить уведомления новым администраторам"""
+    users_to_notify = set()
+    
+    if isinstance(target, discord.Member):
+        # Прямое назначение пользователя
+        if not check_if_user_is_administrator(target, old_config):
+            users_to_notify.add(target)
+    
+    elif isinstance(target, discord.Role):
+        # Назначение роли - уведомляем всех участников с этой ролью
+        for member in guild.members:
+            if target in member.roles:
+                if not check_if_user_is_administrator(member, old_config):
+                    users_to_notify.add(member)
+    
+    # Отправляем уведомления
+    for user in users_to_notify:
+        dm_sent = await send_administrator_welcome_dm(user)
+        channel_sent = await send_notification_to_channel(guild, user, 'administrator')
+        
+        status = "✅" if dm_sent else "❌"
+        print(f"{status} Уведомление администратору {user.display_name}: DM {status}")
+
+
+# ===================== ОСНОВНОЙ COG =====================
 
 class ChannelManagementCog(commands.Cog):
     def __init__(self, bot):
@@ -29,16 +90,19 @@ class ChannelManagementCog(commands.Cog):
             )
             return
             
-        await send_settings_message(interaction)# Moderator management command group
-    moder_group = app_commands.Group(name="moder", description="👮 Управление модераторами")
+        await send_settings_message(interaction)
 
-    @moder_group.command(name="add", description="➕ Добавить модератора (роль или пользователя)")
+    # Moderator management commands
+    moder = app_commands.Group(name="moder", description="👮 Управление модераторами")
+
+    @moder.command(name="add", description="➕ Добавить модератора (роль или пользователя)")
     @app_commands.describe(target="Роль или пользователь для назначения модератором")
     @app_commands.checks.has_permissions(administrator=True)
     async def add_moderator(self, interaction: discord.Interaction, target: discord.Member | discord.Role):
         """Add a user or role as moderator"""
         try:
             config = load_config()
+            old_config = config.copy()  # Сохраняем старую конфигурацию для проверки
             moderators = config.get('moderators', {'users': [], 'roles': []})
             
             if isinstance(target, discord.Member):
@@ -46,6 +110,9 @@ class ChannelManagementCog(commands.Cog):
                     moderators['users'].append(target.id)
                     config['moderators'] = moderators
                     save_config(config)
+                    
+                    # Отправляем уведомления новому модератору
+                    await handle_moderator_assignment(interaction.guild, target, old_config)
                     
                     await interaction.response.send_message(
                         f"✅ Пользователь {target.mention} добавлен в список модераторов.",
@@ -62,6 +129,8 @@ class ChannelManagementCog(commands.Cog):
                     moderators['roles'].append(target.id)
                     config['moderators'] = moderators
                     save_config(config)
+                      # Отправляем уведомления всем участникам с этой ролью
+                    await handle_moderator_assignment(interaction.guild, target, old_config)
                     
                     await interaction.response.send_message(
                         f"✅ Роль {target.mention} добавлена в список модераторских ролей.",
@@ -80,7 +149,7 @@ class ChannelManagementCog(commands.Cog):
             )
             print(f"Add moderator error: {e}")
 
-    @moder_group.command(name="remove", description="➖ Убрать модератора (роль или пользователя)")
+    @moder.command(name="remove", description="➖ Убрать модератора (роль или пользователя)")
     @app_commands.describe(target="Роль или пользователь для удаления из модераторов")
     @app_commands.checks.has_permissions(administrator=True)
     async def remove_moderator(self, interaction: discord.Interaction, target: discord.Member | discord.Role):
@@ -128,7 +197,7 @@ class ChannelManagementCog(commands.Cog):
             )
             print(f"Remove moderator error: {e}")
 
-    @moder_group.command(name="list", description="📋 Показать список модераторов")
+    @moder.command(name="list", description="📋 Показать список модераторов")
     @app_commands.checks.has_permissions(administrator=True)
     async def list_moderators(self, interaction: discord.Interaction):
         """List all moderators and moderator roles"""
@@ -351,18 +420,17 @@ class ChannelManagementCog(commands.Cog):
                 "❌ **Ошибка экспорта конфигурации**\n"
                 "Проверьте права доступа к папке data",
                 ephemeral=True
-            )
+            )    # Administrator management command group
+    admin = app_commands.Group(name="admin", description="👑 Управление администраторами")
 
-    # Administrator management command group
-    admin_group = app_commands.Group(name="admin", description="👑 Управление администраторами")
-
-    @admin_group.command(name="add", description="➕ Добавить администратора (роль или пользователя)")
+    @admin.command(name="add", description="➕ Добавить администратора (роль или пользователя)")
     @app_commands.describe(target="Роль или пользователь для назначения администратором")
     @app_commands.checks.has_permissions(administrator=True)
     async def add_administrator(self, interaction: discord.Interaction, target: discord.Member | discord.Role):
         """Add a user or role as administrator"""
         try:
             config = load_config()
+            old_config = config.copy()  # Сохраняем старую конфигурацию для проверки
             administrators = config.get('administrators', {'users': [], 'roles': []})
             
             if isinstance(target, discord.Member):
@@ -370,6 +438,8 @@ class ChannelManagementCog(commands.Cog):
                     administrators['users'].append(target.id)
                     config['administrators'] = administrators
                     save_config(config)
+                      # Отправляем уведомления новому администратору
+                    await handle_administrator_assignment(interaction.guild, target, old_config)
                     
                     await interaction.response.send_message(
                         f"✅ Пользователь {target.mention} добавлен в список администраторов.",
@@ -386,6 +456,8 @@ class ChannelManagementCog(commands.Cog):
                     administrators['roles'].append(target.id)
                     config['administrators'] = administrators
                     save_config(config)
+                      # Отправляем уведомления всем участникам с этой ролью
+                    await handle_administrator_assignment(interaction.guild, target, old_config)
                     
                     await interaction.response.send_message(
                         f"✅ Роль {target.mention} добавлена в список администраторских ролей.",
@@ -404,7 +476,7 @@ class ChannelManagementCog(commands.Cog):
             )
             print(f"Add administrator error: {e}")
 
-    @admin_group.command(name="remove", description="➖ Убрать администратора (роль или пользователя)")
+    @admin.command(name="remove", description="➖ Убрать администратора (роль или пользователя)")
     @app_commands.describe(target="Роль или пользователь для удаления из администраторов")
     @app_commands.checks.has_permissions(administrator=True)
     async def remove_administrator(self, interaction: discord.Interaction, target: discord.Member | discord.Role):
@@ -452,7 +524,7 @@ class ChannelManagementCog(commands.Cog):
             )
             print(f"Remove administrator error: {e}")
 
-    @admin_group.command(name="list", description="📋 Показать список администраторов")
+    @admin.command(name="list", description="📋 Показать список администраторов")
     @app_commands.checks.has_permissions(administrator=True)
     async def list_administrators(self, interaction: discord.Interaction):
         """List all administrators and administrator roles"""

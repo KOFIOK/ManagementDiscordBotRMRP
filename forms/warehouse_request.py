@@ -987,11 +987,10 @@ class WarehouseCategorySelect(discord.ui.Select):
             from utils.google_sheets import GoogleSheetsManager
             sheets_manager = GoogleSheetsManager()
             warehouse_manager = WarehouseManager(sheets_manager)
-            
-            # Проверка кулдауна для всех пользователей (включая админов)
-            request_channel_id, _ = warehouse_manager.get_warehouse_channels()
-            if request_channel_id:
-                channel = interaction.guild.get_channel(request_channel_id)
+              # Проверка кулдауна для всех пользователей (включая админов)
+            submission_channel_id = warehouse_manager.get_warehouse_submission_channel()
+            if submission_channel_id:
+                channel = interaction.guild.get_channel(submission_channel_id)
                 if channel:
                     can_request, next_time = await warehouse_manager.check_user_cooldown(
                         interaction.user.id, channel
@@ -1132,11 +1131,10 @@ class WarehouseCartView(discord.ui.View):
                 ephemeral=True
             )
             return
-        
-        # ДОПОЛНИТЕЛЬНАЯ проверка кулдауна перед финальной отправкой
-        request_channel_id, _ = self.warehouse_manager.get_warehouse_channels()
-        if request_channel_id:
-            channel = interaction.guild.get_channel(request_channel_id)
+          # ДОПОЛНИТЕЛЬНАЯ проверка кулдауна перед финальной отправкой
+        submission_channel_id = self.warehouse_manager.get_warehouse_submission_channel()
+        if submission_channel_id:
+            channel = interaction.guild.get_channel(submission_channel_id)
             if channel:
                 can_request, next_time = await self.warehouse_manager.check_user_cooldown(
                     interaction.user.id, channel
@@ -1538,8 +1536,7 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
             print(f"❌ Ошибка фоновой обработки: {e}")
             import traceback
             traceback.print_exc()
-            
-            # Обновляем сообщение пользователю об ошибке
+              # Обновляем сообщение пользователю об ошибке
             await interaction.edit_original_response(
                 content="❌ Произошла ошибка при создании заявки. Обратитесь к администратору."
             )
@@ -1547,18 +1544,18 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
     async def _send_simple_warehouse_request(self, interaction: discord.Interaction):
         """Упрощенная отправка заявки склада"""
         try:
-            # Получение канала запросов
-            request_channel_id, _ = self.warehouse_manager.get_warehouse_channels()
-            if not request_channel_id:
+            # Получение канала отправки заявок (новая логика)
+            submission_channel_id = self.warehouse_manager.get_warehouse_submission_channel()
+            if not submission_channel_id:
                 await interaction.edit_original_response(
-                    content="❌ Канал запросов склада не настроен! Обратитесь к администратору."
+                    content="❌ Канал отправки заявок склада не настроен! Обратитесь к администратору."
                 )
                 return
 
-            channel = self.interaction_original.guild.get_channel(request_channel_id)
+            channel = self.interaction_original.guild.get_channel(submission_channel_id)
             if not channel:
                 await interaction.edit_original_response(
-                    content="❌ Канал запросов склада не найден! Обратитесь к администратору."
+                    content="❌ Канал отправки заявок склада не найден! Обратитесь к администратору."
                 )
                 return
 

@@ -46,8 +46,7 @@ class WarehouseManager:
                     "Материалы", "Патроны", "Бодикамеры", "Комплект Боец", "Прочее"
                 ]
             }
-        }
-          # Ограниченные виды оружия для определенных должностей
+        }        # Ограниченные виды оружия для определенных должностей
         self.restricted_weapons = [
             "Кольт М16", "Кольт 416 Канада", "ФН СКАР-Т", 
             "Штейр АУГ-А3", "Таурус Бешеный бык"
@@ -59,6 +58,21 @@ class WarehouseManager:
         request_channel = config.get("warehouse_request_channel")
         audit_channel = config.get("warehouse_audit_channel")
         return request_channel, audit_channel
+    
+    def get_warehouse_submission_channel(self) -> Optional[int]:
+        """Получить канал отправки заявок склада из конфигурации"""
+        config = load_config()
+        # Если настроен отдельный канал отправки, используем его
+        # Иначе используем канал запросов как fallback
+        submission_channel = config.get("warehouse_submission_channel")
+        if submission_channel:
+            return submission_channel
+        
+        fallback_channel = config.get("warehouse_request_channel")
+        if fallback_channel:
+            print("⚠️ warehouse_submission_channel не настроен, используется warehouse_request_channel как fallback")
+        
+        return fallback_channel
 
     def get_cooldown_hours(self) -> int:
         """Получить кулдаун в часах"""

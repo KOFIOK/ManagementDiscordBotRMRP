@@ -70,7 +70,13 @@ default_config = {
         'ranks_enabled': False
     },
     'warehouse_limits_positions': {},  # Will be populated with default limits when first accessed
-    'warehouse_limits_ranks': {}  # Will be populated with default limits when first accessed
+    'warehouse_limits_ranks': {},  # Will be populated with default limits when first accessed
+    
+    # Medical registration system configuration
+    'medical_registration_channel': None,  # Channel for medical registration forms
+    'medical_role_id': None,  # Role to ping for medical requests
+    'medical_vvk_allowed_roles': [],  # Roles allowed to submit VVK medical forms
+    'medical_lecture_allowed_roles': []  # Roles allowed to submit lecture medical forms
 }
 
 def create_backup(reason: str = "auto") -> str:

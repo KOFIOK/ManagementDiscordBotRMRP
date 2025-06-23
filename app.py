@@ -196,6 +196,56 @@ async def on_member_remove(member):
     except Exception as e:
         print(f"❌ Error handling member removal for {member.name}: {e}")
 
+@bot.event
+async def on_member_update(before, after):
+    """Handle member updates including role changes."""
+    try:
+        # Проверяем изменения ролей
+        if before.roles != after.roles:
+            # Получаем добавленные роли
+            added_roles = set(after.roles) - set(before.roles)
+            
+            if added_roles:
+                from utils.config_manager import load_config
+                config = load_config()
+                
+                moderator_role_ids = config.get('moderators', {}).get('roles', [])
+                administrator_role_ids = config.get('administrators', {}).get('roles', [])
+                
+                # Проверяем, была ли добавлена модераторская/администраторская роль
+                from cogs.channel_manager import (
+                    check_if_user_is_moderator, check_if_user_is_administrator,
+                    send_moderator_welcome_dm, send_administrator_welcome_dm,
+                    send_notification_to_channel
+                )
+                
+                # Проверяем статус ДО изменения ролей
+                was_moderator = check_if_user_is_moderator(before, config)
+                was_administrator = check_if_user_is_administrator(before, config)
+                
+                became_moderator = False
+                became_administrator = False
+                
+                for role in added_roles:
+                    if role.id in administrator_role_ids and not was_administrator:
+                        became_administrator = True
+                        break
+                    elif role.id in moderator_role_ids and not was_moderator and not was_administrator:
+                        became_moderator = True
+                  # Отправляем уведомления
+                if became_administrator:
+                    dm_sent = await send_administrator_welcome_dm(after)
+                    channel_sent = await send_notification_to_channel(after.guild, after, 'administrator')
+                    print(f"📢 Авто-уведомление администратору {after.display_name} (роль выдана): DM {'✅' if dm_sent else '❌'}")
+                    
+                elif became_moderator:
+                    dm_sent = await send_moderator_welcome_dm(after)
+                    channel_sent = await send_notification_to_channel(after.guild, after, 'moderator')
+                    print(f"📢 Авто-уведомление модератору {after.display_name} (роль выдана): DM {'✅' if dm_sent else '❌'}")
+            
+    except Exception as e:
+        print(f"❌ Error handling member update for {after.name}: {e}")
+
 async def restore_channel_messages(config):
     """Check and restore button messages for all configured channels."""    # Restore dismissal channel message
     dismissal_channel_id = config.get('dismissal_channel')

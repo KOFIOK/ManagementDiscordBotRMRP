@@ -4,6 +4,7 @@
 """
 
 import re
+import asyncio
 import discord
 import traceback
 from datetime import datetime
@@ -384,7 +385,7 @@ class WarehouseRequestItem:
         self.timestamp = datetime.now()
     
     def __str__(self):
-        return f"• **{self.item_name}** × {self.quantity}"
+        return f"**{self.item_name}** × {self.quantity}"
 
 
 class WarehouseRequestCart:
@@ -404,14 +405,15 @@ class WarehouseRequestCart:
                 # Если есть, увеличиваем количество
                 existing_item.quantity += item.quantity
                 return
-        
-        # Если нет, добавляем новый предмет
+          # Если нет, добавляем новый предмет
         self.items.append(item)
     
-    def remove_last_item(self):
-        """Удалить последний добавленный предмет"""
-        if self.items:
-            self.items.pop()
+    def remove_item_by_index(self, index: int):
+        """Удалить предмет по индексу (0-based)"""
+        if 0 <= index < len(self.items):
+            self.items.pop(index)
+            return True
+        return False
     
     def clear(self):
         """Очистить корзину"""
@@ -423,10 +425,20 @@ class WarehouseRequestCart:
     
     def get_total_items(self) -> int:
         """Получить общее количество предметов"""
-        return sum(item.quantity for item in self.items)
-    
+        return sum(item.quantity for item in self.items)    
     def get_summary(self) -> str:
         """Получить краткое описание корзины"""
+        if self.is_empty():
+            return "Корзина пуста"
+        
+        summary = []
+        for i, item in enumerate(self.items, 1):
+            summary.append(f"{i}. {str(item)}")
+        
+        return "\n".join(summary)
+    
+    def get_summary_without_numbers(self) -> str:
+        """Получить краткое описание корзины без номеров (для финальной заявки)"""
         if self.is_empty():
             return "Корзина пуста"
         
@@ -459,11 +471,33 @@ def get_user_cart(user_id: int) -> WarehouseRequestCart:
 
 
 def clear_user_cart(user_id: int):
-    """Очистить корзину пользователя"""
-    if user_id in user_carts:
-        del user_carts[user_id]
-    if user_id in user_cart_messages:
-        del user_cart_messages[user_id]
+    """Очистить корзину пользователя безопасно"""
+    try:
+        cart_cleared = False
+        message_cleared = False
+        
+        if user_id in user_carts:
+            del user_carts[user_id]
+            cart_cleared = True
+            
+        if user_id in user_cart_messages:
+            del user_cart_messages[user_id]
+            message_cleared = True
+            
+        if cart_cleared or message_cleared:
+            print(f"🧹 CART CLEANUP: Очищены данные для пользователя {user_id} (корзина: {'✅' if cart_cleared else '❌'}, сообщение: {'✅' if message_cleared else '❌'})")
+        
+    except Exception as e:
+        print(f"❌ CART CLEANUP ERROR: Ошибка очистки корзины для {user_id}: {e}")
+
+
+def clear_user_cart_safe(user_id: int, reason: str = "unknown"):
+    """Безопасная очистка корзины с указанием причины"""
+    try:
+        print(f"🧹 CART SAFE CLEAR: Начата очистка для пользователя {user_id}, причина: {reason}")
+        clear_user_cart(user_id)
+    except Exception as e:
+        print(f"❌ CART SAFE CLEAR ERROR: Критическая ошибка очистки корзины для {user_id}: {e}")
 
 
 def get_user_cart_message(user_id: int) -> Optional[discord.Message]:
@@ -810,7 +844,9 @@ class WarehouseQuantityModal(discord.ui.Modal):
             
             # Если лимит был превышен, показываем предупреждение
             if "уменьшено" in validation_message:
-                warning_message = validation_message            # Проверяем дубликаты по времени (быстрое добавление)
+                warning_message = validation_message
+            
+            # Проверяем дубликаты по времени (быстрое добавление)
             for existing_item in cart.items:
                 if (existing_item.category == self.category and 
                     existing_item.item_name == self.item_name and
@@ -822,7 +858,18 @@ class WarehouseQuantityModal(discord.ui.Modal):
                     await self._show_cart_ultra_fast(interaction, cart, warning_message, loading_message)
                     return
             
-            # Добавляем новый предмет с исправленным общим количеством
+            # Проверяем, есть ли уже такой предмет в корзине (без учета времени)
+            for existing_item in cart.items:
+                if (existing_item.category == self.category and 
+                    existing_item.item_name == self.item_name):
+                    # Обновляем существующий предмет до corrected_total_quantity
+                    existing_item.quantity = corrected_total_quantity
+                    existing_item.timestamp = current_time  # Обновляем время
+                    print(f"🔄 ITEM UPDATED: {self.item_name} обновлено до {corrected_total_quantity} (было {existing_quantity})")
+                    await self._show_cart_ultra_fast(interaction, cart, warning_message, loading_message)
+                    return
+            
+            # Если предмет не найден, создаем новый с corrected_total_quantity
             item = WarehouseRequestItem(
                 category=self.category,
                 item_name=self.item_name,
@@ -833,9 +880,9 @@ class WarehouseQuantityModal(discord.ui.Modal):
                 rank=rank
             )
             
-            # Добавление в корзину
-            cart.add_item(item)
-            print(f"✅ NEW ITEM ADDED: {self.item_name} x{corrected_total_quantity}")
+            # Добавление в корзину (предмета точно нет, так как мы проверили выше)
+            cart.items.append(item)  # Используем напрямую append вместо add_item
+            print(f"✅ NEW ITEM CREATED: {self.item_name} x{corrected_total_quantity}")
             
             # 🚀 СУПЕР быстрое отображение
             await self._show_cart_ultra_fast(interaction, cart, warning_message, loading_message)
@@ -862,7 +909,8 @@ class WarehouseQuantityModal(discord.ui.Modal):
             except:
                 print("❌ Критическая ошибка: не удалось отправить уведомление об ошибке")
 
-    async def _show_cart_ultra_fast(self, interaction: discord.Interaction, cart: WarehouseRequestCart, validation_message: str = "", loading_message=None):
+    async def _show_cart_ultra_fast(self, interaction: discord.Interaction, cart: WarehouseRequestCart, 
+                                   validation_message: str = "", loading_message = None):
         """УЛЬТРА-БЫСТРОЕ отображение корзины для предотвращения таймаутов Discord"""
         try:
             # Формируем описание с предупреждением, если есть
@@ -874,15 +922,13 @@ class WarehouseQuantityModal(discord.ui.Modal):
                 title="📦 Корзина обновлена",
                 description=description,
                 color=discord.Color.green()
-            )
+            )              # Полный список ВСЕХ предметов с нумерацией для черновика
+            items_list = []
+            for i, item in enumerate(cart.items, 1):
+                items_list.append(f"{i}. **{item.item_name}** × {item.quantity}")
+            items_text = "\n".join(items_list)
             
-            # Краткий список последних предметов (максимум 3)
-            recent_items = cart.items[-3:] if len(cart.items) > 3 else cart.items
-            items_text = "\n".join([f"• {item.item_name} × {item.quantity}" for item in recent_items])
-            if len(cart.items) > 3:
-                items_text += f"\n... и ещё {len(cart.items) - 3} предметов"
-            
-            embed.add_field(name="Последние добавленные", value=items_text or "Нет предметов", inline=False)
+            embed.add_field(name="Все предметы в корзине", value=items_text or "Нет предметов", inline=False)
             
             # Быстрая view с минимальным функционалом
             view = WarehouseCartView(cart, self.warehouse_manager)
@@ -1064,7 +1110,7 @@ class WarehouseItemSelectView(discord.ui.View):
     """View для выбора конкретного предмета - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
     
     def __init__(self, category: str, category_info: Dict, warehouse_manager: WarehouseManager):
-        super().__init__(timeout=300)  # 5 минут таймаут для выбора предмета
+        super().__init__(timeout=None)  # 5 минут таймаут для выбора предмета
         self.category = category
         self.category_info = category_info
         self.warehouse_manager = warehouse_manager
@@ -1072,10 +1118,12 @@ class WarehouseItemSelectView(discord.ui.View):
         items = category_info["items"]
         for i, item in enumerate(items):
             if i < 20:  # Максимум 20 кнопок (4 ряда по 5)
+                # ИСПРАВЛЕНИЕ: делаем custom_id уникальным для каждой категории!
+                unique_id = f"warehouse_{self.category.lower()}_{i}_{hash(item) % 10000}"
                 button = discord.ui.Button(
                     label=item[:80] if len(item) > 80 else item,  # Ограничение длины
                     style=discord.ButtonStyle.secondary,
-                    custom_id=f"warehouse_item_temp_{i}",  # Временный ID
+                    custom_id=unique_id,  # Уникальный ID!
                     row=i // 5  # Распределение по рядам
                 )
                 button.callback = self._create_item_callback(item)
@@ -1083,13 +1131,20 @@ class WarehouseItemSelectView(discord.ui.View):
 
     def _create_item_callback(self, item_name: str):
         """Создать callback для кнопки предмета"""
+        # ВАЖНО: захватываем значения по значению, а не по ссылке!
+        category = self.category
+        warehouse_manager = self.warehouse_manager
+        
         async def callback(interaction: discord.Interaction):
+            # ОТЛАДКА: выводим что именно открываем
+            print(f"🔍 CALLBACK: Пользователь {interaction.user.display_name} нажал '{item_name}' в категории '{category}'")
+            
             # Специальная обработка для кастомного предмета "Прочее"
             if item_name == "Прочее":
-                modal = WarehouseCustomItemModal(self.category, self.warehouse_manager)
+                modal = WarehouseCustomItemModal(category, warehouse_manager)
             else:
                 # Создание упрощенного модального окна только для количества
-                modal = WarehouseQuantityModal(self.category, item_name, self.warehouse_manager)
+                modal = WarehouseQuantityModal(category, item_name, warehouse_manager)
             await interaction.response.send_modal(modal)
             
         return callback
@@ -1106,110 +1161,116 @@ class WarehousePinMessageView(discord.ui.View):
 
 
 class WarehouseCartView(discord.ui.View):
-    """View для управления корзиной запросов - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
+    """View для управления корзиной запросов"""
     
     def __init__(self, cart: WarehouseRequestCart, warehouse_manager: WarehouseManager, is_submitted: bool = False):
-        super().__init__(timeout=300)  # 5 минут на работу с корзиной
+        super().__init__(timeout=None)
         self.cart = cart
         self.warehouse_manager = warehouse_manager
-        self.is_submitted = is_submitted  # Флаг отправленной заявки
-    
+        self.is_submitted = is_submitted
+
     @discord.ui.button(label="Подтвердить отправку", style=discord.ButtonStyle.green, emoji="✅")
     async def confirm_request(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Подтвердить и отправить весь запрос"""
-        # Проверяем, не была ли заявка уже отправлена
         if self.is_submitted:
             await interaction.response.send_message(
                 "❌ Заявка уже была отправлена!",
                 ephemeral=True
             )
             return
+        
+        try:
+            if self.cart.is_empty():
+                await interaction.response.send_message(
+                    "❌ Корзина пуста! Добавьте предметы перед отправкой.",
+                    ephemeral=True
+                )
+                return
+              # Проверка кулдауна перед отправкой
+            submission_channel_id = self.warehouse_manager.get_warehouse_submission_channel()
+            if submission_channel_id:
+                channel = interaction.guild.get_channel(submission_channel_id)
+                if channel:
+                    can_request, next_time = await self.warehouse_manager.check_user_cooldown(
+                        interaction.user.id, channel
+                    )
+                    if not can_request and next_time:
+                        from datetime import timezone, timedelta
+                        moscow_tz = timezone(timedelta(hours=3))
+                        current_time_moscow = datetime.now(moscow_tz).replace(tzinfo=None)
+                        time_left = next_time - current_time_moscow
+                        hours = int(time_left.total_seconds() // 3600)
+                        minutes = int((time_left.total_seconds() % 3600) // 60)
+                        await interaction.response.send_message(
+                            f"⏰ Кулдаун! Вы можете подать следующий запрос через {hours}ч {minutes}мин",
+                            ephemeral=True
+                        )
+                        return
             
-        if self.cart.is_empty():
+            # НЕ устанавливаем флаг отправки здесь - только после реальной отправки в канал!
+            
+            # Показываем модальное окно
+            try:
+                from utils.warehouse_user_data import prepare_modal_data
+                modal_data = await prepare_modal_data(interaction.user.id)
+                modal = WarehouseFinalDetailsModal.create_with_prefilled_data(
+                    self.cart, self.warehouse_manager, interaction,
+                    name=modal_data['name_value'],
+                    static=modal_data['static_value'],
+                    parent_view=self
+                )
+                print(f"🚀 FAST MODAL: Создано модальное окно с данными из {modal_data['source']} для {interaction.user.display_name}")
+                await interaction.response.send_modal(modal)
+            except Exception as e:
+                print(f"❌ Ошибка предзагрузки данных пользователя: {e}")
+                try:
+                    modal = WarehouseFinalDetailsModal(self.cart, self.warehouse_manager, interaction, parent_view=self)
+                    await interaction.response.send_modal(modal)
+                except Exception as modal_error:
+                    print(f"❌ Критическая ошибка с модальным окном: {modal_error}")
+                    if not interaction.response.is_done():
+                        await interaction.response.send_message(
+                            "❌ Произошла ошибка при открытии формы заявки. Попробуйте позже.",
+                            ephemeral=True
+                        )
+                    else:
+                        await interaction.followup.send(
+                            "❌ Произошла ошибка при открытии формы заявки. Попробуйте позже.",
+                            ephemeral=True
+                        )
+                    return
+        except Exception as e:
+            print(f"❌ Критическая ошибка в confirm_request: {e}")
+
+    @discord.ui.button(label="Очистить корзину", style=discord.ButtonStyle.secondary, emoji="🗑️")
+    async def clear_cart(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Очистить корзину с подтверждением"""
+        if self.is_submitted:
             await interaction.response.send_message(
-                "❌ Корзина пуста! Добавьте предметы перед отправкой.",
+                "❌ Нельзя изменять корзину после отправки заявки!",
                 ephemeral=True
             )
             return
-          # ДОПОЛНИТЕЛЬНАЯ проверка кулдауна перед финальной отправкой
-        submission_channel_id = self.warehouse_manager.get_warehouse_submission_channel()
-        if submission_channel_id:
-            channel = interaction.guild.get_channel(submission_channel_id)
-            if channel:
-                can_request, next_time = await self.warehouse_manager.check_user_cooldown(
-                    interaction.user.id, channel
-                )
-                if not can_request and next_time:
-                    # next_time уже в московском времени из warehouse_manager
-                    from datetime import timezone, timedelta
-                    moscow_tz = timezone(timedelta(hours=3))  # UTC+3 для Москвы
-                    current_time_moscow = datetime.now(moscow_tz).replace(tzinfo=None)
-                    time_left = next_time - current_time_moscow
-                    hours = int(time_left.total_seconds() // 3600)
-                    minutes = int((time_left.total_seconds() % 3600) // 60)
-                    await interaction.response.send_message(
-                        f"⏰ Кулдаун! Вы можете подать следующий запрос через {hours}ч {minutes}мин",
-                        ephemeral=True
-                    )
-                    return
-        
-        # 🔄 БЫСТРЫЙ ОТКЛИК: Сразу показываем модальное окно без промежуточного сообщения
-        try:
-            # Используем оптимизированный модуль для предзагрузки данных
-            from utils.warehouse_user_data import prepare_modal_data
             
-            # Быстро получаем данные для автозаполнения
-            modal_data = await prepare_modal_data(interaction.user.id)
-            
-            # Создаем модальное окно с предзаполненными данными
-            modal = WarehouseFinalDetailsModal.create_with_prefilled_data(
-                self.cart, self.warehouse_manager, interaction,
-                name=modal_data['name_value'],
-                static=modal_data['static_value']
-            )
-            
-            print(f"🚀 FAST MODAL: Создано модальное окно с данными из {modal_data['source']} для {interaction.user.display_name}")
-            
-            # Показываем модальное окно сразу
-            await interaction.response.send_modal(modal)
-            
-        except Exception as e:
-            print(f"❌ Ошибка предзагрузки данных пользователя: {e}")
-            
-            try:
-                # Создаем модальное окно без предзаполнения
-                modal = WarehouseFinalDetailsModal(self.cart, self.warehouse_manager, interaction)
-                
-                # Показываем модальное окно как fallback
-                await interaction.response.send_modal(modal)
-            except Exception as modal_error:
-                print(f"❌ Критическая ошибка с модальным окном: {modal_error}")
-                # Если модальное окно вообще не может быть показано, отправляем обычное сообщение
-                await interaction.response.send_message(
-                    "❌ Произошла ошибка при открытии формы заявки. Попробуйте позже.",
-                    ephemeral=True
-                )
-    
-    @discord.ui.button(label="Очистить корзину", style=discord.ButtonStyle.secondary, emoji="🗑️")
-    async def clear_cart(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Очистить корзину"""
-        self.cart.clear()
-        
-        embed = discord.Embed(
-            title="🗑️ Корзина очищена",
-            description="Все предметы удалены из корзины.",
+        confirm_embed = discord.Embed(
+            title="⚠️ Подтверждение очистки",
+            description="Вы действительно хотите удалить **все предметы** из корзины?\n\n**Это действие необратимо!**",
             color=discord.Color.orange()
         )
         
-        # Удаляем сообщение корзины из отслеживания
-        if interaction.user.id in user_cart_messages:
-            del user_cart_messages[interaction.user.id]
+        confirm_view = ConfirmClearCartView(self.cart, self.warehouse_manager)
+        await interaction.response.send_message(embed=confirm_embed, view=confirm_view, ephemeral=True)
+
+    @discord.ui.button(label="Удалить по номеру", style=discord.ButtonStyle.secondary, emoji="❌")
+    async def remove_by_number(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Удалить предмет по номеру позиции"""
+        if self.is_submitted:
+            await interaction.response.send_message(
+                "❌ Нельзя изменять корзину после отправки заявки!",
+                ephemeral=True
+            )
+            return
             
-        await interaction.response.edit_message(embed=embed, view=None)
-    
-    @discord.ui.button(label="Удалить последний", style=discord.ButtonStyle.secondary, emoji="❌")
-    async def remove_last(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Удалить последний добавленный предмет"""
         if self.cart.is_empty():
             await interaction.response.send_message(
                 "❌ Корзина уже пуста!",
@@ -1217,27 +1278,259 @@ class WarehouseCartView(discord.ui.View):
             )
             return
         
-        self.cart.remove_last_item()
+        modal = RemoveItemByNumberModal(self.cart, self.warehouse_manager)
+        await interaction.response.send_modal(modal)
+        await interaction.response.send_modal(modal)
+    
+    async def _safe_update_cart_display(self, interaction: discord.Interaction):
+        """Безопасное обновление отображения корзины"""
+        try:
+            if self.cart.is_empty():
+                # Корзина пуста - показываем сообщение о возврате к главному меню
+                empty_embed = discord.Embed(
+                    title="📦 Корзина пуста",
+                    description="Все предметы удалены из корзины.\n\nДля новых запросов используйте закрепленное сообщение склада.",
+                    color=discord.Color.blue()
+                )
+                empty_embed.set_footer(text="Сообщение автоматически исчезнет через 10 секунд")
+                
+                # Удаляем сообщение корзины из отслеживания
+                if interaction.user.id in user_cart_messages:
+                    del user_cart_messages[interaction.user.id]
+                
+                await interaction.response.edit_message(embed=empty_embed, view=None)
+                
+                # Автоматически удаляем сообщение через 10 секунд
+                import asyncio
+                await asyncio.sleep(10)
+                try:
+                    await interaction.delete_original_response()
+                except:
+                    pass  # Игнорируем ошибки удаления
+                    
+            else:
+                # Обновляем отображение корзины с актуальными данными
+                embed = discord.Embed(
+                    title="📦 Ваша заявка на склад",
+                    description=self.cart.get_summary(),
+                    color=discord.Color.blue(),
+                    timestamp=datetime.now()
+                )
+                
+                embed.add_field(
+                    name="📊 Статистика",
+                    value=f"Предметов в корзине: **{len(self.cart.items)}**\nОбщее количество: **{self.cart.get_total_items()}**",
+                    inline=False
+                )
+                
+                embed.set_footer(text="Последний предмет удалён из корзины")
+                
+                # Создаем новый view с актуальным состоянием
+                new_view = WarehouseCartView(self.cart, self.warehouse_manager, self.is_submitted)
+                await interaction.response.edit_message(embed=embed, view=new_view)
+                
+        except Exception as e:
+            print(f"❌ Ошибка обновления корзины: {e}")
+            await interaction.response.send_message(
+                "❌ Произошла ошибка при обновлении корзины.",
+                ephemeral=True            )
+
+
+# =================== МОДАЛЬНОЕ ОКНО ДЛЯ УДАЛЕНИЯ ПО НОМЕРУ ===================
+
+class RemoveItemByNumberModal(discord.ui.Modal):
+    """Модальное окно для удаления предмета по номеру позиции"""
+    def __init__(self, cart: WarehouseRequestCart, warehouse_manager: WarehouseManager):
+        super().__init__(title=f"Удалить предмет (1-{len(cart.items)})")
+        self.cart = cart
+        self.warehouse_manager = warehouse_manager
         
-        # Обновляем отображение корзины
-        embed = discord.Embed(
-            title="📦 Ваша заявка на склад",
-            description=self.cart.get_summary() if not self.cart.is_empty() else "Корзина пуста",
-            color=discord.Color.blue(),
-            timestamp=datetime.now()
+        # Только поле для ввода номера - список предметов пользователь уже видит в корзине
+        self.number_input = discord.ui.TextInput(
+            label="Номер позиции для удаления",
+            placeholder=f"Введите номер от 1 до {len(cart.items)}",
+            min_length=1,
+            max_length=3,
+            required=True
         )
         
-        if not self.cart.is_empty():
-            embed.add_field(
-                name="📊 Статистика",
-                value=f"Предметов в корзине: **{len(self.cart.items)}**\nОбщее количество: **{self.cart.get_total_items()}**",
-                inline=False
+        self.add_item(self.number_input)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        """Обработка удаления предмета по номеру"""
+        try:
+            await interaction.response.defer(ephemeral=True)
+            
+            # Валидация номера
+            try:
+                item_number = int(self.number_input.value.strip())
+                if item_number < 1 or item_number > len(self.cart.items):
+                    raise ValueError(f"Номер должен быть от 1 до {len(self.cart.items)}")
+            except ValueError as e:
+                error_embed = discord.Embed(
+                    title="❌ Ошибка валидации",
+                    description=f"Некорректный номер! {str(e)}",
+                    color=discord.Color.red()
+                )
+                await interaction.followup.send(embed=error_embed, ephemeral=True)
+                return
+            
+            # Сохраняем информацию об удаляемом предмете
+            removed_item = self.cart.items[item_number - 1]  # -1 потому что нумерация с 0
+            
+            # Удаляем предмет по индексу
+            self.cart.remove_item_by_index(item_number - 1)
+            
+            # Формируем сообщение об успешном удалении
+            success_embed = discord.Embed(
+                title="✅ Предмет удален",
+                description=f"Удален предмет #{item_number}: **{removed_item.item_name}** × {removed_item.quantity}",
+                color=discord.Color.green()
             )
-        
-        embed.set_footer(text="Последний предмет удалён из корзины")
-        
-        view = WarehouseCartView(self.cart, self.warehouse_manager) if not self.cart.is_empty() else None
-        await interaction.response.edit_message(embed=embed, view=view)
+            
+            # Если корзина стала пустой
+            if self.cart.is_empty():
+                success_embed.add_field(
+                    name="📦 Корзина пуста",
+                    value="Все предметы удалены. Для новых запросов используйте закрепленное сообщение склада.",
+                    inline=False
+                )
+                
+                # Очищаем корзину из отслеживания
+                clear_user_cart_safe(interaction.user.id, "корзина опустошена через удаление")
+                
+                await interaction.followup.send(embed=success_embed, ephemeral=True)
+                
+                # Обновляем исходное сообщение
+                original_message = get_user_cart_message(interaction.user.id)
+                if original_message:
+                    try:
+                        empty_embed = discord.Embed(
+                            title="📦 Корзина пуста",
+                            description="Все предметы удалены из корзины.\n\nДля новых запросов используйте закрепленное сообщение склада.",
+                            color=discord.Color.blue()
+                        )
+                        empty_embed.set_footer(text="Сообщение автоматически исчезнет через 10 секунд")
+                        await original_message.edit(embed=empty_embed, view=None)
+                        
+                        # Удаляем сообщение через 10 секунд
+                        import asyncio
+                        await asyncio.sleep(10)
+                        try:
+                            await original_message.delete()
+                        except:
+                            pass
+                    except (discord.NotFound, discord.HTTPException):
+                        pass
+            else:
+                # Корзина не пуста - обновляем отображение
+                await interaction.followup.send(embed=success_embed, ephemeral=True)
+                
+                # Обновляем корзину
+                await self._update_cart_display(interaction)
+                
+        except Exception as e:
+            print(f"❌ Ошибка при удалении предмета по номеру: {e}")
+            error_embed = discord.Embed(
+                title="❌ Ошибка",
+                description="Произошла ошибка при удалении предмета. Попробуйте позже.",
+                color=discord.Color.red()
+            )
+            await interaction.followup.send(embed=error_embed, ephemeral=True)
+    
+    async def _update_cart_display(self, interaction: discord.Interaction):
+        """Обновить отображение корзины после удаления"""
+        try:
+            original_message = get_user_cart_message(interaction.user.id)
+            if original_message:
+                # Создаем обновленный embed
+                embed = discord.Embed(
+                    title="📦 Ваша заявка на склад",
+                    description=self.cart.get_summary(),
+                    color=discord.Color.blue(),
+                    timestamp=datetime.now()
+                )
+                
+                embed.add_field(
+                    name="📊 Статистика",
+                    value=f"Предметов в корзине: **{len(self.cart.items)}**\nОбщее количество: **{self.cart.get_total_items()}**",
+                    inline=False
+                )
+                
+                embed.set_footer(text="Предмет удален из корзины")
+                
+                # Создаем новый view с актуальным состоянием
+                new_view = WarehouseCartView(self.cart, self.warehouse_manager)
+                await original_message.edit(embed=embed, view=new_view)
+        except Exception as e:
+            print(f"❌ Ошибка обновления корзины: {e}")
+
+
+# =================== ПОДТВЕРЖДЕНИЕ ОЧИСТКИ КОРЗИНЫ ===================
+
+class ConfirmClearCartView(discord.ui.View):
+    """View для подтверждения очистки корзины"""
+    
+    def __init__(self, cart: WarehouseRequestCart, warehouse_manager: WarehouseManager):
+        super().__init__(timeout=30)  # 30 секунд на подтверждение
+        self.cart = cart
+        self.warehouse_manager = warehouse_manager
+    
+    @discord.ui.button(label="✅ Да, очистить", style=discord.ButtonStyle.danger)
+    async def confirm_clear(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Подтвердить очистку корзины"""
+        try:
+            self.cart.clear()
+              # Удаляем сообщение корзины из отслеживания
+            if interaction.user.id in user_cart_messages:
+                cart_message = user_cart_messages[interaction.user.id]
+                clear_user_cart_safe(interaction.user.id, "manual_clear")
+                
+                # Обновляем основное сообщение корзины
+                embed = discord.Embed(
+                    title="🗑️ Корзина очищена",
+                    description="Все предметы удалены из корзины.\n\nДля новых запросов используйте закрепленное сообщение склада.",
+                    color=discord.Color.orange()
+                )
+                embed.set_footer(text="Сообщение автоматически исчезнет через 10 секунд")
+                
+                await cart_message.edit(embed=embed, view=None)
+                
+                # Автоматически удаляем сообщение через 10 секунд
+                import asyncio
+                asyncio.create_task(self._auto_delete_message(cart_message))
+            
+            await interaction.response.edit_message(
+                content="✅ Корзина успешно очищена!",
+                embed=None,
+                view=None
+            )
+            
+        except Exception as e:
+            print(f"❌ Ошибка очистки корзины: {e}")
+            await interaction.response.edit_message(
+                content="❌ Произошла ошибка при очистке корзины.",
+                embed=None,
+                view=None
+            )
+    
+    @discord.ui.button(label="❌ Отмена", style=discord.ButtonStyle.secondary)
+    async def cancel_clear(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Отменить очистку корзины"""
+        await interaction.response.edit_message(
+            content="Очистка корзины отменена.",
+            embed=None,
+            view=None
+        )
+    
+    async def _auto_delete_message(self, message):
+        """Автоматически удалить сообщение через 10 секунд"""
+        import asyncio
+        await asyncio.sleep(10)
+        try:
+            await message.delete()
+        except:
+            pass  # Игнорируем ошибки удаления
 
 
 # =================== КНОПКИ СОСТОЯНИЯ ЗАПРОСА ===================
@@ -1398,12 +1691,12 @@ class RejectionReasonModal(discord.ui.Modal):
 
 class WarehouseFinalDetailsModal(discord.ui.Modal):
     """Модальное окно для финального ввода имени и статика при отправке заявки"""
-    
-    def __init__(self, cart: WarehouseRequestCart, warehouse_manager: WarehouseManager, interaction_original: discord.Interaction):
+    def __init__(self, cart: WarehouseRequestCart, warehouse_manager: WarehouseManager, interaction_original: discord.Interaction, parent_view=None):
         super().__init__(title="Подтверждение заявки")
         self.cart = cart
         self.warehouse_manager = warehouse_manager
         self.interaction_original = interaction_original
+        self.parent_view = parent_view  # Ссылка на родительскую view для сброса флагов
         
         # Поля формы с значениями по умолчанию
         self.name_input = discord.ui.TextInput(
@@ -1426,10 +1719,9 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
         
         self.add_item(self.name_input)
         self.add_item(self.static_input)
-    
     @classmethod
     def create_with_prefilled_data(cls, cart: WarehouseRequestCart, warehouse_manager: WarehouseManager, 
-                                 interaction_original: discord.Interaction, name: str = "", static: str = ""):
+                                 interaction_original: discord.Interaction, name: str = "", static: str = "", parent_view=None):
         """
         Создать модальное окно с предзаполненными данными (быстрый метод)
         """
@@ -1437,6 +1729,7 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
         instance.cart = cart
         instance.warehouse_manager = warehouse_manager
         instance.interaction_original = interaction_original
+        instance.parent_view = parent_view  # Ссылка на родительскую view
         
         # Инициализируем Modal
         discord.ui.Modal.__init__(instance, title="Подтверждение заявки")
@@ -1523,22 +1816,28 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
             # Обновляем все предметы в корзине
             for item in self.cart.items:
                 item.user_name = name
-                item.user_static = static            # Отправляем заявку (самая тяжелая операция)
+                item.user_static = static
+              # Отправляем заявку (самая тяжелая операция)
             await self._send_simple_warehouse_request(interaction)
             
-            # ✅ ОБНОВЛЯЕМ КОРЗИНУ: заявка отправлена, блокируем повторные отправки
+            # ✅ ЗАЯВКА УСПЕШНО ОТПРАВЛЕНА В КАНАЛ - теперь устанавливаем флаг!
+            if self.parent_view:
+                self.parent_view.is_submitted = True
+                print(f"🔒 SUBMITTED FLAG SET: Заявка отправлена, корзина заблокирована для пользователя {self.interaction_original.user.id}")
+            
+            # ✅ ОБНОВЛЯЕМ КОРЗИНУ: заявка отправлена, отключаем все кнопки
             await self._update_cart_after_submission(interaction)
             
-            # Корзина уже обновлена с информацией об успехе, дополнительное сообщение не нужно
             print(f"✅ PROCESS COMPLETE: Заявка успешно обработана для пользователя {self.interaction_original.user.id}")
             
         except Exception as e:
             print(f"❌ Ошибка фоновой обработки: {e}")
             import traceback
             traceback.print_exc()
-              # Обновляем сообщение пользователю об ошибке
+            
+            # Обновляем сообщение пользователю об ошибке
             await interaction.edit_original_response(
-                content="❌ Произошла ошибка при создании заявки. Обратитесь к администратору."
+                content="❌ Произошла ошибка при создании заявки. Попробуйте позже."
             )
 
     async def _send_simple_warehouse_request(self, interaction: discord.Interaction):
@@ -1590,9 +1889,7 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
             embed.add_field(name="🎖️ Звание", value=first_item.rank or "Не указано", inline=True)
             
             # Добавляем пустое поле для разделения
-            embed.add_field(name="\u200b", value="\u200b", inline=False)
-            
-            # Список запрашиваемых предметов
+            embed.add_field(name="\u200b", value="\u200b", inline=False)            # Список запрашиваемых предметов С номерами для финальной заявки
             items_text = ""
             for i, item in enumerate(self.cart.items, 1):
                 items_text += f"{i}. **{item.item_name}** × {item.quantity}\n"
@@ -1657,16 +1954,16 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
                   # Обновляем сообщение корзины
                 await cart_message.edit(embed=submitted_embed, view=submitted_view)
                 print(f"✅ CART UPDATE: Обновлено сообщение корзины для пользователя {self.interaction_original.user.id}")
-                
-                # Очищаем корзину ПОСЛЕ обновления сообщения
-                clear_user_cart(self.interaction_original.user.id)
+                  # Очищаем корзину ПОСЛЕ обновления сообщения
+                clear_user_cart_safe(self.interaction_original.user.id, "successful_submission")
                 print(f"🧹 CART CLEAR: Корзина очищена для пользователя {self.interaction_original.user.id}")
                 
         except Exception as e:
-            print(f"⚠️ CART UPDATE ERROR: Ошибка обновления корзины: {e}")
-            # Если не удалось обновить сообщение, всё равно очищаем корзину
-            clear_user_cart(self.interaction_original.user.id)
-            # Не критично, не прерываем процесс
+            print(f"⚠️ CART UPDATE ERROR: Ошибка обновления корзины: {e}")            # Если не удалось обновить сообщение, всё равно очищаем корзину
+            clear_user_cart_safe(self.interaction_original.user.id, "error_fallback")
+            # Не критично, не прерываем процесс    async def on_timeout(self):
+        """Обработчик истечения времени ожидания"""
+        pass
 
     def _format_static(self, static: str) -> str:
         """Форматирование статика в стандартный вид"""
@@ -1868,7 +2165,7 @@ class WarehouseCustomItemModal(discord.ui.Modal):
 
     async def _show_cart_ultra_fast(self, interaction: discord.Interaction, cart: WarehouseRequestCart, 
                                    validation_message: str = "", loading_message = None):
-        """Быстрое отображение корзины после добавления предмета - копия из WarehouseQuantityModal"""
+        """УЛЬТРА-БЫСТРОЕ отображение корзины для предотвращения таймаутов Discord"""
         try:
             # Формируем описание с предупреждением, если есть
             description = "Предметы готовы к отправке:"
@@ -1935,7 +2232,6 @@ class WarehouseCustomItemModal(discord.ui.Modal):
                 set_user_cart_message(interaction.user.id, message)
             except Exception:
                 await interaction.followup.send(f"✅ Добавлено: **{cart.items[-1].item_name}** × {cart.items[-1].quantity}", ephemeral=True)
-            
         except Exception as e:
             print(f"❌ Ошибка в _show_cart_ultra_fast: {e}")
             try:

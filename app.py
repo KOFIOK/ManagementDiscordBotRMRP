@@ -91,14 +91,15 @@ async def on_ready():
     bot.add_view(AutomaticDismissalApprovalView(None))  # Persistent view for automatic dismissals
     bot.add_view(LeaveRequestApprovalView("dummy"))  # Dummy ID for persistent view
     print("✅ Approval views added")
-      # Add role assignment approval view for persistent buttons    print("🔄 Adding role assignment approval view...")
+      # Add role assignment approval view for persistent buttons
+    print("🔄 Adding role assignment approval view...")
     from forms.role_assignment_form import RoleApplicationApprovalView
     bot.add_view(RoleApplicationApprovalView({}))  # Empty data for persistent view
     print("✅ Role assignment approval view added")
     
     print("🔄 Adding warehouse persistent views...")
     try:
-        from forms.warehouse_request import (
+        from forms.warehouse import (
             WarehousePinMessageView, WarehousePersistentRequestView, WarehousePersistentMultiRequestView,
             WarehouseStatusView
         )
@@ -109,7 +110,7 @@ async def on_ready():
         print(f"🔍 Import traceback: {traceback.format_exc()}")
     
     try:
-        from forms.warehouse_audit import WarehouseAuditPinMessageView
+        from forms.warehouse.audit import WarehouseAuditPinMessageView
         print("✅ Warehouse audit view imported successfully")
     except Exception as e:
         print(f"❌ Error importing warehouse audit view: {e}")
@@ -334,7 +335,7 @@ async def restore_channel_messages(config):
             print(f"⚠️ Канал склада не найден (ID: {warehouse_request_channel_id})")    # Restore warehouse audit channel
     warehouse_audit_channel_id = config.get('warehouse_audit_channel')
     if warehouse_audit_channel_id:
-        from forms.warehouse_audit import send_warehouse_audit_message, restore_warehouse_audit_views, restore_warehouse_audit_pinned_message
+        from forms.warehouse.audit import send_warehouse_audit_message, restore_warehouse_audit_views, restore_warehouse_audit_pinned_message
         channel = bot.get_channel(warehouse_audit_channel_id)
         if channel:
             # Сначала пытаемся восстановить существующее закрепленное сообщение

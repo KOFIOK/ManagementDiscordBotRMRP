@@ -8,7 +8,7 @@ import discord
 async def restore_warehouse_pinned_message(channel):
     """Восстановить закрепленное сообщение склада после перезапуска"""
     try:
-        from forms.warehouse_request import WarehousePinMessageView
+        from forms.warehouse import WarehousePinMessageView
         
         # Ищем закрепленное сообщение склада
         pinned_messages = await channel.pins()
@@ -41,7 +41,7 @@ async def restore_warehouse_pinned_message(channel):
 async def restore_warehouse_request_views(channel):
     """Восстановить view для заявок склада в канале"""
     try:
-        from forms.warehouse_request import WarehousePersistentRequestView, WarehousePersistentMultiRequestView
+        from forms.warehouse import WarehousePersistentRequestView, WarehousePersistentMultiRequestView
         
         restored_count = 0
         
@@ -132,11 +132,10 @@ async def send_warehouse_message(channel):
             "> 💊 **Медикаменты** - аптечки, обезболивающие, дефибрилляторы\n"
             "> 📦 **Другое** - материалы, патроны, спецоборудование\n\n"
             "### ⚠️ Ограничения:\n"
-            "> • Максимум 3 единицы оружия или 1.000 материалов\n"
-            "> • Максимум 10 единиц брони\n"
-            "> • Максимум 20 аптечек\n"
-            "> • Максимум 4 дефибрилляторов\n"
-            "> • Максимум 8 обезболивающих\n\n"
+            "> • **Оружие**: максимум 3 единицы оружия\n"
+            "> • **Боеприпасы**: максимум 1.000 материалов\n"
+            "> • **Бронежилеты  **: максимум 10 единиц\n"
+            "> • **Аптечки**: максимум 20 единиц\n\n"
             "*Точные лимиты зависят от вашей должности и звания*"
         ),
         color=discord.Color.orange(),
@@ -159,9 +158,8 @@ async def send_warehouse_message(channel):
         text="Склад ВС РФ | Выберите категорию ниже",
         icon_url=channel.guild.icon.url if channel.guild.icon else None
     )
-    
-    # Создаем view с категориями - ИСПРАВЛЕННАЯ ВЕРСИЯ
-    from forms.warehouse_request import WarehousePinMessageView
+      # Создаем view с категориями - ИСПРАВЛЕННАЯ ВЕРСИЯ
+    from forms.warehouse import WarehousePinMessageView
     view = WarehousePinMessageView()  # Без параметров!
     
     # Отправляем сообщение
@@ -193,7 +191,7 @@ async def send_warehouse_message(channel):
 async def recreate_warehouse_pinned_message(channel):
     """Пересоздать закрепленное сообщение склада с обновленными кнопками"""
     try:
-        from forms.warehouse_request import WarehousePinMessageView
+        from forms.warehouse import WarehousePinMessageView
         
         # Удаляем старое закрепленное сообщение если есть
         pinned_messages = await channel.pins()

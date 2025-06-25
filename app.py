@@ -143,6 +143,15 @@ async def on_ready():
     print("🔄 Setting up welcome system...")
     setup_welcome_events(bot)
     print("✅ Welcome system events setup complete")
+    
+    # Setup department applications persistent views
+    print("🔄 Setting up department applications persistent views...")
+    try:
+        from forms.department_applications import DepartmentSelectView, DepartmentApplicationView
+        # The actual restoration will be handled by the cog
+        print("✅ Department applications views ready")
+    except Exception as e:
+        print(f"❌ Error importing department applications views: {e}")
       # Start notification scheduler
     print("🔄 Starting notification scheduler...")
     notification_scheduler.start()

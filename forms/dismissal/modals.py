@@ -271,16 +271,13 @@ class DismissalReportModal(ui.Modal, title="Рапорт на увольнени
                             highest_position = department_role.position
                             user_department = department_role
                 
-                if user_department:
-                    ping_role_ids = ping_settings.get(str(user_department.id), [])
-                    ping_roles = []
-                    for role_id in ping_role_ids:
-                        role = interaction.guild.get_role(role_id)
-                        if role:
-                            ping_roles.append(role.mention)
-                    
-                    if ping_roles:
-                        ping_content = f"-# {' '.join(ping_roles)}\n\n"
+                # Get ping roles using new adapter
+                from utils.ping_adapter import ping_adapter
+                ping_roles_list = ping_adapter.get_ping_roles_for_dismissals(interaction.user)
+                ping_roles = [role.mention for role in ping_roles_list]
+                
+                if ping_roles:
+                    ping_content = f"-# {' '.join(ping_roles)}\n\n"
             
             # Send the report to the dismissal channel with pings
             await channel.send(content=ping_content, embed=embed, view=approval_view)

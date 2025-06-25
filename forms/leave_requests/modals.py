@@ -168,10 +168,9 @@ class LeaveRequestModal(ui.Modal):
         channel = interaction.guild.get_channel(channel_id)
         if not channel:
           return
-          # Get ping roles based on user's roles
-        ping_roles = LeaveRequestDepartmentDetector.get_ping_roles_from_user(
-            interaction.user.roles, interaction.guild
-        )
+          # Get ping roles using new adapter
+        from utils.ping_adapter import ping_adapter
+        ping_roles = ping_adapter.get_ping_roles_for_leave_requests(interaction.user)
         ping_text = " ".join([role.mention for role in ping_roles]) if ping_roles else ""
         
         # Department names

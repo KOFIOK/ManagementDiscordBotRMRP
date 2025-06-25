@@ -85,6 +85,12 @@ class ChannelConfigSelect(ui.Select):
                 description="Настроить каналы запросов и аудита складского имущества",
                 emoji="📦",
                 value="warehouse"
+            ),
+            discord.SelectOption(
+                label="Заявления в подразделения",
+                description="Настроить каналы для заявлений в подразделения",
+                emoji="🎓",
+                value="departments"
             )
         ]
         
@@ -119,6 +125,9 @@ class ChannelConfigSelect(ui.Select):
                 await show_medical_registration_config(interaction)
             elif config_type == "warehouse":
                 await show_warehouse_config(interaction)
+            elif config_type == "departments":
+                from .channels_departments import show_department_channels_config
+                await show_department_channels_config(interaction)
             else:
                 # For audit channel (simple channel selection)
                 from .channels_base import ChannelSelectionModal

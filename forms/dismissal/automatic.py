@@ -98,17 +98,13 @@ async def create_automatic_dismissal_report(guild, member, target_role_name="Ð’Ð
                         highest_position = dept_role.position
                         user_department_role = dept_role
             
-            # Get ping roles for this department
-            if user_department_role:
-                ping_role_ids = ping_settings.get(str(user_department_role.id), [])
-                ping_roles = []
-                for role_id in ping_role_ids:
-                    role = guild.get_role(role_id)
-                    if role:
-                        ping_roles.append(role.mention)
-                
-                if ping_roles:
-                    ping_content = f"-# {' '.join(ping_roles)}\n\n"
+            # Get ping roles using new adapter
+            from utils.ping_adapter import ping_adapter
+            ping_roles_list = ping_adapter.get_ping_roles_for_dismissals(member)
+            ping_roles = [role.mention for role in ping_roles_list]
+            
+            if ping_roles:
+                ping_content = f"-# {' '.join(ping_roles)}\n\n"
         
         # Send the automatic report with department pings
         message = await channel.send(content=ping_content, embed=embed, view=approval_view)

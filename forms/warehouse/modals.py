@@ -703,7 +703,10 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
         
         item = self.cart.items[0]
         
-        # Получение подразделения из Google Sheets
+        # Сначала получаем роли для пинга (быстро, через Discord роли)
+        ping_roles = self.warehouse_manager.get_ping_roles_for_warehouse_request(interaction.user, "")
+        
+        # Получение подразделения из Google Sheets (только для отображения в embed)
         try:
             department = await get_user_department_fast(interaction.user.id)
             print(f"🏢 DEPT: Получено подразделение '{department}' для пользователя {interaction.user.id}")
@@ -745,8 +748,14 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
         if not warehouse_channel:
             raise Exception(f"Канал склада с ID {warehouse_channel_id} не найден!")
         
+        # Получаем роли для пинга на основе подразделения пользователя (уже получены ранее)
+        ping_content = ""
+        if ping_roles:
+            ping_mentions = [f"<@&{role.id}>" for role in ping_roles]
+            ping_content = f"-# {' '.join(ping_mentions)}"
+        
         view = WarehousePersistentRequestView()
-        await warehouse_channel.send(embed=embed, view=view)
+        await warehouse_channel.send(content=ping_content, embed=embed, view=view)
 
     async def _send_multi_request(self, interaction: discord.Interaction):
         """Отправить множественную заявку"""
@@ -755,7 +764,10 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
         
         first_item = self.cart.items[0]
         
-        # Получение подразделения из Google Sheets
+        # Сначала получаем роли для пинга (быстро, через Discord роли)
+        ping_roles = self.warehouse_manager.get_ping_roles_for_warehouse_request(interaction.user, "")
+        
+        # Получение подразделения из Google Sheets (только для отображения в embed)
         try:
             department = await get_user_department_fast(interaction.user.id)
             print(f"🏢 DEPT: Получено подразделение '{department}' для пользователя {interaction.user.id}")
@@ -801,8 +813,14 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
         if not warehouse_channel:
             raise Exception(f"Канал склада с ID {warehouse_channel_id} не найден!")
         
+        # Получаем роли для пинга на основе подразделения пользователя (уже получены ранее)
+        ping_content = ""
+        if ping_roles:
+            ping_mentions = [f"<@&{role.id}>" for role in ping_roles]
+            ping_content = f"-# {' '.join(ping_mentions)}"
+        
         view = WarehousePersistentMultiRequestView()
-        await warehouse_channel.send(embed=embed, view=view)
+        await warehouse_channel.send(content=ping_content, embed=embed, view=view)
 
     async def _update_cart_after_submission(self, interaction: discord.Interaction):
         """Обновить корзину после отправки заявки"""

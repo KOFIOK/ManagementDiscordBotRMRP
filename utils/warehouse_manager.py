@@ -293,8 +293,6 @@ class WarehouseManager:
                 "оружие": 999,
                 "бронежилеты": 999,
                 "аптечки": 999,
-                "обезболивающее": 999,
-                "дефибрилляторы": 999,
                 "weapon_restrictions": []
             }
         
@@ -315,8 +313,6 @@ class WarehouseManager:
             "оружие": 3,
             "бронежилеты": 10,
             "аптечки": 20,
-            "обезболивающее": 8,
-            "дефибрилляторы": 4,
             "weapon_restrictions": []
         }
 
@@ -336,34 +332,28 @@ class WarehouseManager:
             if weapon_restrictions and item_name not in weapon_restrictions:
                 return False, 0, f"❌ Вам недоступен данный тип оружия. Доступно: {', '.join(weapon_restrictions)}"
             
-            # Проверка количества
+            # Проверка количества (более 3 единиц - слив)
             if quantity > max_weapons:
-                return True, max_weapons, f"⚠️ Количество уменьшено до максимально возможного: {max_weapons}"
+                return True, max_weapons, f"Количество уменьшено до максимально возможного: {max_weapons}"
             
         elif category_key == "бронежилеты":
             max_armor = user_limits.get("бронежилеты", 10)
+            # Проверка количества (более 10 единиц - слив)
             if quantity > max_armor:
-                return True, max_armor, f"⚠️ Количество уменьшено до максимально возможного: {max_armor}"
+                return True, max_armor, f"Количество уменьшено до максимально возможного: {max_armor}"
                 
         elif category_key == "медикаменты":
             if item_name == "Армейская аптечка":
                 max_medkits = user_limits.get("аптечки", 20)
+                # Проверка количества (более 20 единиц - слив)
                 if quantity > max_medkits:
-                    return True, max_medkits, f"⚠️ Количество уменьшено до максимально возможного: {max_medkits}"
-            elif item_name == "Обезболивающее":
-                max_painkillers = user_limits.get("обезболивающее", 8)
-                if quantity > max_painkillers:
-                    return True, max_painkillers, f"⚠️ Количество уменьшено до максимально возможного: {max_painkillers}"
-            elif item_name == "Дефибриллятор":
-                max_defibs = user_limits.get("дефибрилляторы", 4)
-                if quantity > max_defibs:
-                    return True, max_defibs, f"⚠️ Количество уменьшено до максимально возможного: {max_defibs}"
+                    return True, max_medkits, f"Количество уменьшено до максимально возможного: {max_medkits}"
                 
         elif category_key == "другое":
             if item_name == "Материалы":
-                # Лимит материалов - 1000
+                # Лимит материалов - 1000 (более 1000 - слив)
                 if quantity > 1000:
-                    return True, 1000, "⚠️ Количество уменьшено до максимально возможного: 1000"
+                    return True, 1000, "Количество уменьшено до максимально возможного: 1000"
         
         return True, quantity, "✅ Запрос корректен"
 

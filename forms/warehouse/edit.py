@@ -29,14 +29,24 @@ class WarehouseEditSelect(discord.ui.Select):
         
         # Создаем опции для select menu
         options = []
-        for i, (item_text, item_name, quantity) in enumerate(items):
+        for i, (item_text, item_name, quantity, is_deleted) in enumerate(items):
             if i < 25:  # Discord лимит на select options
-                options.append(discord.SelectOption(
-                    label=f"{i+1}. {item_name}",
-                    description=f"Количество: {quantity}",
-                    value=str(i),
-                    emoji="📦"
-                ))
+                if is_deleted:
+                    # Удаленный предмет - отображаем с крестиком
+                    options.append(discord.SelectOption(
+                        label=f"❌ {i+1}. {item_name}",
+                        description=f"Удален | Было: {quantity}",
+                        value=str(i),
+                        emoji="🗑️"
+                    ))
+                else:
+                    # Обычный предмет
+                    options.append(discord.SelectOption(
+                        label=f"{i+1}. {item_name}",
+                        description=f"Количество: {quantity}",
+                        value=str(i),
+                        emoji="📦"
+                    ))
         
         if not options:
             options.append(discord.SelectOption(
@@ -54,7 +64,7 @@ class WarehouseEditSelect(discord.ui.Select):
         self.parsed_items = items
     
     def _parse_items_from_embed(self) -> List[tuple]:
-        """Парсит предметы из embed заявки"""
+        """Парсит предметы из embed заявки, включая удаленные"""
         items = []
         
         try:
@@ -65,17 +75,26 @@ class WarehouseEditSelect(discord.ui.Select):
                 if "запрашиваемые предметы" in field.name.lower() or "предмет" in field.name.lower():
                     field_value = field.value
                     
-                    # Парсим строки вида "1. **AK-74M** × 2"
+                    # Парсим строки вида "1. **AK-74M** × 2" и "❌ ~~1. **AK-74M** × 2~~"
                     lines = field_value.split('\n')
                     for line in lines:
                         line = line.strip()
                         if '×' in line or 'x' in line:
+                            is_deleted = False
+                            original_line = line
+                            
+                            # Проверяем, удален ли предмет (зачеркнут)
+                            if line.startswith('❌ ~~') and line.endswith('~~'):
+                                is_deleted = True
+                                # Убираем зачеркивание для парсинга
+                                line = line[5:-2]  # Убираем "❌ ~~" в начале и "~~" в конце
+                            
                             # Извлекаем номер, название и количество
                             # Паттерн для строки "1. **название** × количество"
                             match = re.match(r'(\d+)\.\s*\*\*(.*?)\*\*\s*[×x]\s*(\d+)', line)
                             if match:
                                 number, item_name, quantity = match.groups()
-                                items.append((line, item_name.strip(), int(quantity)))
+                                items.append((original_line, item_name.strip(), int(quantity), is_deleted))
                             else:
                                 # Fallback парсинг для других форматов
                                 if '**' in line and ('×' in line or 'x' in line):
@@ -84,8 +103,10 @@ class WarehouseEditSelect(discord.ui.Select):
                                         item_name = parts[1].strip()
                                         quantity_part = line.split('×')[-1] if '×' in line else line.split('x')[-1]
                                         try:
+                                            # Убираем дополнительные пометки вида "*(из 2)*"
+                                            quantity_part = quantity_part.split('*')[0].strip()
                                             quantity = int(quantity_part.strip())
-                                            items.append((line, item_name, quantity))
+                                            items.append((original_line, item_name, quantity, is_deleted))
                                         except ValueError:
                                             pass
                     break
@@ -113,22 +134,39 @@ class WarehouseEditSelect(discord.ui.Select):
                 )
                 return
             
-            item_text, item_name, current_quantity = self.parsed_items[item_index]
+            item_text, item_name, current_quantity, is_deleted = self.parsed_items[item_index]
             
-            # Показываем кнопки действий
-            view = WarehouseEditActionView(
-                self.original_message, 
-                item_index, 
-                item_text, 
-                item_name, 
-                current_quantity
-            )
-            
-            embed = discord.Embed(
-                title="🔧 Действия с предметом",
-                description=f"**Выбранный предмет:** {item_name}\n**Текущее количество:** {current_quantity}",
-                color=discord.Color.orange()
-            )
+            # Показываем кнопки действий (разные для удаленных и обычных предметов)
+            if is_deleted:
+                # Для удаленного предмета показываем только кнопку восстановления
+                view = WarehouseRestoreActionView(
+                    self.original_message, 
+                    item_index, 
+                    item_text, 
+                    item_name, 
+                    current_quantity
+                )
+                
+                embed = discord.Embed(
+                    title="🔧 Восстановление предмета",
+                    description=f"**Удаленный предмет:** {item_name}\n**Было количество:** {current_quantity}",
+                    color=discord.Color.orange()
+                )
+            else:
+                # Для обычного предмета показываем стандартные действия
+                view = WarehouseEditActionView(
+                    self.original_message, 
+                    item_index, 
+                    item_text, 
+                    item_name, 
+                    current_quantity
+                )
+                
+                embed = discord.Embed(
+                    title="🔧 Действия с предметом",
+                    description=f"**Выбранный предмет:** {item_name}\n**Текущее количество:** {current_quantity}",
+                    color=discord.Color.orange()
+                )
             
             await interaction.response.edit_message(embed=embed, view=view)
             
@@ -227,6 +265,113 @@ class WarehouseEditActionView(discord.ui.View):
                         if line.strip() == self.item_text:
                             # Зачеркиваем предмет
                             lines[j] = f"❌ ~~{self.item_text}~~"
+                            break
+                    
+                    # Обновляем поле
+                    new_value = '\n'.join(lines)
+                    embed.set_field_at(i, name=field.name, value=new_value, inline=field.inline)
+                    break
+            
+            # Обновляем сообщение с восстановленным view
+            await self.original_message.edit(embed=embed, view=original_view)
+            
+        except Exception as e:
+            print(f"❌ Ошибка при обновлении сообщения: {e}")
+            raise
+
+
+class WarehouseRestoreActionView(discord.ui.View):
+    """View с кнопкой восстановления удаленного предмета"""
+    
+    def __init__(self, original_message: discord.Message, item_index: int, 
+                 item_text: str, item_name: str, original_quantity: int):
+        super().__init__(timeout=300)  # 5 минут на действие
+        self.original_message = original_message
+        self.item_index = item_index
+        self.item_text = item_text
+        self.item_name = item_name
+        self.original_quantity = original_quantity
+    
+    @discord.ui.button(label="♻️ Восстановить предмет", style=discord.ButtonStyle.success)
+    async def restore_item(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Восстановить удаленный предмет"""
+        try:
+            await interaction.response.defer(ephemeral=True)
+            
+            # Обновляем оригинальное сообщение заявки
+            await self._update_original_message_restore_item(interaction)
+            
+            await interaction.followup.send(
+                f"✅ Предмет **{self.item_name}** восстановлен в заявке.",
+                ephemeral=True
+            )
+            
+        except Exception as e:
+            print(f"❌ Ошибка при восстановлении предмета: {e}")
+            await interaction.followup.send(
+                "❌ Произошла ошибка при восстановлении предмета.",
+                ephemeral=True
+            )
+    
+    async def _update_original_message_restore_item(self, interaction: discord.Interaction):
+        """Обновить оригинальное сообщение - восстановить предмет"""
+        try:
+            embed = self.original_message.embeds[0]
+            original_view = None
+            
+            # Сохраняем оригинальный view
+            if self.original_message.components:
+                # Определяем тип view по количеству кнопок или custom_id
+                embed_text = str(embed.to_dict())
+                is_multi_request = False
+                for field in embed.fields:
+                    if "запрашиваемые предметы" in field.name.lower() and "поз.)" in field.name:
+                        is_multi_request = True
+                        break
+                
+                # Восстанавливаем соответствующий view
+                if is_multi_request:
+                    from .persistent_views import WarehousePersistentMultiRequestView
+                    original_view = WarehousePersistentMultiRequestView()
+                else:
+                    from .persistent_views import WarehousePersistentRequestView
+                    original_view = WarehousePersistentRequestView()
+            
+            # Ищем поле с предметами
+            for i, field in enumerate(embed.fields):
+                if "запрашиваемые предметы" in field.name.lower():
+                    lines = field.value.split('\n')
+                    
+                    # Найдем и восстановим нужную строку (убираем зачеркивание)
+                    for j, line in enumerate(lines):
+                        if line.strip() == self.item_text:
+                            # Восстанавливаем предмет - убираем "❌ ~~" и "~~"
+                            if line.startswith('❌ ~~') and line.endswith('~~'):
+                                # Извлекаем содержимое без зачеркивания
+                                prefix = "❌ ~~"
+                                suffix = "~~"
+                                content = line[len(prefix):-len(suffix)]  # Правильное удаление
+                                
+                                # Проверяем и восстанавливаем номер
+                                expected_number = str(self.item_index + 1)
+                                
+                                # Проверяем, правильный ли номер в начале
+                                import re
+                                match = re.match(r'^(\d+)\.\s*(.*)$', content.strip())
+                                if match:
+                                    current_number = match.group(1)
+                                    item_content = match.group(2).strip()  # Убираем лишние пробелы
+                                    
+                                    # Если номер неправильный, исправляем
+                                    if current_number != expected_number:
+                                        restored_line = f"{expected_number}. {item_content}"
+                                    else:
+                                        restored_line = f"{current_number}. {item_content}"  # Пересобираем правильно
+                                else:
+                                    # Номера нет совсем, добавляем
+                                    restored_line = f"{expected_number}. {content.strip()}"
+                                
+                                lines[j] = restored_line
                             break
                     
                     # Обновляем поле

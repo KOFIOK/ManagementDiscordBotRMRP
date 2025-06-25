@@ -127,29 +127,27 @@ class WarehouseRequestModal(discord.ui.Modal):
             # Получение информации о пользователе
             user_info = await self.warehouse_manager.get_user_info(interaction.user)
             _, _, position, rank = user_info
-            
-            # Валидация количества с учетом доступного склада
+              # Валидация количества с учетом ограничений пользователя
             category_key = self._get_category_key(self.category)
             
-            validation_result = await self.warehouse_manager.validate_warehouse_request(
-                category_key, self.item_name, quantity
+            is_valid, corrected_quantity, validation_msg = self.warehouse_manager.validate_item_request(
+                category_key, self.item_name, quantity, position, rank
             )
             
             validation_message = ""
-            if not validation_result.get('valid', True):
-                if validation_result.get('adjusted', False):
-                    # Корректируем количество до доступного
-                    quantity = validation_result.get('available_quantity', quantity)
-                    validation_message = f"⚠️ Количество **{self.item_name}** уменьшено до {quantity} (доступный остаток)"
-                else:
-                    # Полный отказ
-                    error_embed = discord.Embed(
-                        title="❌ Недостаточно снаряжения на складе",
-                        description=validation_result.get('message', 'Недостаточно снаряжения'),
-                        color=discord.Color.red()
-                    )
-                    await interaction.edit_original_response(embed=error_embed)
-                    return
+            if corrected_quantity != quantity:
+                # Количество было скорректировано
+                quantity = corrected_quantity
+                validation_message = validation_msg
+            elif not is_valid:
+                # Полный отказ
+                error_embed = discord.Embed(
+                    title="❌ Ошибка валидации",
+                    description=validation_msg,
+                    color=discord.Color.red()
+                )
+                await interaction.edit_original_response(embed=error_embed)
+                return
             
             # Создание объекта предмета
             item = WarehouseRequestItem(
@@ -203,7 +201,16 @@ class WarehouseRequestModal(discord.ui.Modal):
         
         from .views import WarehouseCartView
         view = WarehouseCartView(cart, self.warehouse_manager)
+        
+        # Обновляем original response и сохраняем как сообщение корзины
         await interaction.edit_original_response(embed=embed, view=view)
+        
+        # Получаем оригинальное сообщение и сохраняем как сообщение корзины
+        try:
+            original_message = await interaction.original_response()
+            set_user_cart_message(interaction.user.id, original_message)
+        except Exception as e:
+            print(f"⚠️ Не удалось сохранить ссылку на сообщение корзины: {e}")
 
     def _format_static(self, static: str) -> str:
         """Форматирование статика в стандартный вид"""
@@ -283,26 +290,26 @@ class WarehouseQuantityModal(discord.ui.Modal):
                 # Базовые данные, если корзина пуста
                 user_info = await self.warehouse_manager.get_user_info(interaction.user)
                 user_name, user_static, position, rank = user_info
-                
-            # Валидация склада
+                  # Валидация количества с учетом ограничений пользователя
             category_key = self._get_category_key(self.category)
-            validation_result = await self.warehouse_manager.validate_warehouse_request(
-                category_key, self.item_name, quantity
+            is_valid, corrected_quantity, validation_msg = self.warehouse_manager.validate_item_request(
+                category_key, self.item_name, quantity, position, rank
             )
             
             validation_message = ""
-            if not validation_result.get('valid', True):
-                if validation_result.get('adjusted', False):
-                    quantity = validation_result.get('available_quantity', quantity)
-                    validation_message = f"⚠️ Количество **{self.item_name}** уменьшено до {quantity} (доступный остаток)"
-                else:
-                    error_embed = discord.Embed(
-                        title="❌ Недостаточно снаряжения на складе",
-                        description=validation_result.get('message', 'Недостаточно снаряжения'),
-                        color=discord.Color.red()
-                    )
-                    await interaction.followup.send(embed=error_embed, ephemeral=True)
-                    return
+            if corrected_quantity != quantity:
+                # Количество было скорректировано
+                quantity = corrected_quantity
+                validation_message = validation_msg
+            elif not is_valid:
+                # Полный отказ
+                error_embed = discord.Embed(
+                    title="❌ Ошибка валидации",
+                    description=validation_msg,
+                    color=discord.Color.red()
+                )
+                await interaction.followup.send(embed=error_embed, ephemeral=True)
+                return
             
             # Создание и добавление предмета
             item = WarehouseRequestItem(
@@ -355,15 +362,23 @@ class WarehouseQuantityModal(discord.ui.Modal):
             
             from .views import WarehouseCartView
             view = WarehouseCartView(cart, self.warehouse_manager)
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            
+            # Приоритет 1: Обновляем существующее сообщение корзины
+            existing_cart_message = get_user_cart_message(interaction.user.id)
+            if existing_cart_message:
+                try:
+                    await existing_cart_message.edit(embed=embed, view=view)
+                    return
+                except (discord.NotFound, discord.HTTPException):
+                    # Старое сообщение недоступно, создадим новое
+                    pass
+            
+            # Приоритет 2: Создаем новое сообщение корзины
+            cart_message = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            set_user_cart_message(interaction.user.id, cart_message)
             
         except Exception as e:
             print(f"❌ Ошибка в _show_cart_ultra_fast: {e}")
-            # Fallback: минимальное сообщение
-            await interaction.followup.send(
-                f"✅ **{self.item_name}** добавлен в корзину!",
-                ephemeral=True
-            )
 
     def _get_category_key(self, category: str) -> str:
         """Получить ключ категории"""
@@ -532,15 +547,7 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
                 await interaction.followup.send(embed=error_embed, ephemeral=True)
                 return
             
-            # Мгновенный отклик пользователю
-            loading_embed = discord.Embed(
-                title="⏳ Отправка заявки...",
-                description="Обрабатываем вашу заявку на склад, пожалуйста подождите...",
-                color=discord.Color.orange()
-            )
-            await interaction.followup.send(embed=loading_embed, ephemeral=True)
-            
-            # Фоновая обработка
+            # Фоновая обработка без дополнительных сообщений
             await self._process_warehouse_request_background(interaction, name, static)
             
         except Exception as e:
@@ -594,40 +601,85 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
     async def _send_single_request(self, interaction: discord.Interaction):
         """Отправить одиночную заявку"""
         from forms.warehouse.persistent_views import WarehousePersistentRequestView
+        from utils.user_cache import get_user_department_fast
         
         item = self.cart.items[0]
         
+        # Получение подразделения из Google Sheets
+        try:
+            department = await get_user_department_fast(interaction.user.id)
+            print(f"🏢 DEPT: Получено подразделение '{department}' для пользователя {interaction.user.id}")
+        except Exception as e:
+            print(f"⚠️ DEPT FALLBACK: Ошибка получения подразделения: {e}")
+            department = "Не определено"
+        
         embed = discord.Embed(
-            title="📦 Новая заявка на склад",
-            description=f"**{item.item_name}** × {item.quantity}",
+            title="📦 Запрос склада",
+            description=f"## {interaction.user.mention}",
             color=discord.Color.blue(),
             timestamp=datetime.now()
         )
         
+        # Информация о пользователе в правильном порядке
         embed.add_field(name="👤 Заявитель", value=f"{item.user_name} ({item.user_static})", inline=True)
+        embed.add_field(name="🏢 Подразделение", value=department, inline=True)
+        embed.add_field(name="📍 Должность", value=item.position, inline=True)
         embed.add_field(name="🎖️ Звание", value=item.rank, inline=True)
-        embed.add_field(name="💼 Должность", value=item.position, inline=True)
-        embed.add_field(name="📂 Категория", value=item.category, inline=True)
+        
+        # Пустое поле для разделения
+        embed.add_field(name="\u200b", value="\u200b", inline=False)
+        
+        # Список запрашиваемых предметов
+        embed.add_field(
+            name="📋 Запрашиваемые предметы (1 поз.)",
+            value=f"1. **{item.item_name}** × {item.quantity}",
+            inline=False
+        )
         
         embed.set_footer(text=f"ID пользователя: {interaction.user.id}")
         
-        # Отправляем в канал склада
-        warehouse_channel = await self.warehouse_manager.get_warehouse_channel(interaction.guild)
-        if warehouse_channel:
-            view = WarehousePersistentRequestView()
-            await warehouse_channel.send(embed=embed, view=view)
+        # Получаем ID канала склада и затем объект канала
+        warehouse_channel_id = self.warehouse_manager.get_warehouse_submission_channel()
+        if not warehouse_channel_id:
+            raise Exception("Канал отправки заявок склада не настроен!")
+        
+        warehouse_channel = interaction.guild.get_channel(warehouse_channel_id)
+        if not warehouse_channel:
+            raise Exception(f"Канал склада с ID {warehouse_channel_id} не найден!")
+        
+        view = WarehousePersistentRequestView()
+        await warehouse_channel.send(embed=embed, view=view)
 
     async def _send_multi_request(self, interaction: discord.Interaction):
         """Отправить множественную заявку"""
         from forms.warehouse.persistent_views import WarehousePersistentMultiRequestView
+        from utils.user_cache import get_user_department_fast
         
         first_item = self.cart.items[0]
         
+        # Получение подразделения из Google Sheets
+        try:
+            department = await get_user_department_fast(interaction.user.id)
+            print(f"🏢 DEPT: Получено подразделение '{department}' для пользователя {interaction.user.id}")
+        except Exception as e:
+            print(f"⚠️ DEPT FALLBACK: Ошибка получения подразделения: {e}")
+            department = "Не определено"
+        
         embed = discord.Embed(
-            title="📦 Новая множественная заявка на склад",
+            title="� Запрос склада",
+            description=f"## {interaction.user.mention}",
             color=discord.Color.blue(),
             timestamp=datetime.now()
         )
+        
+        # Информация о пользователе в правильном порядке
+        embed.add_field(name="👤 Заявитель", value=f"{first_item.user_name} ({first_item.user_static})", inline=True)
+        embed.add_field(name="🏢 Подразделение", value=department, inline=True)
+        embed.add_field(name="📍 Должность", value=first_item.position, inline=True)
+        embed.add_field(name="🎖️ Звание", value=first_item.rank, inline=True)
+        
+        # Пустое поле для разделения
+        embed.add_field(name="\u200b", value="\u200b", inline=False)
         
         # Добавляем список предметов
         items_text = ""
@@ -640,35 +692,59 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
             inline=False
         )
         
-        embed.add_field(name="👤 Заявитель", value=f"{first_item.user_name} ({first_item.user_static})", inline=True)
-        embed.add_field(name="🎖️ Звание", value=first_item.rank, inline=True)
-        embed.add_field(name="💼 Должность", value=first_item.position, inline=True)
-        
         embed.set_footer(text=f"ID пользователя: {interaction.user.id}")
         
-        # Отправляем в канал склада
-        warehouse_channel = await self.warehouse_manager.get_warehouse_channel(interaction.guild)
-        if warehouse_channel:
-            view = WarehousePersistentMultiRequestView()
-            await warehouse_channel.send(embed=embed, view=view)
+        # Получаем ID канала склада и затем объект канала
+        warehouse_channel_id = self.warehouse_manager.get_warehouse_submission_channel()
+        if not warehouse_channel_id:
+            raise Exception("Канал отправки заявок склада не настроен!")
+        
+        warehouse_channel = interaction.guild.get_channel(warehouse_channel_id)
+        if not warehouse_channel:
+            raise Exception(f"Канал склада с ID {warehouse_channel_id} не найден!")
+        
+        view = WarehousePersistentMultiRequestView()
+        await warehouse_channel.send(embed=embed, view=view)
 
     async def _update_cart_after_submission(self, interaction: discord.Interaction):
         """Обновить корзину после отправки заявки"""
         try:
+            # Получаем сообщение корзины для обновления
+            cart_message = get_user_cart_message(interaction.user.id)
+            
             # Очищаем корзину
             clear_user_cart_safe(interaction.user.id, "submission_completed")
             
-            # Обновляем интерфейс
+            # Обновляем сообщение корзины с информацией об успешной отправке
             success_embed = discord.Embed(
                 title="✅ Заявка отправлена!",
                 description="Ваша заявка на склад успешно отправлена на рассмотрение модераторам.",
                 color=discord.Color.green()
             )
             
-            await interaction.edit_original_response(embed=success_embed)
+            # Обновляем сообщение корзины без кнопок
+            if cart_message:
+                try:
+                    await cart_message.edit(embed=success_embed, view=None)
+                except (discord.NotFound, discord.HTTPException):
+                    # Если сообщение корзины недоступно, обновляем основной ответ
+                    await interaction.edit_original_response(embed=success_embed)
+            else:
+                # Если нет сообщения корзины, обновляем основной ответ
+                await interaction.edit_original_response(embed=success_embed)
             
         except Exception as e:
             print(f"❌ Ошибка при обновлении корзины после отправки: {e}")
+            # В случае ошибки просто показываем успех через основной ответ
+            try:
+                success_embed = discord.Embed(
+                    title="✅ Заявка отправлена!",
+                    description="Ваша заявка на склад успешно отправлена на рассмотрение модераторам.",
+                    color=discord.Color.green()
+                )
+                await interaction.edit_original_response(embed=success_embed)
+            except:
+                pass
 
     def _format_static(self, static: str) -> str:
         """Форматирование статика в стандартный вид"""
@@ -776,7 +852,7 @@ class WarehouseCustomItemModal(discord.ui.Modal):
 
     async def _show_cart_ultra_fast(self, interaction: discord.Interaction, cart: WarehouseRequestCart, 
                                    validation_message: str = "", loading_message = None):
-        """Быстрое отображение корзины"""
+        """Быстрое отображение корзины для кастомных предметов"""
         try:
             embed = discord.Embed(
                 title="📦 Ваша заявка на склад",
@@ -784,6 +860,9 @@ class WarehouseCustomItemModal(discord.ui.Modal):
                 color=discord.Color.blue(),
                 timestamp=datetime.now()
             )
+            
+            if validation_message:
+                embed.add_field(name="⚠️ Внимание", value=validation_message, inline=False)
             
             embed.add_field(
                 name="📊 Статистика",
@@ -794,11 +873,24 @@ class WarehouseCustomItemModal(discord.ui.Modal):
             
             from .views import WarehouseCartView
             view = WarehouseCartView(cart, self.warehouse_manager)
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            
+            # Приоритет 1: Обновляем существующее сообщение корзины
+            existing_cart_message = get_user_cart_message(interaction.user.id)
+            if existing_cart_message:
+                try:
+                    await existing_cart_message.edit(embed=embed, view=view)
+                    custom_item_name = self.item_name_input.value
+                    return
+                except (discord.NotFound, discord.HTTPException):
+                    # Старое сообщение недоступно, создадим новое
+                    pass
+            
+            # Приоритет 2: Создаем новое сообщение корзины
+            cart_message = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            set_user_cart_message(interaction.user.id, cart_message)
             
         except Exception as e:
             print(f"❌ Ошибка в _show_cart_ultra_fast: {e}")
-            await interaction.followup.send(f"✅ **{self.item_name_input.value}** добавлен в корзину!", ephemeral=True)
 
     def _get_category_key(self, category: str) -> str:
         """Получить ключ категории"""

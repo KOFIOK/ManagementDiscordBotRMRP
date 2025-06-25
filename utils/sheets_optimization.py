@@ -8,30 +8,92 @@
 """
 
 import asyncio
+import time
+import random
 from typing import Dict, List, Optional, Any
 from utils.google_sheets import GoogleSheetsManager
+from utils.user_database import UserDatabase
+import gspread
 
 
 class OptimizedSheetsManager:
     """Оптимизированный менеджер для работы с Google Sheets"""
     
-    def __init__(self):
-        self.base_manager = GoogleSheetsManager()
-        self._batch_cache = {}  # Временный кэш для batch операций
+    def __init__(self, base_manager: GoogleSheetsManager):
+        self.base_manager = base_manager
+        # Глобальный счетчик запросов для контроля rate limiting
+        self._request_count = 0
+        self._request_window_start = time.time()
+        self._max_requests_per_minute = 40  # Консервативный лимит (Google: 100/min)
+        self._rate_limit_cooldown = False
+        self._cooldown_until = 0
+    
+    async def _check_rate_limit(self):
+        """Проверяет и контролирует rate limiting"""
+        current_time = time.time()
+        
+        # Проверяем, находимся ли мы в состоянии cooldown
+        if self._rate_limit_cooldown and current_time < self._cooldown_until:
+            sleep_time = self._cooldown_until - current_time
+            print(f"🛑 RATE LIMIT: Ждем {sleep_time:.2f}s до окончания cooldown")
+            await asyncio.sleep(sleep_time)
+            self._rate_limit_cooldown = False
+        
+        # Сброс окна запросов каждую минуту
+        if current_time - self._request_window_start > 60:
+            self._request_count = 0
+            self._request_window_start = current_time
+        
+        # Проверяем лимит запросов
+        if self._request_count >= self._max_requests_per_minute:
+            sleep_time = 60 - (current_time - self._request_window_start)
+            print(f"⏳ RATE LIMIT: Достигнут лимит {self._max_requests_per_minute} запросов/мин, ждем {sleep_time:.2f}s")
+            await asyncio.sleep(sleep_time)
+            self._request_count = 0
+            self._request_window_start = time.time()
+        
+        self._request_count += 1
+    
+    async def _handle_rate_limit_error(self, error):
+        """Обрабатывает 429 ошибку и устанавливает cooldown"""
+        print(f"🚨 RATE LIMIT ERROR: {error}")
+        self._rate_limit_cooldown = True
+        self._cooldown_until = time.time() + 120  # 2 минуты cooldown
+        print(f"⏰ COOLDOWN: Установлен cooldown на 2 минуты")
+    
+    async def _retry_with_exponential_backoff(self, func, max_retries=5, base_delay=1):
+        """
+        Выполняет функцию с retry и exponential backoff для обработки 429 ошибок
+        """
+        for attempt in range(max_retries):
+            try:
+                # Проверяем rate limit перед каждой попыткой
+                await self._check_rate_limit()
+                return await func()
+            except gspread.exceptions.APIError as e:
+                if e.response.status_code == 429:  # Quota exceeded
+                    await self._handle_rate_limit_error(e)
+                    
+                    if attempt == max_retries - 1:
+                        print(f"❌ RETRY: Превышено максимальное количество попыток ({max_retries})")
+                        raise
+                    
+                    # Exponential backoff с jitter
+                    delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
+                    print(f"⏳ RETRY: Попытка {attempt + 1}/{max_retries}, ждем {delay:.2f}s из-за лимита API")
+                    await asyncio.sleep(delay)
+                else:
+                    # Другие API ошибки - не повторяем
+                    raise
+            except Exception as e:
+                # Неожиданные ошибки - не повторяем
+                raise
     
     async def get_users_batch(self, user_ids: List[int]) -> Dict[int, Optional[Dict[str, Any]]]:
         """
-        Получить данные нескольких пользователей одним запросом
-        
-        Args:
-            user_ids: Список Discord ID пользователей
-            
-        Returns:
-            Dict {user_id: user_data} с результатами
+        Массовое получение пользователей из Google Sheets (оптимизированная версия)
         """
         try:
-            from utils.user_database import UserDatabase
-            
             # Получаем рабочий лист
             worksheet = self.base_manager.get_worksheet(UserDatabase.WORKSHEET_NAME)
             if not worksheet:
@@ -40,9 +102,13 @@ class OptimizedSheetsManager:
             
             print(f"🔄 BATCH: Загружаем данные для {len(user_ids)} пользователей")
             
-            # Получаем все данные листа одним запросом
-            all_records = await asyncio.to_thread(worksheet.get_all_records)
-              # Создаем индекс по Discord ID для быстрого поиска
+            # Получаем все данные листа одним запросом с retry
+            async def get_records():
+                return await asyncio.to_thread(worksheet.get_all_records)
+            
+            all_records = await self._retry_with_exponential_backoff(get_records)
+            
+            # Создаем индекс по Discord ID для быстрого поиска
             users_index = {}
             for record in all_records:
                 discord_id_str = str(record.get('Discord ID', '')).strip()
@@ -53,119 +119,61 @@ class OptimizedSheetsManager:
                             'first_name': str(record.get('Имя', '')).strip(),
                             'last_name': str(record.get('Фамилия', '')).strip(),
                             'static': str(record.get('Статик', '')).strip(),
-                            'rank': str(record.get('Звание', '')).strip(),  # ИСПРАВЛЕНО: 'Звание' вместо 'Воинское Звание'
+                            'rank': str(record.get('Звание', '')).strip(),
                             'department': str(record.get('Подразделение', '')).strip(),
                             'position': str(record.get('Должность', '')).strip(),
-                            'discord_id': discord_id_str
+                            'discord_id': discord_id
                         }
-                    except ValueError:
-                        continue  # Пропускаем некорректные Discord ID
+                    except (ValueError, TypeError):
+                        continue
             
-            # Формируем результаты для запрошенных пользователей
-            results = {}
+            # Формируем результат для запрошенных пользователей
+            result = {}
             for user_id in user_ids:
                 if user_id in users_index:
                     user_data = users_index[user_id]
-                    # Создаем полное имя
+                    # Формируем полное имя
                     user_data['full_name'] = f"{user_data['first_name']} {user_data['last_name']}".strip()
-                    results[user_id] = user_data
+                    result[user_id] = user_data
                     print(f"✅ BATCH: Найден пользователь {user_id}: {user_data['full_name']}")
                 else:
-                    results[user_id] = None
-                    print(f"⚠️ BATCH: Пользователь {user_id} не найден")
+                    result[user_id] = None
+                    print(f"❌ BATCH: Пользователь {user_id} не найден")
             
-            print(f"✅ BATCH: Обработано {len(user_ids)} пользователей, найдено {len([r for r in results.values() if r])}")
-            return results
+            print(f"📊 BATCH RESULT: {len([r for r in result.values() if r])}/{len(user_ids)} пользователей найдено")
+            return result
             
         except Exception as e:
             print(f"❌ BATCH ERROR: {e}")
-            import traceback
-            traceback.print_exc()
-            # Возвращаем пустые результаты при ошибке
             return {user_id: None for user_id in user_ids}
     
     async def get_user_fast(self, user_id: int) -> Optional[Dict[str, Any]]:
-        """
-        Быстрое получение данных одного пользователя
-        
-        Args:
-            user_id: Discord ID пользователя
-            
-        Returns:
-            Dict с данными пользователя или None
-        """
-        try:
-            # Используем batch метод для одного пользователя
-            results = await self.get_users_batch([user_id])
-            return results.get(user_id)
-            
-        except Exception as e:
-            print(f"❌ FAST GET ERROR для {user_id}: {e}")
-            return None
+        """Быстрое получение одного пользователя"""
+        batch_result = await self.get_users_batch([user_id])
+        return batch_result.get(user_id)
+
+
+# Глобальный экземпляр оптимизированного менеджера (ленивая инициализация)
+_optimized_sheets = None
+
+def get_optimized_sheets_manager():
+    """Получить или создать экземпляр OptimizedSheetsManager с правильной инициализацией"""
+    global _optimized_sheets
     
-    async def preload_active_users(self, limit: int = 100) -> Dict[int, Dict[str, Any]]:
-        """
-        Предзагрузить данные наиболее активных пользователей
-        
-        Args:
-            limit: Максимальное количество пользователей для загрузки
-            
-        Returns:
-            Dict с данными загруженных пользователей
-        """
+    if _optimized_sheets is None:
         try:
-            from utils.user_database import UserDatabase
+            from utils.google_sheets import GoogleSheetsManager
             
-            # Получаем рабочий лист
-            worksheet = self.base_manager.get_worksheet(UserDatabase.WORKSHEET_NAME)
-            if not worksheet:
-                print(f"❌ PRELOAD: Лист '{UserDatabase.WORKSHEET_NAME}' не найден")
-                return {}
-            
-            print(f"🔄 PRELOAD: Предзагружаем данные до {limit} пользователей")
-            
-            # Получаем все записи
-            all_records = await asyncio.to_thread(worksheet.get_all_records)
-            
-            # Ограничиваем количество и формируем результат
-            results = {}
-            count = 0
-            
-            for record in all_records:
-                if count >= limit:
-                    break
-                    
-                discord_id_str = str(record.get('Discord ID', '')).strip()
-                if discord_id_str:
-                    try:
-                        discord_id = int(discord_id_str)
-                        user_data = {
-                            'first_name': str(record.get('Имя', '')).strip(),
-                            'last_name': str(record.get('Фамилия', '')).strip(),
-                            'static': str(record.get('Статик', '')).strip(),
-                            'rank': str(record.get('Воинское Звание', '')).strip(),
-                            'department': str(record.get('Подразделение', '')).strip(),
-                            'position': str(record.get('Должность', '')).strip(),
-                            'discord_id': discord_id_str
-                        }
-                        user_data['full_name'] = f"{user_data['first_name']} {user_data['last_name']}".strip()
-                        
-                        results[discord_id] = user_data
-                        count += 1
-                        
-                    except ValueError:
-                        continue
-            
-            print(f"✅ PRELOAD: Предзагружено {len(results)} пользователей")
-            return results
-            
+            # GoogleSheetsManager не принимает параметры в __init__
+            base_manager = GoogleSheetsManager()
+            base_manager.initialize()  # Инициализируем соединение
+            _optimized_sheets = OptimizedSheetsManager(base_manager)
+            print("✅ OPTIMIZED SHEETS: Инициализирован оптимизированный менеджер")
         except Exception as e:
-            print(f"❌ PRELOAD ERROR: {e}")
-            return {}
-
-
-# Глобальный экземпляр оптимизированного менеджера
-optimized_sheets = OptimizedSheetsManager()
+            print(f"❌ OPTIMIZED SHEETS INIT ERROR: {e}")
+            _optimized_sheets = None
+    
+    return _optimized_sheets
 
 
 async def get_users_batch_optimized(user_ids: List[int]) -> Dict[int, Optional[Dict[str, Any]]]:
@@ -176,8 +184,22 @@ async def get_users_batch_optimized(user_ids: List[int]) -> Dict[int, Optional[D
         user_ids: Список Discord ID пользователей
         
     Returns:
-        Dict с результатами
+        Dict {user_id: user_data} с результатами
     """
+    optimized_sheets = get_optimized_sheets_manager()
+    if optimized_sheets is None:
+        print("❌ FALLBACK: Используем стандартный UserDatabase")
+        # Fallback на стандартный UserDatabase
+        results = {}
+        for user_id in user_ids:
+            try:
+                user_data = await UserDatabase.get_user_info(user_id)
+                results[user_id] = user_data
+            except Exception as e:
+                print(f"❌ FALLBACK ERROR для {user_id}: {e}")
+                results[user_id] = None
+        return results
+    
     return await optimized_sheets.get_users_batch(user_ids)
 
 
@@ -191,4 +213,13 @@ async def get_user_fast_optimized(user_id: int) -> Optional[Dict[str, Any]]:
     Returns:
         Dict с данными пользователя или None
     """
+    optimized_sheets = get_optimized_sheets_manager()
+    if optimized_sheets is None:
+        print("❌ FALLBACK: Используем стандартный UserDatabase")
+        try:
+            return await UserDatabase.get_user_info(user_id)
+        except Exception as e:
+            print(f"❌ FALLBACK ERROR для {user_id}: {e}")
+            return None
+    
     return await optimized_sheets.get_user_fast(user_id)

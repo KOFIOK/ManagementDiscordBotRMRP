@@ -27,6 +27,9 @@ class UserDataCache:
         # Время истечения кэша: {user_id: expiry_datetime}
         self._expiry: Dict[int, datetime] = {}
         
+        # Защита от рекурсивных вызовов
+        self._loading: Dict[int, bool] = {}
+        
         # Статистика кэша
         self._stats = {
             'hits': 0,
@@ -37,9 +40,9 @@ class UserDataCache:
         }
         
         # Настройки
-        self.CACHE_TTL = 300  # 5 минут TTL
-        self.MAX_CACHE_SIZE = 1000  # Максимум записей в кэше
-        self.CLEANUP_INTERVAL = 600  # Очистка каждые 10 минут
+        self.CACHE_TTL = 1800  # 30 минут TTL (было 5 минут)
+        self.MAX_CACHE_SIZE = 2000  # Максимум записей в кэше (было 1000)
+        self.CLEANUP_INTERVAL = 1800  # Очистка каждые 30 минут (было 10)
     
     async def get_user_info(self, user_id: int, force_refresh: bool = False) -> Optional[Dict[str, Any]]:
         """
@@ -53,25 +56,45 @@ class UserDataCache:
             Dict с данными пользователя или None если не найден
         """
         self._stats['total_requests'] += 1
-          # Проверяем, нужно ли принудительное обновление
+        
+        # Защита от рекурсивных вызовов
+        if self._loading.get(user_id, False):
+            print(f"🔄 RECURSIVE PROTECTION: Обнаружен рекурсивный вызов для {user_id}, возвращаем None")
+            return None
+        
+        # Проверяем, нужно ли принудительное обновление
         if not force_refresh and self._is_cached(user_id):
             self._stats['hits'] += 1
             print(f"📋 CACHE HIT: Данные пользователя {user_id} получены из кэша")
             cached_data = self._cache[user_id]
             return cached_data.copy() if cached_data is not None else None
-          # Кэш пропуск - загружаем данные
+        
+        # Кэш пропуск - загружаем данные
         self._stats['misses'] += 1
         print(f"🔄 CACHE MISS: Загружаем данные пользователя {user_id} из базы")
         
-        try:            # Используем оптимизированный batch-запрос если доступен
+        # Устанавливаем флаг загрузки
+        self._loading[user_id] = True
+        
+        try:            
+            # Пытаемся использовать оптимизированный запрос только если он не будет вызывать рекурсию
+            user_data = None
+            
+            # Сначала пробуем прямой доступ к sheets без оптимизации
             try:
-                from utils.sheets_optimization import get_user_fast_optimized
-                user_data = await get_user_fast_optimized(user_id)
-                print(f"🚀 FAST OPTIMIZED: Используем оптимизированный запрос для {user_id}")
-            except ImportError:
-                # Fallback на обычный UserDatabase
-                user_data = await UserDatabase.get_user_info(user_id)
-                print(f"📋 STANDARD: Используем стандартный запрос для {user_id}")
+                from utils.user_database import UserDatabase
+                user_data = await UserDatabase._get_user_info_original(user_id)
+                print(f"� DIRECT: Используем прямой запрос для {user_id}")
+            except Exception as e:
+                print(f"⚠️ DIRECT FALLBACK: {e}")
+                # Если прямой запрос не работает, пробуем оптимизированный
+                try:
+                    from utils.sheets_optimization import get_user_fast_optimized
+                    user_data = await get_user_fast_optimized(user_id)
+                    print(f"� FAST OPTIMIZED: Используем оптимизированный запрос для {user_id}")
+                except Exception as e2:
+                    print(f"❌ OPTIMIZED FAILED: {e2}")
+                    user_data = None
             
             if user_data:
                 # Сохраняем в кэш
@@ -91,6 +114,9 @@ class UserDataCache:
                 print(f"🔄 CACHE FALLBACK: Используем устаревшие данные для {user_id}")
                 return self._cache[user_id].copy()
             return None
+        finally:
+            # Всегда очищаем флаг загрузки
+            self._loading.pop(user_id, None)
     
     def _is_cached(self, user_id: int) -> bool:
         """Проверить, есть ли действительные данные в кэше"""
@@ -101,6 +127,49 @@ class UserDataCache:
             return False
         
         return datetime.now() < self._expiry[user_id]
+    
+    async def _get_user_info_internal(self, user_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Внутренняя функция получения данных БЕЗ увеличения счетчика запросов
+        Используется для избежания рекурсивных проблем в fallback логике
+        """
+        # Проверяем кэш без увеличения счетчика
+        if self._is_cached(user_id):
+            print(f"📋 INTERNAL CACHE HIT: Данные пользователя {user_id} получены из кэша")
+            cached_data = self._cache[user_id]
+            return cached_data.copy() if cached_data is not None else None
+        
+        # Защита от рекурсивных вызовов
+        if self._loading.get(user_id, False):
+            print(f"🔄 INTERNAL RECURSIVE PROTECTION: Обнаружен рекурсивный вызов для {user_id}")
+            return None
+        
+        # Устанавливаем флаг загрузки
+        self._loading[user_id] = True
+        
+        try:
+            # Используем только прямой запрос БЕЗ оптимизации для внутренних вызовов
+            from utils.user_database import UserDatabase
+            user_data = await UserDatabase._get_user_info_original(user_id)
+            print(f"📋 INTERNAL DIRECT: Внутренний прямой запрос для {user_id}")
+            
+            if user_data:
+                # Сохраняем в кэш
+                self._store_in_cache(user_id, user_data)
+                print(f"✅ INTERNAL CACHE STORE: Данные пользователя {user_id} сохранены в кэш")
+                return user_data.copy()
+            else:
+                # Сохраняем отрицательный результат
+                self._store_in_cache(user_id, None)
+                print(f"⚠️ INTERNAL CACHE STORE: Пользователь {user_id} не найден")
+                return None
+                
+        except Exception as e:
+            print(f"❌ INTERNAL CACHE ERROR: {e}")
+            return None
+        finally:
+            # Всегда очищаем флаг загрузки
+            self._loading.pop(user_id, None)
     
     def _store_in_cache(self, user_id: int, user_data: Optional[Dict[str, Any]]):
         """Сохранить данные в кэш"""
@@ -225,7 +294,8 @@ class UserDataCache:
                         self._store_in_cache(user_id, user_data)
                         results[user_id] = user_data.copy() if user_data else None
                         
-                except ImportError:
+                except (ImportError, AttributeError, Exception) as batch_error:
+                    print(f"⚠️ BATCH FALLBACK: {batch_error}")
                     print(f"📋 STANDARD PRELOAD: Используем стандартные параллельные запросы")
                     # Fallback на стандартную параллельную загрузку
                     # Ограничиваем количество одновременных запросов

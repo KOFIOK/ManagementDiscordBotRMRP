@@ -5,7 +5,7 @@
 
 import discord
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Optional, Tuple, Any
+from typing import Dict, Optional, Tuple, Any, List
 import re
 from .config_manager import load_config
 from .google_sheets import GoogleSheetsManager
@@ -317,43 +317,73 @@ class WarehouseManager:
         }
 
     def validate_item_request(self, category_key: str, item_name: str, quantity: int, 
-                            position: str, rank: str) -> Tuple[bool, int, str]:
+                            position: str, rank: str, current_cart_items: List = None) -> Tuple[bool, int, str]:
         """
-        Валидировать запрос предмета
+        Валидировать запрос предмета с учетом уже добавленных в корзину
         Возвращает (is_valid, corrected_quantity, message)
         """
         user_limits = self.get_user_limits(position, rank)
+        
+        # Подсчитываем уже существующие предметы данного типа в корзине
+        existing_quantity = 0
+        if current_cart_items:
+            for cart_item in current_cart_items:
+                if self._items_are_same_type(category_key, item_name, cart_item.category, cart_item.item_name):
+                    existing_quantity += cart_item.quantity
         
         # Специальная обработка для разных категорий
         if category_key == "оружие":
             max_weapons = user_limits.get("оружие", 3)
             weapon_restrictions = user_limits.get("weapon_restrictions", [])
-              # Проверка ограничений на тип оружия
+            
+            # Проверка ограничений на тип оружия
             if weapon_restrictions and item_name not in weapon_restrictions:
                 return False, 0, f"❌ Вам недоступен данный тип оружия. Доступно: {', '.join(weapon_restrictions)}"
             
-            # Проверка количества (более 3 единиц - слив)
-            if quantity > max_weapons:
-                return True, max_weapons, f"Количество уменьшено до максимально возможного: {max_weapons}"
+            # Проверка общего количества (существующие + новые)
+            total_quantity = existing_quantity + quantity
+            if total_quantity > max_weapons:
+                # Корректируем количество с учетом уже имеющихся
+                corrected_quantity = max_weapons - existing_quantity
+                if corrected_quantity <= 0:
+                    return False, 0, f"❌ Превышен лимит оружия ({max_weapons}). В корзине уже: {existing_quantity}"
+                return True, corrected_quantity, f"Количество уменьшено до максимально возможного: {corrected_quantity} (лимит: {max_weapons}, в корзине: {existing_quantity})"
             
         elif category_key == "бронежилеты":
             max_armor = user_limits.get("бронежилеты", 10)
-            # Проверка количества (более 10 единиц - слив)
-            if quantity > max_armor:
-                return True, max_armor, f"Количество уменьшено до максимально возможного: {max_armor}"
+            
+            # Проверка общего количества (существующие + новые)
+            total_quantity = existing_quantity + quantity
+            if total_quantity > max_armor:
+                # Корректируем количество с учетом уже имеющихся
+                corrected_quantity = max_armor - existing_quantity
+                if corrected_quantity <= 0:
+                    return False, 0, f"❌ Превышен лимит бронежилетов ({max_armor}). В корзине уже: {existing_quantity}"
+                return True, corrected_quantity, f"Количество уменьшено до максимально возможного: {corrected_quantity} (лимит: {max_armor}, в корзине: {existing_quantity})"
                 
         elif category_key == "медикаменты":
             if item_name == "Армейская аптечка":
                 max_medkits = user_limits.get("аптечки", 20)
-                # Проверка количества (более 20 единиц - слив)
-                if quantity > max_medkits:
-                    return True, max_medkits, f"Количество уменьшено до максимально возможного: {max_medkits}"
+                
+                # Проверка общего количества (существующие + новые)
+                total_quantity = existing_quantity + quantity
+                if total_quantity > max_medkits:
+                    # Корректируем количество с учетом уже имеющихся
+                    corrected_quantity = max_medkits - existing_quantity
+                    if corrected_quantity <= 0:
+                        return False, 0, f"❌ Превышен лимит аптечек ({max_medkits}). В корзине уже: {existing_quantity}"
+                    return True, corrected_quantity, f"Количество уменьшено до максимально возможного: {corrected_quantity} (лимит: {max_medkits}, в корзине: {existing_quantity})"
                 
         elif category_key == "другое":
             if item_name == "Материалы":
-                # Лимит материалов - 1000 (более 1000 - слив)
-                if quantity > 1000:
-                    return True, 1000, "Количество уменьшено до максимально возможного: 1000"
+                # Проверка общего количества материалов
+                total_quantity = existing_quantity + quantity
+                if total_quantity > 1000:
+                    # Корректируем количество с учетом уже имеющихся
+                    corrected_quantity = 1000 - existing_quantity
+                    if corrected_quantity <= 0:
+                        return False, 0, f"❌ Превышен лимит материалов (1000). В корзине уже: {existing_quantity}"
+                    return True, corrected_quantity, f"Количество уменьшено до максимально возможного: {corrected_quantity} (лимит: 1000, в корзине: {existing_quantity})"
         
         return True, quantity, "✅ Запрос корректен"
 
@@ -441,3 +471,24 @@ class WarehouseManager:
         embed.set_footer(text="Система аудита склада ВС РФ")
         
         return embed
+    
+    def _items_are_same_type(self, category_key1: str, item_name1: str, 
+                           category2: str, item_name2: str) -> bool:
+        """
+        Определить, относятся ли предметы к одному типу для проверки лимитов
+        Каждый конкретный предмет имеет свой отдельный лимит
+        """
+        # Приводим категории к единому формату (ключ)
+        category_key2 = None
+        for cat_name, cat_data in self.item_categories.items():
+            if cat_name == category2:
+                category_key2 = cat_data["key"]
+                break
+        
+        if not category_key2:
+            return False
+        
+        # Предметы считаются одного типа только если:
+        # 1. Они из одной категории И
+        # 2. Имеют одинаковое название
+        return (category_key1 == category_key2) and (item_name1 == item_name2)

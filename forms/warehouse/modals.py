@@ -127,42 +127,53 @@ class WarehouseRequestModal(discord.ui.Modal):
             # Получение информации о пользователе
             user_info = await self.warehouse_manager.get_user_info(interaction.user)
             _, _, position, rank = user_info
-              # Валидация количества с учетом ограничений пользователя
+            
+            # Получаем текущее состояние корзины для проверки лимитов
+            cart = get_user_cart(interaction.user.id)
+            
+            # Валидация количества с учетом ограничений пользователя
             category_key = self._get_category_key(self.category)
             
             is_valid, corrected_quantity, validation_msg = self.warehouse_manager.validate_item_request(
-                category_key, self.item_name, quantity, position, rank
+                category_key, self.item_name, quantity, position, rank, cart.items
             )
             
             validation_message = ""
+            item_to_add = None  # Флаг для определения, добавлять ли предмет
+            
             if corrected_quantity != quantity:
                 # Количество было скорректировано
                 quantity = corrected_quantity
                 validation_message = validation_msg
-            elif not is_valid:
-                # Полный отказ
-                error_embed = discord.Embed(
-                    title="❌ Ошибка валидации",
-                    description=validation_msg,
-                    color=discord.Color.red()
+                # Создаем предмет для добавления
+                item_to_add = WarehouseRequestItem(
+                    category=self.category,
+                    item_name=self.item_name,
+                    quantity=quantity,
+                    user_name=name,
+                    user_static=static,
+                    position=position,
+                    rank=rank
                 )
-                await interaction.edit_original_response(embed=error_embed)
-                return
+            elif not is_valid:
+                # Полный отказ - показываем информацию в корзине
+                validation_message = validation_msg
+                # Предмет НЕ добавляется в корзину
+            else:
+                # Валидация прошла успешно
+                item_to_add = WarehouseRequestItem(
+                    category=self.category,
+                    item_name=self.item_name,
+                    quantity=quantity,
+                    user_name=name,
+                    user_static=static,
+                    position=position,
+                    rank=rank
+                )
             
-            # Создание объекта предмета
-            item = WarehouseRequestItem(
-                category=self.category,
-                item_name=self.item_name,
-                quantity=quantity,
-                user_name=name,
-                user_static=static,
-                position=position,
-                rank=rank
-            )
-            
-            # Добавление в корзину
-            cart = get_user_cart(interaction.user.id)
-            cart.add_item(item)
+            # Добавляем предмет в корзину только если он создан
+            if item_to_add:
+                cart.add_item(item_to_add)
             
             # Показать корзину
             await self._show_cart(interaction, cart, validation_message)
@@ -188,8 +199,15 @@ class WarehouseRequestModal(discord.ui.Modal):
             timestamp=datetime.now()
         )
         
-        if validation_message and "уменьшено" in validation_message:
-            embed.add_field(name="⚠️ Внимание", value=validation_message, inline=False)
+        if validation_message:
+            # Определяем цвет и иконку в зависимости от типа сообщения
+            if "Превышен лимит" in validation_message:
+                field_name = "🚫 Лимит исчерпан"
+            elif "уменьшено" in validation_message:
+                field_name = "⚠️ Внимание"
+            else:
+                field_name = "ℹ️ Информация"
+            embed.add_field(name=field_name, value=validation_message, inline=False)
         
         embed.add_field(
             name="📊 Статистика",
@@ -293,36 +311,45 @@ class WarehouseQuantityModal(discord.ui.Modal):
                   # Валидация количества с учетом ограничений пользователя
             category_key = self._get_category_key(self.category)
             is_valid, corrected_quantity, validation_msg = self.warehouse_manager.validate_item_request(
-                category_key, self.item_name, quantity, position, rank
+                category_key, self.item_name, quantity, position, rank, cart.items
             )
             
             validation_message = ""
+            item_to_add = None  # Флаг для определения, добавлять ли предмет
+            
             if corrected_quantity != quantity:
                 # Количество было скорректировано
                 quantity = corrected_quantity
                 validation_message = validation_msg
-            elif not is_valid:
-                # Полный отказ
-                error_embed = discord.Embed(
-                    title="❌ Ошибка валидации",
-                    description=validation_msg,
-                    color=discord.Color.red()
+                # Создаем предмет для добавления
+                item_to_add = WarehouseRequestItem(
+                    category=self.category,
+                    item_name=self.item_name,
+                    quantity=quantity,
+                    user_name=user_name,
+                    user_static=user_static,
+                    position=position,
+                    rank=rank
                 )
-                await interaction.followup.send(embed=error_embed, ephemeral=True)
-                return
+            elif not is_valid:
+                # Полный отказ - показываем информацию в корзине
+                validation_message = validation_msg
+                # Предмет НЕ добавляется в корзину
+            else:
+                # Валидация прошла успешно
+                item_to_add = WarehouseRequestItem(
+                    category=self.category,
+                    item_name=self.item_name,
+                    quantity=quantity,
+                    user_name=user_name,
+                    user_static=user_static,
+                    position=position,
+                    rank=rank
+                )
             
-            # Создание и добавление предмета
-            item = WarehouseRequestItem(
-                category=self.category,
-                item_name=self.item_name,
-                quantity=quantity,
-                user_name=user_name,
-                user_static=user_static,
-                position=position,
-                rank=rank
-            )
-            
-            cart.add_item(item)
+            # Добавляем предмет в корзину только если он создан
+            if item_to_add:
+                cart.add_item(item_to_add)
             
             # Ультра-быстрое отображение корзины
             await self._show_cart_ultra_fast(interaction, cart, validation_message)
@@ -351,7 +378,14 @@ class WarehouseQuantityModal(discord.ui.Modal):
             )
             
             if validation_message:
-                embed.add_field(name="⚠️ Внимание", value=validation_message, inline=False)
+                # Определяем цвет и иконку в зависимости от типа сообщения
+                if "Превышен лимит" in validation_message:
+                    field_name = "🚫 Лимит исчерпан"
+                elif "уменьшено" in validation_message:
+                    field_name = "⚠️ Внимание"
+                else:
+                    field_name = "ℹ️ Информация"
+                embed.add_field(name=field_name, value=validation_message, inline=False)
             
             embed.add_field(
                 name="📊 Статистика",
@@ -621,7 +655,7 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
         )
         
         # Информация о пользователе в правильном порядке
-        embed.add_field(name="👤 Заявитель", value=f"{item.user_name} ({item.user_static})", inline=True)
+        embed.add_field(name="👤 Заявитель", value=f"{item.user_name} | {item.user_static}", inline=False)
         embed.add_field(name="🏢 Подразделение", value=department, inline=True)
         embed.add_field(name="📍 Должность", value=item.position, inline=True)
         embed.add_field(name="🎖️ Звание", value=item.rank, inline=True)
@@ -666,7 +700,7 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
             department = "Не определено"
         
         embed = discord.Embed(
-            title="� Запрос склада",
+            title="📦 Запрос склада",
             description=f"## {interaction.user.mention}",
             color=discord.Color.blue(),
             timestamp=datetime.now()
@@ -825,21 +859,51 @@ class WarehouseCustomItemModal(discord.ui.Modal):
                 user_info = await self.warehouse_manager.get_user_info(interaction.user)
                 user_name, user_static, position, rank = user_info
             
-            # Создание предмета
-            item = WarehouseRequestItem(
-                category=self.category,
-                item_name=item_name,
-                quantity=quantity,
-                user_name=user_name,
-                user_static=user_static,
-                position=position,
-                rank=rank
+            # Валидация с учетом корзины
+            category_key = self._get_category_key(self.category)
+            is_valid, corrected_quantity, validation_msg = self.warehouse_manager.validate_item_request(
+                category_key, item_name, quantity, position, rank, cart.items
             )
             
-            cart.add_item(item)
+            validation_message = ""
+            item_to_add = None  # Флаг для определения, добавлять ли предмет
+            
+            if corrected_quantity != quantity:
+                # Количество было скорректировано
+                quantity = corrected_quantity
+                validation_message = validation_msg
+                # Создаем предмет для добавления
+                item_to_add = WarehouseRequestItem(
+                    category=self.category,
+                    item_name=item_name,
+                    quantity=quantity,
+                    user_name=user_name,
+                    user_static=user_static,
+                    position=position,
+                    rank=rank
+                )
+            elif not is_valid:
+                # Полный отказ - показываем информацию в корзине
+                validation_message = validation_msg
+                # Предмет НЕ добавляется в корзину
+            else:
+                # Валидация прошла успешно
+                item_to_add = WarehouseRequestItem(
+                    category=self.category,
+                    item_name=item_name,
+                    quantity=quantity,
+                    user_name=user_name,
+                    user_static=user_static,
+                    position=position,
+                    rank=rank
+                )
+            
+            # Добавляем предмет в корзину только если он создан
+            if item_to_add:
+                cart.add_item(item_to_add)
             
             # Показать корзину
-            await self._show_cart_ultra_fast(interaction, cart)
+            await self._show_cart_ultra_fast(interaction, cart, validation_message)
             
         except Exception as e:
             print(f"❌ Ошибка в WarehouseCustomItemModal.on_submit: {e}")
@@ -862,7 +926,14 @@ class WarehouseCustomItemModal(discord.ui.Modal):
             )
             
             if validation_message:
-                embed.add_field(name="⚠️ Внимание", value=validation_message, inline=False)
+                # Определяем цвет и иконку в зависимости от типа сообщения
+                if "Превышен лимит" in validation_message:
+                    field_name = "🚫 Лимит исчерпан"
+                elif "уменьшено" in validation_message:
+                    field_name = "⚠️ Внимание"
+                else:
+                    field_name = "ℹ️ Информация"
+                embed.add_field(name=field_name, value=validation_message, inline=False)
             
             embed.add_field(
                 name="📊 Статистика",

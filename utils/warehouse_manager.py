@@ -3,6 +3,7 @@
 Включает в себя валидацию лимитов, определение должностей/званий и логику кулдауна
 """
 
+import asyncio
 import discord
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional, Tuple, Any, List
@@ -179,9 +180,31 @@ class WarehouseManager:
         Сначала ищет в Google Sheets (лист "Личный Состав"), потом в ролях Discord
         """
         try:
-            # Используем UserDatabase для поиска в Google Sheets
+            # Используем UserDatabase для поиска в Google Sheets с защитой от rate limiting
             from utils.user_cache import get_cached_user_info
-            user_data = await get_cached_user_info(user.id)
+            
+            # Retry с защитой от API ошибок
+            user_data = None
+            max_retries = 3
+            
+            for attempt in range(max_retries):
+                try:
+                    user_data = await get_cached_user_info(user.id)
+                    break  # Успешно получили данные
+                except Exception as e:
+                    if "429" in str(e) or "Quota exceeded" in str(e):
+                        # Rate limiting - ждем и повторяем
+                        wait_time = 2 ** attempt  # Exponential backoff
+                        print(f"⏳ RATE LIMIT в get_user_info: ждем {wait_time}s, попытка {attempt + 1}/{max_retries}")
+                        await asyncio.sleep(wait_time)
+                        if attempt == max_retries - 1:
+                            print(f"❌ Не удалось получить данные пользователя после {max_retries} попыток")
+                            user_data = None
+                    else:
+                        # Другая ошибка - прекращаем попытки
+                        print(f"❌ Ошибка получения данных пользователя: {e}")
+                        user_data = None
+                        break
             
             if user_data:
                 # Структура UserDatabase: first_name, last_name, static, rank, department, position, discord_id

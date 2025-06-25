@@ -152,11 +152,10 @@ class UserDatabase:
             }
         """
         try:
-            # Пытаемся получить из универсального кэша
-            from utils.user_cache import UserDataCache
-            cache = UserDataCache()
+            # Используем внутреннюю функцию кэша для избежания рекурсии
+            from utils.user_cache import _global_cache
             
-            cached_data = await cache.get_user_info(user_discord_id)
+            cached_data = await _global_cache._get_user_info_internal(user_discord_id)
             if cached_data is not None:
                 print(f"📋 UNIVERSAL CACHE HIT: {user_discord_id}")
                 return cached_data

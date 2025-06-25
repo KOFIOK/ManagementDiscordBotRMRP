@@ -89,13 +89,22 @@ class WarehouseRequestModal(discord.ui.Modal):
             # Мгновенный ответ для предотвращения таймаута
             await interaction.response.defer(ephemeral=True)
             
-            # Показать быстрое сообщение о подготовке формы запроса
-            quick_embed = discord.Embed(
-                title="⏳ Подготовка формы запроса...",
-                description="Обрабатываем ваш запрос, пожалуйста подождите...",
-                color=discord.Color.orange()
-            )
-            await interaction.followup.send(embed=quick_embed, ephemeral=True)
+            # Проверяем, первое ли это добавление в корзину
+            cart = get_user_cart(interaction.user.id)
+            is_first_item = cart.is_empty()
+            
+            # Создаем новое сообщение (НЕ редактируем original_response с кнопками!)
+            if is_first_item:
+                # Для первого предмета - создаем сообщение "Создание корзины..."
+                loading_embed = discord.Embed(
+                    title="📦 Создание корзины...",
+                    description="Обрабатываем ваш запрос...",
+                    color=discord.Color.orange()
+                )
+                loading_message = await interaction.followup.send(embed=loading_embed, ephemeral=True)
+            else:
+                # Для последующих предметов - сразу показываем обработку
+                loading_message = None
             
             # Валидация количества
             try:
@@ -108,7 +117,7 @@ class WarehouseRequestModal(discord.ui.Modal):
                     description="Некорректное количество! Введите положительное число.",
                     color=discord.Color.red()
                 )
-                await interaction.edit_original_response(embed=error_embed)
+                await interaction.followup.send(embed=error_embed, ephemeral=True)
                 return
 
             # Форматирование статика
@@ -119,7 +128,7 @@ class WarehouseRequestModal(discord.ui.Modal):
                     description="Некорректный статик! Используйте формат: 123456 или 123-456",
                     color=discord.Color.red()
                 )
-                await interaction.edit_original_response(embed=error_embed)
+                await interaction.followup.send(embed=error_embed, ephemeral=True)
                 return
 
             name = self.name_input.value.strip()
@@ -176,7 +185,7 @@ class WarehouseRequestModal(discord.ui.Modal):
                 cart.add_item(item_to_add)
             
             # Показать корзину
-            await self._show_cart(interaction, cart, validation_message)
+            await self._show_cart(interaction, cart, validation_message, is_first_item=is_first_item, loading_message=loading_message)
             
         except Exception as e:
             print(f"❌ Ошибка в WarehouseRequestModal.on_submit: {e}")
@@ -186,11 +195,12 @@ class WarehouseRequestModal(discord.ui.Modal):
                 color=discord.Color.red()
             )
             try:
-                await interaction.edit_original_response(embed=error_embed)
-            except:
                 await interaction.followup.send(embed=error_embed, ephemeral=True)
+            except:
+                pass
 
-    async def _show_cart(self, interaction: discord.Interaction, cart: WarehouseRequestCart, validation_message: str = ""):
+    async def _show_cart(self, interaction: discord.Interaction, cart: WarehouseRequestCart, 
+                        validation_message: str = "", is_first_item: bool = False, loading_message=None):
         """Показать содержимое корзины пользователю"""
         embed = discord.Embed(
             title="📦 Ваша заявка на склад",
@@ -209,6 +219,14 @@ class WarehouseRequestModal(discord.ui.Modal):
                 field_name = "ℹ️ Информация"
             embed.add_field(name=field_name, value=validation_message, inline=False)
         
+        # Добавляем специальное поле для первого предмета
+        if is_first_item:
+            embed.add_field(
+                name="🎉 Корзина создана!",
+                value="Ваш первый предмет добавлен в корзину. Теперь вы можете добавить ещё предметы или отправить заявку.",
+                inline=False
+            )
+        
         embed.add_field(
             name="📊 Статистика",
             value=f"Предметов в корзине: **{len(cart.items)}**\nОбщее количество: **{cart.get_total_items()}**",
@@ -220,15 +238,27 @@ class WarehouseRequestModal(discord.ui.Modal):
         from .views import WarehouseCartView
         view = WarehouseCartView(cart, self.warehouse_manager)
         
-        # Обновляем original response и сохраняем как сообщение корзины
-        await interaction.edit_original_response(embed=embed, view=view)
+        # Приоритет 1: Если есть loading_message - заменяем его
+        if loading_message:
+            try:
+                await loading_message.edit(embed=embed, view=view)
+                set_user_cart_message(interaction.user.id, loading_message)
+                return
+            except (discord.NotFound, discord.HTTPException):
+                pass
         
-        # Получаем оригинальное сообщение и сохраняем как сообщение корзины
-        try:
-            original_message = await interaction.original_response()
-            set_user_cart_message(interaction.user.id, original_message)
-        except Exception as e:
-            print(f"⚠️ Не удалось сохранить ссылку на сообщение корзины: {e}")
+        # Приоритет 2: Обновляем существующее сообщение корзины
+        existing_cart_message = get_user_cart_message(interaction.user.id)
+        if existing_cart_message:
+            try:
+                await existing_cart_message.edit(embed=embed, view=view)
+                return
+            except (discord.NotFound, discord.HTTPException):
+                pass
+        
+        # Приоритет 3: Создаем новое сообщение корзины
+        cart_message = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        set_user_cart_message(interaction.user.id, cart_message)
 
     def _format_static(self, static: str) -> str:
         """Форматирование статика в стандартный вид"""
@@ -279,6 +309,23 @@ class WarehouseQuantityModal(discord.ui.Modal):
         try:            
             await interaction.response.defer(ephemeral=True)
             
+            # Проверяем, первое ли это добавление в корзину
+            cart = get_user_cart(interaction.user.id)
+            is_first_item = cart.is_empty()
+            
+            # Создаем новое сообщение (НЕ редактируем original_response с кнопками!)
+            if is_first_item:
+                # Для первого предмета - создаем сообщение "Создание корзины..."
+                loading_embed = discord.Embed(
+                    title="📦 Создание корзины...",
+                    description="Обрабатываем ваш запрос...",
+                    color=discord.Color.orange()
+                )
+                loading_message = await interaction.followup.send(embed=loading_embed, ephemeral=True)
+            else:
+                # Для последующих предметов - сообщение будет создано позже
+                loading_message = None
+            
             # Валидация количества
             try:
                 quantity = int(self.quantity_input.value.strip())
@@ -294,7 +341,7 @@ class WarehouseQuantityModal(discord.ui.Modal):
                 return
 
             # Быстрое получение информации пользователя из предыдущих данных корзины
-            cart = get_user_cart(interaction.user.id)
+            # cart уже получена выше для проверки первого добавления
             
             # Используем данные из предыдущих запросов или базовые
             if cart.items:
@@ -352,7 +399,7 @@ class WarehouseQuantityModal(discord.ui.Modal):
                 cart.add_item(item_to_add)
             
             # Ультра-быстрое отображение корзины
-            await self._show_cart_ultra_fast(interaction, cart, validation_message)
+            await self._show_cart_ultra_fast(interaction, cart, validation_message, is_first_item=is_first_item, loading_message=loading_message)
             
         except Exception as e:
             print(f"❌ Ошибка в WarehouseQuantityModal.on_submit: {e}")
@@ -367,7 +414,7 @@ class WarehouseQuantityModal(discord.ui.Modal):
                 pass
 
     async def _show_cart_ultra_fast(self, interaction: discord.Interaction, cart: WarehouseRequestCart, 
-                                   validation_message: str = "", loading_message = None):
+                                   validation_message: str = "", is_first_item: bool = False, loading_message=None):
         """УЛЬТРА-БЫСТРОЕ отображение корзины для предотвращения таймаутов Discord"""
         try:
             embed = discord.Embed(
@@ -387,6 +434,14 @@ class WarehouseQuantityModal(discord.ui.Modal):
                     field_name = "ℹ️ Информация"
                 embed.add_field(name=field_name, value=validation_message, inline=False)
             
+            # Добавляем специальное поле для первого предмета
+            if is_first_item:
+                embed.add_field(
+                    name="🎉 Корзина создана!",
+                    value="Ваш первый предмет добавлен в корзину. Теперь вы можете добавить ещё предметы или отправить заявку.",
+                    inline=False
+                )
+            
             embed.add_field(
                 name="📊 Статистика",
                 value=f"Предметов в корзине: **{len(cart.items)}**\nОбщее количество: **{cart.get_total_items()}**",
@@ -397,7 +452,16 @@ class WarehouseQuantityModal(discord.ui.Modal):
             from .views import WarehouseCartView
             view = WarehouseCartView(cart, self.warehouse_manager)
             
-            # Приоритет 1: Обновляем существующее сообщение корзины
+            # Приоритет 1: Если есть loading_message - заменяем его
+            if loading_message:
+                try:
+                    await loading_message.edit(embed=embed, view=view)
+                    set_user_cart_message(interaction.user.id, loading_message)
+                    return
+                except (discord.NotFound, discord.HTTPException):
+                    pass
+            
+            # Приоритет 2: Обновляем существующее сообщение корзины
             existing_cart_message = get_user_cart_message(interaction.user.id)
             if existing_cart_message:
                 try:
@@ -407,7 +471,7 @@ class WarehouseQuantityModal(discord.ui.Modal):
                     # Старое сообщение недоступно, создадим новое
                     pass
             
-            # Приоритет 2: Создаем новое сообщение корзины
+            # Приоритет 3: Создаем новое сообщение корзины
             cart_message = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
             set_user_cart_message(interaction.user.id, cart_message)
             
@@ -828,6 +892,23 @@ class WarehouseCustomItemModal(discord.ui.Modal):
         try:
             await interaction.response.defer(ephemeral=True)
             
+            # Проверяем, первое ли это добавление в корзину
+            cart = get_user_cart(interaction.user.id)
+            is_first_item = cart.is_empty()
+            
+            # Создаем новое сообщение (НЕ редактируем original_response с кнопками!)
+            if is_first_item:
+                # Для первого предмета - создаем сообщение "Создание корзины..."
+                loading_embed = discord.Embed(
+                    title="📦 Создание корзины...",
+                    description="Обрабатываем ваш запрос...",
+                    color=discord.Color.orange()
+                )
+                loading_message = await interaction.followup.send(embed=loading_embed, ephemeral=True)
+            else:
+                # Для последующих предметов - сообщение будет создано позже
+                loading_message = None
+            
             # Валидация количества
             try:
                 quantity = int(self.quantity_input.value.strip())
@@ -903,7 +984,7 @@ class WarehouseCustomItemModal(discord.ui.Modal):
                 cart.add_item(item_to_add)
             
             # Показать корзину
-            await self._show_cart_ultra_fast(interaction, cart, validation_message)
+            await self._show_cart_ultra_fast(interaction, cart, validation_message, is_first_item=is_first_item, loading_message=loading_message)
             
         except Exception as e:
             print(f"❌ Ошибка в WarehouseCustomItemModal.on_submit: {e}")
@@ -915,7 +996,7 @@ class WarehouseCustomItemModal(discord.ui.Modal):
             await interaction.followup.send(embed=error_embed, ephemeral=True)
 
     async def _show_cart_ultra_fast(self, interaction: discord.Interaction, cart: WarehouseRequestCart, 
-                                   validation_message: str = "", loading_message = None):
+                                   validation_message: str = "", is_first_item: bool = False, loading_message=None):
         """Быстрое отображение корзины для кастомных предметов"""
         try:
             embed = discord.Embed(
@@ -935,6 +1016,14 @@ class WarehouseCustomItemModal(discord.ui.Modal):
                     field_name = "ℹ️ Информация"
                 embed.add_field(name=field_name, value=validation_message, inline=False)
             
+            # Добавляем специальное поле для первого предмета
+            if is_first_item:
+                embed.add_field(
+                    name="🎉 Корзина создана!",
+                    value="Ваш первый предмет добавлен в корзину. Теперь вы можете добавить ещё предметы или отправить заявку.",
+                    inline=False
+                )
+            
             embed.add_field(
                 name="📊 Статистика",
                 value=f"Предметов в корзине: **{len(cart.items)}**\nОбщее количество: **{cart.get_total_items()}**",
@@ -945,18 +1034,26 @@ class WarehouseCustomItemModal(discord.ui.Modal):
             from .views import WarehouseCartView
             view = WarehouseCartView(cart, self.warehouse_manager)
             
-            # Приоритет 1: Обновляем существующее сообщение корзины
+            # Приоритет 1: Если есть loading_message - заменяем его
+            if loading_message:
+                try:
+                    await loading_message.edit(embed=embed, view=view)
+                    set_user_cart_message(interaction.user.id, loading_message)
+                    return
+                except (discord.NotFound, discord.HTTPException):
+                    pass
+            
+            # Приоритет 2: Обновляем существующее сообщение корзины
             existing_cart_message = get_user_cart_message(interaction.user.id)
             if existing_cart_message:
                 try:
                     await existing_cart_message.edit(embed=embed, view=view)
-                    custom_item_name = self.item_name_input.value
                     return
                 except (discord.NotFound, discord.HTTPException):
                     # Старое сообщение недоступно, создадим новое
                     pass
             
-            # Приоритет 2: Создаем новое сообщение корзины
+            # Приоритет 3: Создаем новое сообщение корзины
             cart_message = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
             set_user_cart_message(interaction.user.id, cart_message)
             

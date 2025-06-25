@@ -707,7 +707,7 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
         )
         
         # Информация о пользователе в правильном порядке
-        embed.add_field(name="👤 Заявитель", value=f"{first_item.user_name} ({first_item.user_static})", inline=True)
+        embed.add_field(name="👤 Заявитель", value=f"{first_item.user_name} | {first_item.user_static}", inline=False)
         embed.add_field(name="🏢 Подразделение", value=department, inline=True)
         embed.add_field(name="📍 Должность", value=first_item.position, inline=True)
         embed.add_field(name="🎖️ Звание", value=first_item.rank, inline=True)

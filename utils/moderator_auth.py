@@ -277,8 +277,10 @@ class ModeratorAuthModal(ui.Modal, title="Регистрация модерат�
                     "Произошла ошибка при авторизации модератора. Пожалуйста, попробуйте еще раз или обратитесь к администратору.",
                     ephemeral=True
                 )
-        except Exception as follow_error:
-            print(f"Failed to send error message in ModeratorAuthModal.on_error: {follow_error}")
+        except discord.NotFound:
+            print(f"⚠️ Could not send error message to {interaction.user.name} - interaction expired")
+        except Exception as send_error:
+            print(f"⚠️ Error sending error message to {interaction.user.name}: {send_error}")
 
 
 class ModeratorAuthHandler:
@@ -315,12 +317,26 @@ class ModeratorAuthHandler:
                     **callback_kwargs
                 )
                 
-                await interaction.response.send_modal(auth_modal)
+                try:
+                    await interaction.response.send_modal(auth_modal)
+                except discord.NotFound:
+                    print(f"⚠️ Interaction expired for {interaction.user.name}, cannot send modal")
+                    return None
+                except Exception as modal_error:
+                    print(f"⚠️ Error sending modal to {interaction.user.name}: {modal_error}")
+                    return None
+                    
                 return None  # Processing will continue in modal callback
             else:
                 print(f"✅ Moderator {interaction.user.name} found in Google Sheets: {auth_result['info']}")
                 # Show processing state and continue
-                await interaction.response.defer()
+                try:
+                    if not interaction.response.is_done():
+                        await interaction.response.defer()
+                except discord.NotFound:
+                    print(f"⚠️ Interaction expired for {interaction.user.name}, continuing without defer")
+                except Exception as defer_error:
+                    print(f"⚠️ Error deferring interaction for {interaction.user.name}: {defer_error}")
                 
                 signed_by_name = auth_result["info"]
                 return signed_by_name
@@ -330,16 +346,21 @@ class ModeratorAuthHandler:
             import traceback
             traceback.print_exc()
             
-            if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    "❌ Произошла ошибка при проверке авторизации модератора.",
-                    ephemeral=True
-                )
-            else:
-                await interaction.followup.send(
-                    "❌ Произошла ошибка при проверке авторизации модератора.",
-                    ephemeral=True
-                )
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        "❌ Произошла ошибка при проверке авторизации модератора.",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.followup.send(
+                        "❌ Произошла ошибка при проверке авторизации модератора.",
+                        ephemeral=True
+                    )
+            except discord.NotFound:
+                print(f"⚠️ Could not send error message to {interaction.user.name} - interaction expired")
+            except Exception as send_error:
+                print(f"⚠️ Error sending error message to {interaction.user.name}: {send_error}")
             return None
     
     @staticmethod

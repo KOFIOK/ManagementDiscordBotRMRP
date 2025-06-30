@@ -971,8 +971,16 @@ class DismissalApprovalView(ui.View):
     async def _finalize_rejection_with_reason(self, interaction, rejection_reason, target_user, original_message):
         """Finalize the rejection process with the provided reason."""
         try:
-            # Respond to the modal interaction first
-            await interaction.response.defer()
+            # Respond to the modal interaction first - with safety checks
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.defer()
+            except discord.NotFound:
+                print(f"⚠️ Interaction expired for {interaction.user.name} in _finalize_rejection_with_reason")
+                return
+            except Exception as defer_error:
+                print(f"⚠️ Error deferring interaction for {interaction.user.name}: {defer_error}")
+                return
             
             # Show processing state
             processing_view = ui.View(timeout=None)
@@ -1469,8 +1477,16 @@ class AutomaticDismissalApprovalView(ui.View):
     async def _show_processing_state(self, interaction: discord.Interaction):
         """Show processing UI state for automatic dismissal view."""
         try:
-            # Defer the interaction first
-            await interaction.response.defer()
+            # Defer the interaction first - with safety checks
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.defer()
+            except discord.NotFound:
+                print(f"⚠️ Interaction expired for {interaction.user.name} in _show_processing_state")
+                return
+            except Exception as defer_error:
+                print(f"⚠️ Error deferring interaction for {interaction.user.name}: {defer_error}")
+                return
             
             # Create processing view
             processing_view = ui.View(timeout=None)
@@ -1487,6 +1503,8 @@ class AutomaticDismissalApprovalView(ui.View):
             try:
                 if not interaction.response.is_done():
                     await interaction.response.defer()
-            except:
-                pass
+            except discord.NotFound:
+                print(f"⚠️ Interaction expired in processing state fallback for {interaction.user.name}")
+            except Exception as fallback_error:
+                print(f"⚠️ Error in processing state fallback for {interaction.user.name}: {fallback_error}")
 

@@ -48,7 +48,8 @@ class PingManager:
         departments = self.get_departments_config()
         dept_config = departments.get(department_code)
         if dept_config:
-            return dept_config.get('key_role_id')
+            # Try 'role_id' first, then fallback to 'key_role_id' for backward compatibility
+            return dept_config.get('role_id') or dept_config.get('key_role_id')
         return None
     
     def get_department_channel_id(self, department_code: str) -> Optional[int]:
@@ -58,6 +59,46 @@ class PingManager:
         if dept_config:
             return dept_config.get('application_channel_id')
         return None
+    
+    def get_all_department_role_ids(self) -> List[int]:
+        """Get all department role IDs for cleanup operations"""
+        departments = self.get_departments_config()
+        role_ids = []
+        
+        for dept_config in departments.values():
+            # Try 'role_id' first, then fallback to 'key_role_id' for backward compatibility
+            role_id = dept_config.get('role_id') or dept_config.get('key_role_id')
+            if role_id:
+                role_ids.append(role_id)
+        
+        return role_ids
+    
+    def get_all_position_role_ids(self) -> List[int]:
+        """Get all position role IDs from all departments for cleanup operations"""
+        departments = self.get_departments_config()
+        role_ids = []
+        
+        for dept_config in departments.values():
+            position_roles = dept_config.get('position_role_ids', [])
+            role_ids.extend(position_roles)
+        
+        return role_ids
+    
+    def get_department_position_roles(self, department_code: str) -> List[int]:
+        """Get all position role IDs for a specific department"""
+        departments = self.get_departments_config()
+        dept_config = departments.get(department_code)
+        if dept_config:
+            return dept_config.get('position_role_ids', [])
+        return []
+    
+    def get_department_assignable_position_roles(self, department_code: str) -> List[int]:
+        """Get assignable position role IDs for a specific department"""
+        departments = self.get_departments_config()
+        dept_config = departments.get(department_code)
+        if dept_config:
+            return dept_config.get('assignable_position_role_ids', [])
+        return []
     
     def get_ping_roles_for_context(self, department_code: str, context: str, guild: discord.Guild) -> List[discord.Role]:
         """

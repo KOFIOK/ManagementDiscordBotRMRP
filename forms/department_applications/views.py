@@ -122,7 +122,7 @@ class DepartmentApplicationView(ui.View):
                 
                 # Send success message
                 await interaction.followup.send(
-                    f"✅ Заявление пользователя {target_user.mention} одобрено! **__Не забудьте__** переназначить роли, если это не произошло автоматически.",
+                    f"✅ Заявление пользователя {target_user.mention} одобрено! Роли подразделения и должности назначены автоматически.",
                     ephemeral=True
                 )
                 
@@ -313,7 +313,7 @@ class DepartmentApplicationView(ui.View):
         return any(role_id in user_role_ids for role_id in admin_role_ids)
     
     async def _process_approval(self, interaction: discord.Interaction, target_user: discord.Member) -> bool:
-        """Process application approval - assign role and update nickname"""
+        """Process application approval - assign roles and update nickname"""
         try:
             dept_code = self.application_data['department_code']
             
@@ -334,14 +334,19 @@ class DepartmentApplicationView(ui.View):
                 )
                 return False
             
-            # Handle transfer (remove old department role)
-            if self.application_data['application_type'] == 'transfer':
-                await self._remove_old_department_roles(target_user, dept_code)
+            # Step 1: Remove ALL department roles (regardless of transfer/join)
+            await self._remove_all_department_roles(target_user)
             
-            # Assign new department role
+            # Step 2: Remove ALL position roles (regardless of transfer/join)
+            await self._remove_all_position_roles(target_user)
+            
+            # Step 3: Assign new department role
             await target_user.add_roles(dept_role, reason=f"Approved department application by {interaction.user}")
             
-            # Update nickname with department abbreviation
+            # Step 4: Assign assignable position roles for this department
+            await self._assign_department_position_roles(target_user, dept_code, interaction.user)
+            
+            # Step 5: Update nickname with department abbreviation
             await self._update_user_nickname(target_user, dept_code)
             
             return True
@@ -360,17 +365,63 @@ class DepartmentApplicationView(ui.View):
             )
             return False
     
-    async def _remove_old_department_roles(self, user: discord.Member, new_dept_code: str):
-        """Remove old department roles during transfer"""
-        departments = ping_manager.get_all_departments()
+    async def _remove_all_department_roles(self, user: discord.Member):
+        """Remove ALL department roles from user"""
+        all_dept_role_ids = ping_manager.get_all_department_role_ids()
         
-        for dept_code, dept_config in departments.items():
-            if dept_code != new_dept_code:
-                role_id = dept_config.get('role_id')
-                if role_id:
-                    role = user.guild.get_role(role_id)
-                    if role and role in user.roles:
-                        await user.remove_roles(role, reason="Department transfer")
+        for role_id in all_dept_role_ids:
+            role = user.guild.get_role(role_id)
+            if role and role in user.roles:
+                try:
+                    await user.remove_roles(role, reason="Department application approval - cleaning roles")
+                except discord.Forbidden:
+                    logger.warning(f"Could not remove department role {role.name} from {user} - insufficient permissions")
+                except Exception as e:
+                    logger.error(f"Error removing department role {role.name} from {user}: {e}")
+    
+    async def _remove_all_position_roles(self, user: discord.Member):
+        """Remove ALL position roles from user"""
+        all_position_role_ids = ping_manager.get_all_position_role_ids()
+        
+        for role_id in all_position_role_ids:
+            role = user.guild.get_role(role_id)
+            if role and role in user.roles:
+                try:
+                    await user.remove_roles(role, reason="Department application approval - cleaning position roles")
+                except discord.Forbidden:
+                    logger.warning(f"Could not remove position role {role.name} from {user} - insufficient permissions")
+                except Exception as e:
+                    logger.error(f"Error removing position role {role.name} from {user}: {e}")
+    
+    async def _assign_department_position_roles(self, user: discord.Member, dept_code: str, moderator: discord.Member):
+        """Assign assignable position roles for the department"""
+        assignable_role_ids = ping_manager.get_department_assignable_position_roles(dept_code)
+        
+        assigned_roles = []
+        failed_roles = []
+        
+        for role_id in assignable_role_ids:
+            role = user.guild.get_role(role_id)
+            if role:
+                try:
+                    await user.add_roles(role, reason=f"Department application approved - automatic position assignment by {moderator}")
+                    assigned_roles.append(role.name)
+                except discord.Forbidden:
+                    logger.warning(f"Could not assign position role {role.name} to {user} - insufficient permissions")
+                    failed_roles.append(role.name)
+                except Exception as e:
+                    logger.error(f"Error assigning position role {role.name} to {user}: {e}")
+                    failed_roles.append(role.name)
+        
+        # Log results
+        if assigned_roles:
+            logger.info(f"Assigned position roles to {user}: {', '.join(assigned_roles)}")
+        if failed_roles:
+            logger.warning(f"Failed to assign position roles to {user}: {', '.join(failed_roles)}")
+    
+    async def _remove_old_department_roles(self, user: discord.Member, new_dept_code: str):
+        """Legacy method - now calls the new comprehensive role removal"""
+        await self._remove_all_department_roles(user)
     
     async def _update_user_nickname(self, user: discord.Member, dept_code: str):
         """Update user nickname with department abbreviation"""

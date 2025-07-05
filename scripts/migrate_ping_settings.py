@@ -85,7 +85,7 @@ async def migrate_ping_settings():
         print("\n📢 New ping contexts are now available:")
         for context_key, context_name in ping_manager.CONTEXTS.items():
             print(f"   • {context_name} ({context_key})")
-            
+        
         print("\n🔧 Next steps:")
         print("   1. Use /settings to configure context-specific pings")
         print("   2. Test notifications with new system")

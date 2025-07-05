@@ -28,8 +28,7 @@ async def create_automatic_dismissal_report(guild, member, target_role_name="В�
         channel = guild.get_channel(dismissal_channel_id)
         if not channel:
             print(f"Dismissal channel {dismissal_channel_id} not found, skipping automatic report for {member.name}")
-            return False        # Get ping settings for department determination (needed for both paths)
-        ping_settings = config.get('ping_settings', {})
+            return False
         
         # Try to get user data from personnel database first
         from utils.user_cache import get_cached_user_info
@@ -58,7 +57,9 @@ async def create_automatic_dismissal_report(guild, member, target_role_name="В�
             static_value = "Не найден в реестре"
             
             # Get department and rank from roles BEFORE member left
-            user_department = sheets_manager.get_department_from_roles(member, ping_settings)
+            from utils.department_manager import DepartmentManager
+            dept_manager = DepartmentManager()
+            user_department = dept_manager.get_user_department_name(member)
             user_rank = sheets_manager.get_rank_from_roles(member)
           # Create embed for automatic dismissal report
         embed = discord.Embed(
@@ -83,32 +84,14 @@ async def create_automatic_dismissal_report(guild, member, target_role_name="В�
         # Create special approval view for automatic dismissals with three buttons
         approval_view = AutomaticDismissalApprovalView(member.id)
         
-        # Create ping content based on departed member's department (we have role info)
+        # Create ping content using new adapter
         ping_content = ""
-        if ping_settings:
-            # Find user's highest department role that has ping settings
-            user_department_role = None
-            highest_position = -1
-            
-            for department_role_id in ping_settings.keys():
-                dept_role = guild.get_role(int(department_role_id))
-                if dept_role and dept_role in member.roles:
-                    # Check if this role is higher in hierarchy than current highest
-                    if dept_role.position > highest_position:
-                        highest_position = dept_role.position
-                        user_department_role = dept_role
-            
-            # Get ping roles for this department
-            if user_department_role:
-                ping_role_ids = ping_settings.get(str(user_department_role.id), [])
-                ping_roles = []
-                for role_id in ping_role_ids:
-                    role = guild.get_role(role_id)
-                    if role:
-                        ping_roles.append(role.mention)
-                
-                if ping_roles:
-                    ping_content = f"-# {' '.join(ping_roles)}\n\n"
+        from utils.ping_adapter import ping_adapter
+        ping_roles_list = ping_adapter.get_ping_roles_for_dismissals(member)
+        
+        if ping_roles_list:
+            ping_roles = [role.mention for role in ping_roles_list]
+            ping_content = f"-# {' '.join(ping_roles)}\n\n"
         
         # Send the automatic report with department pings
         message = await channel.send(content=ping_content, embed=embed, view=approval_view)

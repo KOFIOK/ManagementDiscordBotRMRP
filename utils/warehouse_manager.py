@@ -23,7 +23,7 @@ class WarehouseManager:
                 "items": [
                     "АК-74М", "Кольт М16", "Кольт 416 Канада", "ФН СКАР-Т", 
                     "Штейр АУГ-А3", "Таурус Бешеный бык", "САР М249", 
-                    "Таурус Бешенный бык МК2", "Обрез", "Тайп 97"
+                    "Таурус Бешенный бык МК2", "Обрез", "Тайп 97", "Сайга-12К"
                 ]
             },
             "Бронежилеты": {
@@ -334,7 +334,7 @@ class WarehouseManager:
         # Базовые лимиты по умолчанию
         return {
             "оружие": 3,
-            "бронежилеты": 10,
+            "бронежилеты": 15,
             "аптечки": 20,
             "weapon_restrictions": []
         }
@@ -373,7 +373,7 @@ class WarehouseManager:
                 return True, corrected_quantity, f"Количество уменьшено до максимально возможного: {corrected_quantity} (лимит: {max_weapons}, в корзине: {existing_quantity})"
             
         elif category_key == "бронежилеты":
-            max_armor = user_limits.get("бронежилеты", 10)
+            max_armor = user_limits.get("бронежилеты", 15)
             
             # Проверка общего количества (существующие + новые)
             total_quantity = existing_quantity + quantity

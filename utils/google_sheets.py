@@ -335,7 +335,7 @@ class GoogleSheetsManager:
                 "requires_manual_input": False
             }
     
-    async def add_dismissal_record(self, form_data, dismissed_user, approving_user, dismissal_time, ping_settings, override_moderator_info=None):
+    async def add_dismissal_record(self, form_data, dismissed_user, approving_user, dismissal_time, override_moderator_info=None):
         """Add a dismissal record to the Google Sheets."""
         try:
             # Ensure connection
@@ -358,7 +358,9 @@ class GoogleSheetsManager:
             else:
                 # For real users, try to get from roles first, then fallback to form data
                 rank = self.get_rank_from_roles(dismissed_user)
-                department = self.get_department_from_roles(dismissed_user, ping_settings)
+                from utils.department_manager import DepartmentManager
+                dept_manager = DepartmentManager()
+                department = dept_manager.get_user_department_name(dismissed_user)
                 
                 # If rank or department not found from roles (user may have left server), use form data
                 if rank == 'Неизвестно' and form_data.get('rank'):

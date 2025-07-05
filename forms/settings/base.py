@@ -55,6 +55,21 @@ class BaseSettingsModal(ui.Modal):
             timestamp=discord.utils.utcnow()
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    async def parse_role(self, guild: discord.Guild, role_text: str) -> discord.Role:
+        """Parse role from text input using RoleParser"""
+        return RoleParser.parse_role_input(role_text, guild)
+    
+    async def parse_channel(self, guild: discord.Guild, channel_text: str) -> discord.TextChannel:
+        """Parse channel from text input using ChannelParser"""
+        return ChannelParser.parse_channel_input(channel_text, guild)
+        embed = discord.Embed(
+            title=f"❌ {title}",
+            description=description,
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 class ConfigDisplayHelper:

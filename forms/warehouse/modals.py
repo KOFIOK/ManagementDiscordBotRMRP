@@ -703,8 +703,9 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
         
         item = self.cart.items[0]
         
-        # Сначала получаем роли для пинга (быстро, через Discord роли)
-        ping_roles = self.warehouse_manager.get_ping_roles_for_warehouse_request(interaction.user, "")
+        # Получаем роли для пинга через новый адаптер
+        from utils.ping_adapter import ping_adapter
+        ping_roles = ping_adapter.get_ping_roles_for_warehouse(interaction.user)
         
         # Получение подразделения из Google Sheets (только для отображения в embed)
         try:
@@ -764,8 +765,9 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
         
         first_item = self.cart.items[0]
         
-        # Сначала получаем роли для пинга (быстро, через Discord роли)
-        ping_roles = self.warehouse_manager.get_ping_roles_for_warehouse_request(interaction.user, "")
+        # Получаем роли для пинга через новый адаптер
+        from utils.ping_adapter import ping_adapter
+        ping_roles = ping_adapter.get_ping_roles_for_warehouse(interaction.user)
         
         # Получение подразделения из Google Sheets (только для отображения в embed)
         try:

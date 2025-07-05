@@ -372,8 +372,9 @@ async def restore_channel_messages(config):
     
     # Restore department applications messages
     print("Restoring department applications messages...")
-    from utils.department_utils import restore_department_applications_messages
-    await restore_department_applications_messages(bot)
+    from forms.department_applications.manager import DepartmentApplicationManager
+    dept_manager = DepartmentApplicationManager(bot)
+    await dept_manager.restore_persistent_views()
 
 async def check_for_button_message(channel, title_keyword):
     """Check if a channel already has a button message with the specified title."""

@@ -28,8 +28,8 @@ class DepartmentManager:
     # Системные подразделения (защищены флагом is_system)
     SYSTEM_DEPARTMENTS = {
         'УВП': {
-            'name': 'Учебно-Воспитательное Подразделение',
-            'description': 'Ответственное за обучение и воспитание личного состава',
+            'name': 'Управление Военной Полиции',
+            'description': 'Контроль и надзор за соблюдением воинской дисциплины',
             'color': 0x3498db,
             'emoji': '🎓',
             'is_system': True
@@ -42,15 +42,15 @@ class DepartmentManager:
             'is_system': True
         },
         'РОиО': {
-            'name': 'Разведывательный Отдел и Оборона',
+            'name': 'Рота Охраны и Обеспечения',
             'description': 'Разведывательная деятельность и оборонительные операции',
             'color': 0x9b59b6,
             'emoji': '🔍',
             'is_system': True
         },
         'ВК': {
-            'name': 'Военная Комендатура',
-            'description': 'Поддержание порядка и дисциплины на территории',
+            'name': 'Военный Комиссариат',
+            'description': 'Обучение и мобилизация гражданского населения',
             'color': 0xe74c3c,
             'emoji': '🚔',
             'is_system': True
@@ -80,15 +80,35 @@ class DepartmentManager:
         updated = False
         for dept_code, dept_data in cls.SYSTEM_DEPARTMENTS.items():
             if dept_code not in departments:
-                # Добавляем системное подразделение
-                departments[dept_code] = dept_data.copy()
+                # Добавляем системное подразделение с полными полями
+                full_dept_data = dept_data.copy()
+                full_dept_data.update({
+                    'application_channel_id': None,
+                    'persistent_message_id': None,
+                    'ping_contexts': {},
+                    'key_role_id': None
+                })
+                departments[dept_code] = full_dept_data
                 updated = True
                 logger.info(f"Initialized system department: {dept_code}")
             else:
-                # Обновляем is_system флаг для существующих
-                if not departments[dept_code].get('is_system', False):
-                    departments[dept_code]['is_system'] = True
+                # Обновляем is_system флаг для существующих и добавляем недостающие поля
+                existing_dept = departments[dept_code]
+                if not existing_dept.get('is_system', False):
+                    existing_dept['is_system'] = True
                     updated = True
+                
+                # Добавляем недостающие поля если их нет
+                missing_fields = {
+                    'application_channel_id': None,
+                    'persistent_message_id': None,
+                    'ping_contexts': {},
+                    'key_role_id': None
+                }
+                for field, default_value in missing_fields.items():
+                    if field not in existing_dept:
+                        existing_dept[field] = default_value
+                        updated = True
         
         if updated:
             config['departments'] = departments
@@ -486,6 +506,46 @@ class DepartmentManager:
             dept_data = departments.get(department_id, {})
             return dept_data.get('name', department_id)
         return "Неизвестно"
+    
+    @classmethod
+    def get_department_safe(cls, dept_code: str) -> Optional[Dict]:
+        """
+        Безопасное получение подразделения с валидацией типов данных
+        
+        Args:
+            dept_code: Код подразделения
+            
+        Returns:
+            Словарь с данными подразделения или None
+        """
+        departments = cls.get_all_departments()
+        dept_data = departments.get(dept_code)
+        
+        if not dept_data:
+            return None
+        
+        # Создаем копию данных с валидацией типов
+        safe_data = {
+            'name': dept_data.get('name', dept_code),
+            'description': dept_data.get('description', 'Описание отсутствует'),
+            'emoji': dept_data.get('emoji', '🏛️'),
+            'is_system': dept_data.get('is_system', False),
+            'key_role_id': dept_data.get('key_role_id'),
+            'ping_contexts': dept_data.get('ping_contexts', {}),
+            'application_channel_id': dept_data.get('application_channel_id')
+        }
+        
+        # Обработка цвета - приведение к правильному типу
+        color = dept_data.get('color', 0x3498db)
+        if isinstance(color, str):
+            try:
+                safe_data['color'] = int(color)
+            except (ValueError, TypeError):
+                safe_data['color'] = 0x3498db  # Синий по умолчанию
+        else:
+            safe_data['color'] = color if isinstance(color, int) else 0x3498db
+        
+        return safe_data
 
 # Инициализация при импорте модуля
 DepartmentManager.initialize_system_departments()

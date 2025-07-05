@@ -48,7 +48,7 @@ class PingManager:
         departments = self.get_departments_config()
         dept_config = departments.get(department_code)
         if dept_config:
-            return dept_config.get('role_id')
+            return dept_config.get('key_role_id')
         return None
     
     def get_department_channel_id(self, department_code: str) -> Optional[int]:
@@ -125,9 +125,9 @@ class PingManager:
         
         # Check new structure first
         for dept_code, dept_config in departments.items():
-            role_id = dept_config.get('role_id')
-            if role_id:
-                role = user.guild.get_role(role_id)
+            key_role_id = dept_config.get('key_role_id')
+            if key_role_id:
+                role = user.guild.get_role(key_role_id)
                 if role and role in user.roles:
                     return dept_code
         
@@ -230,6 +230,44 @@ class PingManager:
                     return False, f"Роль для пинга в контексте '{context}' (ID: {role_id}) не найдена"
         
         return True, "Конфигурация подразделения корректна"
+    
+    def get_department_select_options(self, max_options: int = 25) -> List[discord.SelectOption]:
+        """
+        Get Discord SelectOption list for all departments
+        
+        Args:
+            max_options: Maximum number of options (Discord limit is 25)
+            
+        Returns:
+            List of SelectOption objects for departments
+        """
+        departments = self.get_departments_config()
+        options = []
+        
+        for dept_code, dept_data in departments.items():
+            name = dept_data.get('name', dept_code)
+            description = dept_data.get('description', f'Подразделение {dept_code}')
+            emoji = dept_data.get('emoji', '📁')
+            
+            # Ограничиваем длину описания для Discord
+            if len(description) > 100:
+                description = description[:97] + "..."
+            
+            options.append(discord.SelectOption(
+                label=f"{dept_code} - {name}",
+                description=description,
+                emoji=emoji,
+                value=dept_code
+            ))
+        
+        # Сортируем по коду подразделения для стабильного порядка
+        options.sort(key=lambda x: x.value)
+        
+        return options[:max_options]
+    
+    def get_available_contexts(self) -> Dict[str, str]:
+        """Get available ping contexts"""
+        return self.CONTEXTS.copy()
 
 # Global instance
 ping_manager = PingManager()

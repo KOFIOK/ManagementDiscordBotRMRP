@@ -53,13 +53,15 @@ class PingSystemAdapter:
     @staticmethod
     def _get_ping_roles_legacy_leave_requests(user: discord.Member) -> List[discord.Role]:
         """Legacy leave request ping logic"""
-        from forms.leave_requests.utils import LeaveRequestUtils
+        from utils.department_manager import DepartmentManager
         
-        # Get department from user roles
-        department = LeaveRequestUtils.get_department_from_roles(user.roles)
+        # Get department from user roles using new department manager
+        dept_manager = DepartmentManager()
+        department = dept_manager.get_user_department_name(user)
         
         # Get ping roles for this department
-        return LeaveRequestUtils.get_ping_roles(department, user.guild)
+        from forms.leave_requests.utils import LeaveRequestDepartmentDetector
+        return LeaveRequestDepartmentDetector.get_ping_roles(department, user.guild)
     
     @staticmethod
     def get_ping_roles_for_dismissals(user: discord.Member) -> List[discord.Role]:
@@ -89,11 +91,24 @@ class PingSystemAdapter:
     
     @staticmethod
     def _get_ping_roles_legacy_warehouse(user: discord.Member) -> List[discord.Role]:
-        """Legacy warehouse ping logic"""
-        from utils.warehouse_manager import WarehouseManager
+        """Legacy warehouse ping logic - now uses ping_manager"""
+        from utils.ping_manager import ping_manager
+        from utils.department_manager import DepartmentManager
         
-        warehouse_manager = WarehouseManager()
-        return warehouse_manager.get_ping_roles_for_warehouse_request(user, "")
+        # Определяем подразделение пользователя по его ролям
+        dept_manager = DepartmentManager()
+        departments = dept_manager.get_all_departments()
+        user_department = None
+        
+        for dept_id, dept_data in departments.items():
+            key_role_id = dept_data.get('key_role_id')
+            if key_role_id and any(role.id == key_role_id for role in user.roles):
+                user_department = dept_id
+                break
+        
+        if user_department:
+            return ping_manager.get_ping_roles_for_context(user_department, 'warehouse', user.guild)
+        return []
     
     @staticmethod
     def get_ping_roles_for_role_assignments(user: discord.Member, role_type: str) -> List[discord.Role]:

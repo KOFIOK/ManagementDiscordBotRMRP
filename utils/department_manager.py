@@ -440,6 +440,52 @@ class DepartmentManager:
         except Exception as e:
             logger.error(f"Error deleting department {dept_id}: {e}")
             return False
+    
+    @classmethod
+    def get_user_department(cls, user: discord.Member) -> Optional[str]:
+        """
+        Определить подразделение пользователя по его ролям
+        
+        Args:
+            user: Пользователь Discord
+            
+        Returns:
+            str: ID подразделения или None если не найдено
+        """
+        departments = cls.get_all_departments()
+        
+        user_department = None
+        highest_position = -1
+        
+        for dept_id, dept_data in departments.items():
+            key_role_id = dept_data.get('key_role_id')
+            if key_role_id:
+                role = user.guild.get_role(key_role_id)
+                if role and role in user.roles:
+                    # Выбираем роль с наивысшей позицией в иерархии
+                    if role.position > highest_position:
+                        highest_position = role.position
+                        user_department = dept_id
+        
+        return user_department
+    
+    @classmethod
+    def get_user_department_name(cls, user: discord.Member) -> str:
+        """
+        Получить название подразделения пользователя
+        
+        Args:
+            user: Пользователь Discord
+            
+        Returns:
+            str: Название подразделения или "Неизвестно"
+        """
+        department_id = cls.get_user_department(user)
+        if department_id:
+            departments = cls.get_all_departments()
+            dept_data = departments.get(department_id, {})
+            return dept_data.get('name', department_id)
+        return "Неизвестно"
 
 # Инициализация при импорте модуля
 DepartmentManager.initialize_system_departments()

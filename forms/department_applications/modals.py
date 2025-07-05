@@ -3,13 +3,11 @@ Department Application Forms - Modal forms for department applications
 """
 import discord
 from discord import ui
-from typing import Optional, Dict, Any
+from typing import Dict, Any
 import logging
 from datetime import datetime
 
-from utils.config_manager import load_config
-from utils.user_database import get_user_data
-from utils.google_sheets import SheetsManager
+from utils.user_database import UserDatabase
 from utils.ping_manager import ping_manager
 
 logger = logging.getLogger(__name__)
@@ -283,7 +281,7 @@ class DepartmentApplicationSelectModal(ui.Modal):
                 return
             
             # Get user IC data
-            user_data = await get_user_data(interaction.user.id)
+            user_data = await UserDatabase.get_user_info(interaction.user.id)
             if not user_data:
                 await interaction.response.send_message(
                     "❌ Ваши данные не найдены в системе. Обратитесь к администратору.",

@@ -216,7 +216,8 @@ class DepartmentApplicationManager:
             timestamp=datetime.utcnow()
         )
         
-        for dept_code in self.DEPARTMENTS.keys():
+        departments = self.department_manager.get_all_departments()
+        for dept_code in departments.keys():
             is_valid, status = await self.validate_department_setup(dept_code, guild)
             status_emoji = "✅" if is_valid else "❌"
             

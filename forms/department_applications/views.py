@@ -274,8 +274,9 @@ class DepartmentApplicationView(ui.View):
         try:
             current_nick = user.display_name
             
-            # Remove existing department abbreviations
-            for dept in ['УВП', 'ССО', 'РОиО', 'ВК', 'МР']:
+            # Remove existing department abbreviations dynamically
+            departments = ping_manager.get_all_departments()
+            for dept in departments.keys():
                 current_nick = current_nick.replace(f"[{dept}]", "").replace(f" {dept}", "").strip()
             
             # Add new department abbreviation
@@ -437,8 +438,8 @@ class DepartmentSelectView(ui.View):
             # This would need proper database implementation
             
             # Get user IC data
-            from utils.user_database import get_user_data
-            user_data = await get_user_data(interaction.user.id)
+            from utils.user_database import UserDatabase
+            user_data = await UserDatabase.get_user_info(interaction.user.id)
             if not user_data:
                 await interaction.response.send_message(
                     "❌ Ваши данные не найдены в системе. Обратитесь к администратору.",

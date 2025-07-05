@@ -109,48 +109,34 @@ class DepartmentPingSelect(ui.Select):
     """Select menu for choosing department to configure pings"""
     
     def __init__(self):
-        options = [
-            discord.SelectOption(
-                label="УВП - Учебно-Воспитательное Подразделение",
-                description="Настроить пинги для УВП",
-                emoji="🎓",
-                value="УВП"
-            ),
-            discord.SelectOption(
-                label="ССО - Силы Специальных Операций",
-                description="Настроить пинги для ССО",
-                emoji="🎯",
-                value="ССО"
-            ),
-            discord.SelectOption(
-                label="РОиО - Разведывательный Отдел и Оборона",
-                description="Настроить пинги для РОиО",
-                emoji="🔍",
-                value="РОиО"
-            ),
-            discord.SelectOption(
-                label="ВК - Военная Комендатура",
-                description="Настроить пинги для ВК",
-                emoji="🚔",
-                value="ВК"
-            ),
-            discord.SelectOption(
-                label="МР - Медицинская Рота",
-                description="Настроить пинги для МР",
-                emoji="🏥",
-                value="МР"
-            ),
-            discord.SelectOption(
-                label="ВА - Военная Академия",
-                description="Настроить пинги для ВА",
-                emoji="🎖️",
-                value="ВА"
-            )
-        ]
+        # Динамическая загрузка подразделений из конфигурации
+        from utils.department_manager import DepartmentManager
+        dept_manager = DepartmentManager()
+        departments = dept_manager.get_all_departments()
+        
+        options = []
+        for dept_code, dept_data in departments.items():
+            name = dept_data.get('name', dept_code)
+            description = dept_data.get('description', f'Настроить пинги для {dept_code}')
+            emoji = dept_data.get('emoji', '�')
+            
+            # Ограничиваем длину описания для Discord
+            if len(description) > 100:
+                description = description[:97] + "..."
+            
+            options.append(discord.SelectOption(
+                label=f"{dept_code} - {name}",
+                description=description,
+                emoji=emoji,
+                value=dept_code
+            ))
+        
+        # Сортируем по коду подразделения для стабильного порядка
+        options.sort(key=lambda x: x.value)
         
         super().__init__(
             placeholder="Выберите подразделение для настройки пингов...",
-            options=options
+            options=options[:25]  # Discord ограничение на 25 опций
         )
     
     async def callback(self, interaction: discord.Interaction):

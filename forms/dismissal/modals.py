@@ -227,9 +227,10 @@ class DismissalReportModal(ui.Modal, title="Рапорт на увольнени
                 )
                 return
             
-            # Auto-determine department and rank from user's roles
-            ping_settings = config.get('ping_settings', {})
-            user_department = sheets_manager.get_department_from_roles(interaction.user, ping_settings)
+            # Auto-determine department and rank from user's roles using new department manager
+            from utils.department_manager import DepartmentManager
+            dept_manager = DepartmentManager()
+            user_department = dept_manager.get_user_department_name(interaction.user)
             user_rank = sheets_manager.get_rank_from_roles(interaction.user)
             
             # Create an embed for the report
@@ -256,28 +257,14 @@ class DismissalReportModal(ui.Modal, title="Рапорт на увольнени
             # Create view with approval/rejection buttons
             approval_view = DismissalApprovalView(interaction.user.id)
             
-            # Check for ping settings and add mentions
+            # Get ping roles using new adapter
             ping_content = ""
-            if ping_settings:
-                # Find user's highest department role (by position in hierarchy)
-                user_department = None
-                highest_position = -1
-                
-                for department_role_id in ping_settings.keys():
-                    department_role = interaction.guild.get_role(int(department_role_id))
-                    if department_role and department_role in interaction.user.roles:
-                        # Check if this role is higher in hierarchy than current highest
-                        if department_role.position > highest_position:
-                            highest_position = department_role.position
-                            user_department = department_role
-                
-                # Get ping roles using new adapter
-                from utils.ping_adapter import ping_adapter
-                ping_roles_list = ping_adapter.get_ping_roles_for_dismissals(interaction.user)
+            from utils.ping_adapter import ping_adapter
+            ping_roles_list = ping_adapter.get_ping_roles_for_dismissals(interaction.user)
+            
+            if ping_roles_list:
                 ping_roles = [role.mention for role in ping_roles_list]
-                
-                if ping_roles:
-                    ping_content = f"-# {' '.join(ping_roles)}\n\n"
+                ping_content = f"-# {' '.join(ping_roles)}\n\n"
             
             # Send the report to the dismissal channel with pings
             await channel.send(content=ping_content, embed=embed, view=approval_view)

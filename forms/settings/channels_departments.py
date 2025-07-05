@@ -1,5 +1,5 @@
 """
-Department application channel configuration
+Department application channel configura            emoji = dept_data.get('emoji', '📁')ion
 """
 import discord
 from discord import ui
@@ -32,48 +32,36 @@ class DepartmentChannelSelect(ui.Select):
     """Select menu for choosing which department to configure"""
     
     def __init__(self):
-        options = [
-            discord.SelectOption(
-                label="УВП - Учебно-Воспитательное Подразделение",
-                description="Настроить канал для заявлений в УВП",
-                emoji="🎓",
-                value="УВП"
-            ),
-            discord.SelectOption(
-                label="ССО - Силы Специальных Операций",
-                description="Настроить канал для заявлений в ССО",
-                emoji="🎯",
-                value="ССО"
-            ),
-            discord.SelectOption(
-                label="РОиО - Разведывательный Отдел и Оборона", 
-                description="Настроить канал для заявлений в РОиО",
-                emoji="🔍",
-                value="РОиО"
-            ),
-            discord.SelectOption(
-                label="ВК - Военная Комендатура",
-                description="Настроить канал для заявлений в ВК",
-                emoji="🚔",
-                value="ВК"
-            ),
-            discord.SelectOption(
-                label="МР - Медицинская Рота",
-                description="Настроить канал для заявлений в МР",
-                emoji="🏥",
-                value="МР"
-            ),
-            discord.SelectOption(
-                label="ВА - Военная Академия",
-                description="Настроить канал для заявлений в ВА",
-                emoji="🎖️",
-                value="ВА"
-            )
-        ]
+        # Динамическая загрузка подразделений из конфигурации
+        from utils.department_manager import DepartmentManager
+        dept_manager = DepartmentManager()
+        departments = dept_manager.get_all_departments()
+        
+        options = []
+        for dept_code, dept_data in departments.items():
+            name = dept_data.get('name', dept_code)
+            description = f"Настроить канал для заявлений в {dept_code}"
+            if dept_data.get('description'):
+                description = f"Настроить канал для {dept_data['description'][:50]}..."
+            emoji = dept_data.get('emoji', '�')
+            
+            # Ограничиваем длину описания для Discord
+            if len(description) > 100:
+                description = description[:97] + "..."
+            
+            options.append(discord.SelectOption(
+                label=f"{dept_code} - {name}",
+                description=description,
+                emoji=emoji,
+                value=dept_code
+            ))
+        
+        # Сортируем по коду подразделения для стабильного порядка
+        options.sort(key=lambda x: x.value)
         
         super().__init__(
             placeholder="Выберите подразделение для настройки...",
-            options=options
+            options=options[:25]  # Discord ограничение на 25 опций
         )
     
     async def callback(self, interaction: discord.Interaction):

@@ -25,11 +25,11 @@ class DepartmentApplicationManager:
     async def setup_department_channel(self, department_code: str, channel: discord.TextChannel) -> bool:
         """Setup persistent message in department channel"""
         try:
-            departments = self.department_manager.get_all_departments()
-            if department_code not in departments:
+            # Используем безопасную функцию получения данных подразделения
+            dept_info = self.department_manager.get_department_safe(department_code)
+            if not dept_info:
+                logger.error(f"Department {department_code} not found")
                 return False
-            
-            dept_info = departments[department_code]
             
             # Create embed for department info
             embed = discord.Embed(
@@ -114,20 +114,31 @@ class DepartmentApplicationManager:
             config = load_config()
             departments = config.get('departments', {})
             
+            print(f"🔄 Found {len(departments)} departments in config")
+            
             if not departments:
                 logger.info("No departments configured for applications")
+                print("ℹ️ No departments configured for applications")
                 return
             
             restored_count = 0
             for dept_code, dept_config in departments.items():
+                print(f"📋 Processing department: {dept_code}")
+                print(f"   Config keys: {list(dept_config.keys())}")
+                
                 channel_id = dept_config.get('application_channel_id')
                 if not channel_id:
+                    print(f"   ⚠️ No application_channel_id for {dept_code}")
                     continue
                 
+                print(f"   🔍 Looking for channel ID: {channel_id}")
                 channel = self.bot.get_channel(channel_id)
                 if not channel:
                     logger.warning(f"Channel {channel_id} for {dept_code} not found")
+                    print(f"   ❌ Channel {channel_id} not found")
                     continue
+                
+                print(f"   ✅ Found channel: {channel.name}")
                 
                 # Check for existing pinned message and restore/update it
                 persistent_message = await self._find_or_create_persistent_message(
@@ -139,16 +150,22 @@ class DepartmentApplicationManager:
                     await self._update_message_with_fresh_view(persistent_message, dept_code)
                     restored_count += 1
                     logger.info(f"✅ Restored persistent view for {dept_code} in {channel.name}")
+                    print(f"   ✅ Restored persistent view for {dept_code}")
                 else:
                     logger.warning(f"❌ Failed to restore persistent message for {dept_code}")
+                    print(f"   ❌ Failed to restore persistent message for {dept_code}")
             
             # Also restore application moderation views
             await self._restore_application_views()
             
             logger.info(f"Restored {restored_count} department application channels")
+            print(f"Department applications: restored {restored_count} views")
             
         except Exception as e:
             logger.error(f"Error restoring persistent views: {e}")
+            print(f"❌ Error restoring persistent views: {e}")
+            import traceback
+            traceback.print_exc()
     
     async def _update_message_with_fresh_view(self, message: discord.Message, dept_code: str):
         """Update existing message with fresh view to make buttons work"""
@@ -174,39 +191,69 @@ class DepartmentApplicationManager:
     async def _find_or_create_persistent_message(self, dept_code: str, channel: discord.TextChannel, dept_config: Dict) -> Optional[discord.Message]:
         """Find existing persistent message or create new one"""
         try:
+            print(f"       🔍 Searching for persistent message for {dept_code}")
+            
             # First, check if we have stored message ID
             stored_message_id = dept_config.get('persistent_message_id')
+            print(f"       📋 Stored message ID: {stored_message_id}")
+            
             if stored_message_id:
                 try:
                     message = await channel.fetch_message(stored_message_id)
+                    print(f"       ✅ Found stored message {stored_message_id}")
+                    
                     # Verify it's our message and still pinned
                     if (message.author == self.bot.user and 
                         message.pinned and 
                         len(message.embeds) > 0 and 
                         dept_code in message.embeds[0].title):
                         logger.info(f"Found existing persistent message for {dept_code}")
+                        print(f"       ✅ Message verified as valid persistent message")
                         return message
+                    else:
+                        print(f"       ⚠️ Message exists but doesn't match criteria:")
+                        print(f"           Author is bot: {message.author == self.bot.user}")
+                        print(f"           Is pinned: {message.pinned}")
+                        print(f"           Has embeds: {len(message.embeds) > 0}")
+                        if len(message.embeds) > 0:
+                            print(f"           Title contains dept_code: {dept_code in message.embeds[0].title}")
+                            print(f"           Actual title: {message.embeds[0].title}")
                 except discord.NotFound:
                     logger.info(f"Stored message for {dept_code} not found, will create new")
+                    print(f"       ❌ Stored message {stored_message_id} not found")
             
             # Look for pinned messages from bot in channel
+            print(f"       🔍 Searching pinned messages in {channel.name}")
             pinned_messages = await channel.pins()
-            for message in pinned_messages:
+            print(f"       📌 Found {len(pinned_messages)} pinned messages")
+            
+            for i, message in enumerate(pinned_messages):
+                print(f"       📌 Checking pinned message {i+1}: {message.id}")
+                print(f"           Author is bot: {message.author == self.bot.user}")
+                print(f"           Has embeds: {len(message.embeds) > 0}")
+                
                 if (message.author == self.bot.user and 
-                    len(message.embeds) > 0 and 
-                    dept_code in message.embeds[0].title and
-                    "заявление" in message.embeds[0].title.lower()):
+                    len(message.embeds) > 0):
+                    print(f"           Embed title: {message.embeds[0].title}")
+                    print(f"           Contains dept_code {dept_code}: {dept_code in message.embeds[0].title}")
+                    print(f"           Contains 'заявление': {'заявление' in message.embeds[0].title.lower()}")
                     
-                    # Update stored message ID
-                    await self._save_department_message_info(dept_code, channel.id, message.id)
-                    logger.info(f"Found existing pinned message for {dept_code}")
-                    return message
+                    if (dept_code in message.embeds[0].title and
+                        "заявление" in message.embeds[0].title.lower()):
+                        
+                        # Update stored message ID
+                        await self._save_department_message_info(dept_code, channel.id, message.id)
+                        logger.info(f"Found existing pinned message for {dept_code}")
+                        print(f"       ✅ Found matching pinned message!")
+                        return message
             
             # No existing message found, create new one
             logger.info(f"Creating new persistent message for {dept_code}")
+            print(f"       📝 No existing message found, creating new one")
             success = await self.setup_department_channel(dept_code, channel)
             
             if success:
+                print(f"       ✅ Successfully created new message")
                 # Get the newly created message
                 config = load_config()
                 new_message_id = config.get('departments', {}).get(dept_code, {}).get('persistent_message_id')
@@ -214,12 +261,17 @@ class DepartmentApplicationManager:
                     try:
                         return await channel.fetch_message(new_message_id)
                     except discord.NotFound:
-                        pass
+                        print(f"       ❌ Could not fetch newly created message {new_message_id}")
+            else:
+                print(f"       ❌ Failed to create new message")
             
             return None
             
         except Exception as e:
             logger.error(f"Error finding/creating persistent message for {dept_code}: {e}")
+            print(f"       ❌ Error in _find_or_create_persistent_message: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     async def _restore_application_views(self):

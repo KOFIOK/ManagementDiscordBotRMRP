@@ -118,7 +118,7 @@ class DepartmentApplicationView(ui.View):
                 )
                 self.add_item(approved_button)
                 
-                await interaction.edit_original_response(embed=embed, view=self)
+                await interaction.edit_original_response(content="", embed=embed, view=self)
                 
                 # Send success message
                 await interaction.followup.send(
@@ -512,7 +512,7 @@ class RejectionReasonModal(ui.Modal):
             )
             view.add_item(rejected_button)
             
-            await interaction.edit_original_response(embed=embed, view=view)
+            await interaction.edit_original_response(content="", embed=embed, view=view)
             
             # Send success message
             await interaction.followup.send(

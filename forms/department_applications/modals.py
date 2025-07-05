@@ -473,26 +473,15 @@ class FinalReviewView(ui.View):
             from .views import DepartmentApplicationView
             view = DepartmentApplicationView(self.application_data)
             
+            # Prepare content with pings for target department
+            content = self._create_application_content(interaction.user, interaction.guild)
+            
             # Send to department channel
-            message = await channel.send(embed=embed, view=view)
+            message = await channel.send(content=content, embed=embed, view=view)
             
             # Store application data
             self.application_data['message_id'] = message.id
             self.application_data['channel_id'] = channel.id
-            
-            # Get ping roles and send notification
-            ping_roles = ping_manager.get_ping_roles_for_context(
-                self.application_data['department_code'], 
-                'applications', 
-                interaction.guild
-            )
-            
-            if ping_roles:
-                ping_mentions = [role.mention for role in ping_roles]
-                ping_message = f"📋 Новое заявление в подразделение **{self.application_data['department_code']}**\n"
-                ping_message += f"Уведомления: {' '.join(ping_mentions)}"
-                
-                await channel.send(ping_message, delete_after=30)
             
             # Confirm to user and delete the ephemeral message
             await interaction.edit_original_response(
@@ -573,3 +562,42 @@ class FinalReviewView(ui.View):
         embed.set_footer(text=f"ID заявления: {application_data['user_id']}")
         
         return embed
+    
+    def _create_application_content(self, user: discord.Member, guild: discord.Guild) -> str:
+        """
+        Create content with pings for the application message
+        
+        For new applications: ping roles for target department  
+        For transfers: ping roles for target department + current department
+        """
+        from utils.ping_manager import PingManager
+        ping_manager = PingManager()
+        
+        content_lines = []
+        
+        # Get ping roles for target department (where application is being submitted)
+        target_ping_roles = ping_manager.get_ping_roles_for_context(
+            self.application_data['department_code'], 
+            'applications', 
+            guild
+        )
+        
+        if target_ping_roles:
+            target_mentions = [role.mention for role in target_ping_roles]
+            content_lines.append(' '.join(target_mentions))
+        
+        # Check if this is a transfer (user has current department)
+        current_department = ping_manager.get_user_department_code(user)
+        if current_department and current_department != self.application_data['department_code']:
+            # This is a transfer - add pings for current department on second line
+            current_ping_roles = ping_manager.get_ping_roles_for_context(
+                current_department,
+                'applications',  # или можно использовать 'general'
+                guild
+            )
+            
+            if current_ping_roles:
+                current_mentions = [role.mention for role in current_ping_roles]
+                content_lines.append(' '.join(current_mentions))
+        
+        return '\n'.join(content_lines) if content_lines else ""

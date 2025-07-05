@@ -10,6 +10,7 @@ from datetime import datetime
 
 from utils.config_manager import load_config, save_config
 from utils.ping_manager import ping_manager
+from utils.department_manager import DepartmentManager
 from .views import DepartmentSelectView
 
 logger = logging.getLogger(__name__)
@@ -17,55 +18,18 @@ logger = logging.getLogger(__name__)
 class DepartmentApplicationManager:
     """Manager for department application system"""
     
-    DEPARTMENTS = {
-        'УВП': {
-            'name': 'Учебно-Воспитательное Подразделение',
-            'description': 'Ответственное за обучение и воспитание личного состава',
-            'color': 0x3498db,
-            'emoji': '🎓'
-        },
-        'ССО': {
-            'name': 'Силы Специальных Операций',
-            'description': 'Элитное подразделение для выполнения специальных задач',
-            'color': 0x2ecc71,
-            'emoji': '🎯'
-        },
-        'РОиО': {
-            'name': 'Разведывательный Отдел и Оборона',
-            'description': 'Разведывательная деятельность и оборонительные операции',
-            'color': 0x9b59b6,
-            'emoji': '🔍'
-        },
-        'ВК': {
-            'name': 'Военная Комендатура',
-            'description': 'Поддержание порядка и дисциплины на территории',
-            'color': 0xe74c3c,
-            'emoji': '🚔'
-        },
-        'МР': {
-            'name': 'Медицинская Рота',
-            'description': 'Медицинское обеспечение и помощь личному составу',
-            'color': 0xf39c12,
-            'emoji': '🏥'
-        },
-        'ВА': {
-            'name': 'Военная Академия',
-            'description': 'Высшее военное образование и подготовка офицерского состава',
-            'color': 0x1abc9c,
-            'emoji': '🎖️'
-        }
-    }
-    
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self.department_manager = DepartmentManager()
     
     async def setup_department_channel(self, department_code: str, channel: discord.TextChannel) -> bool:
         """Setup persistent message in department channel"""
         try:
-            if department_code not in self.DEPARTMENTS:
+            departments = self.department_manager.get_all_departments()
+            if department_code not in departments:
                 return False
             
-            dept_info = self.DEPARTMENTS[department_code]
+            dept_info = departments[department_code]
             
             # Create embed for department info
             embed = discord.Embed(
@@ -174,11 +138,12 @@ class DepartmentApplicationManager:
     
     def get_department_info(self, department_code: str) -> Optional[Dict]:
         """Get department information"""
-        return self.DEPARTMENTS.get(department_code)
+        departments = self.department_manager.get_all_departments()
+        return departments.get(department_code)
     
     def get_all_departments(self) -> Dict:
         """Get all departments"""
-        return self.DEPARTMENTS
+        return self.department_manager.get_all_departments()
     
     async def update_department_config(self, department_code: str, **kwargs):
         """Update department configuration"""

@@ -170,23 +170,58 @@ class DepartmentApplicationManager:
     async def _update_message_with_fresh_view(self, message: discord.Message, dept_code: str):
         """Update existing message with fresh view to make buttons work"""
         try:
+            print(f"       🔄 Creating fresh view for {dept_code}")
+            
             # Create fresh view with proper department code
             view = DepartmentSelectView(dept_code)
             
+            print(f"       🔧 View created with custom_id: {getattr(view, 'custom_id', 'NOT SET')}")
+            print(f"       🔧 View timeout: {view.timeout}")
+            print(f"       🔧 View components: {len(view.children)} items")
+            for i, item in enumerate(view.children):
+                if hasattr(item, 'custom_id'):
+                    print(f"          Item {i}: {type(item).__name__} custom_id={item.custom_id}")
+                else:
+                    print(f"          Item {i}: {type(item).__name__} (no custom_id)")
+            
             # Update the message with new view
             await message.edit(view=view)
+            print(f"       ✅ Message updated with new view")
             
             # Also register the view with the bot for persistence
             self.bot.add_view(view, message_id=message.id)
+            print(f"       ✅ View registered with bot for message {message.id}")
+            
+            # Verify the view was actually added
+            persistent_views_count = len(self.bot.persistent_views)
+            print(f"       📊 Bot now has {persistent_views_count} persistent views")
+            
+            # Check if our view is in the persistent views
+            view_found = False
+            for pv in self.bot.persistent_views:
+                if hasattr(pv, 'custom_id') and pv.custom_id == view.custom_id:
+                    view_found = True
+                    break
+            
+            if view_found:
+                print(f"       ✅ View {view.custom_id} confirmed in bot.persistent_views")
+            else:
+                print(f"       ⚠️ View {view.custom_id} NOT found in bot.persistent_views")
             
             logger.info(f"Updated message {message.id} for {dept_code} with fresh view")
             
         except discord.NotFound:
             logger.warning(f"Message {message.id} for {dept_code} not found when updating view")
+            print(f"       ❌ Message {message.id} not found")
         except discord.Forbidden:
             logger.warning(f"No permission to update message {message.id} for {dept_code}")
+            print(f"       ❌ No permission to update message {message.id}")
         except Exception as e:
             logger.error(f"Error updating message view for {dept_code}: {e}")
+            print(f"       ❌ Error updating view: {e}")
+            import traceback
+            print(f"       🔍 Traceback: {traceback.format_exc()}")
+            traceback.print_exc()
     
     async def _find_or_create_persistent_message(self, dept_code: str, channel: discord.TextChannel, dept_config: Dict) -> Optional[discord.Message]:
         """Find existing persistent message or create new one"""

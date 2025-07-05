@@ -155,7 +155,8 @@ async def on_ready():
         print("✅ Department applications views ready")
     except Exception as e:
         print(f"❌ Error importing department applications views: {e}")
-      # Start notification scheduler
+    
+    # Start notification scheduler
     print("🔄 Starting notification scheduler...")
     notification_scheduler.start()
     print("✅ Notification scheduler started")

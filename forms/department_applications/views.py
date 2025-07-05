@@ -971,43 +971,34 @@ class DepartmentSelectView(ui.View):
         super().__init__(timeout=None)  # Persistent view
         self.department_code = department_code
         
-        # Set custom_id for persistence
-        self.add_item(DepartmentApplicationButton("Заявление в подразделение", "join", department_code))
-        self.add_item(DepartmentApplicationButton("Перевод из другого подразделения", "transfer", department_code))
-
-
-class DepartmentApplicationButton(ui.Button):
-    """Button for department application type selection"""
-    
-    def __init__(self, label: str, app_type: str, department_code: str):
-        self.app_type = app_type
-        self.department_code = department_code
+        # Set custom_id for persistence - ВАЖНО!
+        self.custom_id = f"dept_select_{department_code}"
         
-        style = discord.ButtonStyle.green if app_type == "join" else discord.ButtonStyle.blurple
-        emoji = "➕" if app_type == "join" else "🔄"
-        
-        super().__init__(
-            label=label,
-            style=style,
-            emoji=emoji,
-            custom_id=f"dept_app_{app_type}_{department_code}"
-        )
+        # Update button custom_ids to be unique per department
+        self.join_button.custom_id = f"dept_app_join_{department_code}"
+        self.transfer_button.custom_id = f"dept_app_transfer_{department_code}"
     
-    async def callback(self, interaction: discord.Interaction):
+    @ui.button(label="Заявление в подразделение", style=discord.ButtonStyle.green, emoji="➕")
+    async def join_button(self, interaction: discord.Interaction, button: ui.Button):
+        """Handle department join application"""
+        await self._handle_application_type(interaction, "join")
+    
+    @ui.button(label="Перевод из другого подразделения", style=discord.ButtonStyle.blurple, emoji="🔄")
+    async def transfer_button(self, interaction: discord.Interaction, button: ui.Button):
+        """Handle department transfer application"""
+        await self._handle_application_type(interaction, "transfer")
+    
+    async def _handle_application_type(self, interaction: discord.Interaction, app_type: str):
         """Handle department application type selection"""
         try:
-            # Extract data from custom_id: dept_app_{app_type}_{department_code}
-            custom_id_parts = self.custom_id.split('_')
-            if len(custom_id_parts) >= 4:
-                app_type = custom_id_parts[2]  # join or transfer
-                department_code = custom_id_parts[3]  # department code
+            # Get department code from view's custom_id: dept_select_{department_code}
+            if hasattr(self, 'custom_id') and self.custom_id.startswith('dept_select_'):
+                department_code = self.custom_id.replace('dept_select_', '')
             else:
-                # Fallback to instance variables if they exist
-                app_type = getattr(self, 'app_type', 'join')
+                # Fallback to instance variable
                 department_code = getattr(self, 'department_code', 'ВВ')
             
-            # Set instance variables for compatibility
-            self.app_type = app_type
+            # Update instance variables for compatibility
             self.department_code = department_code
             
             # Check if user already has active applications

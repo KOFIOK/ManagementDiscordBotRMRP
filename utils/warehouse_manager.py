@@ -334,7 +334,7 @@ class WarehouseManager:
         # Базовые лимиты по умолчанию
         return {
             "оружие": 3,
-            "бронежилеты": 10,
+            "бронежилеты": 15,
             "аптечки": 20,
             "weapon_restrictions": []
         }
@@ -373,7 +373,7 @@ class WarehouseManager:
                 return True, corrected_quantity, f"Количество уменьшено до максимально возможного: {corrected_quantity} (лимит: {max_weapons}, в корзине: {existing_quantity})"
             
         elif category_key == "бронежилеты":
-            max_armor = user_limits.get("бронежилеты", 10)
+            max_armor = user_limits.get("бронежилеты", 15)
             
             # Проверка общего количества (существующие + новые)
             total_quantity = existing_quantity + quantity

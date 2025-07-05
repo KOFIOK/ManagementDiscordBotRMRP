@@ -9,6 +9,7 @@ from datetime import datetime, timezone, timedelta
 
 from utils.config_manager import load_config
 from utils.ping_manager import ping_manager
+from utils.google_sheets import sheets_manager
 
 logger = logging.getLogger(__name__)
 
@@ -62,9 +63,37 @@ class DepartmentApplicationView(ui.View):
             
             await interaction.response.defer()
             
+            # Show "Processing..." state immediately to prevent double-clicks
+            processing_embed = interaction.message.embeds[0].copy()
+            
+            # Update status field to show processing
+            for i, field in enumerate(processing_embed.fields):
+                if field.name == "📊 Статус":
+                    processing_embed.set_field_at(
+                        i,
+                        name="📊 Статус", 
+                        value="⏳ Обрабатывается...",
+                        inline=True
+                    )
+                    break
+            
+            # Replace all buttons with single disabled "Processing" button
+            processing_view = ui.View(timeout=None)
+            processing_button = ui.Button(
+                label="⏳ Обрабатывается...",
+                style=discord.ButtonStyle.grey,
+                disabled=True
+            )
+            processing_view.add_item(processing_button)
+            
+            # Update message with processing state
+            await interaction.edit_original_response(content="", embed=processing_embed, view=processing_view)
+            
             # Get target user
             target_user = interaction.guild.get_member(self.application_data['user_id'])
             if not target_user:
+                # Restore original buttons on error
+                await self._restore_original_buttons(interaction)
                 await interaction.followup.send(
                     "❌ Пользователь не найден на сервере.",
                     ephemeral=True
@@ -76,6 +105,8 @@ class DepartmentApplicationView(ui.View):
             if dept_role_id:
                 dept_role = interaction.guild.get_role(dept_role_id)
                 if dept_role and dept_role in target_user.roles:
+                    # Restore original buttons on error
+                    await self._restore_original_buttons(interaction)
                     await interaction.followup.send(
                         f"❌ Пользователь уже состоит в подразделении {self.application_data['department_code']}.",
                         ephemeral=True
@@ -137,9 +168,14 @@ class DepartmentApplicationView(ui.View):
                     await target_user.send(embed=dm_embed)
                 except discord.Forbidden:
                     logger.warning(f"Could not send DM to {target_user} about approved application")
+            else:
+                # Restore original buttons if approval failed
+                await self._restore_original_buttons(interaction)
             
         except Exception as e:
             logger.error(f"Error approving department application: {e}")
+            # Restore original buttons on error
+            await self._restore_original_buttons(interaction)
             await interaction.followup.send(
                 "❌ Произошла ошибка при одобрении заявления.",
                 ephemeral=True
@@ -312,6 +348,32 @@ class DepartmentApplicationView(ui.View):
         
         return any(role_id in user_role_ids for role_id in admin_role_ids)
     
+    async def _restore_original_buttons(self, interaction: discord.Interaction):
+        """Restore original buttons after error"""
+        try:
+            # Get the original embed (should already be set)
+            original_embed = interaction.message.embeds[0].copy()
+            
+            # Restore original status if it was changed to "Processing"
+            for i, field in enumerate(original_embed.fields):
+                if field.name == "📊 Статус" and "Обрабатывается" in field.value:
+                    original_embed.set_field_at(
+                        i,
+                        name="📊 Статус",
+                        value="⏳ Ожидает рассмотрения",
+                        inline=True
+                    )
+                    break
+            
+            # Create new view with original buttons
+            restored_view = DepartmentApplicationView(self.application_data)
+            
+            # Update message back to original state
+            await interaction.edit_original_response(content="", embed=original_embed, view=restored_view)
+            
+        except Exception as e:
+            logger.error(f"Error restoring original buttons: {e}")
+    
     async def _process_approval(self, interaction: discord.Interaction, target_user: discord.Member) -> bool:
         """Process application approval - assign roles and update nickname"""
         try:
@@ -348,6 +410,9 @@ class DepartmentApplicationView(ui.View):
             
             # Step 5: Update nickname with department abbreviation
             await self._update_user_nickname(target_user, dept_code)
+            
+            # Step 6: Log to Google Sheets
+            await self._log_to_google_sheets(interaction, target_user, dept_code)
             
             return True
             
@@ -397,27 +462,43 @@ class DepartmentApplicationView(ui.View):
         """Assign assignable position roles for the department"""
         assignable_role_ids = ping_manager.get_department_assignable_position_roles(dept_code)
         
+        logger.info(f"Attempting to assign position roles for {dept_code} to {user.display_name}")
+        logger.info(f"Assignable role IDs: {assignable_role_ids}")
+        
+        if not assignable_role_ids:
+            logger.warning(f"No assignable position roles configured for department {dept_code}")
+            return
+        
         assigned_roles = []
         failed_roles = []
         
         for role_id in assignable_role_ids:
             role = user.guild.get_role(role_id)
-            if role:
-                try:
-                    await user.add_roles(role, reason=f"Department application approved - automatic position assignment by {moderator}")
-                    assigned_roles.append(role.name)
-                except discord.Forbidden:
-                    logger.warning(f"Could not assign position role {role.name} to {user} - insufficient permissions")
-                    failed_roles.append(role.name)
-                except Exception as e:
-                    logger.error(f"Error assigning position role {role.name} to {user}: {e}")
-                    failed_roles.append(role.name)
+            if not role:
+                logger.error(f"Role with ID {role_id} not found on server for department {dept_code}")
+                failed_roles.append(f"ID:{role_id}")
+                continue
+                
+            logger.info(f"Attempting to assign role {role.name} (ID: {role_id}) to {user.display_name}")
+            
+            try:
+                await user.add_roles(role, reason=f"Department application approved - automatic position assignment by {moderator}")
+                assigned_roles.append(role.name)
+                logger.info(f"Successfully assigned role {role.name} to {user.display_name}")
+            except discord.Forbidden:
+                logger.warning(f"Could not assign position role {role.name} to {user} - insufficient permissions")
+                failed_roles.append(role.name)
+            except Exception as e:
+                logger.error(f"Error assigning position role {role.name} to {user}: {e}")
+                failed_roles.append(role.name)
         
         # Log results
         if assigned_roles:
             logger.info(f"Assigned position roles to {user}: {', '.join(assigned_roles)}")
         if failed_roles:
             logger.warning(f"Failed to assign position roles to {user}: {', '.join(failed_roles)}")
+        
+        logger.info(f"Position role assignment complete for {user.display_name}: {len(assigned_roles)} assigned, {len(failed_roles)} failed")
     
     async def _remove_old_department_roles(self, user: discord.Member, new_dept_code: str):
         """Legacy method - now calls the new comprehensive role removal"""
@@ -448,6 +529,327 @@ class DepartmentApplicationView(ui.View):
             logger.warning(f"Could not update nickname for {user} - insufficient permissions")
         except Exception as e:
             logger.error(f"Error updating nickname for {user}: {e}")
+    
+    async def _log_to_google_sheets(self, interaction: discord.Interaction, target_user: discord.Member, dept_code: str):
+        """Log department application approval to Google Sheets"""
+        try:
+            # Initialize sheets manager if needed
+            if not hasattr(sheets_manager, 'client') or not sheets_manager.client:
+                await sheets_manager.async_initialize()
+            
+            # Determine action type
+            application_type = self.application_data.get('application_type', 'join')
+            action = "Принят в подразделение" if application_type == 'join' else "Переведён в подразделение"
+            
+            # Get department name
+            departments = ping_manager.get_all_departments()
+            dept_config = departments.get(dept_code, {})
+            department_name = dept_config.get('name', dept_code)
+            
+            # Get assigned position roles names (from user's actual roles, not config)
+            assignable_role_ids = ping_manager.get_department_assignable_position_roles(dept_code)
+            position_names = []
+            user_role_ids = [role.id for role in target_user.roles]
+            
+            logger.info(f"Getting position roles for Google Sheets. Assignable IDs: {assignable_role_ids}")
+            logger.info(f"User {target_user.display_name} has roles: {user_role_ids}")
+            
+            for role_id in assignable_role_ids:
+                role = interaction.guild.get_role(role_id)
+                if role and role.id in user_role_ids:
+                    position_names.append(role.name)
+                    logger.info(f"Added position role {role.name} to Google Sheets record")
+                elif role:
+                    logger.warning(f"User {target_user.display_name} doesn't have expected position role {role.name}")
+                else:
+                    logger.error(f"Position role ID {role_id} not found on server")
+            
+            position_roles_text = ", ".join(position_names) if position_names else ""
+            logger.info(f"Final position roles text for Google Sheets: '{position_roles_text}'")
+            
+            # Get user rank from roles
+            user_rank = sheets_manager.get_rank_from_roles(target_user) if hasattr(sheets_manager, 'get_rank_from_roles') else "Неизвестно"
+            
+            # Prepare form data for sheets logging (similar to dismissal system)
+            form_data = {
+                'name': self.application_data.get('name', target_user.display_name),
+                'static': self.application_data.get('static', ''),
+                'department': department_name,
+                'rank': user_rank,
+                'reason': '',  # Empty for applications as specified
+                'action': action,
+                'position': position_roles_text
+            }
+            
+            # Log to "Общий Кадровый"
+            success = await self._add_application_record_to_audit(
+                form_data=form_data,
+                target_user=target_user,
+                approving_user=interaction.user,
+                approval_time=datetime.now(timezone(timedelta(hours=3)))
+            )
+            
+            if success:
+                logger.info(f"Successfully logged department application to Google Sheets for {target_user.display_name}")
+                
+                # Update "Личный Состав"
+                await self._update_personal_roster(target_user, department_name, position_roles_text)
+                
+                # Send audit notification after successful Google Sheets logging
+                moderator_info = await self._get_moderator_info_from_users_sheet(interaction.user)
+                audit_url = await self._send_audit_notification(interaction, target_user, form_data, moderator_info)
+                if audit_url:
+                    logger.info(f"Sent audit notification for {target_user.display_name}: {audit_url}")
+                else:
+                    logger.warning(f"Failed to send audit notification for {target_user.display_name}")
+            else:
+                logger.warning(f"Failed to log department application to Google Sheets for {target_user.display_name}")
+                
+        except Exception as e:
+            logger.error(f"Error logging department application to Google Sheets: {e}")
+    
+    async def _send_audit_notification(self, interaction: discord.Interaction, target_user: discord.Member, form_data: dict, moderator_name: str) -> str:
+        """Send audit notification to configured audit channel"""
+        try:
+            config = load_config()
+            audit_channel_id = config.get('audit_channel')
+            
+            if not audit_channel_id:
+                logger.warning("Audit channel ID not configured")
+                return None
+                
+            audit_channel = interaction.guild.get_channel(audit_channel_id)
+            if not audit_channel:
+                logger.error(f"Audit channel not found: {audit_channel_id}")
+                return None
+            
+            # Create audit notification embed (same format as dismissal system)
+            audit_embed = discord.Embed(
+                title="Кадровый аудит ВС РФ",
+                color=0x055000,  # Green color as in template
+                timestamp=discord.utils.utcnow()
+            )
+            
+            # Format date as dd-MM-yyyy
+            action_date = discord.utils.utcnow().strftime('%d-%m-%Y')
+            
+            # Combine name and static for "Имя Фамилия | 6 цифр статика" field
+            name_with_static = f"{form_data.get('name', target_user.display_name)} | {form_data.get('static', '')}"
+            
+            # Set fields according to template
+            audit_embed.add_field(name="Кадровую отписал", value=moderator_name, inline=False)
+            audit_embed.add_field(name="Имя Фамилия | 6 цифр статика", value=name_with_static, inline=False)
+            audit_embed.add_field(name="Действие", value=form_data.get('action', 'Принят на службу'), inline=False)
+            
+            # For applications, we don't usually have a reason field, but add it if exists
+            reason = form_data.get('reason', '')
+            if reason:
+                audit_embed.add_field(name="Причина", value=reason, inline=False)
+            
+            audit_embed.add_field(name="Дата Действия", value=action_date, inline=False)
+            audit_embed.add_field(name="Подразделение", value=form_data.get('department', 'Неизвестно'), inline=False)
+            audit_embed.add_field(name="Воинское звание", value=form_data.get('rank', 'Неизвестно'), inline=False)
+            
+            # Add position field if available
+            position = form_data.get('position', '')
+            if position:
+                audit_embed.add_field(name="Должность", value=position, inline=False)
+            
+            # Set thumbnail to default image as in template
+            audit_embed.set_thumbnail(url="https://i.imgur.com/07MRSyl.png")
+            
+            # Send notification with user mention (the user who was approved)
+            audit_message = await audit_channel.send(content=f"<@{target_user.id}>", embed=audit_embed)
+            logger.info(f"Sent audit notification for department application approval of {target_user.display_name}")
+            
+            return audit_message.jump_url
+            
+        except Exception as e:
+            logger.error(f"Error sending audit notification: {e}")
+            return None
+    
+    async def _add_application_record_to_audit(self, form_data: dict, target_user: discord.Member, approving_user: discord.Member, approval_time: datetime) -> bool:
+        """Add department application record to 'Общий Кадровый' sheet"""
+        try:
+            # Ensure connection
+            if not sheets_manager._ensure_connection():
+                logger.error("Failed to establish Google Sheets connection")
+                return False
+            
+            # Get moderator info from "Пользователи" sheet
+            moderator_info = await self._get_moderator_info_from_users_sheet(approving_user)
+            
+            # Extract data
+            real_name = form_data.get('name', target_user.display_name)
+            static = form_data.get('static', '')
+            action = form_data.get('action', 'Принят в подразделение')
+            department = form_data.get('department', 'Неизвестно')
+            position = form_data.get('position', '')
+            rank = form_data.get('rank', 'Неизвестно')
+            discord_id = str(target_user.id)
+            
+            # Prepare row data for "Общий Кадровый" (columns A-L)
+            row_data = [
+                approval_time.strftime('%d.%m.%Y %H:%M'),  # A: Отметка времени
+                f"{real_name} | {static}" if static else real_name,  # B: Имя Фамилия | 6 цифр статика
+                real_name,  # C: Имя Фамилия
+                static,  # D: Статик
+                action,  # E: Действие
+                approval_time.strftime('%d.%m.%Y'),  # F: Дата Действия
+                department,  # G: Подразделение
+                position,  # H: Должность
+                rank,  # I: Звание
+                discord_id,  # J: Discord ID бойца
+                '',  # K: Причина увольнения (пустая)
+                moderator_info  # L: Кадровую отписал
+            ]
+            
+            # Insert record at the beginning (after headers)
+            result = sheets_manager.worksheet.insert_row(row_data, index=2)
+            
+            if result:
+                logger.info(f"Successfully added application record for {real_name} to 'Общий Кадровый'")
+                return True
+            else:
+                logger.error(f"Failed to add application record for {real_name} to 'Общий Кадровый'")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error adding application record to 'Общий Кадровый': {e}")
+            return False
+    
+    async def _get_moderator_info_from_users_sheet(self, moderator: discord.Member) -> str:
+        """Get moderator info from 'Пользователи' sheet by Discord ID"""
+        try:
+            # Get "Пользователи" worksheet
+            users_worksheet = None
+            for worksheet in sheets_manager.spreadsheet.worksheets():
+                if worksheet.title == 'Пользователи':
+                    users_worksheet = worksheet
+                    break
+            
+            if not users_worksheet:
+                logger.warning("'Пользователи' worksheet not found")
+                return moderator.display_name
+            
+            # Get all values from the worksheet
+            all_values = users_worksheet.get_all_values()
+            
+            # Skip header row and search for moderator by Discord ID
+            for row in all_values[1:]:  # Skip header row
+                if len(row) >= 10:  # Ensure we have at least 10 columns (A-J)
+                    discord_id_cell = str(row[5]).strip()  # Column F (index 5) - Discord ID
+                    name_static_cell = str(row[9]).strip()  # Column J (index 9) - Имя Фамилия | Статик
+                    
+                    if discord_id_cell == str(moderator.id) and name_static_cell:
+                        logger.info(f"Found moderator {moderator.display_name} in 'Пользователи': {name_static_cell}")
+                        return name_static_cell
+            
+            # If not found in sheet, log warning and use Discord display name
+            logger.warning(f"Moderator {moderator.display_name} (ID: {moderator.id}) not found in 'Пользователи' sheet")
+            return moderator.display_name
+            
+        except Exception as e:
+            logger.error(f"Error getting moderator info from 'Пользователи' sheet: {e}")
+            return moderator.display_name
+    
+    async def _update_personal_roster(self, user: discord.Member, department: str, position: str):
+        """Update or add user record in 'Личный Состав' sheet"""
+        try:
+            # Get user info from "Личный Состав" sheet
+            if hasattr(sheets_manager, 'get_user_info_from_personal_list'):
+                existing_info = await sheets_manager.get_user_info_from_personal_list(user.id)
+                
+                if existing_info:
+                    # User exists - update department and position (columns E and F)
+                    await self._update_existing_personal_record(user, department, position, existing_info)
+                else:
+                    # User doesn't exist - add new record at the end
+                    await self._add_new_personal_record(user, department, position)
+            else:
+                logger.warning("Method 'get_user_info_from_personal_list' not available in sheets_manager")
+                
+        except Exception as e:
+            logger.error(f"Error updating personal roster for {user.display_name}: {e}")
+    
+    async def _update_existing_personal_record(self, user: discord.Member, department: str, position: str, existing_info: dict):
+        """Update existing user record in 'Личный Состав' sheet"""
+        try:
+            # Get personal roster worksheet
+            personal_worksheet = None
+            for worksheet in sheets_manager.spreadsheet.worksheets():
+                if worksheet.title == 'Личный Состав':
+                    personal_worksheet = worksheet
+                    break
+            
+            if not personal_worksheet:
+                logger.error("'Личный Состав' worksheet not found")
+                return
+            
+            # Find the row with this user's Discord ID
+            all_values = personal_worksheet.get_all_values()
+            for i, row in enumerate(all_values[1:], start=2):  # Skip header row
+                if len(row) >= 7 and str(row[6]).strip() == str(user.id):
+                    # Update columns E (department) and F (position)
+                    personal_worksheet.update_cell(i, 5, department)  # Column E
+                    personal_worksheet.update_cell(i, 6, position)    # Column F
+                    logger.info(f"Updated personal record for {user.display_name}: dept={department}, pos={position}")
+                    return
+            
+            logger.warning(f"Could not find existing personal record for {user.display_name} (ID: {user.id})")
+            
+        except Exception as e:
+            logger.error(f"Error updating existing personal record: {e}")
+    
+    async def _add_new_personal_record(self, user: discord.Member, department: str, position: str):
+        """Add new user record to 'Личный Состав' sheet"""
+        try:
+            # Get personal roster worksheet
+            personal_worksheet = None
+            for worksheet in sheets_manager.spreadsheet.worksheets():
+                if worksheet.title == 'Личный Состав':
+                    personal_worksheet = worksheet
+                    break
+            
+            if not personal_worksheet:
+                logger.error("'Личный Состав' worksheet not found")
+                return
+            
+            # Get user data from application
+            first_name = ""
+            last_name = ""
+            full_name = self.application_data.get('name', user.display_name)
+            static = self.application_data.get('static', '')
+            
+            # Try to split name into first and last name
+            if full_name:
+                name_parts = full_name.split()
+                if len(name_parts) >= 2:
+                    first_name = name_parts[0]
+                    last_name = " ".join(name_parts[1:])
+                else:
+                    first_name = full_name
+            
+            # Get user rank
+            user_rank = sheets_manager.get_rank_from_roles(user) if hasattr(sheets_manager, 'get_rank_from_roles') else "Неизвестно"
+            
+            # Prepare row data for "Личный Состав" (columns A-G)
+            row_data = [
+                first_name,     # A: Имя
+                last_name,      # B: Фамилия
+                static,         # C: Статик
+                user_rank,      # D: Звание
+                department,     # E: Подразделение
+                position,       # F: Должность
+                str(user.id)    # G: Discord ID
+            ]
+            
+            # Add record at the end
+            personal_worksheet.append_row(row_data)
+            logger.info(f"Added new personal record for {user.display_name}: {full_name}")
+            
+        except Exception as e:
+            logger.error(f"Error adding new personal record: {e}")
 
 class RejectionReasonModal(ui.Modal):
     """Modal for entering rejection reason"""

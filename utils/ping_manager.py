@@ -309,6 +309,12 @@ class PingManager:
     def get_available_contexts(self) -> Dict[str, str]:
         """Get available ping contexts"""
         return self.CONTEXTS.copy()
+    
+    def reload_config(self):
+        """Reload configuration from file"""
+        logger.info("Reloading configuration...")
+        self.config = load_config()
+        logger.info("Configuration reloaded successfully")
 
 # Global instance
 ping_manager = PingManager()

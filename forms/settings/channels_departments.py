@@ -1,11 +1,20 @@
 """
-Department application channel configura            emoji = dept_data.get('emoji', '📁')ion
+Department application channel configuration
 """
 import discord
 from discord import ui
 from typing import Dict, List
 from utils.config_manager import load_config, save_config
 from .base import BaseSettingsView, BaseSettingsModal
+
+
+def auto_reload_config():
+    """Automatically reload configuration in ping_manager"""
+    try:
+        from utils.ping_manager import ping_manager
+        ping_manager.reload_config()
+    except Exception as e:
+        print(f"Warning: Could not auto-reload config: {e}")
 
 
 async def show_department_channels_config(interaction: discord.Interaction):
@@ -388,6 +397,7 @@ class DepartmentChannelModal(BaseSettingsModal):
             
             config['departments'][self.department_code]['application_channel_id'] = channel.id
             save_config(config)
+            auto_reload_config()  # Автоматическая перезагрузка конфигурации
             
             await interaction.response.send_message(
                 f"✅ Канал заявлений для подразделения **{self.department_code}** установлен: {channel.mention}",
@@ -484,6 +494,7 @@ class DepartmentRoleModal(BaseSettingsModal):
             
             config['departments'][self.department_code]['role_id'] = role.id
             save_config(config)
+            auto_reload_config()  # Автоматическая перезагрузка конфигурации
             
             await interaction.response.send_message(
                 f"✅ Роль подразделения **{self.department_code}** установлена: {role.mention}",
@@ -539,7 +550,7 @@ class DepartmentPositionRolesModal(BaseSettingsModal):
         
         self.roles_input = ui.TextInput(
             label="Роли должностей (все)",
-            placeholder="Введите ID ролей или упомяните роли через новую строку\nПример:\n@Рядовой\n@Младший сержант\n1234567890123456",
+            placeholder="ID ролей или @упоминания через новую строку\nПример: @Рядовой",
             style=discord.TextStyle.paragraph,
             max_length=2000,
             default=current_text,
@@ -578,6 +589,7 @@ class DepartmentPositionRolesModal(BaseSettingsModal):
             
             config['departments'][self.department_code]['position_role_ids'] = role_ids
             save_config(config)
+            auto_reload_config()  # Автоматическая перезагрузка конфигурации
             
             roles_mention = []
             for role_id in role_ids:
@@ -592,14 +604,108 @@ class DepartmentPositionRolesModal(BaseSettingsModal):
                 ephemeral=True
             )
             
-            # Return to department config
-            await show_department_config(interaction, self.department_code)
+            # Return to department config using edit instead of response
+            await self._refresh_department_config(interaction)
             
         except Exception as e:
             await interaction.followup.send(
                 f"❌ Произошла ошибка при настройке ролей должностей: {e}",
                 ephemeral=True
             )
+    
+    async def _refresh_department_config(self, interaction: discord.Interaction):
+        """Refresh department configuration view after defer"""
+        config = load_config()
+        departments = config.get('departments', {})
+        dept_config = departments.get(self.department_code, {})
+        
+        # Get current settings
+        channel_id = dept_config.get('application_channel_id')
+        role_id = dept_config.get('role_id')
+        
+        # Create embed with current configuration
+        embed = discord.Embed(
+            title=f"⚙️ Настройка подразделения {self.department_code}",
+            color=discord.Color.blue()
+        )
+        
+        # Channel info
+        if channel_id:
+            channel = interaction.guild.get_channel(channel_id)
+            channel_text = channel.mention if channel else f"❌ Канал не найден (ID: {channel_id})"
+        else:
+            channel_text = "❌ Не настроен"
+        
+        embed.add_field(
+            name="📋 Канал заявлений",
+            value=channel_text,
+            inline=False
+        )
+        
+        # Role info
+        if role_id:
+            role = interaction.guild.get_role(role_id)
+            role_text = role.mention if role else f"❌ Роль не найдена (ID: {role_id})"
+        else:
+            role_text = "❌ Не настроена"
+        
+        embed.add_field(
+            name="👤 Роль подразделения",
+            value=role_text,
+            inline=False
+        )
+        
+        # Position roles info
+        position_role_ids = dept_config.get('position_role_ids', [])
+        assignable_position_role_ids = dept_config.get('assignable_position_role_ids', [])
+        
+        if position_role_ids:
+            position_roles = []
+            for role_id in position_role_ids:
+                role = interaction.guild.get_role(role_id)
+                if role:
+                    position_roles.append(role.mention)
+                else:
+                    position_roles.append(f"❌ ID: {role_id}")
+            position_text = "\n".join(position_roles) if position_roles else "❌ Не настроены"
+        else:
+            position_text = "❌ Не настроены"
+        
+        embed.add_field(
+            name="🎖️ Роли должностей (все)",
+            value=position_text[:1024],  # Discord field limit
+            inline=False
+        )
+        
+        if assignable_position_role_ids:
+            assignable_roles = []
+            for role_id in assignable_position_role_ids:
+                role = interaction.guild.get_role(role_id)
+                if role:
+                    assignable_roles.append(role.mention)
+                else:
+                    assignable_roles.append(f"❌ ID: {role_id}")
+            assignable_text = "\n".join(assignable_roles) if assignable_roles else "❌ Не настроены"
+        else:
+            assignable_text = "❌ Не настроены"
+        
+        embed.add_field(
+            name="⭐ Выдаваемые должности",
+            value=assignable_text[:1024],  # Discord field limit
+            inline=False
+        )
+        
+        # Add note about ping settings
+        embed.add_field(
+            name="📢 Настройки пингов",
+            value="Пинги для этого подразделения настраиваются через `/settings - Настройки пингов`",
+            inline=False
+        )
+        
+        # Create view with configuration options
+        view = DepartmentConfigActionsView(self.department_code)
+        
+        await interaction.edit_original_response(embed=embed, view=view)
 
 
 class DepartmentAssignablePositionsModal(BaseSettingsModal):
@@ -621,7 +727,7 @@ class DepartmentAssignablePositionsModal(BaseSettingsModal):
         
         self.roles_input = ui.TextInput(
             label="Выдаваемые должности",
-            placeholder="Введите ID ролей или упомяните роли через новую строку\nЭти роли будут автоматически выдаваться новичкам\nПример:\n@Рядовой\n1234567890123456",
+            placeholder="ID ролей или @упоминания через новую строку\nАвтоматически выдаются новичкам",
             style=discord.TextStyle.paragraph,
             max_length=2000,
             default=current_text,
@@ -660,6 +766,7 @@ class DepartmentAssignablePositionsModal(BaseSettingsModal):
             
             config['departments'][self.department_code]['assignable_position_role_ids'] = role_ids
             save_config(config)
+            auto_reload_config()  # Автоматическая перезагрузка конфигурации
             
             roles_mention = []
             for role_id in role_ids:
@@ -675,11 +782,105 @@ class DepartmentAssignablePositionsModal(BaseSettingsModal):
                 ephemeral=True
             )
             
-            # Return to department config
-            await show_department_config(interaction, self.department_code)
+            # Return to department config using edit instead of response
+            await self._refresh_department_config(interaction)
             
         except Exception as e:
             await interaction.followup.send(
                 f"❌ Произошла ошибка при настройке выдаваемых должностей: {e}",
                 ephemeral=True
             )
+    
+    async def _refresh_department_config(self, interaction: discord.Interaction):
+        """Refresh department configuration view after defer"""
+        config = load_config()
+        departments = config.get('departments', {})
+        dept_config = departments.get(self.department_code, {})
+        
+        # Get current settings
+        channel_id = dept_config.get('application_channel_id')
+        role_id = dept_config.get('role_id')
+        
+        # Create embed with current configuration
+        embed = discord.Embed(
+            title=f"⚙️ Настройка подразделения {self.department_code}",
+            color=discord.Color.blue()
+        )
+        
+        # Channel info
+        if channel_id:
+            channel = interaction.guild.get_channel(channel_id)
+            channel_text = channel.mention if channel else f"❌ Канал не найден (ID: {channel_id})"
+        else:
+            channel_text = "❌ Не настроен"
+        
+        embed.add_field(
+            name="📋 Канал заявлений",
+            value=channel_text,
+            inline=False
+        )
+        
+        # Role info
+        if role_id:
+            role = interaction.guild.get_role(role_id)
+            role_text = role.mention if role else f"❌ Роль не найдена (ID: {role_id})"
+        else:
+            role_text = "❌ Не настроена"
+        
+        embed.add_field(
+            name="👤 Роль подразделения",
+            value=role_text,
+            inline=False
+        )
+        
+        # Position roles info
+        position_role_ids = dept_config.get('position_role_ids', [])
+        assignable_position_role_ids = dept_config.get('assignable_position_role_ids', [])
+        
+        if position_role_ids:
+            position_roles = []
+            for role_id in position_role_ids:
+                role = interaction.guild.get_role(role_id)
+                if role:
+                    position_roles.append(role.mention)
+                else:
+                    position_roles.append(f"❌ ID: {role_id}")
+            position_text = "\n".join(position_roles) if position_roles else "❌ Не настроены"
+        else:
+            position_text = "❌ Не настроены"
+        
+        embed.add_field(
+            name="🎖️ Роли должностей (все)",
+            value=position_text[:1024],  # Discord field limit
+            inline=False
+        )
+        
+        if assignable_position_role_ids:
+            assignable_roles = []
+            for role_id in assignable_position_role_ids:
+                role = interaction.guild.get_role(role_id)
+                if role:
+                    assignable_roles.append(role.mention)
+                else:
+                    assignable_roles.append(f"❌ ID: {role_id}")
+            assignable_text = "\n".join(assignable_roles) if assignable_roles else "❌ Не настроены"
+        else:
+            assignable_text = "❌ Не настроены"
+        
+        embed.add_field(
+            name="⭐ Выдаваемые должности",
+            value=assignable_text[:1024],  # Discord field limit
+            inline=False
+        )
+        
+        # Add note about ping settings
+        embed.add_field(
+            name="📢 Настройки пингов",
+            value="Пинги для этого подразделения настраиваются через `/settings - Настройки пингов`",
+            inline=False
+        )
+        
+        # Create view with configuration options
+        view = DepartmentConfigActionsView(self.department_code)
+        
+        await interaction.edit_original_response(embed=embed, view=view)

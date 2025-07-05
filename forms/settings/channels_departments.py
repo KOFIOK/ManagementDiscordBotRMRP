@@ -26,6 +26,97 @@ class DepartmentChannelsConfigView(BaseSettingsView):
     def __init__(self):
         super().__init__()
         self.add_item(DepartmentChannelSelect())
+        self.add_item(SetupAllChannelsButton())
+
+
+class SetupAllChannelsButton(ui.Button):
+    """Button to setup all department channels automatically"""
+    
+    def __init__(self):
+        super().__init__(
+            label="🛂 Проверить все каналы",
+            style=discord.ButtonStyle.green,
+            row=1
+        )
+    
+    async def callback(self, interaction: discord.Interaction):
+        """Check and setup all department channels"""
+        try:
+            # Check admin permissions
+            config = load_config()
+            administrators = config.get('administrators', {})
+            
+            user_role_ids = [role.id for role in interaction.user.roles]
+            is_admin = (
+                interaction.user.id in administrators.get('users', []) or
+                any(role_id in user_role_ids for role_id in administrators.get('roles', []))
+            )
+            
+            if not is_admin:
+                await interaction.response.send_message(
+                    "❌ У вас нет прав для выполнения этой операции.",
+                    ephemeral=True
+                )
+                return
+            
+            await interaction.response.defer()
+            
+            # Import and use DepartmentApplicationManager
+            from forms.department_applications.manager import DepartmentApplicationManager
+            from discord.ext import commands
+            
+            # Create mock bot for manager
+            class MockBot:
+                def __init__(self):
+                    self.user = interaction.client.user
+            
+            app_manager = DepartmentApplicationManager(MockBot())
+            results = await app_manager.setup_all_department_channels(interaction.guild)
+            
+            # Create result embed
+            embed = discord.Embed(
+                title="� Проверка каналов заявлений",
+                description="Результат проверки и настройки каналов подразделений:",
+                color=discord.Color.green()
+            )
+            
+            embed.add_field(
+                name="ℹ️ Как это работает",
+                value="Система автоматически ищет закрепленные сообщения с кнопками заявлений. "
+                      "Если сообщение не найдено - создает новое и закрепляет его.",
+                inline=False
+            )
+            
+            for dept_code, result in results.items():
+                embed.add_field(
+                    name=f"{dept_code}",
+                    value=result,
+                    inline=True
+                )
+            
+            if not results:
+                embed.description = "❌ Нет настроенных каналов для подразделений."
+                embed.color = discord.Color.red()
+                embed.add_field(
+                    name="💡 Подсказка",
+                    value="Сначала настройте каналы для подразделений через меню выше.",
+                    inline=False
+                )
+            else:
+                embed.add_field(
+                    name="🤖 Автоматический режим",
+                    value="При каждом запуске бота система автоматически проверяет все каналы "
+                          "и восстанавливает недостающие сообщения.",
+                    inline=False
+                )
+            
+            await interaction.followup.send(embed=embed)
+            
+        except Exception as e:
+            await interaction.followup.send(
+                f"❌ Произошла ошибка: {e}",
+                ephemeral=True
+            )
 
 
 class DepartmentChannelSelect(ui.Select):

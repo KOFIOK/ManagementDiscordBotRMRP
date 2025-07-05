@@ -5,7 +5,7 @@ import discord
 from discord import ui
 from typing import Dict, Any, Optional
 import logging
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 from utils.config_manager import load_config
 from utils.ping_manager import ping_manager
@@ -28,12 +28,36 @@ class DepartmentApplicationView(ui.View):
     async def approve_button(self, interaction: discord.Interaction, button: ui.Button):
         """Approve the application"""
         try:
-            # Check permissions
+            # Check permissions with enhanced hierarchy
             if not await self._check_moderator_permissions(interaction):
-                await interaction.response.send_message(
-                    "❌ У вас нет прав для модерации заявлений.",
-                    ephemeral=True
+                error_message = "❌ **Недостаточно прав для модерации**\n"
+                
+                # Check if user has any moderator/admin rights at all
+                config = load_config()
+                administrators = config.get('administrators', {})
+                moderators = config.get('moderators', {})
+                user_role_ids = [role.id for role in interaction.user.roles]
+                
+                is_admin = (
+                    interaction.user.id in administrators.get('users', []) or
+                    any(role_id in user_role_ids for role_id in administrators.get('roles', []))
                 )
+                
+                is_moderator = (
+                    interaction.user.id in moderators.get('users', []) or
+                    any(role_id in user_role_ids for role_id in moderators.get('roles', []))
+                )
+                
+                if not (is_admin or is_moderator):
+                    error_message += "У вас нет прав модератора или администратора."
+                elif is_moderator and interaction.user.id == self.application_data['user_id']:
+                    error_message += "Модераторы не могут модерировать собственные заявления.\n(Администраторы могут модерировать любые заявления)"
+                elif is_moderator:
+                    error_message += "Модераторы не могут модерировать заявления других модераторов/администраторов."
+                else:
+                    error_message += "Произошла ошибка проверки прав доступа."
+                
+                await interaction.response.send_message(error_message, ephemeral=True)
                 return
             
             await interaction.response.defer()
@@ -79,19 +103,26 @@ class DepartmentApplicationView(ui.View):
                 
                 embed.add_field(
                     name="⏰ Время обработки",
-                    value=f"<t:{int(datetime.utcnow().timestamp())}:R>",
+                    value=f"<t:{int((datetime.now(timezone(timedelta(hours=3)))).timestamp())}:R>",
                     inline=True
                 )
                 
-                # Disable buttons
-                for item in self.children:
-                    item.disabled = True
+                # Disable all buttons and replace with single status button
+                self.clear_items()
+                
+                # Add single disabled "Approved" button
+                approved_button = ui.Button(
+                    label="✅ Одобрено",
+                    style=discord.ButtonStyle.green,
+                    disabled=True
+                )
+                self.add_item(approved_button)
                 
                 await interaction.edit_original_response(embed=embed, view=self)
                 
                 # Send success message
                 await interaction.followup.send(
-                    f"✅ Заявление пользователя {target_user.mention} одобрено!",
+                    f"✅ Заявление пользователя {target_user.mention} одобрено! **__Не забудьте__** переназначить роли, если это не произошло автоматически.",
                     ephemeral=True
                 )
                 
@@ -101,7 +132,7 @@ class DepartmentApplicationView(ui.View):
                         title="✅ Заявление одобрено!",
                         description=f"Ваше заявление в подразделение **{self.application_data['department_code']}** было одобрено!",
                         color=discord.Color.green(),
-                        timestamp=datetime.utcnow()
+                        timestamp=datetime.now(timezone(timedelta(hours=3)))
                     )
                     await target_user.send(embed=dm_embed)
                 except discord.Forbidden:
@@ -118,12 +149,36 @@ class DepartmentApplicationView(ui.View):
     async def reject_button(self, interaction: discord.Interaction, button: ui.Button):
         """Reject the application with reason"""
         try:
-            # Check permissions
+            # Check permissions with enhanced hierarchy
             if not await self._check_moderator_permissions(interaction):
-                await interaction.response.send_message(
-                    "❌ У вас нет прав для модерации заявлений.",
-                    ephemeral=True
+                error_message = "❌ **Недостаточно прав для модерации**\n"
+                
+                # Check if user has any moderator/admin rights at all
+                config = load_config()
+                administrators = config.get('administrators', {})
+                moderators = config.get('moderators', {})
+                user_role_ids = [role.id for role in interaction.user.roles]
+                
+                is_admin = (
+                    interaction.user.id in administrators.get('users', []) or
+                    any(role_id in user_role_ids for role_id in administrators.get('roles', []))
                 )
+                
+                is_moderator = (
+                    interaction.user.id in moderators.get('users', []) or
+                    any(role_id in user_role_ids for role_id in moderators.get('roles', []))
+                )
+                
+                if not (is_admin or is_moderator):
+                    error_message += "У вас нет прав модератора или администратора."
+                elif is_moderator and interaction.user.id == self.application_data['user_id']:
+                    error_message += "Модераторы не могут модерировать собственные заявления.\n(Администраторы могут модерировать любые заявления)"
+                elif is_moderator:
+                    error_message += "Модераторы не могут модерировать заявления других модераторов/администраторов."
+                else:
+                    error_message += "Произошла ошибка проверки прав доступа."
+                
+                await interaction.response.send_message(error_message, ephemeral=True)
                 return
             
             # Show rejection reason modal
@@ -180,19 +235,67 @@ class DepartmentApplicationView(ui.View):
             )
     
     async def _check_moderator_permissions(self, interaction: discord.Interaction) -> bool:
-        """Check if user has moderator permissions"""
+        """
+        Check if user has moderator permissions with proper hierarchy
+        - Admin can moderate ANYTHING (including their own applications)
+        - Moderator cannot moderate their own applications
+        - Moderator cannot moderate applications from equal/higher hierarchy members
+        """
+        user_id = interaction.user.id
+        application_user_id = self.application_data['user_id']
+        
         config = load_config()
+        administrators = config.get('administrators', {})
         moderators = config.get('moderators', {})
-        
-        # Check moderator users
-        if interaction.user.id in moderators.get('users', []):
-            return True
-        
-        # Check moderator roles
         user_role_ids = [role.id for role in interaction.user.roles]
-        moderator_role_ids = moderators.get('roles', [])
         
-        return any(role_id in user_role_ids for role_id in moderator_role_ids)
+        # Check if user is administrator FIRST (can moderate anything including own applications)
+        is_admin = (
+            user_id in administrators.get('users', []) or
+            any(role_id in user_role_ids for role_id in administrators.get('roles', []))
+        )
+        
+        if is_admin:
+            return True  # Admins can moderate everything
+        
+        # Check if user is moderator
+        is_moderator = (
+            user_id in moderators.get('users', []) or
+            any(role_id in user_role_ids for role_id in moderators.get('roles', []))
+        )
+        
+        if not is_moderator:
+            return False  # Not admin, not moderator
+        
+        # Moderators have restrictions:
+        # 1. Cannot moderate own application
+        if user_id == application_user_id:
+            return False
+        
+        # 2. Moderator hierarchy check: cannot moderate other moderators/admins
+        application_user = interaction.guild.get_member(application_user_id)
+        if application_user:
+            app_user_role_ids = [role.id for role in application_user.roles]
+            
+            # Check if application author is admin
+            app_user_is_admin = (
+                application_user_id in administrators.get('users', []) or
+                any(role_id in app_user_role_ids for role_id in administrators.get('roles', []))
+            )
+            
+            if app_user_is_admin:
+                return False  # Moderator cannot moderate admin applications
+            
+            # Check if application author is also moderator
+            app_user_is_moderator = (
+                application_user_id in moderators.get('users', []) or
+                any(role_id in app_user_role_ids for role_id in moderators.get('roles', []))
+            )
+            
+            if app_user_is_moderator:
+                return False  # Moderator cannot moderate other moderator applications
+        
+        return True  # Moderator can moderate regular user applications
     
     async def _check_admin_permissions(self, interaction: discord.Interaction) -> bool:
         """Check if user has admin permissions"""
@@ -343,14 +446,20 @@ class RejectionReasonModal(ui.Modal):
             
             embed.add_field(
                 name="⏰ Время обработки",
-                value=f"<t:{int(datetime.utcnow().timestamp())}:R>",
+                value=f"<t:{int((datetime.now(timezone(timedelta(hours=3)))).timestamp())}:R>",
                 inline=True
             )
             
-            # Disable buttons
+            # Clear all buttons and add single disabled "Rejected" button
             view = DepartmentApplicationView(self.application_data)
-            for item in view.children:
-                item.disabled = True
+            view.clear_items()
+            
+            rejected_button = ui.Button(
+                label="❌ Отклонено",
+                style=discord.ButtonStyle.red,
+                disabled=True
+            )
+            view.add_item(rejected_button)
             
             await interaction.edit_original_response(embed=embed, view=view)
             
@@ -367,7 +476,7 @@ class RejectionReasonModal(ui.Modal):
                         title="❌ Заявление отклонено",
                         description=f"Ваше заявление в подразделение **{self.application_data['department_code']}** было отклонено.",
                         color=discord.Color.red(),
-                        timestamp=datetime.utcnow()
+                        timestamp=datetime.now(timezone(timedelta(hours=3)))
                     )
                     dm_embed.add_field(
                         name="📝 Причина",
@@ -403,39 +512,53 @@ class ConfirmDeletionView(ui.View):
         self.stop()
 
 class DepartmentSelectView(ui.View):
-    """Select menu for choosing department to apply to"""
+    """Button view for choosing department application type"""
     
     def __init__(self, department_code: str):
         super().__init__(timeout=None)  # Persistent view
         self.department_code = department_code
         
         # Set custom_id for persistence
-        self.select_menu.custom_id = f"dept_select_{department_code}"
+        self.add_item(DepartmentApplicationButton("Заявление в подразделение", "join", department_code))
+        self.add_item(DepartmentApplicationButton("Перевод из другого подразделения", "transfer", department_code))
+
+
+class DepartmentApplicationButton(ui.Button):
+    """Button for department application type selection"""
     
-    @ui.select(
-        placeholder="Выберите тип заявления...",
-        options=[
-            discord.SelectOption(
-                label="Вступление в подразделение",
-                description="Подать заявление на вступление в подразделение",
-                value="join",
-                emoji="➕"
-            ),
-            discord.SelectOption(
-                label="Перевод в подразделение", 
-                description="Подать заявление на перевод из другого подразделения",
-                value="transfer",
-                emoji="🔄"
-            )
-        ]
-    )
-    async def select_menu(self, interaction: discord.Interaction, select: ui.Select):
+    def __init__(self, label: str, app_type: str, department_code: str):
+        self.app_type = app_type
+        self.department_code = department_code
+        
+        style = discord.ButtonStyle.green if app_type == "join" else discord.ButtonStyle.blurple
+        emoji = "➕" if app_type == "join" else "🔄"
+        
+        super().__init__(
+            label=label,
+            style=style,
+            emoji=emoji,
+            custom_id=f"dept_app_{app_type}_{department_code}"
+        )
+    
+    async def callback(self, interaction: discord.Interaction):
         """Handle department application type selection"""
         try:
-            app_type = select.values[0]
+            # Check if user already has active applications
+            active_check = await check_user_active_applications(
+                interaction.guild, 
+                interaction.user.id
+            )
             
-            # Check if user already has an active application
-            # This would need proper database implementation
+            if active_check['has_active']:
+                departments_list = ", ".join(active_check['departments'])
+                await interaction.response.send_message(
+                    f"❌ **У вас уже есть активное заявление на рассмотрении**\n\n"
+                    f"📋 Подразделения: **{departments_list}**\n"
+                    f"⏳ Дождитесь рассмотрения текущего заявления перед подачей нового.\n\n"
+                    f"💡 Активные заявления можно найти в каналах заявлений соответствующих подразделений.",
+                    ephemeral=True
+                )
+                return
             
             # Get user IC data
             from utils.user_database import UserDatabase
@@ -447,14 +570,85 @@ class DepartmentSelectView(ui.View):
                 )
                 return
             
-            # Create and send application modal
-            from .modals import DepartmentApplicationModal
-            modal = DepartmentApplicationModal(self.department_code, app_type, user_data)
+            # Create and send Stage 1 modal (IC Information)
+            from .modals import DepartmentApplicationStage1Modal
+            modal = DepartmentApplicationStage1Modal(self.department_code, self.app_type, user_data)
             await interaction.response.send_modal(modal)
             
         except Exception as e:
-            logger.error(f"Error in department select: {e}")
+            logger.error(f"Error in department application: {e}")
             await interaction.response.send_message(
                 "❌ Произошла ошибка. Попробуйте еще раз.",
                 ephemeral=True
             )
+
+async def check_user_active_applications(guild: discord.Guild, user_id: int, department_code: str = None) -> Dict:
+    """
+    Check if user has any active (pending) applications
+    
+    Args:
+        guild: Discord guild to search in
+        user_id: User ID to check applications for
+        department_code: Optional - check for specific department only
+        
+    Returns:
+        dict: {
+            'has_active': bool,
+            'applications': [list of active application messages],
+            'departments': [list of department codes with active applications]
+        }
+    """
+    result = {
+        'has_active': False,
+        'applications': [],
+        'departments': []
+    }
+    
+    try:
+        config = load_config()
+        departments = config.get('departments', {})
+        
+        # Check each department or specific department
+        depts_to_check = [department_code] if department_code else departments.keys()
+        
+        for dept_code in depts_to_check:
+            dept_config = departments.get(dept_code, {})
+            channel_id = dept_config.get('application_channel_id')
+            
+            if not channel_id:
+                continue
+                
+            channel = guild.get_channel(channel_id)
+            if not channel:
+                continue
+            
+            # Check recent messages for user's applications
+            async for message in channel.history(limit=100):
+                if not message.embeds:
+                    continue
+                    
+                embed = message.embeds[0]
+                
+                # Check if this is a department application
+                if not embed.footer or not embed.footer.text:
+                    continue
+                    
+                if f"ID заявления: {user_id}" in embed.footer.text:
+                    # Check if application is still pending (has view with enabled buttons)
+                    if message.components:
+                        # Check if buttons are not disabled
+                        for action_row in message.components:
+                            for component in action_row.children:
+                                if hasattr(component, 'disabled') and not component.disabled:
+                                    # Found active application
+                                    result['has_active'] = True
+                                    result['applications'].append(message)
+                                    if dept_code not in result['departments']:
+                                        result['departments'].append(dept_code)
+                                    break
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error checking user active applications: {e}")
+        return result

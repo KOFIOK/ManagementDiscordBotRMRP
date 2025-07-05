@@ -85,6 +85,9 @@ async def on_ready():
     bot.add_view(MedicalRegistrationView())
     print("✅ Basic persistent views added")
     
+    # Department applications views are created dynamically for specific applications
+    # No need to register them globally like other persistent views
+    
     # Add generic approval views for persistent buttons
     print("🔄 Adding approval views...")
     bot.add_view(DismissalApprovalView())
@@ -147,7 +150,7 @@ async def on_ready():
     # Setup department applications persistent views
     print("🔄 Setting up department applications persistent views...")
     try:
-        from forms.department_applications import DepartmentSelectView, DepartmentApplicationView
+        from forms.department_applications.views import DepartmentSelectView, DepartmentApplicationView
         # The actual restoration will be handled by the cog
         print("✅ Department applications views ready")
     except Exception as e:
@@ -366,6 +369,11 @@ async def restore_channel_messages(config):
     # Restore leave request views
     print("Restoring leave request views...")
     await restore_leave_request_views(bot)
+    
+    # Restore department applications messages
+    print("Restoring department applications messages...")
+    from utils.department_utils import restore_department_applications_messages
+    await restore_department_applications_messages(bot)
 
 async def check_for_button_message(channel, title_keyword):
     """Check if a channel already has a button message with the specified title."""
@@ -383,7 +391,7 @@ async def check_for_button_message(channel, title_keyword):
 async def load_extensions():
     """Load all extension cogs from the cogs directory."""
     # Список исключений - cogs которые не нужно загружать
-    excluded_cogs = {'warehouse_commands', 'cache_admin'}  # warehouse_commands удален, cache_admin заменен на slash-версию
+    excluded_cogs = {'warehouse_commands', 'cache_admin', 'department_applications_views'}  # department_applications_views теперь встроен в app.py
     
     for filename in os.listdir('./cogs'):
         if filename.endswith('.py') and not filename.startswith('_'):

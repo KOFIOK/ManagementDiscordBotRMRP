@@ -996,6 +996,20 @@ class DepartmentApplicationButton(ui.Button):
     async def callback(self, interaction: discord.Interaction):
         """Handle department application type selection"""
         try:
+            # Extract data from custom_id: dept_app_{app_type}_{department_code}
+            custom_id_parts = self.custom_id.split('_')
+            if len(custom_id_parts) >= 4:
+                app_type = custom_id_parts[2]  # join or transfer
+                department_code = custom_id_parts[3]  # department code
+            else:
+                # Fallback to instance variables if they exist
+                app_type = getattr(self, 'app_type', 'join')
+                department_code = getattr(self, 'department_code', 'ВВ')
+            
+            # Set instance variables for compatibility
+            self.app_type = app_type
+            self.department_code = department_code
+            
             # Check if user already has active applications
             active_check = await check_user_active_applications(
                 interaction.guild, 
@@ -1025,7 +1039,7 @@ class DepartmentApplicationButton(ui.Button):
             
             # Create and send Stage 1 modal (IC Information)
             from .modals import DepartmentApplicationStage1Modal
-            modal = DepartmentApplicationStage1Modal(self.department_code, self.app_type, user_data)
+            modal = DepartmentApplicationStage1Modal(department_code, app_type, user_data)
             await interaction.response.send_modal(modal)
             
         except Exception as e:

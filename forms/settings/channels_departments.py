@@ -74,25 +74,22 @@ class SetupAllChannelsButton(ui.Button):
             from forms.department_applications.manager import DepartmentApplicationManager
             from discord.ext import commands
             
-            # Create mock bot for manager
-            class MockBot:
-                def __init__(self):
-                    self.user = interaction.client.user
-            
-            app_manager = DepartmentApplicationManager(MockBot())
+            # Use the real bot instance from the interaction
+            app_manager = DepartmentApplicationManager(interaction.client)
             results = await app_manager.setup_all_department_channels(interaction.guild)
             
             # Create result embed
             embed = discord.Embed(
                 title="� Проверка каналов заявлений",
-                description="Результат проверки и настройки каналов подразделений:",
+                description="Результат проверки и обновления каналов подразделений:",
                 color=discord.Color.green()
             )
             
             embed.add_field(
                 name="ℹ️ Как это работает",
                 value="Система автоматически ищет закрепленные сообщения с кнопками заявлений. "
-                      "Если сообщение не найдено - создает новое и закрепляет его.",
+                      "Если сообщение найдено - обновляет view для работы кнопок. "
+                      "Если не найдено - создает новое и закрепляет его.",
                 inline=False
             )
             
@@ -115,7 +112,7 @@ class SetupAllChannelsButton(ui.Button):
                 embed.add_field(
                     name="🤖 Автоматический режим",
                     value="При каждом запуске бота система автоматически проверяет все каналы "
-                          "и восстанавливает недостающие сообщения.",
+                          "и восстанавливает/обновляет сообщения с рабочими кнопками.",
                     inline=False
                 )
             

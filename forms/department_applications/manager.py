@@ -98,12 +98,27 @@ class DepartmentApplicationManager:
         
         save_config(config)
     
+    async def _save_department_config(self, department_code: str, dept_config: dict):
+        """Save department configuration to config file"""
+        config = load_config()
+        
+        if 'departments' not in config:
+            config['departments'] = {}
+        
+        config['departments'][department_code] = dept_config
+        save_config(config)
+    
     async def restore_persistent_views(self):
         """Restore persistent views on bot startup and ensure messages exist"""
         try:
             config = load_config()
             departments = config.get('departments', {})
             
+            if not departments:
+                logger.info("No departments configured for applications")
+                return
+            
+            restored_count = 0
             for dept_code, dept_config in departments.items():
                 channel_id = dept_config.get('application_channel_id')
                 if not channel_id:
@@ -114,28 +129,47 @@ class DepartmentApplicationManager:
                     logger.warning(f"Channel {channel_id} for {dept_code} not found")
                     continue
                 
-                # Check for existing pinned message
+                # Check for existing pinned message and restore/update it
                 persistent_message = await self._find_or_create_persistent_message(
                     dept_code, channel, dept_config
                 )
                 
                 if persistent_message:
-                    # Restore view for the message
-                    view = DepartmentSelectView(dept_code)
-                    
-                    # Add view to bot with specific message ID for persistence
-                    for item in view.children:
-                        if hasattr(item, 'custom_id'):
-                            self.bot.add_view(view, message_id=persistent_message.id)
-                            break
-                    
-                    logger.info(f"Restored persistent view for {dept_code} in {channel.name}")
+                    # Update message with fresh view (important for persistent buttons after restart)
+                    await self._update_message_with_fresh_view(persistent_message, dept_code)
+                    restored_count += 1
+                    logger.info(f"✅ Restored persistent view for {dept_code} in {channel.name}")
+                else:
+                    logger.warning(f"❌ Failed to restore persistent message for {dept_code}")
             
-            # Also restore application views
+            # Also restore application moderation views
             await self._restore_application_views()
+            
+            logger.info(f"Restored {restored_count} department application channels")
             
         except Exception as e:
             logger.error(f"Error restoring persistent views: {e}")
+    
+    async def _update_message_with_fresh_view(self, message: discord.Message, dept_code: str):
+        """Update existing message with fresh view to make buttons work"""
+        try:
+            # Create fresh view with proper department code
+            view = DepartmentSelectView(dept_code)
+            
+            # Update the message with new view
+            await message.edit(view=view)
+            
+            # Also register the view with the bot for persistence
+            self.bot.add_view(view, message_id=message.id)
+            
+            logger.info(f"Updated message {message.id} for {dept_code} with fresh view")
+            
+        except discord.NotFound:
+            logger.warning(f"Message {message.id} for {dept_code} not found when updating view")
+        except discord.Forbidden:
+            logger.warning(f"No permission to update message {message.id} for {dept_code}")
+        except Exception as e:
+            logger.error(f"Error updating message view for {dept_code}: {e}")
     
     async def _find_or_create_persistent_message(self, dept_code: str, channel: discord.TextChannel, dept_config: Dict) -> Optional[discord.Message]:
         """Find existing persistent message or create new one"""
@@ -187,18 +221,12 @@ class DepartmentApplicationManager:
         except Exception as e:
             logger.error(f"Error finding/creating persistent message for {dept_code}: {e}")
             return None
-            
-            # Also restore application views
-            await self._restore_application_views()
-            
-        except Exception as e:
-            logger.error(f"Error restoring persistent views: {e}")
     
     async def _restore_application_views(self):
         """Restore application moderation views"""
-        # This would need a proper database to track active applications
-        # For now, just log that we should implement this
-        logger.info("Application views restoration not implemented - needs database")
+        # This would restore views for active application messages
+        # For now, just log that this feature could be implemented with a database
+        logger.info("Application moderation views restoration - would need database implementation")
     
     def get_department_info(self, department_code: str) -> Optional[Dict]:
         """Get department information"""
@@ -293,10 +321,11 @@ class DepartmentApplicationManager:
         
         return embed
     
-    async def setup_all_department_channels(self, guild: discord.Guild) -> Dict[str, bool]:
-        """Setup persistent messages in all configured department channels"""
+    async def setup_all_department_channels(self, guild: discord.Guild) -> Dict[str, str]:
+        """Setup/update persistent messages in all configured department channels"""
         results = {}
-        departments = self.department_manager.get_all_departments()
+        config = load_config()
+        departments = config.get('departments', {})
         
         for dept_code, dept_config in departments.items():
             channel_id = dept_config.get('application_channel_id')
@@ -315,9 +344,11 @@ class DepartmentApplicationManager:
             )
             
             if persistent_message:
-                results[dept_code] = f"✅ Сообщение готово"
+                # Update message with fresh view
+                await self._update_message_with_fresh_view(persistent_message, dept_code)
+                results[dept_code] = f"✅ Сообщение обновлено"
             else:
-                results[dept_code] = f"❌ Ошибка при создании"
+                results[dept_code] = f"❌ Ошибка при создании/обновлении"
         
         return results
 

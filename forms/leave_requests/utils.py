@@ -213,44 +213,35 @@ class LeaveRequestDepartmentDetector:
     
     @classmethod
     def get_ping_roles(cls, department: str, guild) -> list:
-        """Get ping roles for department from config"""
-        config = load_config()
-        ping_settings = config.get('ping_settings', {})
+        """Get ping roles for department from config - updated for new ping system"""
+        from utils.ping_manager import ping_manager
         
-        ping_roles = []
-        for dept_role_id, ping_role_ids in ping_settings.items():
-            dept_role = guild.get_role(int(dept_role_id))
-            if dept_role and department in dept_role.name.lower():
-                for ping_role_id in ping_role_ids:
-                    ping_role = guild.get_role(ping_role_id)
-                    if ping_role:
-                        ping_roles.append(ping_role)
-                break
-        
-        return ping_roles    
+        # Используем новый ping_manager с контекстом leave_requests (множественное число)
+        return ping_manager.get_ping_roles_for_context(department, 'leave_requests', guild)
+    
     @classmethod
     def get_ping_roles_from_user(cls, user_roles: list, guild) -> list:
         """
-        Get ping roles based on user's roles using ping_settings from config
+        Get ping roles based on user's roles using new ping system
         Returns list of roles to ping
         """
-        from utils.config_manager import load_config
+        from utils.ping_manager import ping_manager
+        from utils.department_manager import DepartmentManager
         
-        config = load_config()
-        ping_settings = config.get('ping_settings', {})
+        # Определяем подразделение пользователя по его ролям
+        dept_manager = DepartmentManager()
+        departments = dept_manager.get_all_departments()
+        user_department = None
         
-        ping_roles = []
         user_role_ids = [role.id for role in user_roles]
         
-        # Check each ping setting
-        for role_id_str, ping_role_ids in ping_settings.items():
-            role_id = int(role_id_str)
-            
-            # If user has this role, add corresponding ping roles
-            if role_id in user_role_ids:
-                for ping_role_id in ping_role_ids:
-                    ping_role = guild.get_role(ping_role_id)
-                    if ping_role and ping_role not in ping_roles:
-                        ping_roles.append(ping_role)
+        for dept_id, dept_data in departments.items():
+            key_role_id = dept_data.get('key_role_id')
+            if key_role_id and key_role_id in user_role_ids:
+                user_department = dept_id
+                break
         
-        return ping_roles
+        if user_department:
+            return ping_manager.get_ping_roles_for_context(user_department, 'leave_requests', guild)
+        
+        return []

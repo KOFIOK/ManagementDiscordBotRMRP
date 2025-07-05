@@ -359,6 +359,113 @@ class CacheAdminSlashCommands(commands.Cog):
                 await interaction.followup.send(f"❌ Ошибка тестирования: {e}")
             else:
                 await interaction.response.send_message(f"❌ Ошибка тестирования: {e}")
+    
+    @app_commands.command(name='reload_config', description='Перезагрузить конфигурацию бота без перезапуска')
+    @app_commands.default_permissions(administrator=True)
+    async def reload_config(self, interaction: discord.Interaction):
+        """Перезагрузить конфигурацию бота"""
+        try:
+            await interaction.response.defer()
+            
+            # Импорт необходимых модулей
+            from utils.config_manager import load_config
+            from utils.ping_manager import ping_manager
+            
+            # Получаем старую конфигурацию для сравнения
+            old_departments = ping_manager.get_departments_config()
+            
+            # Перезагружаем конфигурацию в ping_manager
+            ping_manager.config = load_config()
+            
+            # Получаем новую конфигурацию
+            new_departments = ping_manager.get_departments_config()
+            
+            # Анализируем изменения
+            changes = []
+            
+            # Проверяем новые подразделения
+            for dept_code, dept_config in new_departments.items():
+                if dept_code not in old_departments:
+                    changes.append(f"➕ Добавлено подразделение: **{dept_code}** ({dept_config.get('name', 'Без названия')})")
+                else:
+                    # Проверяем изменения в ролях должностей
+                    old_positions = set(old_departments[dept_code].get('position_role_ids', []))
+                    new_positions = set(dept_config.get('position_role_ids', []))
+                    
+                    old_assignable = set(old_departments[dept_code].get('assignable_position_role_ids', []))
+                    new_assignable = set(dept_config.get('assignable_position_role_ids', []))
+                    
+                    if old_positions != new_positions:
+                        added_pos = new_positions - old_positions
+                        removed_pos = old_positions - new_positions
+                        if added_pos:
+                            changes.append(f"🔧 {dept_code}: добавлены роли должностей: {list(added_pos)}")
+                        if removed_pos:
+                            changes.append(f"🔧 {dept_code}: удалены роли должностей: {list(removed_pos)}")
+                    
+                    if old_assignable != new_assignable:
+                        added_assign = new_assignable - old_assignable
+                        removed_assign = old_assignable - new_assignable
+                        if added_assign:
+                            changes.append(f"✅ {dept_code}: добавлены выдаваемые роли: {list(added_assign)}")
+                        if removed_assign:
+                            changes.append(f"❌ {dept_code}: удалены выдаваемые роли: {list(removed_assign)}")
+            
+            # Проверяем удаленные подразделения  
+            for dept_code in old_departments:
+                if dept_code not in new_departments:
+                    changes.append(f"➖ Удалено подразделение: **{dept_code}**")
+            
+            # Создаем embed с результатами
+            embed = discord.Embed(
+                title="🔄 Конфигурация перезагружена",
+                color=discord.Color.green(),
+                timestamp=discord.utils.utcnow()
+            )
+            
+            embed.add_field(
+                name="📊 Статистика",
+                value=f"**Подразделений:** {len(new_departments)}\n"
+                      f"**Обнаружено изменений:** {len(changes)}",
+                inline=True
+            )
+            
+            if changes:
+                # Ограничиваем количество изменений для отображения
+                display_changes = changes[:10]
+                if len(changes) > 10:
+                    display_changes.append(f"... и еще {len(changes) - 10} изменений")
+                
+                embed.add_field(
+                    name="📝 Обнаруженные изменения",
+                    value="\n".join(display_changes),
+                    inline=False
+                )
+            else:
+                embed.add_field(
+                    name="✅ Статус",
+                    value="Изменений в конфигурации не обнаружено",
+                    inline=False
+                )
+            
+            embed.add_field(
+                name="💡 Информация",
+                value="Конфигурация успешно перезагружена.\n"
+                      "Новые роли должностей теперь доступны без перезапуска бота.",
+                inline=False
+            )
+            
+            embed.set_footer(text="Изменения применены мгновенно")
+            
+            await interaction.followup.send(embed=embed)
+            
+        except Exception as e:
+            error_embed = discord.Embed(
+                title="❌ Ошибка перезагрузки",
+                description=f"Не удалось перезагрузить конфигурацию: {e}",
+                color=discord.Color.red()
+            )
+            await interaction.followup.send(embed=error_embed)
 
 
 async def setup(bot):

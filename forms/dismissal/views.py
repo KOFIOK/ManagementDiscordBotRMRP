@@ -103,7 +103,7 @@ class DismissalApprovalView(ui.View):
                   # Get audit and form data
             current_time = discord.utils.utcnow()
             embed = interaction.message.embeds[0]
-            user_rank_for_audit, user_unit_for_audit = self._extract_audit_data(embed, target_user, user_has_left_server, config.get('ping_settings', {}))
+            user_rank_for_audit, user_unit_for_audit = self._extract_audit_data(embed, target_user, user_has_left_server)
             form_data, is_automatic_report = self._extract_form_data(embed)
             
             # Add is_automatic_report to form_data for passing to modals
@@ -243,7 +243,7 @@ class DismissalApprovalView(ui.View):
                 form_data['reason'] = field.value
             
         return form_data, is_automatic_report
-    def _extract_audit_data(self, embed, target_user, user_has_left_server, ping_settings):
+    def _extract_audit_data(self, embed, target_user, user_has_left_server):
         """Extract rank and department data for audit"""
         user_rank_for_audit = DismissalConstants.UNKNOWN_VALUE
         user_unit_for_audit = DismissalConstants.UNKNOWN_VALUE
@@ -262,7 +262,9 @@ class DismissalApprovalView(ui.View):
                         user_rank_for_audit = role_rank
                 
                 if user_unit_for_audit == DismissalConstants.UNKNOWN_VALUE:
-                    role_unit = sheets_manager.get_department_from_roles(target_user, ping_settings)
+                    from utils.department_manager import DepartmentManager
+                    dept_manager = DepartmentManager()
+                    role_unit = dept_manager.get_user_department_name(target_user)
                     if role_unit != DismissalConstants.UNKNOWN_VALUE:
                         user_unit_for_audit = role_unit
             except Exception as e:
@@ -379,7 +381,6 @@ class DismissalApprovalView(ui.View):
         """Complete dismissal approval process with moderator information."""
         try:
             excluded_roles_ids = config.get('excluded_roles', [])
-            ping_settings = config.get('ping_settings', {})
               # Log to Google Sheets BEFORE removing roles (to capture rank and department correctly)
             try:
                 success = await sheets_manager.add_dismissal_record(
@@ -387,7 +388,6 @@ class DismissalApprovalView(ui.View):
                     dismissed_user=target_user,
                     approving_user=interaction.user,
                     dismissal_time=current_time,
-                    ping_settings=ping_settings,
                     override_moderator_info=override_moderator_info
                 )
                 if success:
@@ -1290,7 +1290,9 @@ class AutomaticDismissalApprovalView(ui.View):
                             user_rank_for_audit = role_rank
                     
                     if user_unit_for_audit == DismissalConstants.UNKNOWN_VALUE:
-                        role_unit = sheets_manager.get_department_from_roles(target_user, ping_settings)
+                        from utils.department_manager import DepartmentManager
+                        dept_manager = DepartmentManager()
+                        role_unit = dept_manager.get_user_department_name(target_user)
                         if role_unit != DismissalConstants.UNKNOWN_VALUE:
                             user_unit_for_audit = role_unit
                     print(f"Fallback to roles: rank={user_rank_for_audit}, department={user_unit_for_audit}")
@@ -1314,16 +1316,13 @@ class AutomaticDismissalApprovalView(ui.View):
                                          current_time, config, user_position_for_audit=""):
         """Finalize automatic dismissal approval"""
         try:
-            ping_settings = config.get('ping_settings', {})
-            
             # Log to Google Sheets
             try:
                 success = await sheets_manager.add_dismissal_record(
                     form_data=form_data,
                     dismissed_user=target_user,
                     approving_user=interaction.user,
-                    dismissal_time=current_time,
-                    ping_settings=ping_settings
+                    dismissal_time=current_time
                 )
                 if success:
                     print(f"Successfully logged automatic dismissal to Google Sheets")

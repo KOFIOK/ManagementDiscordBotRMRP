@@ -101,64 +101,10 @@ class MainSettingsSelect(ui.Select):
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     
     async def show_ping_settings_menu(self, interaction: discord.Interaction):
-        """Show ping settings configuration menu"""
-        from .ping_settings import PingSettingsView
+        """Show modern ping settings configuration menu"""
+        from .ping_settings_modern import show_ping_settings_overview
         
-        config = load_config()
-        ping_settings = config.get('ping_settings', {})
-        
-        embed = discord.Embed(
-            title="📢 Настройки пингов",
-            description="Управление пингами для уведомлений по подразделениям при подаче рапортов.",
-            color=discord.Color.orange(),
-            timestamp=discord.utils.utcnow()
-        )
-        
-        # Show current ping settings
-        if ping_settings:
-            ping_text = ""
-            for department_role_id, ping_roles_ids in ping_settings.items():
-                department_role = interaction.guild.get_role(int(department_role_id))
-                if department_role:
-                    ping_roles = []
-                    for ping_role_id in ping_roles_ids:
-                        ping_role = interaction.guild.get_role(ping_role_id)
-                        if ping_role:
-                            ping_roles.append(ping_role.mention)
-                    if ping_roles:
-                        ping_text += f"• {department_role.mention} → {', '.join(ping_roles)}\n"
-            ping_text = ping_text or "❌ Настроенные пинги не найдены"
-        else:
-            ping_text = "❌ Пинги не настроены"
-        
-        embed.add_field(
-            name="🔔 Текущие настройки пингов:",
-            value=ping_text,
-            inline=False
-        )
-        
-        embed.add_field(
-            name="ℹ️ Принцип работы:",
-            value=(
-                "• При подаче рапорта на увольнение будут пинговаться указанные роли\n"
-                "• Настройки привязаны к ролям подразделений\n"
-                "• Можно настроить несколько ролей для пинга на одно подразделение"
-            ),
-            inline=False
-        )
-        
-        embed.add_field(
-            name="🔧 Доступные действия:",
-            value=(
-                "• **Добавить настройку** - настроить пинги для нового подразделения\n"
-                "• **Удалить настройку** - убрать пинги для подразделения\n"
-                "• **Очистить все** - удалить все настройки пингов"
-            ),
-            inline=False
-        )
-        
-        view = PingSettingsView()
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await show_ping_settings_overview(interaction)
     
     async def show_current_config(self, interaction: discord.Interaction):
         """Show current configuration"""

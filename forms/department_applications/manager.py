@@ -366,8 +366,9 @@ class DepartmentApplicationManager:
                                     is_pending = False
                                     break
                             
-                            if is_pending and not message.components:
-                                # Extract application data from embed
+                            if is_pending:
+                                # Всегда восстанавливаем кнопки для pending заявлений
+                                # (исправляет проблему неактивных кнопок после рестарта)
                                 try:
                                     application_data = self._extract_application_data_from_embed(embed, dept_code)
                                     if application_data:

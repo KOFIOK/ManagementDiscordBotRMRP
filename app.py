@@ -167,20 +167,16 @@ async def on_ready():
     print("🔄 Adding department applications persistent views...")
     try:
         print("   📦 Importing modules...")
-        from forms.department_applications.views import DepartmentSelectView, DepartmentApplicationView
+        from forms.department_applications import register_static_views
         print("   ✅ Views imported successfully")
         
-        print("   📄 Loading config...")
-        # Use already imported load_config instead of importing again
-        dept_config = load_config()
-        departments = dept_config.get('departments', {})
-        print(f"   📋 Found {len(departments)} departments: {list(departments.keys())}")
+        print("   � Registering static views...")
+        if register_static_views(bot):
+            print("   ✅ Static views registered successfully")
+        else:
+            print("   ❌ Failed to register static views")
         
-        # Temporary: Skip department views registration to test if this is causing the hang
-        print("   ⚠️ TEMPORARILY SKIPPING department views registration for debugging")
-        print("   ℹ️ Department views will be restored during channel restoration instead")
-        
-        print("✅ Department applications setup complete (registration skipped for debugging)")
+        print("✅ Department applications setup complete")
     except Exception as e:
         print(f"❌ Error in department applications setup: {e}")
         import traceback

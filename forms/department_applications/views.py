@@ -20,15 +20,78 @@ class DepartmentApplicationView(ui.View):
         super().__init__(timeout=None)  # Persistent view
         self.application_data = application_data
         
-        # Set custom_id for persistence
-        self.approve_button.custom_id = f"dept_app_approve_{application_data['user_id']}_{application_data['department_code']}"
-        self.reject_button.custom_id = f"dept_app_reject_{application_data['user_id']}_{application_data['department_code']}"
-        self.delete_button.custom_id = f"dept_app_delete_{application_data['user_id']}_{application_data['department_code']}"
+        # Set STATIC custom_id for persistence (важно для восстановления после рестарта)
+        self.approve_button.custom_id = "dept_app_approve_static"
+        self.reject_button.custom_id = "dept_app_reject_static"
+        self.delete_button.custom_id = "dept_app_delete_static"
+    
+    def _extract_application_data_from_embed(self, embed: discord.Embed) -> Dict[str, Any]:
+        """Извлекает данные заявления из embed для статических views"""
+        try:
+            data = {
+                'user_id': None,
+                'department_code': None,
+                'name': None,
+                'static': None,
+                'application_type': 'join'
+            }
+            
+            # Извлекаем user_id из footer
+            if embed.footer and embed.footer.text and "ID заявления:" in embed.footer.text:
+                try:
+                    data['user_id'] = int(embed.footer.text.split("ID заявления:")[-1].strip())
+                except (ValueError, IndexError):
+                    pass
+            
+            # Извлекаем department_code из title
+            if embed.title:
+                # Ищем в title после "в "
+                if " в " in embed.title:
+                    dept_part = embed.title.split(" в ")[-1]
+                    # Убираем лишние слова
+                    data['department_code'] = dept_part.strip()
+                    
+                # Определяем тип заявления
+                if "перевод" in embed.title.lower():
+                    data['application_type'] = 'transfer'
+            
+            # Извлекаем данные из полей
+            for field in embed.fields:
+                field_name = field.name.lower()
+                field_value = field.value
+                
+                # Для отдельных полей (старый формат)
+                if "имя фамилия" in field_name:
+                    data['name'] = field_value
+                elif "статик" in field_name:
+                    data['static'] = field_value
+                # Для нового формата, где данные внутри "📋 IC Информация"
+                elif "ic информация" in field_name:
+                    # Парсим строку вида:
+                    # **Имя Фамилия:** Марко Толедо
+                    # **Статик:** 135-583
+                    # **Документ:** [Ссылка на документ](url)
+                    lines = field_value.split('\n')
+                    for line in lines:
+                        if '**Имя Фамилия:**' in line:
+                            data['name'] = line.split('**Имя Фамилия:**')[-1].strip()
+                        elif '**Статик:**' in line:
+                            data['static'] = line.split('**Статик:**')[-1].strip()
+            
+            return data
+            
+        except Exception as e:
+            logger.error(f"Error extracting application data from embed: {e}")
+            return self.application_data  # Fallback to original data
     
     @ui.button(label="✅ Одобрить", style=discord.ButtonStyle.green, row=0)
     async def approve_button(self, interaction: discord.Interaction, button: ui.Button):
         """Approve the application"""
         try:
+            # Извлекаем актуальные данные из embed (для статических views)
+            if interaction.message and interaction.message.embeds:
+                self.application_data = self._extract_application_data_from_embed(interaction.message.embeds[0])
+            
             # Check permissions with enhanced hierarchy
             if not await self._check_moderator_permissions(interaction):
                 error_message = "❌ **Недостаточно прав для модерации**\n"
@@ -185,6 +248,10 @@ class DepartmentApplicationView(ui.View):
     async def reject_button(self, interaction: discord.Interaction, button: ui.Button):
         """Reject the application with reason"""
         try:
+            # Извлекаем актуальные данные из embed (для статических views)
+            if interaction.message and interaction.message.embeds:
+                self.application_data = self._extract_application_data_from_embed(interaction.message.embeds[0])
+            
             # Check permissions with enhanced hierarchy
             if not await self._check_moderator_permissions(interaction):
                 error_message = "❌ **Недостаточно прав для модерации**\n"
@@ -232,6 +299,10 @@ class DepartmentApplicationView(ui.View):
     async def delete_button(self, interaction: discord.Interaction, button: ui.Button):
         """Delete the application (admin or author only)"""
         try:
+            # Извлекаем актуальные данные из embed (для статических views)
+            if interaction.message and interaction.message.embeds:
+                self.application_data = self._extract_application_data_from_embed(interaction.message.embeds[0])
+            
             # Check if user is admin or application author
             is_admin = await self._check_admin_permissions(interaction)
             is_author = interaction.user.id == self.application_data['user_id']
@@ -1018,19 +1089,10 @@ class DepartmentSelectView(ui.View):
                 )
                 return
             
-            # Get user IC data
-            from utils.user_database import UserDatabase
-            user_data = await UserDatabase.get_user_info(interaction.user.id)
-            if not user_data:
-                await interaction.response.send_message(
-                    "❌ Ваши данные не найдены в системе. Обратитесь к администратору.",
-                    ephemeral=True
-                )
-                return
-            
-            # Create and send Stage 1 modal (IC Information)
+            # Открываем модальное окно СРАЗУ, не дожидаясь загрузки данных
+            # Это предотвращает "Unknown interaction" при долгих запросах к Google Sheets
             from .modals import DepartmentApplicationStage1Modal
-            modal = DepartmentApplicationStage1Modal(department_code, app_type, user_data)
+            modal = DepartmentApplicationStage1Modal(department_code, app_type, interaction.user.id)
             await interaction.response.send_modal(modal)
             
         except Exception as e:

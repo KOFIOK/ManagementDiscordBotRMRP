@@ -5,7 +5,7 @@ import discord
 from discord import ui
 import re
 import asyncio
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import logging
 from datetime import datetime, timezone, timedelta
 
@@ -18,10 +18,11 @@ logger = logging.getLogger(__name__)
 class DepartmentApplicationStage1Modal(ui.Modal):
     """Stage 1: IC Information modal for department applications"""
     
-    def __init__(self, department_code: str, application_type: str, user_ic_data: Dict[str, Any]):
+    def __init__(self, department_code: str, application_type: str, user_id: int):
         self.department_code = department_code
         self.application_type = application_type  # 'join' or 'transfer'
-        self.user_ic_data = user_ic_data
+        self.user_id = user_id
+        self.user_ic_data = None  # Будет загружено синхронно при создании
         
         title = f"Заявление в {department_code} - IC Информация"
         if application_type == 'transfer':
@@ -29,33 +30,153 @@ class DepartmentApplicationStage1Modal(ui.Modal):
         
         super().__init__(title=title, timeout=300)
         
-        # Pre-fill IC data from Google Sheets
-        self._setup_fields()
+        # Синхронно пытаемся загрузить данные (с таймаутом)
+        self._try_load_user_data_sync()
+        
+        # Создаем поля с данными (если загрузились) или пустые
+        self._setup_fields_with_data()
     
-    def _setup_fields(self):
-        """Setup form fields with auto-filled IC data"""
+    def _try_load_user_data_sync(self):
+        """Пытается загрузить данные пользователя из кэша синхронно, затем асинхронно из базы"""
+        try:
+            # Шаг 1: Проверяем кэш синхронно (быстро)
+            cache_data = self._try_load_from_cache()
+            if cache_data:
+                self.user_ic_data = cache_data
+                logger.info(f"✅ User data loaded from cache for {self.user_id} - form will be autofilled")
+                return
+            
+            # Шаг 2: Если в кэше нет - проверяем, можем ли загрузить из базы
+            try:
+                loop = asyncio.get_running_loop()
+                # Если loop уже запущен - не можем делать синхронную загрузку из базы
+                # Оставляем поля пустыми, пользователь заполнит вручную
+                logger.info(f"ℹ️  No cached data for {self.user_id}, event loop running - form will be empty")
+                self.user_ic_data = None
+                return
+            except RuntimeError:
+                # Нет активного loop - можем попробовать загрузить из базы
+                logger.info(f"ℹ️  No cached data for {self.user_id}, trying database load...")
+                self._try_load_from_database_sync()
+                
+        except Exception as e:
+            logger.error(f"💥 Critical error in sync data loading for {self.user_id}: {e}")
+            self.user_ic_data = None
+    
+    def _try_load_from_cache(self) -> Optional[Dict[str, Any]]:
+        """Пытается получить данные из кэша синхронно"""
+        try:
+            from utils.user_cache import _global_cache
+            
+            # Прямой доступ к кэшу (синхронно)
+            if hasattr(_global_cache, '_cache') and self.user_id in _global_cache._cache:
+                # Проверяем, не истек ли кэш
+                if hasattr(_global_cache, '_expiry') and self.user_id in _global_cache._expiry:
+                    if _global_cache._expiry[self.user_id] > datetime.now():
+                        cached_data = _global_cache._cache[self.user_id]
+                        # Проверяем, что это не маркер "NOT_FOUND"
+                        if cached_data and cached_data != "NOT_FOUND":
+                            return cached_data
+                        else:
+                            logger.info(f"ℹ️  User {self.user_id} marked as NOT_FOUND in cache")
+                            return None
+                    else:
+                        logger.info(f"ℹ️  Cached data for {self.user_id} expired")
+                        return None
+                else:
+                    # Нет информации об истечении - считаем устаревшим
+                    return None
+            else:
+                logger.info(f"ℹ️  No cached data for user {self.user_id}")
+                return None
+                
+        except Exception as e:
+            logger.warning(f"❌ Error accessing cache for {self.user_id}: {e}")
+            return None
+    
+    def _try_load_from_database_sync(self):
+        """Пытается синхронно загрузить данные из базы (только если нет event loop)"""
+        try:
+            import asyncio
+            
+            # Создаем новый event loop
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            # Загружаем данные с таймаутом
+            try:
+                task = asyncio.create_task(self._load_user_data_fast())
+                start_time = loop.time()
+                self.user_ic_data = loop.run_until_complete(asyncio.wait_for(task, timeout=3.0))
+                load_time = loop.time() - start_time
+                
+                if self.user_ic_data:
+                    logger.info(f"✅ User data loaded from database for {self.user_id} in {load_time:.3f}s - form will be autofilled")
+                else:
+                    logger.info(f"ℹ️  User {self.user_id} not found in database in {load_time:.3f}s - form will be empty")
+                    
+            except asyncio.TimeoutError:
+                logger.warning(f"⏰ Timeout (>3s) loading user data from database for {self.user_id} - form will be empty")
+                self.user_ic_data = None
+            except Exception as e:
+                logger.warning(f"❌ Error loading user data from database for {self.user_id}: {e} - form will be empty")
+                self.user_ic_data = None
+                
+        except Exception as e:
+            logger.error(f"💥 Critical error in database sync loading for {self.user_id}: {e}")
+            self.user_ic_data = None
+    
+    async def _load_user_data_fast(self):
+        """Быстрая загрузка данных пользователя"""
+        from utils.user_database import UserDatabase
+        return await UserDatabase.get_user_info(self.user_id)
+    
+    def _setup_fields_with_data(self):
+        """Setup form fields with loaded data or empty if not available"""
         
-        # Auto-fill from user database
-        ic_first_name = self.user_ic_data.get('first_name', '')
-        ic_last_name = self.user_ic_data.get('last_name', '')
-        ic_static = self.user_ic_data.get('static', '')
+        # Подготавливаем данные для автозаполнения
+        default_name = ""
+        default_static = ""
         
+        if self.user_ic_data:
+            # Данные найдены в базе - автозаполняем
+            ic_first_name = self.user_ic_data.get('first_name', '')
+            ic_last_name = self.user_ic_data.get('last_name', '')
+            ic_static = self.user_ic_data.get('static', '')
+            
+            full_name = f"{ic_first_name} {ic_last_name}".strip()
+            
+            if full_name:
+                default_name = full_name
+                name_placeholder = f"✅ Автозаполнено: {full_name}"
+            else:
+                name_placeholder = "Введите ваше Имя Фамилия"
+            
+            if ic_static:
+                default_static = ic_static
+                static_placeholder = f"✅ Автозаполнено: {ic_static}"
+            else:
+                static_placeholder = "Введите ваш статик (123-456)"
+        else:
+            # Данные не найдены - поля пустые
+            name_placeholder = "например: Иван Иванов"
+            static_placeholder = "например: 123-456"
+
         # Full name field
-        full_name = f"{ic_first_name} {ic_last_name}".strip()
         self.name_input = ui.TextInput(
             label="Имя Фамилия",
-            placeholder="Иван Иванов",
-            default=full_name,
+            placeholder=name_placeholder,
+            default=default_name,
             max_length=100,
             required=True
         )
         self.add_item(self.name_input)
         
-        # Static field with auto-formatting
+        # Static field
         self.static_input = ui.TextInput(
             label="Статик",
-            placeholder="123456 или 123-456",
-            default=ic_static,
+            placeholder=static_placeholder,
+            default=default_static,
             max_length=10,
             required=True
         )
@@ -81,6 +202,41 @@ class DepartmentApplicationStage1Modal(ui.Modal):
         )
         self.add_item(self.reason_input)
     
+    async def _load_user_data_async(self):
+        """Асинхронно загружает данные пользователя из Google Sheets"""
+        try:
+            from utils.user_database import UserDatabase
+            self.user_ic_data = await UserDatabase.get_user_info(self.user_id)
+            
+            if self.user_ic_data:
+                # Автозаполняем поля если данные найдены
+                ic_first_name = self.user_ic_data.get('first_name', '')
+                ic_last_name = self.user_ic_data.get('last_name', '')
+                ic_static = self.user_ic_data.get('static', '')
+                
+                full_name = f"{ic_first_name} {ic_last_name}".strip()
+                
+                # Обновляем значения по умолчанию (но пользователь может их изменить)
+                if full_name and full_name.strip():
+                    self.name_input.default = full_name
+                    self.name_input.placeholder = "Данные автозаполнены из базы"
+                
+                if ic_static:
+                    self.static_input.default = ic_static
+                    self.static_input.placeholder = "Данные автозаполнены из базы"
+                
+                logger.info(f"Successfully loaded user data for {self.user_id}: {full_name}, {ic_static}")
+            else:
+                logger.warning(f"User {self.user_id} not found in personnel database - form will be empty")
+                self.name_input.placeholder = "Введите ваше Имя Фамилия (данные не найдены в базе)"
+                self.static_input.placeholder = "Введите ваш статик (данные не найдены в базе)"
+                
+        except Exception as e:
+            logger.error(f"Error loading user data for {self.user_id}: {e}")
+            # Если ошибка загрузки - оставляем поля пустыми
+            self.name_input.placeholder = "Введите ваше Имя Фамилия (ошибка загрузки данных)"
+            self.static_input.placeholder = "Введите ваш статик (ошибка загрузки данных)"
+    
     def format_static(self, static_input: str) -> str:
         """Auto-format static number to standard format"""
         digits_only = re.sub(r'\D', '', static_input.strip())
@@ -96,6 +252,10 @@ class DepartmentApplicationStage1Modal(ui.Modal):
         """Handle Stage 1 submission"""
         try:
             await interaction.response.defer(ephemeral=True)
+            
+            # Загружаем данные пользователя асинхронно (если еще не загружены)
+            if self.user_ic_data is None:
+                await self._load_user_data_async()
             
             # Validate static
             formatted_static = self.format_static(self.static_input.value)

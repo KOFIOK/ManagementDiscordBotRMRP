@@ -106,7 +106,7 @@ class PingManager:
         
         Args:
             department_code: Department code (УВП, ССО, РОиО, ВК, МР)
-            context: Ping context (applications, leave_requests, dismissals, etc.)
+            context: Ping context (applications, leave_requests, dismissals, warehouse, etc.)
             guild: Discord guild
             
         Returns:
@@ -119,8 +119,19 @@ class PingManager:
             dept_config = departments[department_code]
             ping_contexts = dept_config.get('ping_contexts', {})
             
+            # First try specific context
             if context in ping_contexts:
                 role_ids = ping_contexts[context]
+                roles = []
+                for role_id in role_ids:
+                    role = guild.get_role(role_id)
+                    if role:
+                        roles.append(role)
+                return roles
+            
+            # Fallback to 'general' context if specific context not found
+            if 'general' in ping_contexts:
+                role_ids = ping_contexts['general']
                 roles = []
                 for role_id in role_ids:
                     role = guild.get_role(role_id)

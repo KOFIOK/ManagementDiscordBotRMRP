@@ -74,6 +74,9 @@ async def has_moderator_permissions(user: discord.Member, guild: discord.Guild) 
         if user.guild_permissions.administrator:
             return True
         
+        if has_admin_permissions(user, guild):
+            return True
+        
         return False
         
     except Exception as e:

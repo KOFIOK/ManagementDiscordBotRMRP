@@ -63,7 +63,7 @@ class WarehouseCategorySelect(discord.ui.Select):
                 channel = interaction.guild.get_channel(submission_channel_id)
                 if channel:
                     can_request, next_time = await warehouse_manager.check_user_cooldown(
-                        interaction.user.id, channel
+                        interaction.user.id, channel, interaction.user
                     )
                     
                     if not can_request and next_time:
@@ -220,7 +220,7 @@ class WarehouseCartView(discord.ui.View):
                 channel = interaction.guild.get_channel(submission_channel_id)
                 if channel:
                     can_request, next_time = await self.warehouse_manager.check_user_cooldown(
-                        interaction.user.id, channel
+                        interaction.user.id, channel, interaction.user
                     )
                     if not can_request and next_time:
                         moscow_tz = timezone(timedelta(hours=3))

@@ -98,13 +98,18 @@ class WarehouseManager:
         config = load_config()
         return config.get("warehouse_limits_ranks", {})
 
-    async def check_user_cooldown(self, user_id: int, channel: discord.TextChannel) -> Tuple[bool, Optional[datetime]]:
+    async def check_user_cooldown(self, user_id: int, channel: discord.TextChannel, user: discord.Member = None) -> Tuple[bool, Optional[datetime]]:
         """
         Проверить кулдаун пользователя с учетом статуса заявки
         Кулдаун применяется только если последняя заявка одобрена или на рассмотрении
         Если отклонена - можно подавать новую сразу
+        Модераторы и администраторы обходят кулдаун полностью
         Возвращает (can_request, next_available_time_moscow)
         """
+        # Проверка bypass кулдауна для модераторов/администраторов
+        if user and await self._user_can_bypass_cooldown(user):
+            return True, None
+        
         cooldown_hours = self.get_cooldown_hours()
         moscow_tz = timezone(timedelta(hours=3))  # UTC+3 для Москвы
         print(f"🕐 COOLDOWN CHECK: Проверяем кулдаун для пользователя {user_id}, лимит: {cooldown_hours} часов")
@@ -515,3 +520,28 @@ class WarehouseManager:
         # 1. Они из одной категории И
         # 2. Имеют одинаковое название
         return (category_key1 == category_key2) and (item_name1 == item_name2)
+
+    async def _user_can_bypass_cooldown(self, user: discord.Member) -> bool:
+        """
+        Проверить, может ли пользователь обходить кулдаун склада
+        Модераторы и администраторы могут подавать заявки без ограничений по времени
+        """
+        try:
+            from utils.moderator_auth import has_moderator_permissions, has_admin_permissions
+            
+            # Администраторы могут всегда обходить кулдаун
+            if await has_admin_permissions(user, user.guild):
+                print(f"🛡️ COOLDOWN BYPASS: Администратор {user.display_name} обходит кулдаун")
+                return True
+            
+            # Модераторы могут всегда обходить кулдаун  
+            elif await has_moderator_permissions(user, user.guild):
+                print(f"👮 COOLDOWN BYPASS: Модератор {user.display_name} обходит кулдаун")
+                return True
+            
+            return False
+            
+        except Exception as e:
+            print(f"❌ Ошибка при проверке прав bypass кулдауна: {e}")
+            # В случае ошибки - не даем bypass (безопасность)
+            return False

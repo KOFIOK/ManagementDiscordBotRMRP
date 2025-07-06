@@ -58,32 +58,48 @@ async def on_ready():
         print(f'Failed to sync commands: {e}')
     
     # Load configuration on startup
-    config = load_config()
-    print('Configuration loaded successfully')
-    print(f'Dismissal channel: {config.get("dismissal_channel", "Not set")}')
-    print(f'Audit channel: {config.get("audit_channel", "Not set")}')
-    print(f'Blacklist channel: {config.get("blacklist_channel", "Not set")}')
-    print(f'Role assignment channel: {config.get("role_assignment_channel", "Not set")}')
-    print(f'Moderator registration channel: {config.get("moderator_registration_channel", "Not set")}')
-    print(f'Military role: {config.get("military_role", "Not set")}')
-    print(f'Civilian role: {config.get("civilian_role", "Not set")}')
+    try:
+        config = load_config()
+        print('✅ Configuration loaded successfully')
+        print(f'Dismissal channel: {config.get("dismissal_channel", "Not set")}')
+        print(f'Audit channel: {config.get("audit_channel", "Not set")}')
+        print(f'Blacklist channel: {config.get("blacklist_channel", "Not set")}')
+        print(f'Role assignment channel: {config.get("role_assignment_channel", "Not set")}')
+        print(f'Moderator registration channel: {config.get("moderator_registration_channel", "Not set")}')
+        print(f'Military role: {config.get("military_role", "Not set")}')
+        print(f'Civilian role: {config.get("civilian_role", "Not set")}')
+    except Exception as e:
+        print(f'❌ Error loading configuration: {e}')
+        import traceback
+        traceback.print_exc()
+        return
     
     # Initialize Google Sheets
-    print('Initializing Google Sheets...')
-    sheets_success = sheets_manager.initialize()
-    if sheets_success:
-        print('✅ Google Sheets initialized successfully')
-    else:
-        print('⚠️ Google Sheets initialization failed - dismissal logging will not work')
+    try:
+        print('🔄 Initializing Google Sheets...')
+        sheets_success = sheets_manager.initialize()
+        if sheets_success:
+            print('✅ Google Sheets initialized successfully')
+        else:
+            print('⚠️ Google Sheets initialization failed - dismissal logging will not work')
+    except Exception as e:
+        print(f'❌ Error initializing Google Sheets: {e}')
+        import traceback
+        traceback.print_exc()
       # Create persistent button views
-    print("🔄 Adding persistent button views...")
-    bot.add_view(DismissalReportButton())
-    bot.add_view(SettingsView())
-    bot.add_view(RoleAssignmentView())
-    bot.add_view(ModeratorRegistrationView())
-    bot.add_view(LeaveRequestButton())
-    bot.add_view(MedicalRegistrationView())
-    print("✅ Basic persistent views added")
+    try:
+        print("🔄 Adding persistent button views...")
+        bot.add_view(DismissalReportButton())
+        bot.add_view(SettingsView())
+        bot.add_view(RoleAssignmentView())
+        bot.add_view(ModeratorRegistrationView())
+        bot.add_view(LeaveRequestButton())
+        bot.add_view(MedicalRegistrationView())
+        print("✅ Basic persistent views added")
+    except Exception as e:
+        print(f"❌ Error adding basic persistent views: {e}")
+        import traceback
+        traceback.print_exc()
     
     # Department applications views are created dynamically for specific applications
     # No need to register them globally like other persistent views
@@ -147,36 +163,70 @@ async def on_ready():
     setup_welcome_events(bot)
     print("✅ Welcome system events setup complete")
     
-    # Setup department applications persistent views
-    print("🔄 Setting up department applications persistent views...")
+    # Department applications views - register base views globally
+    print("🔄 Adding department applications persistent views...")
     try:
+        print("   📦 Importing modules...")
         from forms.department_applications.views import DepartmentSelectView, DepartmentApplicationView
-        # The actual restoration will be handled by the cog
-        print("✅ Department applications views ready")
+        print("   ✅ Views imported successfully")
+        
+        print("   📄 Loading config...")
+        # Use already imported load_config instead of importing again
+        dept_config = load_config()
+        departments = dept_config.get('departments', {})
+        print(f"   📋 Found {len(departments)} departments: {list(departments.keys())}")
+        
+        # Temporary: Skip department views registration to test if this is causing the hang
+        print("   ⚠️ TEMPORARILY SKIPPING department views registration for debugging")
+        print("   ℹ️ Department views will be restored during channel restoration instead")
+        
+        print("✅ Department applications setup complete (registration skipped for debugging)")
     except Exception as e:
-        print(f"❌ Error importing department applications views: {e}")
+        print(f"❌ Error in department applications setup: {e}")
+        import traceback
+        traceback.print_exc()
     
     # Start notification scheduler
-    print("🔄 Starting notification scheduler...")
-    notification_scheduler.start()
-    print("✅ Notification scheduler started")
+    try:
+        print("🔄 Starting notification scheduler...")
+        notification_scheduler.start()
+        print("✅ Notification scheduler started")
+    except Exception as e:
+        print(f"❌ Error starting notification scheduler: {e}")
+        import traceback
+        traceback.print_exc()
     
     # Start leave requests daily cleanup
-    print("🔄 Starting leave requests cleanup...")
-    from utils.leave_request_storage import LeaveRequestStorage
-    asyncio.create_task(LeaveRequestStorage.start_daily_cleanup_task())
-    print("🧹 Leave requests daily cleanup task started")
+    try:
+        print("🔄 Starting leave requests cleanup...")
+        from utils.leave_request_storage import LeaveRequestStorage
+        asyncio.create_task(LeaveRequestStorage.start_daily_cleanup_task())
+        print("🧹 Leave requests daily cleanup task started")
+    except Exception as e:
+        print(f"❌ Error starting leave requests cleanup: {e}")
+        import traceback
+        traceback.print_exc()
     
     # 🚀 ЗАПУСК СИСТЕМЫ ПРЕДЗАГРУЗКИ КЭША ДЛЯ СКЛАДА
-    print("🔄 Starting warehouse cache preloader...")
-    from utils.warehouse_cache_preloader import start_cache_preloading
-    start_cache_preloading(bot)
-    print("🚀 Warehouse cache preloader started")
+    try:
+        print("🔄 Starting warehouse cache preloader...")
+        from utils.warehouse_cache_preloader import start_cache_preloading
+        start_cache_preloading(bot)
+        print("🚀 Warehouse cache preloader started")
+    except Exception as e:
+        print(f"❌ Error starting warehouse cache preloader: {e}")
+        import traceback
+        traceback.print_exc()
     
     # Check channels and restore messages if needed
-    print("🔄 Starting channel messages restoration...")
-    await restore_channel_messages(config)
-    print("✅ Channel messages restoration complete")
+    try:
+        print("🔄 Starting channel messages restoration...")
+        await restore_channel_messages(config)
+        print("✅ Channel messages restoration complete")
+    except Exception as e:
+        print(f"❌ Error during channel messages restoration: {e}")
+        import traceback
+        traceback.print_exc()
 
 @bot.event
 async def on_member_remove(member):
@@ -371,11 +421,16 @@ async def restore_channel_messages(config):
     print("Restoring leave request views...")
     await restore_leave_request_views(bot)
     
-    # Restore department applications messages
+    # Restore department applications messages (direct call for reliability)
     print("Restoring department applications messages...")
-    from forms.department_applications.manager import DepartmentApplicationManager
-    dept_manager = DepartmentApplicationManager(bot)
-    await dept_manager.restore_persistent_views()
+    try:
+        from forms.department_applications.manager import DepartmentApplicationManager
+        dept_manager = DepartmentApplicationManager(bot)
+        await dept_manager.restore_persistent_views()
+    except Exception as e:
+        print(f"❌ Error restoring department applications: {e}")
+        import traceback
+        traceback.print_exc()
 
 async def check_for_button_message(channel, title_keyword):
     """Check if a channel already has a button message with the specified title."""
@@ -393,7 +448,7 @@ async def check_for_button_message(channel, title_keyword):
 async def load_extensions():
     """Load all extension cogs from the cogs directory."""
     # Список исключений - cogs которые не нужно загружать
-    excluded_cogs = {'warehouse_commands', 'cache_admin', 'department_applications_views'}  # department_applications_views теперь встроен в app.py
+    excluded_cogs = {'warehouse_commands', 'cache_admin', 'department_applications_views'}  # department_applications_views восстановление в app.py
     
     for filename in os.listdir('./cogs'):
         if filename.endswith('.py') and not filename.startswith('_'):

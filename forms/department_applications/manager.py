@@ -4,6 +4,7 @@ Department Application Manager - Manages persistent messages and configuration
 import discord
 from discord.ext import commands
 import logging
+import re
 from typing import Dict, Optional, List
 import json
 from datetime import datetime
@@ -25,11 +26,16 @@ class DepartmentApplicationManager:
     async def setup_department_channel(self, department_code: str, channel: discord.TextChannel) -> bool:
         """Setup persistent message in department channel"""
         try:
+            print(f"       📝 Setting up channel for {department_code}")
+            
             # Используем безопасную функцию получения данных подразделения
             dept_info = self.department_manager.get_department_safe(department_code)
             if not dept_info:
                 logger.error(f"Department {department_code} not found")
+                print(f"       ❌ Department {department_code} not found in manager")
                 return False
+            
+            print(f"       ✅ Department info loaded: {dept_info.get('name', 'Unknown')}")
             
             # Create embed for department info
             embed = discord.Embed(
@@ -60,25 +66,38 @@ class DepartmentApplicationManager:
                 icon_url=self.bot.user.display_avatar.url if self.bot.user else None
             )
             
+            print(f"       ✅ Embed created")
+            
             # Create view with select menu
             view = DepartmentSelectView(department_code)
+            print(f"       ✅ View created with custom_id: {getattr(view, 'custom_id', 'NOT SET')}")
             
             # Send message
+            print(f"       📤 Sending message to {channel.name}")
             message = await channel.send(embed=embed, view=view)
+            print(f"       ✅ Message sent with ID: {message.id}")
             
             # Pin the message
             try:
                 await message.pin()
+                print(f"       📌 Message pinned successfully")
             except discord.Forbidden:
                 logger.warning(f"Could not pin message in {channel.name} - insufficient permissions")
+                print(f"       ⚠️ Could not pin message - insufficient permissions")
+            except Exception as pin_error:
+                print(f"       ❌ Error pinning message: {pin_error}")
             
             # Store message info in config
             await self._save_department_message_info(department_code, channel.id, message.id)
+            print(f"       ✅ Message info saved to config")
             
             return True
             
         except Exception as e:
             logger.error(f"Error setting up department channel {department_code}: {e}")
+            print(f"       ❌ Error in setup_department_channel: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     async def _save_department_message_info(self, department_code: str, channel_id: int, message_id: int):
@@ -121,6 +140,20 @@ class DepartmentApplicationManager:
                 print("ℹ️ No departments configured for applications")
                 return
             
+            # Debug: print all departments and their configs
+            for dept_code, dept_config in departments.items():
+                print(f"📋 Department {dept_code}:")
+                print(f"   application_channel_id: {dept_config.get('application_channel_id')}")
+                if self.bot:
+                    channel_id = dept_config.get('application_channel_id')
+                    if channel_id:
+                        channel = self.bot.get_channel(channel_id)
+                        print(f"   channel found: {channel.name if channel else 'NOT FOUND'}")
+                    else:
+                        print(f"   channel: NOT CONFIGURED")
+                else:
+                    print(f"   bot: NOT AVAILABLE")
+            
             restored_count = 0
             for dept_code, dept_config in departments.items():
                 print(f"📋 Processing department: {dept_code}")
@@ -132,6 +165,11 @@ class DepartmentApplicationManager:
                     continue
                 
                 print(f"   🔍 Looking for channel ID: {channel_id}")
+                
+                if not self.bot:
+                    print(f"   ❌ Bot not available")
+                    continue
+                    
                 channel = self.bot.get_channel(channel_id)
                 if not channel:
                     logger.warning(f"Channel {channel_id} for {dept_code} not found")
@@ -188,25 +226,9 @@ class DepartmentApplicationManager:
             await message.edit(view=view)
             print(f"       ✅ Message updated with new view")
             
-            # Also register the view with the bot for persistence
-            self.bot.add_view(view, message_id=message.id)
-            print(f"       ✅ View registered with bot for message {message.id}")
-            
-            # Verify the view was actually added
-            persistent_views_count = len(self.bot.persistent_views)
-            print(f"       📊 Bot now has {persistent_views_count} persistent views")
-            
-            # Check if our view is in the persistent views
-            view_found = False
-            for pv in self.bot.persistent_views:
-                if hasattr(pv, 'custom_id') and pv.custom_id == view.custom_id:
-                    view_found = True
-                    break
-            
-            if view_found:
-                print(f"       ✅ View {view.custom_id} confirmed in bot.persistent_views")
-            else:
-                print(f"       ⚠️ View {view.custom_id} NOT found in bot.persistent_views")
+            # Note: View is already globally registered in app.py
+            # No need to add it again here to prevent duplicates
+            print(f"ℹ️ View {view.custom_id} uses global registration from app.py")
             
             logger.info(f"Updated message {message.id} for {dept_code} with fresh view")
             
@@ -310,10 +332,98 @@ class DepartmentApplicationManager:
             return None
     
     async def _restore_application_views(self):
-        """Restore application moderation views"""
-        # This would restore views for active application messages
-        # For now, just log that this feature could be implemented with a database
-        logger.info("Application moderation views restoration - would need database implementation")
+        """Restore application moderation views for pending applications"""
+        try:
+            config = load_config()
+            departments = config.get('departments', {})
+            restored_count = 0
+            
+            for dept_code, dept_config in departments.items():
+                channel_id = dept_config.get('application_channel_id')
+                if not channel_id:
+                    continue
+                    
+                channel = self.bot.get_channel(channel_id)
+                if not channel:
+                    continue
+                
+                # Check recent messages for pending applications
+                async for message in channel.history(limit=100):
+                    if (message.author == self.bot.user and 
+                        message.embeds and
+                        len(message.embeds) > 0):
+                        
+                        embed = message.embeds[0]
+                        
+                        # Check if it's a department application embed
+                        if (embed.title and "Заявление в подразделение" in embed.title and
+                            embed.fields):
+                            
+                            # Check if application is still pending (no processed status)
+                            is_pending = True
+                            for field in embed.fields:
+                                if field.name == "📊 Статус" and ("Одобрено" in field.value or "Отклонено" in field.value):
+                                    is_pending = False
+                                    break
+                            
+                            if is_pending and not message.components:
+                                # Extract application data from embed
+                                try:
+                                    application_data = self._extract_application_data_from_embed(embed, dept_code)
+                                    if application_data:
+                                        # Create and add the view
+                                        from .views import DepartmentApplicationView
+                                        view = DepartmentApplicationView(application_data)
+                                        await message.edit(view=view)
+                                        restored_count += 1
+                                        logger.info(f"Restored moderation view for application {message.id}")
+                                except Exception as e:
+                                    logger.error(f"Error restoring view for message {message.id}: {e}")
+            
+            logger.info(f"Restored {restored_count} application moderation views")
+            print(f"Application moderation views: restored {restored_count} views")
+            
+        except Exception as e:
+            logger.error(f"Error restoring application moderation views: {e}")
+            print(f"❌ Error restoring application moderation views: {e}")
+    
+    def _extract_application_data_from_embed(self, embed, dept_code: str) -> Optional[Dict]:
+        """Extract application data from embed for view restoration"""
+        try:
+            application_data = {
+                'department_code': dept_code,
+                'timestamp': embed.timestamp.isoformat() if embed.timestamp else None
+            }
+            
+            # Extract user ID and other data from embed fields
+            for field in embed.fields:
+                if field.name == "👤 Заявитель":
+                    # Extract user ID from mention format <@!123456789> or <@123456789>
+                    import re
+                    match = re.search(r'<@!?(\d+)>', field.value)
+                    if match:
+                        application_data['user_id'] = int(match.group(1))
+                elif field.name == "📝 Имя Фамилия":
+                    application_data['name'] = field.value
+                elif field.name == "🔢 Статик":
+                    application_data['static'] = field.value
+                elif field.name == "📋 Тип заявления":
+                    application_data['application_type'] = field.value
+                elif field.name == "🎖️ Текущее звание":
+                    application_data['current_rank'] = field.value
+                elif field.name == "📝 Причина перехода" or field.name == "📝 Причина поступления":
+                    application_data['reason'] = field.value
+            
+            # Check if we have minimum required data
+            if 'user_id' in application_data:
+                return application_data
+            else:
+                logger.warning(f"Could not extract user_id from embed for dept {dept_code}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error extracting application data from embed: {e}")
+            return None
     
     def get_department_info(self, department_code: str) -> Optional[Dict]:
         """Get department information"""

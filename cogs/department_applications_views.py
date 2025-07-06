@@ -4,7 +4,6 @@ Department Applications Cog - Restore persistent messages and views in departmen
 import discord
 from discord.ext import commands
 import logging
-from typing import Optional, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -17,20 +16,10 @@ class DepartmentApplicationsCog(commands.Cog):
     @commands.Cog.listener()
     async def on_ready(self):
         """Restore persistent messages and views in all department channels"""
-        # Wait a bit for bot to fully initialize
-        await discord.utils.sleep_until(discord.utils.utcnow().replace(second=0, microsecond=0) + discord.timedelta(seconds=3))
-        
-        try:
-            from forms.department_applications.manager import DepartmentApplicationManager
-            
-            # Create manager and restore all persistent views
-            manager = DepartmentApplicationManager(self.bot)
-            await manager.restore_persistent_views()
-            
-            logger.info("✅ Department applications persistent views restored successfully")
-            
-        except Exception as e:
-            logger.error(f"❌ Error restoring department applications views: {e}")
+        # Skip restoration if it's already handled by main app.py
+        # This prevents double execution
+        logger.info("Department applications restoration handled by main app.py startup process")
+        return
     
     @commands.command(name="fix_department_buttons", hidden=True)
     @commands.has_permissions(administrator=True)

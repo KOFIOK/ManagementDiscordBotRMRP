@@ -722,3 +722,82 @@ async def show_medical_registration_config(interaction: discord.Interaction):
                 ephemeral=True
             )
         raise
+
+
+# Safe Documents Channel Configuration
+class SafeDocumentsChannelView(BaseSettingsView):
+    """View for safe documents channel configuration"""
+    
+    @discord.ui.button(label="📂 Настроить канал", style=discord.ButtonStyle.green)
+    async def set_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = ChannelSelectionModal("safe_documents")
+        await interaction.response.send_modal(modal)
+    
+    @discord.ui.button(label="🗑️ Удалить канал", style=discord.ButtonStyle.red)
+    async def remove_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        config = load_config()
+        config['safe_documents_channel'] = None
+        save_config(config)
+        
+        await self.send_success_message(
+            interaction,
+            "Канал удален",
+            "Канал для заявок на безопасные документы был удален из настроек."
+        )
+
+
+async def show_safe_documents_config(interaction: discord.Interaction):
+    """Show safe documents channel configuration"""
+    try:
+        config = load_config()
+        helper = ConfigDisplayHelper()
+        
+        embed = discord.Embed(
+            title="📋 Настройка канала сейф документов",
+            description="Настройте канал для заявок на безопасное хранение документов.",
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow()
+        )
+        
+        # Текущий канал
+        current_channel = helper.format_channel_info(config, 'safe_documents_channel', interaction.guild)
+        embed.add_field(
+            name="📂 Текущий канал:",
+            value=current_channel,
+            inline=False
+        )
+        
+        embed.add_field(
+            name="ℹ️ Описание системы:",
+            value=(
+                "Система безопасных документов позволяет пользователям подавать заявки на размещение "
+                "документов в безопасном хранилище. Модераторы могут одобрять или отклонять заявки.\n\n"
+                "**Возможности:**\n"
+                "• Автозаполнение формы из профиля пользователя\n"
+                "• Модерация заявок с проверкой прав\n"
+                "• Редактирование заявок автором или модераторами\n"
+                "• Уведомления о результатах рассмотрения\n"
+                "• Пинги ролей при новых заявках"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🔧 Доступные действия:",
+            value="Выберите действие для настройки канала сейф документов:",
+            inline=False
+        )
+        
+        view = SafeDocumentsChannelView()
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        
+    except Exception as e:
+        print(f"❌ ERROR in show_safe_documents_config: {e}")
+        import traceback
+        traceback.print_exc()
+        if not interaction.response.is_done():
+            await interaction.response.send_message(
+                "❌ Произошла ошибка при загрузке настроек канала сейф документов.",
+                ephemeral=True
+            )
+        raise

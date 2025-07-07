@@ -13,7 +13,8 @@ from .channels_other import (
     show_blacklist_config, 
     show_moderator_registration_config, 
     show_leave_requests_config, 
-    show_medical_registration_config
+    show_medical_registration_config,
+    show_safe_documents_config
 )
 from .channels_promotion import show_promotion_reports_config
 from .channels_warehouse import show_warehouse_config
@@ -91,6 +92,12 @@ class ChannelConfigSelect(ui.Select):
                 description="Настроить каналы для заявлений в подразделения",
                 emoji="🎓",
                 value="departments"
+            ),
+            discord.SelectOption(
+                label="Сейф документов",
+                description="Настроить канал для заявок на безопасное хранение документов",
+                emoji="📋",
+                value="safe_documents"
             )
         ]
         
@@ -128,6 +135,8 @@ class ChannelConfigSelect(ui.Select):
             elif config_type == "departments":
                 from .channels_departments import show_department_channels_config
                 await show_department_channels_config(interaction)
+            elif config_type == "safe_documents":
+                await show_safe_documents_config(interaction)
             else:
                 # For audit channel (simple channel selection)
                 from .channels_base import ChannelSelectionModal

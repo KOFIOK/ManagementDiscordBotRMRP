@@ -20,7 +20,8 @@ class ChannelSelectionModal(BaseSettingsModal):
             "role_assignment": "получения ролей",
             "moderator_registration": "регистрации модераторов",
             "leave_requests": "отгулов",
-            "medical_registration": "записи к врачу"
+            "medical_registration": "записи к врачу",
+            "safe_documents": "сейф документов"
         }
         
         super().__init__(title=f"Настройка канала {type_names.get(config_type, config_type)}")
@@ -70,7 +71,8 @@ class ChannelSelectionModal(BaseSettingsModal):
                 "role_assignment": "получения ролей",
                 "moderator_registration": "регистрации модераторов",
                 "leave_requests": "отгулов",
-                "medical_registration": "записи к врачу"
+                "medical_registration": "записи к врачу",
+                "safe_documents": "сейф документов"
             }
             type_name = type_names.get(self.config_type, self.config_type)
               # Send appropriate button message to the channel
@@ -96,6 +98,16 @@ class ChannelSelectionModal(BaseSettingsModal):
                 from forms.medical_registration import send_medical_registration_message
                 await send_medical_registration_message(channel)
                 button_message_added = True
+            elif self.config_type == "safe_documents":
+                from forms.safe_documents import ensure_safe_documents_pin_message
+                # Получаем бота из interaction
+                bot = interaction.client
+                success = await ensure_safe_documents_pin_message(bot, channel.id)
+                if success:
+                    button_message_added = True
+                else:
+                    # Если не удалось создать pin message, все равно продолжаем
+                    print(f"Warning: Failed to create safe documents pin message in channel {channel.id}")
             
             success_message = f"Канал {type_name} успешно настроен на {channel.mention}!"
             if button_message_added:

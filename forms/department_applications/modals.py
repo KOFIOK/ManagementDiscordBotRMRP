@@ -212,7 +212,7 @@ class DepartmentApplicationStage1Modal(ui.Modal):
             logger.info(f"ℹ️  Fast modal for {self.user_id} - autofill available on submit")
         else:
             # Данные не найдены - поля пустые
-            name_placeholder = "например: Иван Иванов"
+            name_placeholder = "например: Олег Дубов"
             static_placeholder = "например: 123-456"
 
         # Full name field
@@ -541,7 +541,7 @@ class DepartmentApplicationStage2Modal(ui.Modal):
         
         self.timezone_input = ui.TextInput(
             label="Часовой пояс",
-            placeholder="UTC+3 (МСК), UTC+5, UTC+7 и т.д.",
+            placeholder="МСК, МСК+3, МСК-1 и т.д.",
             max_length=20,
             required=True
         )

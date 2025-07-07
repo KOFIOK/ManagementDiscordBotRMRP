@@ -105,33 +105,7 @@ class DepartmentApplicationView(ui.View):
             
             # Check permissions with enhanced hierarchy
             if not await self._check_moderator_permissions(interaction):
-                error_message = "❌ **Недостаточно прав для модерации**\n"
-                
-                # Check if user has any moderator/admin rights at all
-                config = load_config()
-                administrators = config.get('administrators', {})
-                moderators = config.get('moderators', {})
-                user_role_ids = [role.id for role in interaction.user.roles]
-                
-                is_admin = (
-                    interaction.user.id in administrators.get('users', []) or
-                    any(role_id in user_role_ids for role_id in administrators.get('roles', []))
-                )
-                
-                is_moderator = (
-                    interaction.user.id in moderators.get('users', []) or
-                    any(role_id in user_role_ids for role_id in moderators.get('roles', []))
-                )
-                
-                if not (is_admin or is_moderator):
-                    error_message += "У вас нет прав модератора или администратора."
-                elif is_moderator and interaction.user.id == self.application_data['user_id']:
-                    error_message += "Модераторы не могут модерировать собственные заявления.\n(Администраторы могут модерировать любые заявления)"
-                elif is_moderator:
-                    error_message += "Модераторы не могут модерировать заявления других модераторов/администраторов."
-                else:
-                    error_message += "Произошла ошибка проверки прав доступа."
-                
+                error_message = self._get_permission_error_message(interaction)
                 await interaction.response.send_message(error_message, ephemeral=True)
                 return
             
@@ -268,33 +242,7 @@ class DepartmentApplicationView(ui.View):
             
             # Check permissions with enhanced hierarchy
             if not await self._check_moderator_permissions(interaction):
-                error_message = "❌ **Недостаточно прав для модерации**\n"
-                
-                # Check if user has any moderator/admin rights at all
-                config = load_config()
-                administrators = config.get('administrators', {})
-                moderators = config.get('moderators', {})
-                user_role_ids = [role.id for role in interaction.user.roles]
-                
-                is_admin = (
-                    interaction.user.id in administrators.get('users', []) or
-                    any(role_id in user_role_ids for role_id in administrators.get('roles', []))
-                )
-                
-                is_moderator = (
-                    interaction.user.id in moderators.get('users', []) or
-                    any(role_id in user_role_ids for role_id in moderators.get('roles', []))
-                )
-                
-                if not (is_admin or is_moderator):
-                    error_message += "У вас нет прав модератора или администратора."
-                elif is_moderator and interaction.user.id == self.application_data['user_id']:
-                    error_message += "Модераторы не могут модерировать собственные заявления.\n(Администраторы могут модерировать любые заявления)"
-                elif is_moderator:
-                    error_message += "Модераторы не могут модерировать заявления других модераторов/администраторов."
-                else:
-                    error_message += "Произошла ошибка проверки прав доступа."
-                
+                error_message = self._get_permission_error_message(interaction)
                 await interaction.response.send_message(error_message, ephemeral=True)
                 return
             
@@ -360,7 +308,7 @@ class DepartmentApplicationView(ui.View):
         Check if user has moderator permissions with proper hierarchy
         - Admin can moderate ANYTHING (including their own applications)
         - Moderator cannot moderate their own applications
-        - Moderator cannot moderate applications from equal/higher hierarchy members
+        - Higher hierarchy moderator can moderate lower hierarchy moderator applications
         """
         user_id = interaction.user.id
         application_user_id = self.application_data['user_id']
@@ -380,12 +328,11 @@ class DepartmentApplicationView(ui.View):
             return True  # Admins can moderate everything
         
         # Check if user is moderator
-        is_moderator = (
-            user_id in moderators.get('users', []) or
-            any(role_id in user_role_ids for role_id in moderators.get('roles', []))
-        )
+        is_moderator_by_user = user_id in moderators.get('users', [])
+        moderator_roles = [role for role in interaction.user.roles if role.id in moderators.get('roles', [])]
+        is_moderator_by_role = len(moderator_roles) > 0
         
-        if not is_moderator:
+        if not (is_moderator_by_user or is_moderator_by_role):
             return False  # Not admin, not moderator
         
         # Moderators have restrictions:
@@ -408,13 +355,34 @@ class DepartmentApplicationView(ui.View):
                 return False  # Moderator cannot moderate admin applications
             
             # Check if application author is also moderator
-            app_user_is_moderator = (
-                application_user_id in moderators.get('users', []) or
-                any(role_id in app_user_role_ids for role_id in moderators.get('roles', []))
-            )
+            app_is_moderator_by_user = application_user_id in moderators.get('users', [])
+            app_moderator_roles = [role for role in application_user.roles if role.id in moderators.get('roles', [])]
+            app_is_moderator_by_role = len(app_moderator_roles) > 0
             
-            if app_user_is_moderator:
-                return False  # Moderator cannot moderate other moderator applications
+            if not (app_is_moderator_by_user or app_is_moderator_by_role):
+                return True  # Moderator can moderate regular user applications
+            
+            # Both are moderators - check hierarchy
+            if is_moderator_by_role and app_is_moderator_by_role:
+                # Find highest moderator role position for current user
+                user_highest_mod_role_position = max(role.position for role in moderator_roles)
+                
+                # Find highest moderator role position for application author
+                app_highest_mod_role_position = max(role.position for role in app_moderator_roles)
+                
+                # Higher role can moderate lower role
+                return user_highest_mod_role_position > app_highest_mod_role_position
+            
+            # If one is moderator by user and other by role
+            if is_moderator_by_user and app_is_moderator_by_role:
+                return False  # User moderator cannot moderate role moderator
+            
+            if is_moderator_by_role and app_is_moderator_by_user:
+                return True  # Role moderator can moderate user moderator
+            
+            # Both are user moderators - deny moderation
+            if is_moderator_by_user and app_is_moderator_by_user:
+                return False
         
         return True  # Moderator can moderate regular user applications
     
@@ -592,23 +560,86 @@ class DepartmentApplicationView(ui.View):
     async def _update_user_nickname(self, user: discord.Member, dept_code: str):
         """Update user nickname with department abbreviation"""
         try:
+            import re
             current_nick = user.display_name
             
-            # Remove existing department abbreviations dynamically
+            # Remove existing department abbreviations dynamically (improved cleaning)
             departments = ping_manager.get_all_departments()
             for dept in departments.keys():
-                current_nick = current_nick.replace(f"[{dept}]", "").replace(f" {dept}", "").strip()
+                # First, handle complex patterns with regex - matches department at start with anything until |
+                # This handles cases like "РОиО[1] |", "УВП|", "ССО| Опер|"
+                pattern = rf"^{re.escape(dept)}[^\|]*\|"
+                if re.match(pattern, current_nick):
+                    current_nick = re.sub(pattern, "", current_nick).strip()
+                    continue
+                
+                # Handle simple bracket format: [УВП]
+                if current_nick.startswith(f"[{dept}]"):
+                    current_nick = current_nick[len(f"[{dept}]"):].strip()
+                    continue
+                
+                # Handle format with space: УВП |
+                if current_nick.startswith(f"{dept} |"):
+                    current_nick = current_nick[len(f"{dept} |"):].strip()
+                    continue
+                
+                # Handle format without space: УВП|
+                if current_nick.startswith(f"{dept}|"):
+                    current_nick = current_nick[len(f"{dept}|"):].strip()
+                    continue
+                
+                # Fallback: if starts with department name followed by space
+                if current_nick.startswith(f"{dept} "):
+                    current_nick = current_nick[len(f"{dept} "):].strip()
+                    continue
             
-            # Add new department abbreviation
-            new_nick = f"[{dept_code}] {current_nick}"
+            # Additional cleanup for complex cases with multiple departments/roles
+            # Remove any remaining patterns like "| Опер|" or "| РОиО|" from the start
+            while True:
+                old_nick = current_nick
+                # Remove any leading pipe and text until next pipe
+                current_nick = re.sub(r"^\s*\|[^\|]*\|", "", current_nick).strip()
+                # Remove any leading pipe and text if no closing pipe
+                current_nick = re.sub(r"^\s*\|[^\|]*$", "", current_nick).strip()
+                # Clean up any remaining orphaned pipes or brackets at the start
+                current_nick = current_nick.lstrip("|[]() ").strip()
+                
+                # If no changes made, break the loop
+                if current_nick == old_nick:
+                    break
             
-            # Ensure nickname length is within Discord limits
-            if len(new_nick) > 32:
-                # Truncate the base name if needed
-                base_name = current_nick[:32 - len(f"[{dept_code}] ")]
-                new_nick = f"[{dept_code}] {base_name}"
+            # Try full format first: УВП | Имя Фамилия
+            new_nick = f"{dept_code} | {current_nick}"
             
-            await user.edit(nick=new_nick, reason=f"Department application approved - {dept_code}")
+            # Check if nickname is within Discord limits (32 characters)
+            if len(new_nick) <= 32:
+                await user.edit(nick=new_nick, reason=f"Department application approved - {dept_code}")
+                return
+            
+            # If too long, try abbreviated format: УВП | И. Фамилия
+            name_parts = current_nick.split()
+            if len(name_parts) >= 2:
+                # Take first letter of first name + dot + last name
+                first_name_initial = name_parts[0][0] + "."
+                last_name = name_parts[-1]  # Take last part as surname
+                abbreviated_name = f"{first_name_initial} {last_name}"
+                
+                new_nick = f"{dept_code} | {abbreviated_name}"
+                
+                if len(new_nick) <= 32:
+                    await user.edit(nick=new_nick, reason=f"Department application approved - {dept_code}")
+                    return
+            
+            # If still too long, truncate the base name
+            max_base_length = 32 - len(f"{dept_code} | ")
+            if max_base_length > 0:
+                truncated_name = current_nick[:max_base_length]
+                new_nick = f"{dept_code} | {truncated_name}"
+                await user.edit(nick=new_nick, reason=f"Department application approved - {dept_code}")
+            else:
+                # If department code is too long, just use the code
+                new_nick = dept_code[:32]
+                await user.edit(nick=new_nick, reason=f"Department application approved - {dept_code}")
             
         except discord.Forbidden:
             logger.warning(f"Could not update nickname for {user} - insufficient permissions")
@@ -1274,3 +1305,90 @@ async def check_user_active_applications(guild: discord.Guild, user_id: int, dep
     except Exception as e:
         logger.error(f"Error checking user active applications: {e}")
         return result
+
+    def _get_permission_error_message(self, interaction: discord.Interaction) -> str:
+        """Get detailed permission error message"""
+        try:
+            config = load_config()
+            administrators = config.get('administrators', {})
+            moderators = config.get('moderators', {})
+            user_role_ids = [role.id for role in interaction.user.roles]
+            application_user_id = self.application_data['user_id']
+            
+            # Check if user is administrator
+            is_admin = (
+                interaction.user.id in administrators.get('users', []) or
+                any(role_id in user_role_ids for role_id in administrators.get('roles', []))
+            )
+            
+            if is_admin:
+                return "✅ У вас есть права администратора"
+            
+            # Check if user is moderator
+            is_moderator_by_user = interaction.user.id in moderators.get('users', [])
+            moderator_roles = [role for role in interaction.user.roles if role.id in moderators.get('roles', [])]
+            is_moderator_by_role = len(moderator_roles) > 0
+            
+            if not (is_moderator_by_user or is_moderator_by_role):
+                return "❌ **Недостаточно прав для модерации**\n\nУ вас нет прав модератора или администратора."
+            
+            # Check self-moderation
+            if interaction.user.id == application_user_id:
+                return "❌ **Недостаточно прав для модерации**\n\nВы не можете модерировать собственные заявления."
+            
+            # Check application author permissions
+            application_user = interaction.guild.get_member(application_user_id)
+            if not application_user:
+                return "✅ У вас есть права модератора"
+            
+            app_user_role_ids = [role.id for role in application_user.roles]
+            
+            # Check if application author is admin
+            app_user_is_admin = (
+                application_user_id in administrators.get('users', []) or
+                any(role_id in app_user_role_ids for role_id in administrators.get('roles', []))
+            )
+            
+            if app_user_is_admin:
+                return "❌ **Недостаточно прав для модерации**\n\nВы не можете модерировать заявления администраторов."
+            
+            # Check moderator hierarchy
+            app_is_moderator_by_user = application_user_id in moderators.get('users', [])
+            app_moderator_roles = [role for role in application_user.roles if role.id in moderators.get('roles', [])]
+            app_is_moderator_by_role = len(app_moderator_roles) > 0
+            
+            if not (app_is_moderator_by_user or app_is_moderator_by_role):
+                return "✅ У вас есть права модератора"
+            
+            # Both are moderators - check hierarchy
+            if is_moderator_by_role and app_is_moderator_by_role:
+                user_highest_position = max(role.position for role in moderator_roles)
+                app_highest_position = max(role.position for role in app_moderator_roles)
+                
+                if user_highest_position > app_highest_position:
+                    return "✅ У вас более высокая модераторская роль"
+                else:
+                    user_highest_role = max(moderator_roles, key=lambda r: r.position)
+                    app_highest_role = max(app_moderator_roles, key=lambda r: r.position)
+                    
+                    return (
+                        f"❌ **Недостаточно прав для модерации**\n\n"
+                        f"Ваша роль: **{user_highest_role.name}** (позиция {user_highest_position})\n"
+                        f"Роль автора заявления: **{app_highest_role.name}** (позиция {app_highest_position})\n\n"
+                        f"Вы можете модерировать только пользователей с более низкими ролями."
+                    )
+            
+            if is_moderator_by_user and app_is_moderator_by_role:
+                return "❌ **Недостаточно прав для модерации**\n\nВы не можете модерировать пользователей с модераторскими ролями."
+            
+            if is_moderator_by_role and app_is_moderator_by_user:
+                return "✅ У вас есть модераторская роль"
+            
+            if is_moderator_by_user and app_is_moderator_by_user:
+                return "❌ **Недостаточно прав для модерации**\n\nВы не можете модерировать других модераторов с персональными правами."
+            
+            return "✅ У вас есть права модератора"
+            
+        except Exception as e:
+            logger.error(f"Error getting permission error message: {e}")
+            return "❌ Произошла ошибка при проверке прав доступа."

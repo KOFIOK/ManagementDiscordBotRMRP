@@ -19,6 +19,7 @@ class PingManager:
         'dismissals': 'Увольнения',
         'warehouse': 'Складские запросы',
         'promotions': 'Присвоения званий',
+        'safe_documents': 'Сейф документов',
         'general': 'Общие уведомления'
     }
     

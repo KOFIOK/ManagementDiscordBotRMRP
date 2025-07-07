@@ -140,17 +140,34 @@ class WarehouseItemSelectView(discord.ui.View):
         self.category_info = category_info
         self.warehouse_manager = warehouse_manager
         
+        # Добавляем кнопку "Характеристики оружия" для категории "Оружие"
+        if category == "Оружие":
+            weapons_info_button = discord.ui.Button(
+                label="Характеристики оружия",
+                style=discord.ButtonStyle.primary,
+                emoji="📊",
+                custom_id="warehouse_weapons_info",
+                row=0
+            )
+            weapons_info_button.callback = self._weapons_info_callback
+            self.add_item(weapons_info_button)
+        
         # Добавление кнопок для каждого предмета
         items = category_info["items"]
         for i, item in enumerate(items):
             if i < 20:  # Максимум 20 кнопок (4 ряда по 5)
                 # Делаем custom_id уникальным для каждой категории!
                 unique_id = f"warehouse_{self.category.lower()}_{i}_{hash(item) % 10000}"
+                
+                # Для категории "Оружие" сдвигаем кнопки, чтобы освободить место для кнопки характеристик
+                row_offset = 1 if category == "Оружие" else 0
+                current_row = (i // 5) + row_offset
+                
                 button = discord.ui.Button(
                     label=item[:80] if len(item) > 80 else item,  # Ограничение длины
                     style=discord.ButtonStyle.secondary,
                     custom_id=unique_id,  # Уникальный ID!
-                    row=i // 5  # Распределение по рядам
+                    row=current_row  # Распределение по рядам с учетом offset
                 )
                 button.callback = self._create_item_callback(item)
                 self.add_item(button)
@@ -175,6 +192,36 @@ class WarehouseItemSelectView(discord.ui.View):
             await interaction.response.send_modal(modal)
             
         return callback
+
+    async def _weapons_info_callback(self, interaction: discord.Interaction):
+        """Callback для кнопки характеристик оружия"""
+        try:
+            # Путь к файлу с характеристиками оружия
+            weapons_info_path = "files/weapons_info.png"
+            
+            # Проверяем существование файла
+            import os
+            if not os.path.exists(weapons_info_path):
+                await interaction.response.send_message(
+                    "❌ Файл с характеристиками оружия не найден.",
+                    ephemeral=True
+                )
+                return
+            
+            # Отправляем файл как ephemeral сообщение
+            file = discord.File(weapons_info_path, filename="weapons_info.png")
+            await interaction.response.send_message(
+                "📊 **Характеристики оружия:**",
+                file=file,
+                ephemeral=True
+            )
+            
+        except Exception as e:
+            print(f"❌ Ошибка при отправке характеристик оружия: {e}")
+            await interaction.response.send_message(
+                "❌ Произошла ошибка при загрузке характеристик оружия.",
+                ephemeral=True
+            )
 
 
 class WarehousePinMessageView(discord.ui.View):
@@ -286,6 +333,7 @@ class WarehouseCartView(discord.ui.View):
             color=discord.Color.orange()
         )
         
+        # Создаем view для подтверждения
         confirm_view = ConfirmClearCartView(self.cart, self.warehouse_manager)
         await interaction.response.send_message(embed=confirm_embed, view=confirm_view, ephemeral=True)
 
@@ -376,75 +424,65 @@ class ConfirmClearCartView(discord.ui.View):
     async def confirm_clear(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Подтвердить очистку корзины"""
         try:
+            # СНАЧАЛА получаем сообщение корзины ДО очистки отслеживания!
+            cart_message = get_user_cart_message(interaction.user.id)
+            
             # Очищаем корзину
             self.cart.clear()
             
-            # Безопасно очищаем отслеживание
-            clear_user_cart_safe(interaction.user.id, "пользователь подтвердил очистку")
-            
-            success_embed = discord.Embed(
-                title="✅ Корзина очищена",
-                description="Все предметы удалены из корзины.\n\nДля новых запросов используйте закрепленное сообщение склада.",
-                color=discord.Color.green()
-            )
-            
-            # Обновляем ephemeral сообщение
-            await interaction.response.edit_message(embed=success_embed, view=None)
-            
-            # Автоматически удаляем сообщение через 5 секунд
-            asyncio.create_task(self._auto_delete_message(interaction.message))
-            
-            # Обновляем исходное сообщение корзины
-            cart_message = get_user_cart_message(interaction.user.id)
+            # Теперь работаем с полученным сообщением корзины
             if cart_message:
                 try:
-                    empty_embed = discord.Embed(
-                        title="📦 Корзина очищена",
-                        description="Все предметы удалены из корзины.\n\nДля новых запросов используйте закрепленное сообщение склада.",
-                        color=discord.Color.blue()
-                    )
-                    empty_embed.set_footer(text="Сообщение автоматически исчезнет через 10 секунд")
-                    
-                    await cart_message.edit(embed=empty_embed, view=None)
-                    
-                    # Удаляем сообщение корзины через 10 секунд
-                    await asyncio.sleep(10)
-                    try:
-                        await cart_message.delete()
-                    except:
-                        pass
+                    # Сразу удаляем сообщение корзины БЕЗ обновления и задержек
+                    await cart_message.delete()
+                    print(f"🧹 CART: Сообщение корзины удалено для пользователя {interaction.user.id}")
                         
-                except (discord.NotFound, discord.HTTPException):
-                    pass  # Сообщение уже удалено или недоступно
+                except (discord.NotFound, discord.HTTPException) as e:
+                    print(f"Не удалось удалить сообщение корзины: {e}")
+            else:
+                print(f"⚠️ CART: Сообщение корзины не найдено для пользователя {interaction.user.id}")
+            
+            # В конце очищаем отслеживание
+            clear_user_cart_safe(interaction.user.id, "пользователь подтвердил очистку")
+            
+            # Удаляем сообщение подтверждения немедленно
+            await interaction.response.edit_message(content="✅ Корзина очищена!", embed=None, view=None)
+
+            # Удаляем сообщение подтверждения через 1 секунду
+            await asyncio.sleep(1)
+            try:
+                await interaction.delete_original_response()
+            except:
+                pass  # Игнорируем ошибки удаления
                     
         except Exception as e:
             print(f"❌ Ошибка при очистке корзины: {e}")
-            error_embed = discord.Embed(
-                title="❌ Ошибка",
-                description="Произошла ошибка при очистке корзины",
-                color=discord.Color.red()
-            )
-            await interaction.response.edit_message(embed=error_embed, view=None)
+            try:
+                await interaction.response.edit_message(
+                    content="❌ Произошла ошибка при очистке корзины",
+                    embed=None,
+                    view=None
+                )
+            except:
+                pass
     
     @discord.ui.button(label="❌ Отмена", style=discord.ButtonStyle.secondary)
     async def cancel_clear(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Отменить очистку корзины"""
-        cancel_embed = discord.Embed(
-            title="❌ Очистка отменена",
-            description="Корзина не была изменена.",
-            color=discord.Color.blue()
-        )
+        # Просто удаляем сообщение подтверждения
+        await interaction.response.edit_message(content="❌ Очистка отменена", embed=None, view=None)
         
-        await interaction.response.edit_message(embed=cancel_embed, view=None)
-        asyncio.create_task(self._auto_delete_message(interaction.message))
-    
-    async def _auto_delete_message(self, message):
-        """Автоматически удалить сообщение через 10 секунд"""
-        await asyncio.sleep(10)
+        # Удаляем сообщение через 2 секунды
+        await asyncio.sleep(2)
         try:
-            await message.delete()
+            await interaction.delete_original_response()
         except:
             pass  # Игнорируем ошибки удаления
+    
+    async def _auto_delete_message(self, message):
+        """Автоматически удалить сообщение через 10 секунд (DEPRECATED - заменен на delete_original_response)"""
+        # Этот метод больше не используется для ephemeral сообщений
+        pass
 
 
 class WarehouseSubmittedView(discord.ui.View):

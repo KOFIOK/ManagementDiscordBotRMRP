@@ -10,7 +10,8 @@ from typing import Optional
 from utils.user_cache import (
     get_cache_statistics, clear_user_cache, invalidate_user_cache,
     get_cached_user_info, preload_user_data, get_user_name_fast,
-    get_user_department_fast, get_user_rank_fast
+    get_user_department_fast, get_user_rank_fast, refresh_user_cache, 
+    is_cache_initialized, initialize_user_cache
 )
 
 
@@ -19,74 +20,6 @@ class CacheAdminSlashCommands(commands.Cog):
     
     def __init__(self, bot):
         self.bot = bot
-    
-    @app_commands.command(name='cache_stats', description='Показать статистику использования кэша пользователей')
-    @app_commands.default_permissions(administrator=True)
-    async def cache_statistics(self, interaction: discord.Interaction):
-        """Показать статистику использования кэша пользователей"""
-        try:
-            stats = get_cache_statistics()
-            
-            embed = discord.Embed(
-                title="📊 Статистика кэша пользователей",
-                color=discord.Color.blue(),
-                timestamp=discord.utils.utcnow()
-            )
-            
-            # Основная статистика
-            embed.add_field(
-                name="📈 Производительность",
-                value=f"**Hit Rate:** {stats['hit_rate_percent']}%\n"
-                      f"**Всего запросов:** {stats['total_requests']}\n"
-                      f"**Cache Hits:** {stats['hits']}\n"
-                      f"**Cache Misses:** {stats['misses']}",
-                inline=True
-            )
-            
-            # Размер кэша
-            embed.add_field(
-                name="💾 Размер кэша",
-                value=f"**Записей в кэше:** {stats['cache_size']}\n"
-                      f"**Истекших записей:** {stats['expired_entries']}\n"
-                      f"**Память (примерно):** {stats['memory_usage_estimate']} байт",
-                inline=True
-            )
-            
-            # Время последней очистки
-            last_cleanup = stats['last_cleanup'].strftime('%H:%M:%S %d.%m.%Y')
-            embed.add_field(
-                name="🧹 Обслуживание",
-                value=f"**Последняя очистка:** {last_cleanup}",
-                inline=False
-            )
-            
-            # Рекомендации
-            recommendations = []
-            if stats['hit_rate_percent'] < 70:
-                recommendations.append("🔸 Низкий Hit Rate - рассмотрите увеличение TTL кэша")
-            if stats['expired_entries'] > stats['cache_size'] * 0.3:
-                recommendations.append("🔸 Много истекших записей - выполните очистку")
-            if stats['cache_size'] > 500:
-                recommendations.append("🔸 Большой размер кэша - проверьте память сервера")
-            
-            if recommendations:
-                embed.add_field(
-                    name="💡 Рекомендации",
-                    value="\n".join(recommendations),
-                    inline=False
-                )
-            
-            embed.set_footer(text="Используйте /cache_clear для очистки кэша")
-            
-            await interaction.response.send_message(embed=embed)
-            
-        except Exception as e:
-            embed = discord.Embed(
-                title="❌ Ошибка",
-                description=f"Не удалось получить статистику кэша: {e}",
-                color=discord.Color.red()
-            )
-            await interaction.response.send_message(embed=embed)
     
     @app_commands.command(name='cache_clear', description='Полностью очистить кэш пользователей')
     @app_commands.default_permissions(administrator=True)
@@ -102,7 +35,7 @@ class CacheAdminSlashCommands(commands.Cog):
                 color=discord.Color.green()
             )
             
-            await interaction.response.send_message(embed=embed)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             
         except Exception as e:
             embed = discord.Embed(
@@ -110,7 +43,7 @@ class CacheAdminSlashCommands(commands.Cog):
                 description=f"Не удалось очистить кэш: {e}",
                 color=discord.Color.red()
             )
-            await interaction.response.send_message(embed=embed)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
     
     @app_commands.command(name='cache_invalidate', description='Удалить конкретного пользователя из кэша')
     @app_commands.describe(user='Пользователь для удаления из кэша')
@@ -126,7 +59,7 @@ class CacheAdminSlashCommands(commands.Cog):
                 color=discord.Color.orange()
             )
             
-            await interaction.response.send_message(embed=embed)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             
         except Exception as e:
             embed = discord.Embed(
@@ -134,7 +67,7 @@ class CacheAdminSlashCommands(commands.Cog):
                 description=f"Не удалось удалить пользователя из кэша: {e}",
                 color=discord.Color.red()
             )
-            await interaction.response.send_message(embed=embed)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
     
     @app_commands.command(name='cache_test_user', description='Протестировать получение данных пользователя через кэш')
     @app_commands.describe(user='Пользователь для тестирования')
@@ -208,7 +141,7 @@ class CacheAdminSlashCommands(commands.Cog):
             if interaction.response.is_done():
                 await interaction.followup.send(f"❌ Ошибка тестирования пользователя: {e}")
             else:
-                await interaction.response.send_message(f"❌ Ошибка тестирования пользователя: {e}")
+                await interaction.response.send_message(f"❌ Ошибка тестирования пользователя: {e}", ephemeral=True)
 
     @app_commands.command(name='global_cache_status', description='Показать полный статус универсальной системы кэширования')
     @app_commands.default_permissions(administrator=True)
@@ -286,10 +219,10 @@ class CacheAdminSlashCommands(commands.Cog):
                 inline=False
             )
             
-            await interaction.response.send_message(embed=embed)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             
         except Exception as e:
-            await interaction.response.send_message(f"❌ Ошибка получения статуса: {e}")
+            await interaction.response.send_message(f"❌ Ошибка получения статуса: {e}", ephemeral=True)
 
     @app_commands.command(name='warehouse_test_user', description='Протестировать получение данных пользователя для системы склада')
     @app_commands.describe(user='Пользователь для тестирования (по умолчанию - вы)')
@@ -358,7 +291,7 @@ class CacheAdminSlashCommands(commands.Cog):
             if interaction.response.is_done():
                 await interaction.followup.send(f"❌ Ошибка тестирования: {e}")
             else:
-                await interaction.response.send_message(f"❌ Ошибка тестирования: {e}")
+                await interaction.response.send_message(f"❌ Ошибка тестирования: {e}", ephemeral=True)
     
     @app_commands.command(name='reload_config', description='Перезагрузить конфигурацию бота без перезапуска')
     @app_commands.default_permissions(administrator=True)
@@ -466,6 +399,160 @@ class CacheAdminSlashCommands(commands.Cog):
                 color=discord.Color.red()
             )
             await interaction.followup.send(embed=error_embed)
+
+    @app_commands.command(name='cache_refresh', description='Принудительное обновление кэша пользователей')
+    @app_commands.default_permissions(administrator=True)
+    async def cache_refresh(self, interaction: discord.Interaction):
+        """Принудительное обновление кэша пользователей"""
+        try:
+            await interaction.response.defer(ephemeral=True)
+            
+            # Получаем статистику до обновления
+            old_stats = get_cache_statistics()
+            
+            print(f"🔄 MANUAL CACHE REFRESH: Запрос от {interaction.user}")
+            success = await refresh_user_cache()
+            
+            # Получаем статистику после обновления
+            new_stats = get_cache_statistics()
+            
+            if success:
+                await interaction.followup.send(
+                    f"✅ **Кэш успешно обновлен**\n\n"
+                    f"📊 **Статистика:**\n"
+                    f"• Пользователей в кэше: {new_stats['cache_size']}\n"
+                    f"• Hit rate: {new_stats['hit_rate_percent']}%\n"
+                    f"• Всего запросов: {new_stats['total_requests']}\n"
+                    f"• Попаданий: {new_stats['hits']}\n"
+                    f"• Промахов: {new_stats['misses']}\n\n"
+                    f"📦 **Предзагрузка:**\n"
+                    f"• Пользователей предзагружено: {new_stats['bulk_preload_count']}\n"
+                    f"• Время предзагрузки: {new_stats['bulk_preload_time']}\n\n"
+                    f"💾 **Память:**\n"
+                    f"• Примерное использование: {new_stats['memory_usage_estimate']} байт",
+                    ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    "❌ **Ошибка при обновлении кэша**\n\n"
+                    "Проверьте логи бота для деталей.",
+                    ephemeral=True
+                )
+        
+        except Exception as e:
+            print(f"❌ Error in cache refresh command: {e}")
+            try:
+                await interaction.followup.send(
+                    f"❌ Произошла ошибка: {str(e)}",
+                    ephemeral=True
+                )
+            except:
+                pass
+
+    @app_commands.command(name='cache_stats', description='Показать статистику кэша пользователей')
+    @app_commands.default_permissions(administrator=True)
+    async def cache_stats(self, interaction: discord.Interaction):
+        """Показать статистику кэша пользователей"""
+        try:
+            stats = get_cache_statistics()
+            is_initialized = is_cache_initialized()
+            
+            # Рассчитываем время работы
+            if stats.get('bulk_preload_time'):
+                import datetime
+                preload_time = stats['bulk_preload_time']
+                if isinstance(preload_time, str):
+                    try:
+                        preload_time = datetime.datetime.fromisoformat(preload_time)
+                    except:
+                        preload_time = "Неизвестно"
+                
+                if isinstance(preload_time, datetime.datetime):
+                    age = datetime.datetime.now() - preload_time
+                    age_text = f"{age.total_seconds():.0f} секунд назад"
+                else:
+                    age_text = "Неизвестно"
+            else:
+                age_text = "Не выполнена"
+            
+            status_emoji = "✅" if is_initialized else "⚠️"
+            status_text = "Активен" if is_initialized else "Требует инициализации"
+            
+            await interaction.response.send_message(
+                f"{status_emoji} **Статистика кэша пользователей**\n\n"
+                f"🔄 **Статус:** {status_text}\n"
+                f"📊 **Размер кэша:** {stats['cache_size']} записей\n"
+                f"📈 **Hit rate:** {stats['hit_rate_percent']}%\n"
+                f"📋 **Всего запросов:** {stats['total_requests']}\n"
+                f"✅ **Попаданий:** {stats['hits']}\n"
+                f"❌ **Промахов:** {stats['misses']}\n\n"
+                f"📦 **Предзагрузка:**\n"
+                f"• Пользователей: {stats.get('bulk_preload_count', 0)}\n"
+                f"• Последняя: {age_text}\n\n"
+                f"💾 **Память:** ~{stats['memory_usage_estimate']} байт\n"
+                f"🧹 **Истекших записей:** {stats['expired_entries']}",
+                ephemeral=True
+            )
+        
+        except Exception as e:
+            print(f"❌ Error in cache stats command: {e}")
+            await interaction.response.send_message(
+                f"❌ Ошибка получения статистики: {str(e)}",
+                ephemeral=True
+            )
+
+    @app_commands.command(name='cache_bulk_init', description='Принудительная инициализация кэша с массовой предзагрузкой')
+    @app_commands.default_permissions(administrator=True)
+    async def cache_bulk_init(self, interaction: discord.Interaction):
+        """Принудительная инициализация кэша с массовой предзагрузкой"""
+        try:
+            await interaction.response.defer(ephemeral=True)
+            
+            print(f"🚀 MANUAL BULK INIT: Запрос от {interaction.user}")
+            
+            import time
+            start_time = time.time()
+            
+            success = await initialize_user_cache(force_refresh=True)
+            
+            load_time = time.time() - start_time
+            stats = get_cache_statistics()
+            
+            if success:
+                await interaction.followup.send(
+                    f"✅ **Массовая предзагрузка завершена**\n\n"
+                    f"⏱️ **Время выполнения:** {load_time:.2f} секунд\n"
+                    f"📦 **Результат:**\n"
+                    f"• Пользователей загружено: {stats.get('bulk_preload_count', 0)}\n"
+                    f"• Размер кэша: {stats['cache_size']} записей\n"
+                    f"• Статус: {'Активен' if is_cache_initialized() else 'Ошибка'}\n\n"
+                    f"🚀 **Эффект:**\n"
+                    f"• Мгновенное автозаполнение форм\n"
+                    f"• Отсутствие 429 ошибок Google API\n"
+                    f"• Быстрая работа всех систем",
+                    ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    f"❌ **Ошибка массовой предзагрузки**\n\n"
+                    f"⏱️ Время выполнения: {load_time:.2f} секунд\n"
+                    f"📝 Проверьте логи бота для деталей\n"
+                    f"💡 Возможные причины:\n"
+                    f"• Проблемы с Google Sheets API\n"
+                    f"• Превышение лимитов запросов\n"
+                    f"• Недоступность листа 'Личный Состав'",
+                    ephemeral=True
+                )
+        
+        except Exception as e:
+            print(f"❌ Error in bulk init command: {e}")
+            try:
+                await interaction.followup.send(
+                    f"❌ Произошла ошибка: {str(e)}",
+                    ephemeral=True
+                )
+            except:
+                pass
 
 
 async def setup(bot):

@@ -309,7 +309,8 @@ class AdminCommandsButton(discord.ui.Button):
             value=(
                 "`/reload_config` - Горячая перезагрузка конфигурации\n"
                 "`/migrate-ping-settings` - Миграция настроек пингов\n"
-                "`/cache_stats` - Статистика использования кэша\n"
+                "`/cache-stats` - Статистика использования кэша\n"
+                "`/cache-refresh` - Обновление кэша пользователя\n"
                 "`/cache_clear` - Полная очистка кэша\n"
                 "`/cache_invalidate` - Удалить пользователя из кэша\n"
                 "`/cache_test_user` - Тестирование кэша пользователя\n"

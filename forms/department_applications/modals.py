@@ -5,8 +5,8 @@ import discord
 from discord import ui
 import re
 import asyncio
-from typing import Dict, Any, Optional
 import logging
+from typing import Dict, Any, Optional
 from datetime import datetime, timezone, timedelta
 
 from utils.user_database import UserDatabase
@@ -18,11 +18,12 @@ logger = logging.getLogger(__name__)
 class DepartmentApplicationStage1Modal(ui.Modal):
     """Stage 1: IC Information modal for department applications"""
     
-    def __init__(self, department_code: str, application_type: str, user_id: int):
+    def __init__(self, department_code: str, application_type: str, user_id: int, skip_data_loading: bool = False):
         self.department_code = department_code
         self.application_type = application_type  # 'join' or 'transfer'
         self.user_id = user_id
-        self.user_ic_data = None  # Будет загружено синхронно при создании
+        self.user_ic_data = None  # Будет загружено позже при необходимости
+        self.skip_data_loading = skip_data_loading
         
         title = f"Заявление в {department_code} - IC Информация"
         if application_type == 'transfer':
@@ -30,12 +31,34 @@ class DepartmentApplicationStage1Modal(ui.Modal):
         
         super().__init__(title=title, timeout=300)
         
-        # Синхронно пытаемся загрузить данные (с таймаутом)
-        self._try_load_user_data_sync()
+        if not skip_data_loading:
+            # Старый способ - синхронная загрузка (может быть медленным)
+            self._try_load_user_data_sync()
+        else:
+            # Быстрая инициализация - ВСЕГДА пытаемся загрузить из кэша синхронно
+            # Кэш быстрый (мгновенный), не замедлит инициализацию
+            logger.info(f"⚡ Fast initialization for user {user_id} - loading from cache only")
+            self._try_load_from_cache_only()
         
         # Создаем поля с данными (если загрузились) или пустые
         self._setup_fields_with_data()
     
+    def _try_load_from_cache_only(self):
+        """Быстрая загрузка ТОЛЬКО из кэша - мгновенная операция"""
+        try:
+            # Попробуем загрузить через публичный API кэша
+            cache_data = self._try_load_from_cache_public()
+            if cache_data:
+                self.user_ic_data = cache_data
+                logger.info(f"⚡ User data loaded from cache for {self.user_id} - form will be autofilled")
+            else:
+                logger.info(f"ℹ️  No cached data for {self.user_id} - form will be empty (can load async later)")
+                self.user_ic_data = None
+                
+        except Exception as e:
+            logger.error(f"💥 Error in cache-only loading for {self.user_id}: {e}")
+            self.user_ic_data = None
+
     def _try_load_user_data_sync(self):
         """Пытается загрузить данные пользователя из кэша синхронно, затем асинхронно из базы"""
         try:
@@ -63,8 +86,31 @@ class DepartmentApplicationStage1Modal(ui.Modal):
             logger.error(f"💥 Critical error in sync data loading for {self.user_id}: {e}")
             self.user_ic_data = None
     
+    def _try_load_from_cache_public(self) -> Optional[Dict[str, Any]]:
+        """Публичный способ загрузки из кэша через API"""
+        try:
+            from utils.user_cache import get_cached_user_info_sync
+            
+            # Используем публичный синхронный API кэша
+            cached_data = get_cached_user_info_sync(self.user_id)
+            if cached_data:
+                logger.info(f"✅ Cache data found for user {self.user_id}")
+                return cached_data
+            else:
+                logger.info(f"ℹ️  No cached data for user {self.user_id}")
+                return None
+                
+        except Exception as e:
+            logger.warning(f"❌ Error accessing cache for {self.user_id}: {e}")
+            # Fallback к прямому доступу
+            return self._try_load_from_cache_direct()
+    
     def _try_load_from_cache(self) -> Optional[Dict[str, Any]]:
         """Пытается получить данные из кэша синхронно"""
+        return self._try_load_from_cache_direct()
+    
+    def _try_load_from_cache_direct(self) -> Optional[Dict[str, Any]]:
+        """Прямой доступ к кэшу"""
         try:
             from utils.user_cache import _global_cache
             
@@ -139,7 +185,7 @@ class DepartmentApplicationStage1Modal(ui.Modal):
         default_static = ""
         
         if self.user_ic_data:
-            # Данные найдены в базе - автозаполняем
+            # Данные найдены в базе/кэше - автозаполняем
             ic_first_name = self.user_ic_data.get('first_name', '')
             ic_last_name = self.user_ic_data.get('last_name', '')
             ic_static = self.user_ic_data.get('static', '')
@@ -149,14 +195,21 @@ class DepartmentApplicationStage1Modal(ui.Modal):
             if full_name:
                 default_name = full_name
                 name_placeholder = f"✅ Автозаполнено: {full_name}"
+                logger.info(f"⚡ Autofilled name for {self.user_id}: {full_name}")
             else:
                 name_placeholder = "Введите ваше Имя Фамилия"
             
             if ic_static:
                 default_static = ic_static
                 static_placeholder = f"✅ Автозаполнено: {ic_static}"
+                logger.info(f"⚡ Autofilled static for {self.user_id}: {ic_static}")
             else:
                 static_placeholder = "Введите ваш статик (123-456)"
+        elif self.skip_data_loading:
+            # Быстрая инициализация - показываем что данные могут загрузиться позже
+            name_placeholder = "Например: Олег Дубов"
+            static_placeholder = "Например: 123-456"
+            logger.info(f"ℹ️  Fast modal for {self.user_id} - autofill available on submit")
         else:
             # Данные не найдены - поля пустые
             name_placeholder = "например: Иван Иванов"
@@ -253,12 +306,57 @@ class DepartmentApplicationStage1Modal(ui.Modal):
         try:
             await interaction.response.defer(ephemeral=True)
             
+            # ПРОВЕРКА АКТИВНЫХ ЗАЯВЛЕНИЙ В ПЕРВУЮ ОЧЕРЕДЬ
+            # Если пропустили проверку при нажатии кнопки - проверяем здесь
+            from .views import check_user_active_applications
+            active_check = await check_user_active_applications(
+                interaction.guild, 
+                interaction.user.id
+            )
+            
+            if active_check['has_active']:
+                departments_list = ", ".join(active_check['departments'])
+                await interaction.followup.send(
+                    f"❌ **У вас уже есть активное заявление на рассмотрении**\n\n"
+                    f"📋 Подразделения: **{departments_list}**\n"
+                    f"⏳ Дождитесь рассмотрения текущего заявления перед подачей нового.\n\n"
+                    f"💡 Активные заявления можно найти в каналах заявлений соответствующих подразделений.",
+                    ephemeral=True
+                )
+                return
+            
+            # УМНОЕ АВТОЗАПОЛНЕНИЕ - попытка загрузить данные если их не было
+            name_value = self.name_input.value.strip()
+            static_value = self.static_input.value.strip()
+            
+            # Если пользователь НЕ заполнил поля, пытаемся загрузить из базы
+            if (not name_value or not static_value) and self.user_ic_data is None:
+                logger.info(f"🔄 User {self.user_id} has empty fields, trying to load from database...")
+                await self._load_user_data_async()
+                
+                # Автозаполняем пустые поля, если данные загрузились
+                if self.user_ic_data:
+                    ic_first_name = self.user_ic_data.get('first_name', '')
+                    ic_last_name = self.user_ic_data.get('last_name', '')
+                    ic_static = self.user_ic_data.get('static', '')
+                    
+                    full_name = f"{ic_first_name} {ic_last_name}".strip()
+                    
+                    # Автозаполняем только пустые поля
+                    if not name_value and full_name:
+                        name_value = full_name
+                        logger.info(f"✅ Auto-filled name for {self.user_id}: {full_name}")
+                    
+                    if not static_value and ic_static:
+                        static_value = ic_static  
+                        logger.info(f"✅ Auto-filled static for {self.user_id}: {ic_static}")
+            
             # Загружаем данные пользователя асинхронно (если еще не загружены)
             if self.user_ic_data is None:
                 await self._load_user_data_async()
             
-            # Validate static
-            formatted_static = self.format_static(self.static_input.value)
+            # Validate static - используем заполненное значение
+            formatted_static = self.format_static(static_value)
             if not formatted_static:
                 await interaction.followup.send(
                     "❌ **Ошибка валидации статика**\n"
@@ -279,9 +377,9 @@ class DepartmentApplicationStage1Modal(ui.Modal):
                 )
                 return
             
-            # Store Stage 1 data
+            # Store Stage 1 data - используем автозаполненные значения
             stage1_data = {
-                'name': self.name_input.value.strip(),
+                'name': name_value,
                 'static': formatted_static,
                 'document_url': document_url,
                 'reason': self.reason_input.value.strip(),
@@ -638,6 +736,10 @@ class FinalReviewView(ui.View):
             
             # Send to department channel
             message = await channel.send(content=content, embed=embed, view=view)
+            
+            # Clear user's cache since they now have an active application
+            from .views import _clear_user_cache
+            _clear_user_cache(interaction.user.id)
             
             # Store application data
             self.application_data['message_id'] = message.id

@@ -7,7 +7,7 @@ import logging
 import re
 from typing import Dict, Optional, List
 import json
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 from utils.config_manager import load_config, save_config
 from utils.ping_manager import ping_manager
@@ -15,6 +15,9 @@ from utils.department_manager import DepartmentManager
 from .views import DepartmentSelectView
 
 logger = logging.getLogger(__name__)
+
+# Московская временная зона (MSK = UTC+3)
+MSK_TIMEZONE = timezone(timedelta(hours=3))
 
 class DepartmentApplicationManager:
     """Manager for department application system"""
@@ -42,22 +45,27 @@ class DepartmentApplicationManager:
                 title=f"{dept_info['emoji']} {dept_info['name']} ({department_code})",
                 description=dept_info['description'],
                 color=dept_info['color'],
-                timestamp=datetime.utcnow()
+                timestamp=datetime.now(MSK_TIMEZONE)
             )
             
             embed.add_field(
                 name="📋 Как подать заявление",
                 value="Выберите тип заявления в меню ниже:\n"
-                      "• **Вступление** - если вы не состоите в подразделении\n"
-                      "• **Перевод** - если хотите перейти из другого подразделения",
+                      "- **Вступление** - если вы не состоите в подразделении\n"
+                      "- **Перевод** - если хотите перевестись из другого подразделения",
+                inline=False
+            )
+            
+            embed.add_field(
+                name="",
+                value="",
                 inline=False
             )
             
             embed.add_field(
                 name="⚠️ Важная информация",
-                value="• Можно подать только одну заявку одновременно\n"
-                      "• Заявление рассматривается модерацией\n"
-                      "• Ложная информация может привести к отклонению",
+                value="- Не подавайте несколько заявок в разные подразделения одновременно\n"
+                      "- Заявление рассматривается старшим составом до 72 часов\n",
                 inline=False
             )
             
@@ -503,7 +511,7 @@ class DepartmentApplicationManager:
             title="📋 Система заявлений в подразделения",
             description="Статус настройки подразделений",
             color=discord.Color.blue(),
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(MSK_TIMEZONE)
         )
         
         departments = self.department_manager.get_all_departments()

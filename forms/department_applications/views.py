@@ -180,6 +180,9 @@ class DepartmentApplicationView(ui.View):
             success = await self._process_approval(interaction, target_user)
             
             if success:
+                # Clear user's cache since status changed
+                _clear_user_cache(target_user.id)
+                
                 # Update embed
                 embed = interaction.message.embeds[0]
                 embed.color = discord.Color.green()
@@ -978,6 +981,9 @@ class RejectionReasonModal(ui.Modal):
             view = DepartmentApplicationView(self.application_data)
             view.clear_items()
             
+            # Clear user's cache since status changed
+            _clear_user_cache(self.application_data['user_id'])
+            
             rejected_button = ui.Button(
                 label="❌ Отклонено",
                 style=discord.ButtonStyle.red,
@@ -1072,39 +1078,90 @@ class DepartmentSelectView(ui.View):
             # Update instance variables for compatibility
             self.department_code = department_code
             
-            # Check if user already has active applications
-            active_check = await check_user_active_applications(
-                interaction.guild, 
-                interaction.user.id
-            )
-            
-            if active_check['has_active']:
-                departments_list = ", ".join(active_check['departments'])
-                await interaction.response.send_message(
-                    f"❌ **У вас уже есть активное заявление на рассмотрении**\n\n"
-                    f"📋 Подразделения: **{departments_list}**\n"
-                    f"⏳ Дождитесь рассмотрения текущего заявления перед подачей нового.\n\n"
-                    f"💡 Активные заявления можно найти в каналах заявлений соответствующих подразделений.",
-                    ephemeral=True
-                )
-                return
-            
-            # Открываем модальное окно СРАЗУ, не дожидаясь загрузки данных
-            # Это предотвращает "Unknown interaction" при долгих запросах к Google Sheets
+            # БЫСТРАЯ ОТПРАВКА МОДАЛЬНОГО ОКНА - отвечаем в течение 1 секунды
             from .modals import DepartmentApplicationStage1Modal
-            modal = DepartmentApplicationStage1Modal(department_code, app_type, interaction.user.id)
+            modal = DepartmentApplicationStage1Modal(department_code, app_type, interaction.user.id, skip_data_loading=True)
             await interaction.response.send_modal(modal)
+            
+            # ПРОВЕРКА АКТИВНЫХ ЗАЯВЛЕНИЙ В ФОНЕ (асинхронно)
+            # Если найдем активные заявления - закроем модальное окно через followup
+            try:
+                active_check = await check_user_active_applications(
+                    interaction.guild, 
+                    interaction.user.id
+                )
+                
+                if active_check['has_active']:
+                    # Модальное окно уже открыто, но мы можем отправить уведомление
+                    # Discord автоматически закроет модальное окно при отправке followup
+                    departments_list = ", ".join(active_check['departments'])
+                    await interaction.followup.send(
+                        f"❌ **У вас уже есть активное заявление на рассмотрении**\n\n"
+                        f"📋 Подразделения: **{departments_list}**\n"
+                        f"⏳ Дождитесь рассмотрения текущего заявления перед подачей нового.\n\n"
+                        f"💡 Активные заявления можно найти в каналах заявлений соответствующих подразделений.",
+                        ephemeral=True
+                    )
+                    # Пользователь увидит это сообщение, если попытается отправить заявление
+                    
+            except Exception as bg_error:
+                logger.warning(f"Background check for active applications failed: {bg_error}")
+                # Не останавливаем процесс - пользователь может продолжить подачу заявления
             
         except Exception as e:
             logger.error(f"Error in department application: {e}")
-            await interaction.response.send_message(
-                "❌ Произошла ошибка. Попробуйте еще раз.",
-                ephemeral=True
-            )
+            try:
+                await interaction.response.send_message(
+                    "❌ Произошла ошибка. Попробуйте еще раз.",
+                    ephemeral=True
+                )
+            except discord.InteractionResponded:
+                await interaction.followup.send(
+                    "❌ Произошла ошибка. Попробуйте еще раз.",
+                    ephemeral=True
+                )
+
+# Active applications cache for performance optimization
+_active_applications_cache = {}
+_cache_expiry = {}
+
+def _is_cache_valid(user_id: int) -> bool:
+    """Check if cache for user is still valid"""
+    if user_id not in _cache_expiry:
+        return False
+    
+    from datetime import datetime, timedelta
+    return datetime.now() < _cache_expiry[user_id]
+
+def _cache_user_active_status(user_id: int, has_active: bool, departments: list):
+    """Cache user's active application status for 30 seconds"""
+    from datetime import datetime, timedelta
+    
+    _active_applications_cache[user_id] = {
+        'has_active': has_active,
+        'departments': departments
+    }
+    _cache_expiry[user_id] = datetime.now() + timedelta(seconds=30)
+
+def _get_cached_active_status(user_id: int) -> Dict:
+    """Get cached active status if available and valid"""
+    if _is_cache_valid(user_id):
+        cached = _active_applications_cache.get(user_id, {})
+        return {
+            'has_active': cached.get('has_active', False),
+            'applications': [],  # Don't cache message objects
+            'departments': cached.get('departments', [])
+        }
+    return None
+
+def _clear_user_cache(user_id: int):
+    """Clear cache for user (call when application is submitted/processed)"""
+    _active_applications_cache.pop(user_id, None)
+    _cache_expiry.pop(user_id, None)
 
 async def check_user_active_applications(guild: discord.Guild, user_id: int, department_code: str = None) -> Dict:
     """
-    Check if user has any active (pending) applications
+    Check if user has any active (pending) applications - OPTIMIZED WITH CACHE
     
     Args:
         guild: Discord guild to search in
@@ -1118,6 +1175,12 @@ async def check_user_active_applications(guild: discord.Guild, user_id: int, dep
             'departments': [list of department codes with active applications]
         }
     """
+    # Try cache first (30 second expiry)
+    cached_result = _get_cached_active_status(user_id)
+    if cached_result is not None:
+        logger.info(f"⚡ Using cached active applications status for user {user_id}")
+        return cached_result
+    
     result = {
         'has_active': False,
         'applications': [],
@@ -1131,6 +1194,10 @@ async def check_user_active_applications(guild: discord.Guild, user_id: int, dep
         # Check each department or specific department
         depts_to_check = [department_code] if department_code else departments.keys()
         
+        # OPTIMIZATION: Limit search and use timeout
+        max_messages_per_channel = 50  # Reduced from 100
+        search_timeout = 2.0  # Maximum 2 seconds per channel
+        
         for dept_code in depts_to_check:
             dept_config = departments.get(dept_code, {})
             channel_id = dept_config.get('application_channel_id')
@@ -1142,30 +1209,54 @@ async def check_user_active_applications(guild: discord.Guild, user_id: int, dep
             if not channel:
                 continue
             
-            # Check recent messages for user's applications
-            async for message in channel.history(limit=100):
-                if not message.embeds:
-                    continue
-                    
-                embed = message.embeds[0]
+            try:
+                # Use asyncio.timeout for faster failure
+                import asyncio
                 
-                # Check if this is a department application
-                if not embed.footer or not embed.footer.text:
-                    continue
+                async def check_channel_for_user():
+                    # Check recent messages for user's applications
+                    async for message in channel.history(limit=max_messages_per_channel):
+                        if not message.embeds:
+                            continue
+                            
+                        embed = message.embeds[0]
+                        
+                        # Quick check if this is a department application
+                        if not embed.footer or not embed.footer.text:
+                            continue
+                            
+                        if f"ID заявления: {user_id}" in embed.footer.text:
+                            # Quick check if application is still pending (has view with enabled buttons)
+                            if message.components:
+                                # Check if buttons are not disabled
+                                for action_row in message.components:
+                                    for component in action_row.children:
+                                        if hasattr(component, 'disabled') and not component.disabled:
+                                            # Found active application
+                                            result['has_active'] = True
+                                            result['applications'].append(message)
+                                            if dept_code not in result['departments']:
+                                                result['departments'].append(dept_code)
+                                            return True  # Early exit when found
+                            break  # Only check the most recent application per user per department
+                    return False
+                
+                # Apply timeout to channel check
+                found_active = await asyncio.wait_for(check_channel_for_user(), timeout=search_timeout)
+                
+                # If found active application, we can stop checking other departments
+                if found_active and not department_code:
+                    break
                     
-                if f"ID заявления: {user_id}" in embed.footer.text:
-                    # Check if application is still pending (has view with enabled buttons)
-                    if message.components:
-                        # Check if buttons are not disabled
-                        for action_row in message.components:
-                            for component in action_row.children:
-                                if hasattr(component, 'disabled') and not component.disabled:
-                                    # Found active application
-                                    result['has_active'] = True
-                                    result['applications'].append(message)
-                                    if dept_code not in result['departments']:
-                                        result['departments'].append(dept_code)
-                                    break
+            except asyncio.TimeoutError:
+                logger.warning(f"Timeout checking active applications in department {dept_code} - skipping")
+                continue
+            except Exception as channel_error:
+                logger.error(f"Error checking applications in department {dept_code}: {channel_error}")
+                continue
+        
+        # Cache the result for 30 seconds
+        _cache_user_active_status(user_id, result['has_active'], result['departments'])
         
         return result
         

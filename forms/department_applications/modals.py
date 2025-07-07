@@ -777,7 +777,7 @@ class FinalReviewView(ui.View):
         app_type_text = "Заявление на вступление" if application_data['application_type'] == 'join' else "Заявление на перевод"
         
         embed = discord.Embed(
-            title=f"{app_type_text} в {application_data['department_code']}",
+            description=f"## {app_type_text} в {application_data['department_code']} от {user.mention}",
             color=discord.Color.blue(),
             timestamp=datetime.fromisoformat(application_data['timestamp']).replace(tzinfo=timezone(timedelta(hours=3)))
         )

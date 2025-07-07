@@ -43,8 +43,19 @@ class DepartmentApplicationView(ui.View):
                 except (ValueError, IndexError):
                     pass
             
-            # Извлекаем department_code из title
-            if embed.title:
+            # Извлекаем department_code из description (новый формат)
+            if embed.description:
+                # Ищем в description после "в " и до " от"
+                if " в " in embed.description and " от" in embed.description:
+                    dept_part = embed.description.split(" в ")[-1].split(" от")[0]
+                    # Убираем лишние слова
+                    data['department_code'] = dept_part.strip()
+                    
+                # Определяем тип заявления
+                if "перевод" in embed.description.lower():
+                    data['application_type'] = 'transfer'
+            # Fallback: извлекаем department_code из title (старый формат)
+            elif embed.title:
                 # Ищем в title после "в "
                 if " в " in embed.title:
                     dept_part = embed.title.split(" в ")[-1]

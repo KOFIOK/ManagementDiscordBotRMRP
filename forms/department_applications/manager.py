@@ -364,8 +364,13 @@ class DepartmentApplicationManager:
                         embed = message.embeds[0]
                         
                         # Check if it's a department application embed
-                        if (embed.title and "Заявление в подразделение" in embed.title and
-                            embed.fields):
+                        is_dept_application = False
+                        if embed.description and ("Заявление на вступление в" in embed.description or "Заявление на перевод в" in embed.description):
+                            is_dept_application = True
+                        elif embed.title and "Заявление в подразделение" in embed.title:
+                            is_dept_application = True
+                        
+                        if (is_dept_application and embed.fields):
                             
                             # Check if application is still pending (no processed status)
                             is_pending = True

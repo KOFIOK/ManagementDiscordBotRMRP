@@ -554,7 +554,6 @@ class CacheAdminSlashCommands(commands.Cog):
             except:
                 pass
 
-
 async def setup(bot):
     """Загрузка Cog"""
     await bot.add_cog(CacheAdminSlashCommands(bot))

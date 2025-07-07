@@ -172,6 +172,53 @@ async def on_ready():
         print(f"❌ Error adding warehouse views to bot: {e}")
         import traceback
         print(f"🔍 Add view traceback: {traceback.format_exc()}")
+
+    # Add safe documents persistent views
+    print("🔄 Adding safe documents persistent views...")
+    try:
+        from forms.safe_documents import SafeDocumentsPinView, SafeDocumentsApplicationView, SafeDocumentsApprovedView, SafeDocumentsRejectedView, setup_safe_documents_system
+        print("✅ Safe documents views imported successfully")
+        
+        # Add persistent views
+        bot.add_view(SafeDocumentsPinView())  # Persistent pin message view
+        print("✅ SafeDocumentsPinView added")
+        
+        # Add SafeDocumentsApplicationView with dummy data for persistent view functionality
+        dummy_application_data = {
+            'user_id': 0,
+            'username': 'dummy',
+            'timestamp': '2024-01-01T00:00:00',
+            'status': 'pending',
+            'name': 'dummy',
+            'static': 'dummy',
+            'documents': 'dummy',
+            'phone': 'dummy',
+            'email': 'dummy'
+        }
+        bot.add_view(SafeDocumentsApplicationView(dummy_application_data))
+        print("✅ SafeDocumentsApplicationView added with dummy data")
+        
+        # Add specialized views for different statuses
+        bot.add_view(SafeDocumentsApprovedView(dummy_application_data))
+        print("✅ SafeDocumentsApprovedView added")
+        
+        bot.add_view(SafeDocumentsRejectedView(dummy_application_data))
+        print("✅ SafeDocumentsRejectedView added")
+        
+        print('✅ Safe documents persistent views added to bot')
+    except Exception as e:
+        print(f"❌ Error adding safe documents views to bot: {e}")
+        import traceback
+        print(f"🔍 Safe documents traceback: {traceback.format_exc()}")
+
+    # Setup safe documents system
+    print("🔄 Setting up safe documents system...")
+    try:
+        await setup_safe_documents_system(bot)
+    except Exception as e:
+        print(f"❌ Error setting up safe documents system: {e}")
+        import traceback
+        print(f"🔍 Safe documents setup traceback: {traceback.format_exc()}")
       # Setup welcome system events
     print("🔄 Setting up welcome system...")
     setup_welcome_events(bot)

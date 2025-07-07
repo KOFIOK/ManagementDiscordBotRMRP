@@ -9,6 +9,7 @@ Features:
 - Предзагрузка данных для часто используемых операций
 - Безопасная обработка ошибок с fallback
 - Статистика использования кэша
+- BULK PRELOAD - массовая предзагрузка всего листа при старте бота
 """
 
 import asyncio
@@ -30,19 +31,27 @@ class UserDataCache:
         # Защита от рекурсивных вызовов
         self._loading: Dict[int, bool] = {}
         
+        # Флаг предзагрузки всего листа
+        self._bulk_preloaded = False
+        self._bulk_preload_time = None
+        self._bulk_preload_lock = asyncio.Lock()
+        
         # Статистика кэша
         self._stats = {
             'hits': 0,
             'misses': 0,
             'total_requests': 0,
             'cache_size': 0,
-            'last_cleanup': datetime.now()
+            'last_cleanup': datetime.now(),
+            'bulk_preload_count': 0,
+            'bulk_preload_time': None
         }
         
         # Настройки
-        self.CACHE_TTL = 1800  # 30 минут TTL (было 5 минут)
+        self.CACHE_TTL = 600  # 10 минут TTL (было 30 минут)
         self.MAX_CACHE_SIZE = 2000  # Максимум записей в кэше (было 1000)
-        self.CLEANUP_INTERVAL = 1800  # Очистка каждые 30 минут (было 10)
+        self.CLEANUP_INTERVAL = 600  # Очистка каждые 10 минут (было 30)
+        self.BULK_PRELOAD_TTL = 3600  # Перезагрузка всего листа каждый час
     
     async def get_user_info(self, user_id: int, force_refresh: bool = False) -> Optional[Dict[str, Any]]:
         """
@@ -56,6 +65,18 @@ class UserDataCache:
             Dict с данными пользователя или None если не найден
         """
         self._stats['total_requests'] += 1
+        
+        # АВТОМАТИЧЕСКАЯ ПРЕДЗАГРУЗКА при первом запросе
+        if not self._bulk_preloaded and not self._loading.get('__bulk_preload__', False):
+            print(f"🔄 AUTO BULK PRELOAD: Запускаем автоматическую предзагрузку")
+            self._loading['__bulk_preload__'] = True
+            try:
+                # Запускаем предзагрузку в фоне (не блокируем текущий запрос)
+                asyncio.create_task(self._auto_bulk_preload())
+            except Exception as e:
+                print(f"❌ AUTO BULK PRELOAD ERROR: {e}")
+            finally:
+                self._loading.pop('__bulk_preload__', None)
         
         # Защита от рекурсивных вызовов
         if self._loading.get(user_id, False):
@@ -77,6 +98,13 @@ class UserDataCache:
         self._loading[user_id] = True
         
         try:            
+            # Если предзагрузка прошла, но пользователь не найден - не идем в Google Sheets
+            if self._bulk_preloaded and user_id not in self._cache:
+                print(f"🚫 BULK MISS: Пользователь {user_id} не найден в предзагруженных данных")
+                # Сохраняем отрицательный результат
+                self._store_in_cache(user_id, None)
+                return None
+            
             # Пытаемся использовать оптимизированный запрос только если он не будет вызывать рекурсию
             user_data = None
             
@@ -84,14 +112,14 @@ class UserDataCache:
             try:
                 from utils.user_database import UserDatabase
                 user_data = await UserDatabase._get_user_info_original(user_id)
-                print(f"� DIRECT: Используем прямой запрос для {user_id}")
+                print(f"🔍 DIRECT: Используем прямой запрос для {user_id}")
             except Exception as e:
                 print(f"⚠️ DIRECT FALLBACK: {e}")
                 # Если прямой запрос не работает, пробуем оптимизированный
                 try:
                     from utils.sheets_optimization import get_user_fast_optimized
                     user_data = await get_user_fast_optimized(user_id)
-                    print(f"� FAST OPTIMIZED: Используем оптимизированный запрос для {user_id}")
+                    print(f"🚀 FAST OPTIMIZED: Используем оптимизированный запрос для {user_id}")
                 except Exception as e2:
                     print(f"❌ OPTIMIZED FAILED: {e2}")
                     user_data = None
@@ -117,6 +145,18 @@ class UserDataCache:
         finally:
             # Всегда очищаем флаг загрузки
             self._loading.pop(user_id, None)
+    
+    async def _auto_bulk_preload(self):
+        """Автоматическая предзагрузка в фоне"""
+        try:
+            print(f"🔄 AUTO BULK PRELOAD: Запуск фоновой предзагрузки")
+            success = await self.bulk_preload_all_users()
+            if success:
+                print(f"✅ AUTO BULK PRELOAD: Фоновая предзагрузка завершена успешно")
+            else:
+                print(f"❌ AUTO BULK PRELOAD: Фоновая предзагрузка не удалась")
+        except Exception as e:
+            print(f"❌ AUTO BULK PRELOAD ERROR: {e}")
     
     def _is_cached(self, user_id: int) -> bool:
         """Проверить, есть ли действительные данные в кэше"""
@@ -323,6 +363,125 @@ class UserDataCache:
         print(f"✅ CACHE PRELOAD завершена: {len(results)} пользователей обработано")
         return results
     
+    async def bulk_preload_all_users(self, force_refresh: bool = False) -> bool:
+        """
+        МАССОВАЯ ПРЕДЗАГРУЗКА всего листа "Личный Состав" в кэш
+        
+        Загружает ВСЕ данные пользователей одним запросом к Google Sheets
+        и кэширует их для быстрого доступа. Предотвращает превышение лимитов API.
+        
+        Args:
+            force_refresh: Принудительно обновить даже если данные свежие
+            
+        Returns:
+            bool: True если предзагрузка прошла успешно
+        """
+        async with self._bulk_preload_lock:
+            # Проверяем, нужна ли предзагрузка
+            if not force_refresh and self._is_bulk_preload_valid():
+                print(f"📋 BULK PRELOAD: Данные свежие, пропускаем предзагрузку")
+                return True
+            
+            print(f"🚀 BULK PRELOAD: Начинаем массовую предзагрузку листа 'Личный Состав'")
+            start_time = datetime.now()
+            
+            try:
+                # Получаем все данные листа одним запросом
+                from utils.google_sheets import sheets_manager
+                
+                # Инициализируем sheets manager если нужно
+                if not hasattr(sheets_manager, 'client') or not sheets_manager.client:
+                    await sheets_manager.async_initialize()
+                
+                # Получаем worksheet
+                worksheet = sheets_manager.get_worksheet('Личный Состав')
+                if not worksheet:
+                    print(f"❌ BULK PRELOAD: Лист 'Личный Состав' не найден")
+                    return False
+                
+                # ОДИН запрос к API - получаем все данные листа
+                print(f"📊 BULK PRELOAD: Загружаем все данные листа одним запросом...")
+                all_records = worksheet.get_all_records()
+                
+                # Парсим и кэшируем все записи
+                preloaded_count = 0
+                error_count = 0
+                
+                for record in all_records:
+                    try:
+                        # Извлекаем Discord ID
+                        discord_id_str = str(record.get('Discord ID', '')).strip()
+                        if not discord_id_str or discord_id_str == '':
+                            continue
+                        
+                        try:
+                            discord_id = int(discord_id_str)
+                        except (ValueError, TypeError):
+                            continue
+                        
+                        # Формируем данные пользователя
+                        user_data = {
+                            'first_name': str(record.get('Имя', '')).strip(),
+                            'last_name': str(record.get('Фамилия', '')).strip(),
+                            'static': str(record.get('Статик', '')).strip(),
+                            'rank': str(record.get('Звание', '')).strip(),
+                            'department': str(record.get('Подразделение', '')).strip(),
+                            'position': str(record.get('Должность', '')).strip(),
+                            'discord_id': discord_id
+                        }
+                        
+                        # Создаем полное имя
+                        full_name = f"{user_data['first_name']} {user_data['last_name']}".strip()
+                        user_data['full_name'] = full_name
+                        
+                        # Сохраняем в кэш (с продленным TTL для bulk данных)
+                        self._store_in_cache_bulk(discord_id, user_data)
+                        preloaded_count += 1
+                        
+                    except Exception as record_error:
+                        error_count += 1
+                        continue
+                
+                # Отмечаем успешную предзагрузку
+                self._bulk_preloaded = True
+                self._bulk_preload_time = datetime.now()
+                self._stats['bulk_preload_count'] = preloaded_count
+                self._stats['bulk_preload_time'] = self._bulk_preload_time
+                
+                load_time = (datetime.now() - start_time).total_seconds()
+                
+                print(f"✅ BULK PRELOAD: Завершена за {load_time:.2f}s")
+                print(f"   📦 Предзагружено: {preloaded_count} пользователей")
+                print(f"   ❌ Ошибок: {error_count}")
+                print(f"   📊 Размер кэша: {len(self._cache)} записей")
+                
+                return True
+                
+            except Exception as e:
+                print(f"❌ BULK PRELOAD ERROR: {e}")
+                import traceback
+                traceback.print_exc()
+                return False
+    
+    def _is_bulk_preload_valid(self) -> bool:
+        """Проверить, актуальна ли массовая предзагрузка"""
+        if not self._bulk_preloaded or not self._bulk_preload_time:
+            return False
+        
+        # Проверяем TTL предзагрузки
+        age = datetime.now() - self._bulk_preload_time
+        return age.total_seconds() < self.BULK_PRELOAD_TTL
+    
+    def _store_in_cache_bulk(self, user_id: int, user_data: Optional[Dict[str, Any]]):
+        """Сохранить данные в кэш при массовой предзагрузке (с продленным TTL)"""
+        # Для bulk данных используем более длительный TTL
+        bulk_ttl = max(self.CACHE_TTL, self.BULK_PRELOAD_TTL)
+        
+        # Сохраняем данные
+        self._cache[user_id] = user_data
+        self._expiry[user_id] = datetime.now() + timedelta(seconds=bulk_ttl)
+        self._stats['cache_size'] = len(self._cache)
+    
     async def background_cleanup_task(self):
         """Фоновая задача для периодической очистки кэша"""
         while True:
@@ -349,6 +508,43 @@ user_cache = UserDataCache()
 
 # Глобальный экземпляр кэша для использования во всех модулях
 _global_cache = UserDataCache()
+
+
+async def initialize_user_cache(force_refresh: bool = False) -> bool:
+    """
+    Инициализация кэша с предзагрузкой всех пользователей
+    
+    ДОЛЖНА ВЫЗЫВАТЬСЯ ПРИ СТАРТЕ БОТА для предотвращения превышения лимитов API
+    
+    Args:
+        force_refresh: Принудительно обновить даже если данные свежие
+        
+    Returns:
+        bool: True если инициализация прошла успешно
+    """
+    print(f"🚀 CACHE INIT: Инициализация кэша пользователей")
+    return await _global_cache.bulk_preload_all_users(force_refresh)
+
+
+async def refresh_user_cache() -> bool:
+    """
+    Принудительное обновление всего кэша
+    
+    Returns:
+        bool: True если обновление прошло успешно
+    """
+    print(f"🔄 CACHE REFRESH: Принудительное обновление кэша")
+    return await _global_cache.bulk_preload_all_users(force_refresh=True)
+
+
+def is_cache_initialized() -> bool:
+    """
+    Проверить, инициализирован ли кэш
+    
+    Returns:
+        bool: True если кэш инициализирован
+    """
+    return _global_cache._bulk_preloaded and _global_cache._is_bulk_preload_valid()
 
 
 async def get_cached_user_info(user_id: int, force_refresh: bool = False) -> Optional[Dict[str, Any]]:
@@ -498,6 +694,20 @@ async def get_user_position_fast(user_id: int) -> str:
 
 
 # =================== СОВМЕСТИМОСТЬ СО СТАРЫМ КОДОМ ===================
+
+def get_cached_user_info_sync(user_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Синхронное получение данных пользователя ТОЛЬКО из кэша
+    Используется для быстрого автозаполнения форм
+    """
+    try:
+        if _global_cache._is_cached(user_id):
+            cached_data = _global_cache._cache.get(user_id)
+            if cached_data and cached_data != "NOT_FOUND":
+                return cached_data.copy()
+        return None
+    except Exception:
+        return None
 
 # Алиасы для совместимости с существующим кодом warehouse
 async def get_warehouse_user_data(user_id: int) -> Dict[str, str]:

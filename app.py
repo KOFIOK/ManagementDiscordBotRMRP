@@ -86,6 +86,20 @@ async def on_ready():
         print(f'❌ Error initializing Google Sheets: {e}')
         import traceback
         traceback.print_exc()
+
+    # ИНИЦИАЛИЗАЦИЯ КЭША ПОЛЬЗОВАТЕЛЕЙ - предотвращает превышение лимитов API
+    try:
+        print('🚀 Initializing user cache with bulk preload...')
+        from utils.user_cache import initialize_user_cache
+        cache_success = await initialize_user_cache()
+        if cache_success:
+            print('✅ User cache initialized successfully with bulk preload')
+        else:
+            print('⚠️ User cache bulk preload failed - will use fallback loading')
+    except Exception as e:
+        print(f'❌ Error initializing user cache: {e}')
+        import traceback
+        traceback.print_exc()
       # Create persistent button views
     try:
         print("🔄 Adding persistent button views...")

@@ -81,6 +81,54 @@ class DismissalReportButton(ui.View):
         await interaction.response.send_modal(modal)
 
 
+class DeletionConfirmationView(ui.View):
+    """Confirmation view for deletion actions"""
+    
+    def __init__(self, original_message: discord.Message, user_name: str):
+        super().__init__(timeout=60)
+        self.original_message = original_message
+        self.user_name = user_name
+        self.confirmed = None  # None = timeout, True = confirmed, False = cancelled
+    
+    @discord.ui.button(label="Да, удалить", style=discord.ButtonStyle.red, emoji="🗑️")
+    async def confirm_deletion(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.confirmed = True
+        try:
+            # Delete the original message
+            await self.original_message.delete()
+            
+            # Send ephemeral confirmation
+            await interaction.response.send_message(
+                f"✅ Рапорт на увольнение пользователя {self.user_name} был удален.",
+                ephemeral=True
+            )
+            
+        except discord.NotFound:
+            await interaction.response.send_message(
+                "❌ Сообщение уже было удалено.",
+                ephemeral=True
+            )
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                "❌ Нет прав для удаления этого сообщения.",
+                ephemeral=True
+            )
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Произошла ошибка при удалении: {str(e)}",
+                ephemeral=True
+            )
+        finally:
+            self.stop()
+    
+    @discord.ui.button(label="Отмена", style=discord.ButtonStyle.secondary)
+    async def cancel_deletion(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.confirmed = False
+        # Просто закрываем диалог без дополнительных сообщений
+        await interaction.response.edit_message(view=None)
+        self.stop()
+
+
 class DismissalApprovalView(ui.View):
     """Approval/Rejection view for dismissal reports with complex processing logic"""
     def __init__(self, user_id=None, is_automatic=False):
@@ -143,6 +191,66 @@ class DismissalApprovalView(ui.View):
                     
         except Exception as e:
             await self._handle_rejection_error(interaction, e)
+
+    @discord.ui.button(label="🗑️ Удалить", style=discord.ButtonStyle.grey, custom_id="delete_dismissal")
+    async def delete_dismissal(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Delete dismissal report (author or admins only)"""
+        try:
+            # Check deletion permissions
+            if not await self._check_delete_permissions(interaction):
+                error_message = await self._get_delete_permission_error_message(interaction)
+                await interaction.response.send_message(error_message, ephemeral=True)
+                return
+            
+            # Extract report information for confirmation
+            target_user, _ = self._extract_target_user(interaction)
+            form_data, _ = self._extract_form_data(interaction.message.embeds[0])
+            
+            # Create confirmation embed
+            confirmation_embed = discord.Embed(
+                title="⚠️ Подтверждение удаления",
+                description=(
+                    f"Вы действительно хотите **удалить** рапорт на увольнение?\n\n"
+                    f"**Увольняемый:** {target_user.display_name}\n"
+                    f"**Имя Фамилия:** {form_data.get('name', 'Неизвестно')}\n"
+                    f"**Статик:** {form_data.get('static', 'Неизвестно')}\n"
+                    f"**Причина:** {form_data.get('reason', 'Неизвестно')}\n\n"
+                    f"⚠️ **Это действие нельзя отменить!**"
+                ),
+                color=discord.Color.orange()
+            )
+            
+            # Create confirmation view
+            confirmation_view = DeletionConfirmationView(
+                interaction.message, 
+                target_user.display_name
+            )
+            await interaction.response.send_message(
+                embed=confirmation_embed,
+                view=confirmation_view,
+                ephemeral=True
+            )
+            
+            # Wait for confirmation
+            await confirmation_view.wait()
+            
+            # Process result based on confirmation state
+            if confirmation_view.confirmed is True:
+                # Deletion confirmed and already processed in DeletionConfirmationView
+                pass  # No additional action needed
+            elif confirmation_view.confirmed is False:
+                # Deletion cancelled - dialog already closed, no additional message needed
+                pass  # No additional action needed
+            else:
+                # Timeout occurred
+                await interaction.edit_original_response(
+                    content="⏰ Время ожидания истекло. Удаление отменено.",
+                    embed=None,
+                    view=None
+                )
+        
+        except Exception as e:
+            await self._handle_deletion_error(interaction, e)
 
     def _extract_target_user(self, interaction: discord.Interaction):
         """Extract target user from view or embed footer, creating MockUser if user left server"""
@@ -926,7 +1034,8 @@ class DismissalApprovalView(ui.View):
     async def _handle_approval_error(self, interaction: discord.Interaction, error: Exception):
         """Handle errors in approval process with fallback responses."""
         print(f"Error in dismissal approval: {error}")
-        try:            await interaction.followup.send(
+        try:
+            await interaction.followup.send(
                 DismissalConstants.PROCESSING_ERROR_APPROVAL,
                 ephemeral=True
             )
@@ -939,6 +1048,152 @@ class DismissalApprovalView(ui.View):
             except:
                 pass
 
+    # Methods for deletion functionality
+    async def _check_delete_permissions(self, interaction: discord.Interaction) -> bool:
+        """
+        Check if the user has permission to delete the dismissal report.
+        Permissions: report author, config admins, or Discord admins.
+        """
+        try:
+            # Get report author from embed footer
+            embed = interaction.message.embeds[0]
+            report_author_id = None
+            
+            if embed.footer and embed.footer.text:
+                footer_text = embed.footer.text
+                if DismissalConstants.REPORT_SENDER_PREFIX in footer_text:
+                    author_name = footer_text.replace(DismissalConstants.REPORT_SENDER_PREFIX, "").strip()
+                    # Try to find the author by name
+                    for member in interaction.guild.members:
+                        if member.name == author_name or member.display_name == author_name:
+                            report_author_id = member.id
+                            break
+            
+            # Check if user is the report author
+            if report_author_id and interaction.user.id == report_author_id:
+                return True
+            
+            # Check if user has Discord admin permissions
+            if interaction.user.guild_permissions.administrator:
+                return True
+            
+            # Check if user is in config admins
+            try:
+                config = load_config()
+                admins = config.get('moderators', {}).get('admins', [])
+                if interaction.user.id in admins:
+                    return True
+            except Exception:
+                # If config loading fails, fall back to Discord permissions only
+                pass
+            
+            return False
+            
+        except Exception:
+            return False
+
+    async def _get_delete_permission_error_message(self, interaction: discord.Interaction) -> str:
+        """Get appropriate error message for delete permission denial"""
+        try:
+            # Get report author from embed footer
+            embed = interaction.message.embeds[0]
+            if embed.footer and embed.footer.text:
+                footer_text = embed.footer.text
+                if DismissalConstants.REPORT_SENDER_PREFIX in footer_text:
+                    author_name = footer_text.replace(DismissalConstants.REPORT_SENDER_PREFIX, "").strip()
+                    return (
+                        f"❌ У вас нет прав для удаления этого рапорта.\n"
+                        f"Удалить рапорт может только:\n"
+                        f"• Автор рапорта ({author_name})\n"
+                        f"• Администратор сервера\n"
+                        f"• Администратор из конфигурации бота"
+                    )
+            
+            return (
+                "❌ У вас нет прав для удаления этого рапорта.\n"
+                "Удалить рапорт может только автор рапорта или администратор."
+            )
+        except Exception:
+            return "❌ У вас нет прав для удаления этого рапорта."
+
+    async def _handle_deletion_error(self, interaction: discord.Interaction, error: Exception):
+        """Handle errors during deletion process"""
+        error_message = f"❌ Произошла ошибка при удалении рапорта: {str(error)}"
+        
+        try:
+            if interaction.response.is_done():
+                await interaction.edit_original_response(
+                    content=error_message,
+                    embed=None,
+                    view=None
+                )
+            else:
+                await interaction.response.send_message(error_message, ephemeral=True)
+        except Exception:
+            # If we can't send the error message, at least log it
+            print(f"Error in deletion process: {error}")
+            import traceback
+            traceback.print_exc()
+
+    async def _extract_target_user_from_embed(self, interaction):
+        """Extract target user from embed description (mention)"""
+        try:
+            embed = interaction.message.embeds[0]
+            description = embed.description
+            
+            # Extract user ID from mention in description
+            import re
+            user_mention_pattern = r'<@(\d+)>'
+            match = re.search(user_mention_pattern, description)
+            if match:
+                user_id = int(match.group(1))
+                # Try to get member object (may be None if user left)
+                target_user = interaction.guild.get_member(user_id)
+                
+                if not target_user:
+                    # Create mock user for users who left
+                    class MockUser:
+                        def __init__(self, user_id, name):
+                            self.id = user_id
+                            self.name = name
+                            self.display_name = name
+                            self.mention = f"<@{user_id}>"
+                            self.roles = []
+                            self._is_mock = True
+                        
+                        def __str__(self):
+                            return self.display_name
+                    
+                    target_user = MockUser(user_id, "Покинувший пользователь")
+                return target_user
+            
+            return None
+            
+        except Exception as e:
+            print(f"Error extracting target user: {e}")
+            return None
+    
+    def _extract_current_data_from_embed(self, interaction):
+        """Extract current data from embed fields"""
+        try:
+            embed = interaction.message.embeds[0]
+            data = {}
+            
+            for field in embed.fields:
+                if field.name == "Имя Фамилия":
+                    data['name'] = field.value
+                elif field.name == "Статик":
+                    data['static'] = field.value
+                elif field.name == "Подразделение":
+                    data['department'] = field.value
+                elif field.name == "Воинское звание":
+                    data['rank'] = field.value
+            
+            return data            
+        except Exception as e:
+            print(f"Error extracting current data: {e}")
+            return {}
+    
     async def _request_rejection_reason(self, interaction, target_user):
         """Request rejection reason from moderator via modal."""
         try:
@@ -1165,6 +1420,66 @@ class AutomaticDismissalApprovalView(ui.View):
                 except:
                     pass
     
+    @discord.ui.button(label="🗑️ Удалить", style=discord.ButtonStyle.grey, custom_id="auto_delete_dismissal")
+    async def delete_dismissal(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Delete automatic dismissal report (author or admins only)"""
+        try:
+            # Check deletion permissions (using same method as main class)
+            if not await self._check_delete_permissions(interaction):
+                error_message = await self._get_delete_permission_error_message(interaction)
+                await interaction.response.send_message(error_message, ephemeral=True)
+                return
+            
+            # Extract report information for confirmation
+            target_user = await self._extract_target_user_from_embed(interaction)
+            current_data = self._extract_current_data_from_embed(interaction)
+            
+            # Create confirmation embed
+            confirmation_embed = discord.Embed(
+                title="⚠️ Подтверждение удаления",
+                description=(
+                    f"Вы действительно хотите **удалить** автоматический рапорт на увольнение?\n\n"
+                    f"**Увольняемый:** {target_user.display_name if target_user else 'Неизвестно'}\n"
+                    f"**Имя Фамилия:** {current_data.get('name', 'Неизвестно')}\n"
+                    f"**Статик:** {current_data.get('static', 'Неизвестно')}\n"
+                    f"**Причина:** {current_data.get('reason', 'Неизвестно')}\n\n"
+                    f"⚠️ **Это действие нельзя отменить!**"
+                ),
+                color=discord.Color.orange()
+            )
+            
+            # Create confirmation view
+            confirmation_view = DeletionConfirmationView(
+                interaction.message, 
+                target_user.display_name if target_user else "Неизвестный пользователь"
+            )
+            await interaction.response.send_message(
+                embed=confirmation_embed,
+                view=confirmation_view,
+                ephemeral=True
+            )
+            
+            # Wait for confirmation
+            await confirmation_view.wait()
+            
+            # Process result based on confirmation state
+            if confirmation_view.confirmed is True:
+                # Deletion confirmed and already processed in DeletionConfirmationView
+                pass  # No additional action needed
+            elif confirmation_view.confirmed is False:
+                # Deletion cancelled - dialog already closed, no additional message needed
+                pass  # No additional action needed
+            else:
+                # Timeout occurred
+                await interaction.edit_original_response(
+                    content="⏰ Время ожидания истекло. Удаление отменено.",
+                    embed=None,
+                    view=None
+                )
+        
+        except Exception as e:
+            await self._handle_deletion_error(interaction, e)
+
     async def _extract_target_user_from_embed(self, interaction):
         """Extract target user from embed description (mention)"""
         try:

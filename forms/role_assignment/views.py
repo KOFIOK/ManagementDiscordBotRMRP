@@ -85,9 +85,10 @@ class RoleAssignmentView(ui.View):
 class ApprovedApplicationView(ui.View):
     """View to show after application is approved"""
     
-    def __init__(self):
+    def __init__(self, application_data: dict = None):
         super().__init__(timeout=None)
-    
+        self.application_data = application_data or {}
+
     @discord.ui.button(label="✅ Одобрено", style=discord.ButtonStyle.green, custom_id="status_approved", disabled=True)
     async def approved_status(self, interaction: discord.Interaction, button: discord.ui.Button):
         # This button is disabled and just for visual indication
@@ -109,9 +110,10 @@ class ProcessingApplicationView(ui.View):
 class RejectedApplicationView(ui.View):
     """View to show after application is rejected"""
     
-    def __init__(self):
+    def __init__(self, application_data: dict = None):
         super().__init__(timeout=None)
-    
+        self.application_data = application_data or {}
+
     @discord.ui.button(label="❌ Отказано", style=discord.ButtonStyle.red, custom_id="status_rejected", disabled=True)
     async def rejected_status(self, interaction: discord.Interaction, button: discord.ui.Button):
         # This button is disabled and just for visual indication

@@ -14,11 +14,17 @@ from .role_assignment import (
     MilitaryApplicationModal,
     SupplierApplicationModal,
     CivilianApplicationModal,
+    MilitaryEditModal,
+    CivilianEditModal,
+    SupplierEditModal,
     RoleApplicationApprovalView,
     send_role_assignment_message,
     restore_role_assignment_views,
     restore_approval_views
 )
+
+# Create alias for backward compatibility
+send_role_assignment_button_message = send_role_assignment_message
 
 # Re-export everything for backward compatibility
 __all__ = [
@@ -29,8 +35,12 @@ __all__ = [
     'MilitaryApplicationModal',
     'SupplierApplicationModal',
     'CivilianApplicationModal',
+    'MilitaryEditModal',
+    'CivilianEditModal',
+    'SupplierEditModal',
     'RoleApplicationApprovalView',
     'send_role_assignment_message',
+    'send_role_assignment_button_message',  # Alias for backward compatibility
     'restore_role_assignment_views',
     'restore_approval_views'
 ]

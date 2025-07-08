@@ -488,7 +488,7 @@ class SupplierApplicationModal(ui.Modal):
         
         self.faction_input = ui.TextInput(
             label="Фракция, звание, должность",
-            placeholder="Например: ФСВНГ, Подполковник",
+            placeholder="Например: ФСИН, МО РФ, ФСБ",
             min_length=1,
             max_length=100,
             required=True
@@ -631,6 +631,481 @@ class SupplierApplicationModal(ui.Modal):
             print(f"Error sending supplier application: {e}")
             await interaction.response.send_message(
                 "❌ Произошла ошибка при отправке заявки. Попробуйте позже.",
+                ephemeral=True
+            )
+
+
+# =============== МОДАЛЬНЫЕ ФОРМЫ ДЛЯ РЕДАКТИРОВАНИЯ ===============
+
+class MilitaryEditModal(ui.Modal):
+    """Modal for editing military service role applications"""
+    
+    def __init__(self, application_data: dict):
+        super().__init__(title="✏️ Редактирование военной заявки")
+        self.application_data = application_data
+        
+        # Предзаполняем поля текущими данными
+        self.name_input = ui.TextInput(
+            label="Имя Фамилия",
+            placeholder="Например: Олег Дубов",
+            min_length=2,
+            max_length=50,
+            required=True,
+            default=application_data.get('name', '')
+        )
+        self.add_item(self.name_input)
+        
+        self.static_input = ui.TextInput(
+            label="Статик",
+            placeholder="123-456 (допускается 5-6 цифр)",
+            min_length=5,
+            max_length=7,
+            required=True,
+            default=application_data.get('static', '')
+        )
+        self.add_item(self.static_input)
+        
+        self.rank_input = ui.TextInput(
+            label="Звание",
+            placeholder="Обычно: Рядовой",
+            min_length=1,
+            max_length=30,
+            required=True,
+            default=application_data.get('rank', 'Рядовой')
+        )
+        self.add_item(self.rank_input)
+        
+        self.recruitment_type_input = ui.TextInput(
+            label="Порядок набора",
+            placeholder="Экскурсия или Призыв",
+            min_length=1,
+            max_length=20,
+            required=True,
+            default=application_data.get('recruitment_type', '')
+        )
+        self.add_item(self.recruitment_type_input)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        """Обработка редактирования военной заявки"""
+        try:
+            # Валидация и форматирование статика
+            static = self.static_input.value.strip()
+            formatted_static = self._format_static(static)
+            if not formatted_static:
+                await interaction.response.send_message(
+                    "❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.\n"
+                    "Примеры: 123456, 123-456, 12345, 12-345, 123 456",
+                    ephemeral=True
+                )
+                return
+            
+            # Валидация типа набора
+            recruitment_type = self.recruitment_type_input.value.strip().lower()
+            if recruitment_type not in ["экскурсия", "призыв"]:
+                await interaction.response.send_message(
+                    "❌ Порядок набора должен быть: 'Экскурсия' или 'Призыв'.",
+                    ephemeral=True
+                )
+                return
+            
+            # Собираем новые данные
+            updated_data = {
+                'name': self.name_input.value.strip(),
+                'static': formatted_static,
+                'rank': self.rank_input.value.strip(),
+                'recruitment_type': recruitment_type.title(),
+                # Сохраняем оригинальные данные
+                'type': self.application_data['type'],
+                'user_id': self.application_data['user_id'],
+                'user_mention': self.application_data.get('user_mention', f"<@{self.application_data['user_id']}>"),
+                'timestamp': self.application_data.get('timestamp')
+            }
+            
+            await self._handle_edit_update(interaction, updated_data)
+            
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Произошла ошибка при редактировании заявки: {str(e)}",
+                ephemeral=True
+            )
+    
+    def _format_static(self, static_input: str) -> str:
+        """Auto-format static number to standard format"""
+        digits_only = re.sub(r'\D', '', static_input.strip())
+        
+        if len(digits_only) == 5:
+            return f"{digits_only[:2]}-{digits_only[2:]}"
+        elif len(digits_only) == 6:
+            return f"{digits_only[:3]}-{digits_only[3:]}"
+        else:
+            return ""
+    
+    async def _handle_edit_update(self, interaction: discord.Interaction, updated_data: dict):
+        """Обновление embed с новыми данными"""
+        try:
+            # Обновляем embed
+            embed = interaction.message.embeds[0]
+            embed.color = discord.Color.blue()  # Оставляем синий цвет для военных
+            
+            # Обновляем поля и удаляем старое поле "Отредактировано" если есть
+            fields_to_remove = []
+            for i, field in enumerate(embed.fields):
+                if field.name == "📝 Имя Фамилия":
+                    embed.set_field_at(i, name="📝 Имя Фамилия", value=updated_data['name'], inline=True)
+                elif field.name == "🔢 Статик":
+                    embed.set_field_at(i, name="🔢 Статик", value=updated_data['static'], inline=True)
+                elif field.name == "🎖️ Звание":
+                    embed.set_field_at(i, name="🎖️ Звание", value=updated_data['rank'], inline=True)
+                elif field.name == "📋 Порядок набора":
+                    embed.set_field_at(i, name="📋 Порядок набора", value=updated_data['recruitment_type'], inline=True)
+                elif field.name == "✏️ Отредактировано":
+                    fields_to_remove.append(i)
+            
+            # Удаляем старые поля "Отредактировано" (в обратном порядке, чтобы не сбить индексы)
+            for i in reversed(fields_to_remove):
+                embed.remove_field(i)
+            
+            # Добавляем обновленную информацию о редактировании
+            embed.add_field(
+                name="✏️ Отредактировано",
+                value=f"{interaction.user.mention}\n{discord.utils.format_dt(discord.utils.utcnow(), 'f')}",
+                inline=True
+            )
+            
+            # Обновляем сообщение
+            await interaction.response.edit_message(embed=embed)
+            
+        except Exception as e:
+            print(f"Error updating military application embed: {e}")
+            await interaction.response.send_message(
+                "❌ Произошла ошибка при обновлении заявки.",
+                ephemeral=True
+            )
+
+
+class CivilianEditModal(ui.Modal):
+    """Modal for editing civilian role applications"""
+    
+    def __init__(self, application_data: dict):
+        super().__init__(title="✏️ Редактирование гражданской заявки")
+        self.application_data = application_data
+        
+        # Предзаполняем поля текущими данными
+        self.name_input = ui.TextInput(
+            label="Имя Фамилия",
+            placeholder="Например: Олег Дубов",
+            min_length=2,
+            max_length=50,
+            required=True,
+            default=application_data.get('name', '')
+        )
+        self.add_item(self.name_input)
+        
+        self.static_input = ui.TextInput(
+            label="Статик",
+            placeholder="123-456 (допускается 5-6 цифр)",
+            min_length=5,
+            max_length=7,
+            required=True,
+            default=application_data.get('static', '')
+        )
+        self.add_item(self.static_input)
+        
+        self.faction_input = ui.TextInput(
+            label="Фракция, звание, должность",
+            placeholder="Например: ФСВНГ, Подполковник, Нач. Упр. Вневедомственной Охраны",
+            min_length=1,
+            max_length=100,
+            required=True,
+            default=application_data.get('faction', '')
+        )
+        self.add_item(self.faction_input)
+        
+        self.purpose_input = ui.TextInput(
+            label="Цель получения роли",
+            placeholder="Например: доступ к пропуску (на территорию в/ч)",
+            min_length=1,
+            max_length=100,
+            required=True,
+            default=application_data.get('purpose', '')
+        )
+        self.add_item(self.purpose_input)
+        
+        self.proof_input = ui.TextInput(
+            label="Удостоверение (ссылка)",
+            placeholder="Ссылка на удостоверение",
+            min_length=5,
+            max_length=200,
+            required=True,
+            default=application_data.get('proof', '')
+        )
+        self.add_item(self.proof_input)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        """Обработка редактирования гражданской заявки"""
+        try:
+            # Валидация и форматирование статика
+            static = self.static_input.value.strip()
+            formatted_static = self._format_static(static)
+            if not formatted_static:
+                await interaction.response.send_message(
+                    "❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.\n"
+                    "Примеры: 123456, 123-456, 12345, 12-345, 123 456",
+                    ephemeral=True
+                )
+                return
+            
+            # Валидация ссылки
+            proof = self.proof_input.value.strip()
+            if not self._validate_url(proof):
+                await interaction.response.send_message(
+                    "❌ Пожалуйста, укажите корректную ссылку в поле доказательств.",
+                    ephemeral=True
+                )
+                return
+            
+            # Собираем новые данные
+            updated_data = {
+                'name': self.name_input.value.strip(),
+                'static': formatted_static,
+                'faction': self.faction_input.value.strip(),
+                'purpose': self.purpose_input.value.strip(),
+                'proof': proof,
+                # Сохраняем оригинальные данные
+                'type': self.application_data['type'],
+                'user_id': self.application_data['user_id'],
+                'user_mention': self.application_data.get('user_mention', f"<@{self.application_data['user_id']}>"),
+                'timestamp': self.application_data.get('timestamp')
+            }
+            
+            await self._handle_edit_update(interaction, updated_data)
+            
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Произошла ошибка при редактировании заявки: {str(e)}",
+                ephemeral=True
+            )
+    
+    def _format_static(self, static_input: str) -> str:
+        """Auto-format static number to standard format"""
+        digits_only = re.sub(r'\D', '', static_input.strip())
+        
+        if len(digits_only) == 5:
+            return f"{digits_only[:2]}-{digits_only[2:]}"
+        elif len(digits_only) == 6:
+            return f"{digits_only[:3]}-{digits_only[3:]}"
+        else:
+            return ""
+    
+    def _validate_url(self, url):
+        """Basic URL validation"""
+        url_pattern = re.compile(
+            r'^https?://'  # http:// or https://
+            r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # domain...
+            r'localhost|'  # localhost...
+            r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # ...or ip
+            r'(?::\d+)?'  # optional port
+            r'(?:/?|[/?]\S+)$', re.IGNORECASE)
+        return url_pattern.match(url) is not None
+    
+    async def _handle_edit_update(self, interaction: discord.Interaction, updated_data: dict):
+        """Обновление embed с новыми данными"""
+        try:
+            # Обновляем embed
+            embed = interaction.message.embeds[0]
+            embed.color = discord.Color.orange()  # Оставляем оранжевый цвет для гражданских
+            
+            # Обновляем поля и удаляем старое поле "Отредактировано" если есть
+            fields_to_remove = []
+            for i, field in enumerate(embed.fields):
+                if field.name == "📝 Имя Фамилия":
+                    embed.set_field_at(i, name="📝 Имя Фамилия", value=updated_data['name'], inline=True)
+                elif field.name == "🔢 Статик":
+                    embed.set_field_at(i, name="🔢 Статик", value=updated_data['static'], inline=True)
+                elif field.name == "🏛️ Фракция, звание, должность":
+                    embed.set_field_at(i, name="🏛️ Фракция, звание, должность", value=updated_data['faction'], inline=False)
+                elif field.name == "🎯 Цель получения роли":
+                    embed.set_field_at(i, name="🎯 Цель получения роли", value=updated_data['purpose'], inline=False)
+                elif field.name == "🔗 Удостоверение":
+                    embed.set_field_at(i, name="🔗 Удостоверение", value=f"[Ссылка]({updated_data['proof']})", inline=False)
+                elif field.name == "✏️ Отредактировано":
+                    fields_to_remove.append(i)
+            
+            # Удаляем старые поля "Отредактировано" (в обратном порядке, чтобы не сбить индексы)
+            for i in reversed(fields_to_remove):
+                embed.remove_field(i)
+            
+            # Добавляем обновленную информацию о редактировании
+            embed.add_field(
+                name="✏️ Отредактировано",
+                value=f"{interaction.user.mention}\n{discord.utils.format_dt(discord.utils.utcnow(), 'f')}",
+                inline=True
+            )
+            
+            # Обновляем сообщение
+            await interaction.response.edit_message(embed=embed)
+            
+        except Exception as e:
+            print(f"Error updating civilian application embed: {e}")
+            await interaction.response.send_message(
+                "❌ Произошла ошибка при обновлении заявки.",
+                ephemeral=True
+            )
+
+
+class SupplierEditModal(ui.Modal):
+    """Modal for editing supplier role applications"""
+    
+    def __init__(self, application_data: dict):
+        super().__init__(title="✏️ Редактирование заявки поставщика")
+        self.application_data = application_data
+        
+        # Предзаполняем поля текущими данными
+        self.name_input = ui.TextInput(
+            label="Имя Фамилия",
+            placeholder="Например: Олег Дубов",
+            min_length=2,
+            max_length=50,
+            required=True,
+            default=application_data.get('name', '')
+        )
+        self.add_item(self.name_input)
+        
+        self.static_input = ui.TextInput(
+            label="Статик",
+            placeholder="123-456 (допускается 5-6 цифр)",
+            min_length=5,
+            max_length=7,
+            required=True,
+            default=application_data.get('static', '')
+        )
+        self.add_item(self.static_input)
+        
+        self.faction_input = ui.TextInput(
+            label="Фракция, звание, должность",
+            placeholder="Например: ФСИН, МО РФ, ФСБ",
+            min_length=1,
+            max_length=100,
+            required=True,
+            default=application_data.get('faction', '')
+        )
+        self.add_item(self.faction_input)
+        
+        self.proof_input = ui.TextInput(
+            label="Удостоверение (ссылка)",
+            placeholder="Ссылка на удостоверение",
+            min_length=5,
+            max_length=200,
+            required=True,
+            default=application_data.get('proof', '')
+        )
+        self.add_item(self.proof_input)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        """Обработка редактирования заявки поставщика"""
+        try:
+            # Валидация и форматирование статика
+            static = self.static_input.value.strip()
+            formatted_static = self._format_static(static)
+            if not formatted_static:
+                await interaction.response.send_message(
+                    "❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.\n"
+                    "Примеры: 123456, 123-456, 12345, 12-345, 123 456",
+                    ephemeral=True
+                )
+                return
+            
+            # Валидация ссылки
+            proof = self.proof_input.value.strip()
+            if not self._validate_url(proof):
+                await interaction.response.send_message(
+                    "❌ Пожалуйста, укажите корректную ссылку в поле доказательств.",
+                    ephemeral=True
+                )
+                return
+            
+            # Собираем новые данные
+            updated_data = {
+                'name': self.name_input.value.strip(),
+                'static': formatted_static,
+                'faction': self.faction_input.value.strip(),
+                'proof': proof,
+                # Сохраняем оригинальные данные
+                'type': self.application_data['type'],
+                'user_id': self.application_data['user_id'],
+                'user_mention': self.application_data.get('user_mention', f"<@{self.application_data['user_id']}>"),
+                'timestamp': self.application_data.get('timestamp')
+            }
+            
+            await self._handle_edit_update(interaction, updated_data)
+            
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Произошла ошибка при редактировании заявки: {str(e)}",
+                ephemeral=True
+            )
+    
+    def _format_static(self, static_input: str) -> str:
+        """Auto-format static number to standard format"""
+        digits_only = re.sub(r'\D', '', static_input.strip())
+        
+        if len(digits_only) == 5:
+            return f"{digits_only[:2]}-{digits_only[2:]}"
+        elif len(digits_only) == 6:
+            return f"{digits_only[:3]}-{digits_only[3:]}"
+        else:
+            return ""
+    
+    def _validate_url(self, url):
+        """Basic URL validation"""
+        url_pattern = re.compile(
+            r'^https?://'  # http:// or https://
+            r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # domain...
+            r'localhost|'  # localhost...
+            r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # ...or ip
+            r'(?::\d+)?'  # optional port
+            r'(?:/?|[/?]\S+)$', re.IGNORECASE)
+        return url_pattern.match(url) is not None
+    
+    async def _handle_edit_update(self, interaction: discord.Interaction, updated_data: dict):
+        """Обновление embed с новыми данными"""
+        try:
+            # Обновляем embed
+            embed = interaction.message.embeds[0]
+            embed.color = discord.Color.orange()  # Оставляем оранжевый цвет для поставщиков
+            
+            # Обновляем поля и удаляем старое поле "Отредактировано" если есть
+            fields_to_remove = []
+            for i, field in enumerate(embed.fields):
+                if field.name == "📝 Имя Фамилия":
+                    embed.set_field_at(i, name="📝 Имя Фамилия", value=updated_data['name'], inline=True)
+                elif field.name == "🔢 Статик":
+                    embed.set_field_at(i, name="🔢 Статик", value=updated_data['static'], inline=True)
+                elif field.name == "🏛️ Фракция, звание, должность":
+                    embed.set_field_at(i, name="🏛️ Фракция, звание, должность", value=updated_data['faction'], inline=False)
+                elif field.name == "🔗 Удостоверение":
+                    embed.set_field_at(i, name="🔗 Удостоверение", value=f"[Ссылка]({updated_data['proof']})", inline=False)
+                elif field.name == "✏️ Отредактировано":
+                    fields_to_remove.append(i)
+            
+            # Удаляем старые поля "Отредактировано" (в обратном порядке, чтобы не сбить индексы)
+            for i in reversed(fields_to_remove):
+                embed.remove_field(i)
+            
+            # Добавляем обновленную информацию о редактировании
+            embed.add_field(
+                name="✏️ Отредактировано",
+                value=f"{interaction.user.mention}\n{discord.utils.format_dt(discord.utils.utcnow(), 'f')}",
+                inline=True
+            )
+            
+            # Обновляем сообщение
+            await interaction.response.edit_message(embed=embed)
+            
+        except Exception as e:
+            print(f"Error updating supplier application embed: {e}")
+            await interaction.response.send_message(
+                "❌ Произошла ошибка при обновлении заявки.",
                 ephemeral=True
             )
 

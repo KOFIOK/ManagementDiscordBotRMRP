@@ -22,6 +22,73 @@ class RoleApplicationApprovalView(ui.View):
         super().__init__(timeout=None)
         self.application_data = application_data
     
+    def _extract_application_data_from_embed(self, embed: discord.Embed) -> dict:
+        """Извлечение актуальных данных заявки из embed сообщения"""
+        try:
+            application_data = {}
+            
+            # Извлекаем данные из полей embed
+            for field in embed.fields:
+                if field.name == "👤 Заявитель":
+                    user_mention = field.value
+                    # Extract user ID from mention format <@!123456789> or <@123456789>
+                    import re
+                    match = re.search(r'<@!?(\d+)>', user_mention)
+                    if match:
+                        application_data['user_id'] = int(match.group(1))
+                        application_data['user_mention'] = user_mention
+                elif field.name == "📝 Имя Фамилия":
+                    application_data['name'] = field.value
+                elif field.name == "🔢 Статик":
+                    application_data['static'] = field.value
+                elif field.name == "🎖️ Звание":
+                    application_data['rank'] = field.value
+                elif field.name == "📋 Порядок набора":
+                    application_data['recruitment_type'] = field.value
+                elif field.name == "🏛️ Фракция, звание, должность":
+                    application_data['faction'] = field.value
+                elif field.name == "🎯 Цель получения роли":
+                    application_data['purpose'] = field.value
+                elif field.name == "🔗 Удостоверение":
+                    # Extract URL from markdown link
+                    import re
+                    link_match = re.search(r'\[.*?\]\((.*?)\)', field.value)
+                    if link_match:
+                        application_data['proof'] = link_match.group(1)
+                    else:
+                        application_data['proof'] = field.value
+            
+            # Определяем тип заявки из заголовка embed
+            if embed.title:
+                if "военнослужащего" in embed.title.lower():
+                    application_data['type'] = 'military'
+                elif "доступа к поставкам" in embed.title.lower():
+                    application_data['type'] = 'supplier'
+                elif "госслужащего" in embed.title.lower():
+                    application_data['type'] = 'civilian'
+            
+            # Добавляем timestamp
+            if embed.timestamp:
+                application_data['timestamp'] = embed.timestamp.isoformat()
+            
+            # Сохраняем оригинальные данные из self.application_data для совместимости
+            application_data['original_user_id'] = self.application_data.get('user_id')
+            
+            return application_data
+            
+        except Exception as e:
+            print(f"Error extracting application data from embed: {e}")
+            return {}
+    
+    def _get_current_application_data(self, interaction: discord.Interaction) -> dict:
+        """Получение актуальных (текущих) данных заявки из embed"""
+        # Всегда извлекаем данные из embed, чтобы получить актуальные значения
+        if interaction.message and interaction.message.embeds:
+            return self._extract_application_data_from_embed(interaction.message.embeds[0])
+        
+        # Если embed недоступен, используем оригинальные данные как fallback
+        return self.application_data
+
     @discord.ui.button(label="✅ Одобрить", style=discord.ButtonStyle.green, custom_id="approve_role_app")
     async def approve_application(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Handle application approval"""
@@ -57,6 +124,61 @@ class RoleApplicationApprovalView(ui.View):
             print(f"Error in rejection process: {e}")
             await self._send_error_message(interaction, "Произошла ошибка при отклонении заявки.")
     
+    @discord.ui.button(label="Изменить", style=discord.ButtonStyle.secondary, custom_id="role_assignment:edit_pending", emoji="✏️")
+    async def edit_pending_application(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Редактирование заявки на рассмотрении (только автор или администраторы)"""
+        try:
+            # Получаем актуальные данные из embed (не оригинальные!)
+            current_application_data = self._get_current_application_data(interaction)
+            if not current_application_data:
+                await interaction.response.send_message(
+                    "❌ Не удалось получить данные заявки!",
+                    ephemeral=True
+                )
+                return
+            
+            from utils.config_manager import is_moderator_or_admin, load_config
+            config = load_config()
+            
+            # Проверяем права на редактирование: автор заявки или администратор
+            can_edit = (
+                interaction.user.id == current_application_data.get('user_id') or  # Автор заявки
+                is_moderator_or_admin(interaction.user, config)  # Администратор
+            )
+            
+            if not can_edit:
+                await interaction.response.send_message(
+                    "❌ У вас нет прав для редактирования этой заявки!",
+                    ephemeral=True
+                )
+                return
+            
+            # Показываем модальное окно для редактирования в зависимости от типа заявки
+            application_type = current_application_data.get('type')
+            if application_type == 'military':
+                from .modals import MilitaryEditModal
+                modal = MilitaryEditModal(current_application_data)
+            elif application_type == 'civilian':
+                from .modals import CivilianEditModal
+                modal = CivilianEditModal(current_application_data)
+            elif application_type == 'supplier':
+                from .modals import SupplierEditModal
+                modal = SupplierEditModal(current_application_data)
+            else:
+                await interaction.response.send_message(
+                    "❌ Неизвестный тип заявки!",
+                    ephemeral=True
+                )
+                return
+            
+            await interaction.response.send_modal(modal)
+            
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Произошла ошибка при редактировании заявки: {str(e)}",
+                ephemeral=True
+            )
+
     async def _check_moderator_permissions(self, interaction):
         """Check if user has moderator permissions"""
         config = load_config()
@@ -425,7 +547,7 @@ class RoleApplicationApprovalView(ui.View):
                 audit_embed.add_field(name="Причина принятия", value=recruitment_type.capitalize(), inline=False)
             
             audit_embed.add_field(name="Дата Действия", value=action_date, inline=False)
-            audit_embed.add_field(name="Подразделение", value="Военная Академия", inline=False)
+            audit_embed.add_field(name="Подразделение", value="Военная Академия - ВА", inline=False)
             audit_embed.add_field(name="Воинское звание", value=self.application_data.get("rank", "Рядовой"), inline=False)
             
             audit_embed.set_thumbnail(url="https://i.imgur.com/07MRSyl.png")

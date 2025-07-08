@@ -137,13 +137,13 @@ class RoleApplicationApprovalView(ui.View):
                 )
                 return
             
-            from utils.config_manager import is_moderator_or_admin, load_config
+            from utils.config_manager import is_administrator, load_config
             config = load_config()
             
             # Проверяем права на редактирование: автор заявки или администратор
             can_edit = (
                 interaction.user.id == current_application_data.get('user_id') or  # Автор заявки
-                is_moderator_or_admin(interaction.user, config)  # Администратор
+                is_administrator(interaction.user, config)  # Администратор
             )
             
             if not can_edit:
@@ -176,6 +176,55 @@ class RoleApplicationApprovalView(ui.View):
         except Exception as e:
             await interaction.response.send_message(
                 f"❌ Произошла ошибка при редактировании заявки: {str(e)}",
+                ephemeral=True
+            )
+
+    @discord.ui.button(label="Удалить", style=discord.ButtonStyle.secondary, custom_id="role_assignment:delete_pending", emoji="🗑️")
+    async def delete_pending_application(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Удаление заявки на рассмотрении (только автор или администраторы)"""
+        try:
+            # Получаем актуальные данные из embed
+            current_application_data = self._get_current_application_data(interaction)
+            if not current_application_data:
+                await interaction.response.send_message(
+                    "❌ Не удалось получить данные заявки!",
+                    ephemeral=True
+                )
+                return
+            
+            from utils.config_manager import is_administrator, load_config
+            config = load_config()
+            
+            # Проверяем права на удаление: автор заявки или администратор
+            can_delete = (
+                interaction.user.id == current_application_data.get('user_id') or  # Автор заявки
+                is_administrator(interaction.user, config)  # Администратор
+            )
+            
+            if not can_delete:
+                await interaction.response.send_message(
+                    "❌ У вас нет прав для удаления этой заявки!",
+                    ephemeral=True
+                )
+                return
+            
+            # Показываем подтверждение удаления
+            confirmation_view = DeleteConfirmationView(interaction.message)
+            embed = discord.Embed(
+                title="🗑️ Подтверждение удаления",
+                description="Вы уверены, что хотите удалить эту заявку?\n\n**Это действие нельзя отменить!**",
+                color=discord.Color.orange()
+            )
+            
+            await interaction.response.send_message(
+                embed=embed,
+                view=confirmation_view,
+                ephemeral=True
+            )
+            
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Произошла ошибка при удалении заявки: {str(e)}",
                 ephemeral=True
             )
 
@@ -806,3 +855,69 @@ class RoleApplicationApprovalView(ui.View):
                 
         except Exception as e:
             print(f"❌ Failed to send registry error message: {e}")
+
+
+class DeleteConfirmationView(ui.View):
+    """View for confirming deletion of pending applications"""
+    
+    def __init__(self, original_message):
+        super().__init__(timeout=300)  # 5 minute timeout for confirmation
+        self.original_message = original_message
+    
+    @discord.ui.button(label="Подтвердить удаление", style=discord.ButtonStyle.danger, custom_id="delete_confirm")
+    async def confirm_deletion(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Confirm and execute the deletion"""
+        try:
+            # Delete the original application message
+            await self.original_message.delete()
+            
+            # Delete the ephemeral confirmation message
+            await interaction.response.edit_message(
+                content="✅ Заявка успешно удалена.",
+                embed=None,
+                view=None
+            )
+            
+        except discord.NotFound:
+            # Message was already deleted
+            await interaction.response.edit_message(
+                content="✅ Заявка была удалена.",
+                embed=None,
+                view=None
+            )
+        except Exception as e:
+            await interaction.response.edit_message(
+                content=f"❌ Произошла ошибка при удалении заявки: {str(e)}",
+                embed=None,
+                view=None
+            )
+    
+    @discord.ui.button(label="Отмена", style=discord.ButtonStyle.secondary, custom_id="delete_cancel")
+    async def cancel_deletion(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Cancel the deletion"""
+        await interaction.response.edit_message(
+            content="❌ Удаление отменено.",
+            embed=None,
+            view=None
+        )
+    
+    async def on_timeout(self):
+        """Handle timeout of the confirmation view"""
+        try:
+            # Disable all buttons
+            for item in self.children:
+                item.disabled = True
+            
+            # Try to edit the message to show timeout
+            # Note: This might fail if the interaction is no longer valid
+            embed = discord.Embed(
+                title="⏰ Время истекло",
+                description="Время подтверждения удаления истекло. Заявка не была удалена.",
+                color=discord.Color.orange()
+            )
+            
+            # We can't reliably edit the ephemeral message here since we don't have the interaction
+            # The timeout will just disable the buttons
+            
+        except Exception as e:
+            print(f"Error in DeleteConfirmationView timeout: {e}")

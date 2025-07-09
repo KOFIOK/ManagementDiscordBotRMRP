@@ -730,6 +730,7 @@ class FinalReviewView(ui.View):
             # Create moderation view
             from .views import DepartmentApplicationView
             view = DepartmentApplicationView(self.application_data)
+            view.setup_buttons()
             
             # Prepare content with pings for target department
             content = self._create_application_content(interaction.user, interaction.guild)

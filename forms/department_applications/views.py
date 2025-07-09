@@ -3,7 +3,7 @@ Department Application Views - Persistent views for department applications
 """
 import discord
 from discord import ui
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List
 import logging
 from datetime import datetime, timezone, timedelta
 
@@ -103,9 +103,9 @@ class DepartmentApplicationView(ui.View):
             if interaction.message and interaction.message.embeds:
                 self.application_data = self._extract_application_data_from_embed(interaction.message.embeds[0])
             
-            # Check permissions with enhanced hierarchy
-            if not await self._check_moderator_permissions(interaction):
-                error_message = self._get_permission_error_message(interaction)
+            # Check permissions - for approve, only first line roles can approve
+            if not await self._check_approve_permissions(interaction):
+                error_message = self._get_approve_permission_error_message(interaction)
                 await interaction.response.send_message(error_message, ephemeral=True)
                 return
             
@@ -240,9 +240,9 @@ class DepartmentApplicationView(ui.View):
             if interaction.message and interaction.message.embeds:
                 self.application_data = self._extract_application_data_from_embed(interaction.message.embeds[0])
             
-            # Check permissions with enhanced hierarchy
-            if not await self._check_moderator_permissions(interaction):
-                error_message = self._get_permission_error_message(interaction)
+            # Check permissions - for reject, any role from all lines can reject
+            if not await self._check_reject_permissions(interaction):
+                error_message = self._get_reject_permission_error_message(interaction)
                 await interaction.response.send_message(error_message, ephemeral=True)
                 return
             
@@ -980,6 +980,157 @@ class DepartmentApplicationView(ui.View):
             
         except Exception as e:
             logger.error(f"Error adding new personal record: {e}")
+    
+    def _extract_role_mentions_from_content(self, content: str) -> List[List[int]]:
+        """
+        Extract role IDs from content lines
+        Returns list of lists - each inner list contains role IDs from one line
+        """
+        import re
+        
+        lines = content.strip().split('\n') if content else []
+        role_lines = []
+        
+        for line in lines:
+            # Find all role mentions in format <@&role_id>
+            role_pattern = r'<@&(\d+)>'
+            role_ids = [int(match) for match in re.findall(role_pattern, line)]
+            role_lines.append(role_ids)
+        
+        return role_lines
+    
+    async def _check_approve_permissions(self, interaction: discord.Interaction) -> bool:
+        """
+        Check if user has permission to approve applications
+        - Admins can approve anything
+        - Moderators can only approve if they have at least one role from FIRST LINE of content
+        """
+        config = load_config()
+        administrators = config.get('administrators', {})
+        moderators = config.get('moderators', {})
+        user_role_ids = [role.id for role in interaction.user.roles]
+        
+        # Check if user is administrator (can approve anything)
+        is_admin = (
+            interaction.user.id in administrators.get('users', []) or
+            any(role_id in user_role_ids for role_id in administrators.get('roles', []))
+        )
+        
+        if is_admin:
+            return True
+        
+        # Check if user is moderator
+        is_moderator = (
+            interaction.user.id in moderators.get('users', []) or
+            any(role_id in user_role_ids for role_id in moderators.get('roles', []))
+        )
+        
+        if not is_moderator:
+            return False
+        
+        # Extract roles from first line of content
+        content = interaction.message.content if interaction.message else ""
+        role_lines = self._extract_role_mentions_from_content(content)
+        
+        if not role_lines or not role_lines[0]:
+            # No roles in content or empty first line - fallback to old logic
+            return await self._check_moderator_permissions(interaction)
+        
+        first_line_role_ids = role_lines[0]
+        
+        # Check if moderator has at least one role from first line
+        has_required_role = any(role_id in user_role_ids for role_id in first_line_role_ids)
+        
+        return has_required_role
+    
+    async def _check_reject_permissions(self, interaction: discord.Interaction) -> bool:
+        """
+        Check if user has permission to reject applications
+        - Admins can reject anything
+        - Moderators can reject if they have at least one role from ANY LINE of content
+        """
+        config = load_config()
+        administrators = config.get('administrators', {})
+        moderators = config.get('moderators', {})
+        user_role_ids = [role.id for role in interaction.user.roles]
+        
+        # Check if user is administrator (can reject anything)
+        is_admin = (
+            interaction.user.id in administrators.get('users', []) or
+            any(role_id in user_role_ids for role_id in administrators.get('roles', []))
+        )
+        
+        if is_admin:
+            return True
+        
+        # Check if user is moderator
+        is_moderator = (
+            interaction.user.id in moderators.get('users', []) or
+            any(role_id in user_role_ids for role_id in moderators.get('roles', []))
+        )
+        
+        if not is_moderator:
+            return False
+        
+        # Extract roles from all lines of content
+        content = interaction.message.content if interaction.message else ""
+        role_lines = self._extract_role_mentions_from_content(content)
+        
+        if not role_lines:
+            # No roles in content - fallback to old logic
+            return await self._check_moderator_permissions(interaction)
+        
+        # Collect all role IDs from all lines
+        all_role_ids = []
+        for line_roles in role_lines:
+            all_role_ids.extend(line_roles)
+        
+        if not all_role_ids:
+            # No roles found - fallback to old logic
+            return await self._check_moderator_permissions(interaction)
+        
+        # Check if moderator has at least one role from any line
+        has_required_role = any(role_id in user_role_ids for role_id in all_role_ids)
+        
+        return has_required_role
+    
+    def _get_approve_permission_error_message(self, interaction: discord.Interaction) -> str:
+        """Get error message for approve permission denial"""
+        content = interaction.message.content if interaction.message else ""
+        role_lines = self._extract_role_mentions_from_content(content)
+        
+        if role_lines and role_lines[0]:
+            first_line_roles = [interaction.guild.get_role(role_id) for role_id in role_lines[0]]
+            valid_roles = [role for role in first_line_roles if role is not None]
+            
+            if valid_roles:
+                role_names = [role.name for role in valid_roles]
+                return f"❌ Вы не можете одобрить это заявление.\n\n" \
+                       f"**Для одобрения требуется одна из ролей:**\n" \
+                       f"• {chr(10).join(f'`{name}`' for name in role_names)}"
+        
+        return "❌ У вас нет прав для одобрения этого заявления."
+    
+    def _get_reject_permission_error_message(self, interaction: discord.Interaction) -> str:
+        """Get error message for reject permission denial"""
+        content = interaction.message.content if interaction.message else ""
+        role_lines = self._extract_role_mentions_from_content(content)
+        
+        all_role_ids = []
+        for line_roles in role_lines:
+            all_role_ids.extend(line_roles)
+        
+        if all_role_ids:
+            all_roles = [interaction.guild.get_role(role_id) for role_id in all_role_ids]
+            valid_roles = list(set([role for role in all_roles if role is not None]))  # Remove duplicates
+            
+            if valid_roles:
+                role_names = [role.name for role in valid_roles]
+                return f"❌ Вы не можете отклонить это заявление.\n\n" \
+                       f"**Для отклонения требуется одна из ролей:**\n" \
+                       f"• {chr(10).join(f'`{name}`' for name in role_names)}"
+        
+        return "❌ У вас нет прав для отклонения этого заявления."
 
 class RejectionReasonModal(ui.Modal):
     """Modal for entering rejection reason"""
@@ -1319,90 +1470,3 @@ async def check_user_active_applications(guild: discord.Guild, user_id: int, dep
     except Exception as e:
         logger.error(f"Error checking user active applications: {e}")
         return result
-
-    def _get_permission_error_message(self, interaction: discord.Interaction) -> str:
-        """Get detailed permission error message"""
-        try:
-            config = load_config()
-            administrators = config.get('administrators', {})
-            moderators = config.get('moderators', {})
-            user_role_ids = [role.id for role in interaction.user.roles]
-            application_user_id = self.application_data['user_id']
-            
-            # Check if user is administrator
-            is_admin = (
-                interaction.user.id in administrators.get('users', []) or
-                any(role_id in user_role_ids for role_id in administrators.get('roles', []))
-            )
-            
-            if is_admin:
-                return "✅ У вас есть права администратора"
-            
-            # Check if user is moderator
-            is_moderator_by_user = interaction.user.id in moderators.get('users', [])
-            moderator_roles = [role for role in interaction.user.roles if role.id in moderators.get('roles', [])]
-            is_moderator_by_role = len(moderator_roles) > 0
-            
-            if not (is_moderator_by_user or is_moderator_by_role):
-                return "❌ **Недостаточно прав для модерации**\n\nУ вас нет прав модератора или администратора."
-            
-            # Check self-moderation
-            if interaction.user.id == application_user_id:
-                return "❌ **Недостаточно прав для модерации**\n\nВы не можете модерировать собственные заявления."
-            
-            # Check application author permissions
-            application_user = interaction.guild.get_member(application_user_id)
-            if not application_user:
-                return "✅ У вас есть права модератора"
-            
-            app_user_role_ids = [role.id for role in application_user.roles]
-            
-            # Check if application author is admin
-            app_user_is_admin = (
-                application_user_id in administrators.get('users', []) or
-                any(role_id in app_user_role_ids for role_id in administrators.get('roles', []))
-            )
-            
-            if app_user_is_admin:
-                return "❌ **Недостаточно прав для модерации**\n\nВы не можете модерировать заявления администраторов."
-            
-            # Check moderator hierarchy
-            app_is_moderator_by_user = application_user_id in moderators.get('users', [])
-            app_moderator_roles = [role for role in application_user.roles if role.id in moderators.get('roles', [])]
-            app_is_moderator_by_role = len(app_moderator_roles) > 0
-            
-            if not (app_is_moderator_by_user or app_is_moderator_by_role):
-                return "✅ У вас есть права модератора"
-            
-            # Both are moderators - check hierarchy
-            if is_moderator_by_role and app_is_moderator_by_role:
-                user_highest_position = max(role.position for role in moderator_roles)
-                app_highest_position = max(role.position for role in app_moderator_roles)
-                
-                if user_highest_position > app_highest_position:
-                    return "✅ У вас более высокая модераторская роль"
-                else:
-                    user_highest_role = max(moderator_roles, key=lambda r: r.position)
-                    app_highest_role = max(app_moderator_roles, key=lambda r: r.position)
-                    
-                    return (
-                        f"❌ **Недостаточно прав для модерации**\n\n"
-                        f"Ваша роль: **{user_highest_role.name}** (позиция {user_highest_position})\n"
-                        f"Роль автора заявления: **{app_highest_role.name}** (позиция {app_highest_position})\n\n"
-                        f"Вы можете модерировать только пользователей с более низкими ролями."
-                    )
-            
-            if is_moderator_by_user and app_is_moderator_by_role:
-                return "❌ **Недостаточно прав для модерации**\n\nВы не можете модерировать пользователей с модераторскими ролями."
-            
-            if is_moderator_by_role and app_is_moderator_by_user:
-                return "✅ У вас есть модераторская роль"
-            
-            if is_moderator_by_user and app_is_moderator_by_user:
-                return "❌ **Недостаточно прав для модерации**\n\nВы не можете модерировать других модераторов с персональными правами."
-            
-            return "✅ У вас есть права модератора"
-            
-        except Exception as e:
-            logger.error(f"Error getting permission error message: {e}")
-            return "❌ Произошла ошибка при проверке прав доступа."

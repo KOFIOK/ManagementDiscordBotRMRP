@@ -28,9 +28,29 @@ class DepartmentApplicationView(ui.View):
             'approved_by': None,
             'permission_by': None
         } if application_data.get('application_type') == 'transfer' else None
+        
+        self.is_transfer = application_data.get('application_type') == 'transfer'
+    
+    def _setup_permission_button_visibility(self):
+        """Show/hide permission button based on application type"""
+        # Find and remove permission button for join applications
+        if not self.is_transfer:
+            # For join applications, remove the permission button entirely
+            for i, item in enumerate(self.children):
+                if hasattr(item, 'custom_id') and item.custom_id == "dept_app_permission_static":
+                    self.remove_item(item)
+                    break
+        # For transfer applications, the button stays as is (enabled and visible)
+    
+    async def _permission_button_callback(self, interaction: discord.Interaction):
+        """Handle permission button click for transfers"""
+        await self.give_permission_callback(interaction)
     
     def setup_buttons(self):
         """Setup buttons after initialization - called after __init__"""
+        # Setup permission button visibility based on application type
+        self._setup_permission_button_visibility()
+        
         # Set STATIC custom_id for persistence (важно для восстановления после рестарта)
         # Only set if the button attributes exist (they are created by @ui.button decorators)
         if hasattr(self, 'approve_button'):
@@ -40,9 +60,7 @@ class DepartmentApplicationView(ui.View):
         if hasattr(self, 'delete_button'):
             self.delete_button.custom_id = "dept_app_delete_static"
         
-        # Set custom_id for permission button (всегда устанавливаем для статических views)
-        if hasattr(self, 'permission_button'):
-            self.permission_button.custom_id = "dept_app_permission_static"
+        # Set custom_id for permission button is now set in the decorator
     
     def _extract_application_data_from_embed(self, embed: discord.Embed) -> Dict[str, Any]:
         """Извлекает данные заявления из embed для статических views"""
@@ -232,7 +250,7 @@ class DepartmentApplicationView(ui.View):
             custom_id="dept_app_permission_static",
             row=0
         )
-        permission_btn.callback = self.permission_button.callback
+        permission_btn.callback = self._permission_button_callback
         view.add_item(permission_btn)
         
         # Reject button (always enabled until fully approved)
@@ -621,11 +639,11 @@ class DepartmentApplicationView(ui.View):
                 ephemeral=True
             )
 
-    @ui.button(label="🔒 Дать разрешение", style=discord.ButtonStyle.green, row=0)
+    @ui.button(label="🔒 Дать разрешение", style=discord.ButtonStyle.green, row=0, custom_id="dept_app_permission_static")
     async def permission_button(self, interaction: discord.Interaction, button: ui.Button):
-        """Handle permission button click for transfers"""
-        await self.give_permission_callback(interaction)
-    
+        """Give permission for transfer application"""
+        await self._permission_button_callback(interaction)
+
     async def _handle_transfer_approval(self, interaction: discord.Interaction):
         """Handle approval button click for transfer applications"""
         try:

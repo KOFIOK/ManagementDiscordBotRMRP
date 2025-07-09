@@ -657,10 +657,24 @@ class DepartmentApplicationView(ui.View):
             application_type = self.application_data.get('application_type', 'join')
             action = "Принят в подразделение" if application_type == 'join' else "Переведён в подразделение"
             
-            # Get department name
+            # Get department name from role name (not config)
             departments = ping_manager.get_all_departments()
             dept_config = departments.get(dept_code, {})
-            department_name = dept_config.get('name', dept_code)
+            
+            # Get department role and use its name for table record
+            dept_role_id = dept_config.get('role_id') or dept_config.get('key_role_id')
+            if dept_role_id:
+                dept_role = interaction.guild.get_role(dept_role_id)
+                if dept_role:
+                    department_name = dept_role.name
+                else:
+                    # Fallback if role not found
+                    department_name = dept_config.get('name', dept_code)
+                    logger.warning(f"Department role {dept_role_id} not found for {dept_code}, using config name")
+            else:
+                # Fallback if no role_id configured
+                department_name = dept_config.get('name', dept_code)
+                logger.warning(f"No role_id configured for department {dept_code}, using config name")
             
             # Get assigned position roles names (from user's actual roles, not config)
             assignable_role_ids = ping_manager.get_department_assignable_position_roles(dept_code)

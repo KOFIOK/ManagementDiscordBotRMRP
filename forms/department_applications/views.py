@@ -3,8 +3,9 @@ Department Application Views - Persistent views for department applications
 """
 import discord
 from discord import ui
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List
 import logging
+import re
 from datetime import datetime, timezone, timedelta
 
 from utils.config_manager import load_config
@@ -20,10 +21,28 @@ class DepartmentApplicationView(ui.View):
         super().__init__(timeout=None)  # Persistent view
         self.application_data = application_data
         
+        # Initialize transfer approval state for transfer applications
+        self.transfer_state = {
+            'approved': False,
+            'permission_given': False,
+            'approved_by': None,
+            'permission_by': None
+        } if application_data.get('application_type') == 'transfer' else None
+    
+    def setup_buttons(self):
+        """Setup buttons after initialization - called after __init__"""
         # Set STATIC custom_id for persistence (важно для восстановления после рестарта)
-        self.approve_button.custom_id = "dept_app_approve_static"
-        self.reject_button.custom_id = "dept_app_reject_static"
-        self.delete_button.custom_id = "dept_app_delete_static"
+        # Only set if the button attributes exist (they are created by @ui.button decorators)
+        if hasattr(self, 'approve_button'):
+            self.approve_button.custom_id = "dept_app_approve_static"
+        if hasattr(self, 'reject_button'):
+            self.reject_button.custom_id = "dept_app_reject_static"
+        if hasattr(self, 'delete_button'):
+            self.delete_button.custom_id = "dept_app_delete_static"
+        
+        # Set custom_id for permission button (всегда устанавливаем для статических views)
+        if hasattr(self, 'permission_button'):
+            self.permission_button.custom_id = "dept_app_permission_static"
     
     def _extract_application_data_from_embed(self, embed: discord.Embed) -> Dict[str, Any]:
         """Извлекает данные заявления из embed для статических views"""
@@ -95,6 +114,370 @@ class DepartmentApplicationView(ui.View):
             logger.error(f"Error extracting application data from embed: {e}")
             return self.application_data  # Fallback to original data
     
+    def _extract_transfer_state_from_embed(self, embed: discord.Embed) -> Dict[str, Any]:
+        """Extract transfer approval state from embed status field"""
+        state = {
+            'approved': False,
+            'permission_given': False,
+            'approved_by': None,
+            'permission_by': None
+        }
+        
+        try:
+            # Look for status field
+            for field in embed.fields:
+                if field.name == "📊 Статус":
+                    status_value = field.value
+                    
+                    # Check for approval status
+                    if "✅ Одобрено" in status_value:
+                        state['approved'] = True
+                        # Extract who approved (format: "✅ Одобрено @username")
+                        if "<@" in status_value:
+                            import re
+                            match = re.search(r'<@!?(\d+)>', status_value)
+                            if match:
+                                state['approved_by'] = int(match.group(1))
+                    
+                    # Check for permission status
+                    if "🔒 Разрешение дано" in status_value:
+                        state['permission_given'] = True
+                        # Extract who gave permission (format: "🔒 Разрешение дано @username")
+                        if "<@" in status_value:
+                            import re
+                            matches = re.findall(r'<@!?(\d+)>', status_value)
+                            if len(matches) >= 2:  # Second mention is permission giver
+                                state['permission_by'] = int(matches[1])
+                            elif len(matches) == 1 and not state['approved']:  # Only permission given
+                                state['permission_by'] = int(matches[0])
+                    
+                    break
+                    
+        except Exception as e:
+            logger.error(f"Error extracting transfer state from embed: {e}")
+        
+        return state
+    
+    def _update_transfer_status_in_embed(self, embed: discord.Embed, state: Dict[str, Any], guild: discord.Guild) -> discord.Embed:
+        """Update the transfer status field in the embed based on current state"""
+        try:
+            # Create status text based on current state
+            status_parts = []
+            
+            if state['approved']:
+                approved_user = guild.get_member(state['approved_by'])
+                if approved_user:
+                    status_parts.append(f"✅ Одобрено {approved_user.mention}")
+                else:
+                    status_parts.append(f"✅ Одобрено <@{state['approved_by']}>")
+            
+            if state['permission_given']:
+                permission_user = guild.get_member(state['permission_by'])
+                if permission_user:
+                    status_parts.append(f"🔒 Разрешение дано {permission_user.mention}")
+                else:
+                    status_parts.append(f"🔒 Разрешение дано <@{state['permission_by']}>")
+            
+            # If neither is done, show waiting status
+            if not status_parts:
+                status_text = "⏳ Ожидает рассмотрения"
+            else:
+                status_text = "\n".join(status_parts)
+            
+            # Update the status field
+            for i, field in enumerate(embed.fields):
+                if field.name == "📊 Статус":
+                    embed.set_field_at(
+                        i,
+                        name="📊 Статус",
+                        value=status_text,
+                        inline=True
+                    )
+                    break
+            
+            return embed
+            
+        except Exception as e:
+            logger.error(f"Error updating transfer status in embed: {e}")
+            return embed
+    
+    def _create_transfer_buttons_view(self, state: Dict[str, Any]) -> ui.View:
+        """Create a new view with buttons in the correct state for transfers"""
+        view = ui.View(timeout=None)
+        
+        # Approve button
+        approve_disabled = state['approved']
+        approve_style = discord.ButtonStyle.grey if approve_disabled else discord.ButtonStyle.green
+        approve_label = "✅ Одобрено" if approve_disabled else "✅ Одобрить"
+        
+        approve_btn = ui.Button(
+            label=approve_label,
+            style=approve_style,
+            disabled=approve_disabled,
+            custom_id="dept_app_approve_static",
+            row=0
+        )
+        approve_btn.callback = self.approve_button.callback
+        view.add_item(approve_btn)
+        
+        # Permission button - only for transfers
+        permission_disabled = state['permission_given']
+        permission_style = discord.ButtonStyle.grey if permission_disabled else discord.ButtonStyle.green
+        permission_label = "🔒 Разрешение дано" if permission_disabled else "🔒 Дать разрешение"
+        
+        permission_btn = ui.Button(
+            label=permission_label,
+            style=permission_style,
+            disabled=permission_disabled,
+            custom_id="dept_app_permission_static",
+            row=0
+        )
+        permission_btn.callback = self.permission_button.callback
+        view.add_item(permission_btn)
+        
+        # Reject button (always enabled until fully approved)
+        if not (state['approved'] and state['permission_given']):
+            reject_btn = ui.Button(
+                label="❌ Отклонить",
+                style=discord.ButtonStyle.red,
+                custom_id="dept_app_reject_static",
+                row=0
+            )
+            reject_btn.callback = self.reject_button.callback
+            view.add_item(reject_btn)
+        
+        # Delete button (always enabled for admin/author)
+        delete_btn = ui.Button(
+            label="🗑️ Удалить",
+            style=discord.ButtonStyle.grey,
+            custom_id="dept_app_delete_static",
+            row=0
+        )
+        delete_btn.callback = self.delete_button.callback
+        view.add_item(delete_btn)
+        
+        return view
+    
+    async def give_permission_callback(self, interaction: discord.Interaction):
+        """Handle permission button click"""
+        try:
+            # Extract current data from embed (for static views)
+            if interaction.message and interaction.message.embeds:
+                self.application_data = self._extract_application_data_from_embed(interaction.message.embeds[0])
+            
+            # Check if this is a transfer application first
+            if self.application_data.get('application_type') != 'transfer':
+                await interaction.response.send_message(
+                    "❌ Эта кнопка доступна только для заявлений на перевод.",
+                    ephemeral=True
+                )
+                return
+            
+            # First check if user is a moderator at all
+            config = load_config()
+            administrators = config.get('administrators', {})
+            moderators = config.get('moderators', {})
+            user_role_ids = [role.id for role in interaction.user.roles]
+            
+            is_admin = (
+                interaction.user.id in administrators.get('users', []) or
+                any(role_id in user_role_ids for role_id in administrators.get('roles', []))
+            )
+            
+            is_moderator = (
+                interaction.user.id in moderators.get('users', []) or
+                any(role_id in user_role_ids for role_id in moderators.get('roles', []))
+            )
+            
+            # If not admin and not moderator, show basic access denied message
+            if not (is_admin or is_moderator):
+                await interaction.response.send_message(
+                    "❌ У вас нет прав для выдачи разрешения на перевод. Это действие доступно только модераторам.",
+                    ephemeral=True
+                )
+                return
+            
+            # Check specific permissions for moderators with roles from second line
+            if not await self._check_permission_permissions(interaction):
+                error_message = self._get_permission_error_message(interaction)
+                await interaction.response.send_message(error_message, ephemeral=True)
+                return
+            
+            # Extract current transfer state from embed
+            current_state = self._extract_transfer_state_from_embed(interaction.message.embeds[0])
+            
+            # Check if permission already given
+            if current_state['permission_given']:
+                await interaction.response.send_message(
+                    "❌ Разрешение уже было дано для этого перевода.",
+                    ephemeral=True
+                )
+                return
+            
+            await interaction.response.defer()
+            
+            # Update state
+            current_state['permission_given'] = True
+            current_state['permission_by'] = interaction.user.id
+            
+            # Update embed
+            embed = interaction.message.embeds[0].copy()
+            embed = self._update_transfer_status_in_embed(embed, current_state, interaction.guild)
+            
+            # Check if both approvals are done
+            if current_state['approved'] and current_state['permission_given']:
+                # Both approvals complete - process final approval
+                await self._process_final_transfer_approval(interaction, embed, current_state)
+            else:
+                # Update view with disabled permission button
+                new_view = self._create_transfer_buttons_view(current_state)
+                await interaction.edit_original_response(embed=embed, view=new_view)
+                
+                # Send feedback message
+                await interaction.followup.send(
+                    "✅ Разрешение на перевод выдано! Ожидаем одобрения руководства нового подразделения.",
+                    ephemeral=True
+                )
+            
+        except Exception as e:
+            logger.error(f"Error giving permission for department transfer: {e}")
+            await interaction.followup.send(
+                "❌ Произошла ошибка при выдаче разрешения.",
+                ephemeral=True
+            )
+    
+    async def _process_final_transfer_approval(self, interaction: discord.Interaction, embed: discord.Embed, state: Dict[str, Any]):
+        """Process final approval when both approve and permission buttons are pressed"""
+        try:
+            # Show "Processing..." state immediately to prevent double-clicks and show progress
+            processing_embed = embed.copy()
+            
+            # Update status field to show processing
+            for i, field in enumerate(processing_embed.fields):
+                if field.name == "📊 Статус":
+                    processing_embed.set_field_at(
+                        i,
+                        name="📊 Статус", 
+                        value="⏳ Обрабатывается...",
+                        inline=True
+                    )
+                    break
+            
+            # Replace all buttons with single disabled "Processing" button
+            processing_view = ui.View(timeout=None)
+            processing_button = ui.Button(
+                label="⏳ Обрабатывается...",
+                style=discord.ButtonStyle.grey,
+                disabled=True
+            )
+            processing_view.add_item(processing_button)
+            
+            # Update message with processing state
+            await interaction.edit_original_response(embed=processing_embed, view=processing_view)
+            
+            # Get target user
+            target_user = interaction.guild.get_member(self.application_data['user_id'])
+            if not target_user:
+                # Restore state view if user not found
+                restored_view = self._create_transfer_buttons_view(state)
+                await interaction.edit_original_response(embed=embed, view=restored_view)
+                await interaction.followup.send(
+                    "❌ Пользователь не найден на сервере.",
+                    ephemeral=True
+                )
+                return
+            
+            # Process approval (assign roles, update nickname, log to sheets)
+            success = await self._process_approval(interaction, target_user)
+            
+            if success:
+                # Clear user's cache since status changed
+                _clear_user_cache(target_user.id)
+                
+                # Update embed for final approval
+                embed.color = discord.Color.green()
+                
+                # Update status field to show final approval with both moderators
+                for i, field in enumerate(embed.fields):
+                    if field.name == "📊 Статус":
+                        # Create final status with both moderators mentioned
+                        status_parts = []
+                        
+                        # Add who approved
+                        if state['approved_by']:
+                            approved_user = interaction.guild.get_member(state['approved_by'])
+                            if approved_user:
+                                status_parts.append(f"✅ Одобрено {approved_user.mention}")
+                            else:
+                                status_parts.append(f"✅ Одобрено <@{state['approved_by']}>")
+                        
+                        # Add who gave permission
+                        if state['permission_by']:
+                            permission_user = interaction.guild.get_member(state['permission_by'])
+                            if permission_user:
+                                status_parts.append(f"🔒 Разрешение дано {permission_user.mention}")
+                            else:
+                                status_parts.append(f"🔒 Разрешение дано <@{state['permission_by']}>")
+                        
+                        # Add completion status
+                        status_parts.append("**Перевод выполнен**")
+                        
+                        final_status = "\n".join(status_parts)
+                        
+                        embed.set_field_at(
+                            i,
+                            name="📊 Статус",
+                            value=final_status,
+                            inline=True
+                        )
+                        break
+                
+                embed.add_field(
+                    name="⏰ Время обработки",
+                    value=f"<t:{int((datetime.now(timezone(timedelta(hours=3)))).timestamp())}:R>",
+                    inline=True
+                )
+                
+                # Create final view with single disabled "Completed" button
+                final_view = ui.View(timeout=None)
+                approved_button = ui.Button(
+                    label="✅ Одобрено",
+                    style=discord.ButtonStyle.green,
+                    disabled=True
+                )
+                final_view.add_item(approved_button)
+                
+                await interaction.edit_original_response(embed=embed, view=final_view)
+                
+                # Send success message
+                await interaction.followup.send(
+                    f"✅ Перевод пользователя {target_user.mention} выполнен! Роли подразделения и должности назначены автоматически.",
+                    ephemeral=True
+                )
+                
+                # Send DM to user
+                try:
+                    dm_embed = discord.Embed(
+                        title="✅ Перевод одобрен!",
+                        description=f"Ваш перевод в подразделение **{self.application_data['department_code']}** был одобрен и выполнен!",
+                        color=discord.Color.green(),
+                        timestamp=datetime.now(timezone(timedelta(hours=3)))
+                    )
+                    await target_user.send(embed=dm_embed)
+                except discord.Forbidden:
+                    logger.warning(f"Could not send DM to {target_user} about approved transfer")
+            else:
+                # Restore state view if approval failed
+                restored_view = self._create_transfer_buttons_view(state)
+                await interaction.edit_original_response(embed=embed, view=restored_view)
+                
+        except Exception as e:
+            logger.error(f"Error processing final transfer approval: {e}")
+            await interaction.followup.send(
+                "❌ Произошла ошибка при выполнении перевода.",
+                ephemeral=True
+            )
+    
     @ui.button(label="✅ Одобрить", style=discord.ButtonStyle.green, row=0)
     async def approve_button(self, interaction: discord.Interaction, button: ui.Button):
         """Approve the application"""
@@ -103,14 +486,20 @@ class DepartmentApplicationView(ui.View):
             if interaction.message and interaction.message.embeds:
                 self.application_data = self._extract_application_data_from_embed(interaction.message.embeds[0])
             
-            # Check permissions with enhanced hierarchy
-            if not await self._check_moderator_permissions(interaction):
-                error_message = self._get_permission_error_message(interaction)
+            # Check permissions - for approve, only first line roles can approve
+            if not await self._check_approve_permissions(interaction):
+                error_message = self._get_approve_permission_error_message(interaction)
                 await interaction.response.send_message(error_message, ephemeral=True)
+                return
+            
+            # Handle transfer applications differently
+            if self.application_data.get('application_type') == 'transfer':
+                await self._handle_transfer_approval(interaction)
                 return
             
             await interaction.response.defer()
             
+            # Regular join application logic (unchanged)
             # Show "Processing..." state immediately to prevent double-clicks
             processing_embed = interaction.message.embeds[0].copy()
             
@@ -231,7 +620,58 @@ class DepartmentApplicationView(ui.View):
                 "❌ Произошла ошибка при одобрении заявления.",
                 ephemeral=True
             )
+
+    @ui.button(label="🔒 Дать разрешение", style=discord.ButtonStyle.green, row=0)
+    async def permission_button(self, interaction: discord.Interaction, button: ui.Button):
+        """Handle permission button click for transfers"""
+        await self.give_permission_callback(interaction)
     
+    async def _handle_transfer_approval(self, interaction: discord.Interaction):
+        """Handle approval button click for transfer applications"""
+        try:
+            # Extract current transfer state from embed
+            current_state = self._extract_transfer_state_from_embed(interaction.message.embeds[0])
+            
+            # Check if already approved
+            if current_state['approved']:
+                await interaction.response.send_message(
+                    "❌ Этот перевод уже был одобрен.",
+                    ephemeral=True
+                )
+                return
+            
+            await interaction.response.defer()
+            
+            # Update state
+            current_state['approved'] = True
+            current_state['approved_by'] = interaction.user.id
+            
+            # Update embed
+            embed = interaction.message.embeds[0].copy()
+            embed = self._update_transfer_status_in_embed(embed, current_state, interaction.guild)
+            
+            # Check if both approvals are done
+            if current_state['approved'] and current_state['permission_given']:
+                # Both approvals complete - process final approval
+                await self._process_final_transfer_approval(interaction, embed, current_state)
+            else:
+                # Update view with disabled approve button
+                new_view = self._create_transfer_buttons_view(current_state)
+                await interaction.edit_original_response(embed=embed, view=new_view)
+                
+                # Send feedback message
+                await interaction.followup.send(
+                    "✅ Перевод одобрен! Ожидаем подтверждения бывшего руководства сотрудника.",
+                    ephemeral=True
+                )
+                
+        except Exception as e:
+            logger.error(f"Error handling transfer approval: {e}")
+            await interaction.followup.send(
+                "❌ Произошла ошибка при одобрении перевода.",
+                ephemeral=True
+            )
+
     @ui.button(label="❌ Отклонить", style=discord.ButtonStyle.red, row=0)
     async def reject_button(self, interaction: discord.Interaction, button: ui.Button):
         """Reject the application with reason"""
@@ -240,9 +680,9 @@ class DepartmentApplicationView(ui.View):
             if interaction.message and interaction.message.embeds:
                 self.application_data = self._extract_application_data_from_embed(interaction.message.embeds[0])
             
-            # Check permissions with enhanced hierarchy
-            if not await self._check_moderator_permissions(interaction):
-                error_message = self._get_permission_error_message(interaction)
+            # Check permissions - for reject, any role from all lines can reject
+            if not await self._check_reject_permissions(interaction):
+                error_message = self._get_reject_permission_error_message(interaction)
                 await interaction.response.send_message(error_message, ephemeral=True)
                 return
             
@@ -407,19 +847,34 @@ class DepartmentApplicationView(ui.View):
             # Get the original embed (should already be set)
             original_embed = interaction.message.embeds[0].copy()
             
-            # Restore original status if it was changed to "Processing"
-            for i, field in enumerate(original_embed.fields):
-                if field.name == "📊 Статус" and "Обрабатывается" in field.value:
-                    original_embed.set_field_at(
-                        i,
-                        name="📊 Статус",
-                        value="⏳ Ожидает рассмотрения",
-                        inline=True
-                    )
-                    break
-            
-            # Create new view with original buttons
-            restored_view = DepartmentApplicationView(self.application_data)
+            # For transfer applications, restore state-based view
+            if self.application_data.get('application_type') == 'transfer':
+                # Extract current state and restore appropriate view
+                current_state = self._extract_transfer_state_from_embed(original_embed)
+                
+                # Reset processing status if needed
+                for i, field in enumerate(original_embed.fields):
+                    if field.name == "📊 Статус" and "Обрабатывается" in field.value:
+                        original_embed = self._update_transfer_status_in_embed(original_embed, current_state, interaction.guild)
+                        break
+                
+                # Create state-based view
+                restored_view = self._create_transfer_buttons_view(current_state)
+            else:
+                # Regular join application - restore original status
+                for i, field in enumerate(original_embed.fields):
+                    if field.name == "📊 Статус" and "Обрабатывается" in field.value:
+                        original_embed.set_field_at(
+                            i,
+                            name="📊 Статус",
+                            value="⏳ Ожидает рассмотрения",
+                            inline=True
+                        )
+                        break
+                
+                # Create new view with original buttons
+                restored_view = DepartmentApplicationView(self.application_data)
+                restored_view.setup_buttons()
             
             # Update message back to original state
             await interaction.edit_original_response(content="", embed=original_embed, view=restored_view)
@@ -657,10 +1112,24 @@ class DepartmentApplicationView(ui.View):
             application_type = self.application_data.get('application_type', 'join')
             action = "Принят в подразделение" if application_type == 'join' else "Переведён в подразделение"
             
-            # Get department name
+            # Get department name from role name (not config)
             departments = ping_manager.get_all_departments()
             dept_config = departments.get(dept_code, {})
-            department_name = dept_config.get('name', dept_code)
+            
+            # Get department role and use its name for table record
+            dept_role_id = dept_config.get('role_id') or dept_config.get('key_role_id')
+            if dept_role_id:
+                dept_role = interaction.guild.get_role(dept_role_id)
+                if dept_role:
+                    department_name = dept_role.name
+                else:
+                    # Fallback if role not found
+                    department_name = dept_config.get('name', dept_code)
+                    logger.warning(f"Department role {dept_role_id} not found for {dept_code}, using config name")
+            else:
+                # Fallback if no role_id configured
+                department_name = dept_config.get('name', dept_code)
+                logger.warning(f"No role_id configured for department {dept_code}, using config name")
             
             # Get assigned position roles names (from user's actual roles, not config)
             assignable_role_ids = ping_manager.get_department_assignable_position_roles(dept_code)
@@ -966,6 +1435,218 @@ class DepartmentApplicationView(ui.View):
             
         except Exception as e:
             logger.error(f"Error adding new personal record: {e}")
+    
+    def _extract_role_mentions_from_content(self, content: str) -> List[List[int]]:
+        """
+        Extract role IDs from content lines
+        Returns list of lists - each inner list contains role IDs from one line
+        """
+        import re
+        
+        lines = content.strip().split('\n') if content else []
+        role_lines = []
+        
+        for line in lines:
+            # Find all role mentions in format <@&role_id>
+            role_pattern = r'<@&(\d+)>'
+            role_ids = [int(match) for match in re.findall(role_pattern, line)]
+            role_lines.append(role_ids)
+        
+        return role_lines
+    
+    async def _check_approve_permissions(self, interaction: discord.Interaction) -> bool:
+        """
+        Check if user has permission to approve applications
+        - Admins can approve anything
+        - Moderators can only approve if they have at least one role from FIRST LINE of content
+        """
+        config = load_config()
+        administrators = config.get('administrators', {})
+        moderators = config.get('moderators', {})
+        user_role_ids = [role.id for role in interaction.user.roles]
+        
+        # Check if user is administrator (can approve anything)
+        is_admin = (
+            interaction.user.id in administrators.get('users', []) or
+            any(role_id in user_role_ids for role_id in administrators.get('roles', []))
+        )
+        
+        if is_admin:
+            return True
+        
+        # Check if user is moderator
+        is_moderator = (
+            interaction.user.id in moderators.get('users', []) or
+            any(role_id in user_role_ids for role_id in moderators.get('roles', []))
+        )
+        
+        if not is_moderator:
+            return False
+        
+        # Extract roles from first line of content
+        content = interaction.message.content if interaction.message else ""
+        role_lines = self._extract_role_mentions_from_content(content)
+        
+        if not role_lines or not role_lines[0]:
+            # No roles in content or empty first line - fallback to old logic
+            return await self._check_moderator_permissions(interaction)
+        
+        first_line_role_ids = role_lines[0]
+        
+        # Check if moderator has at least one role from first line
+        has_required_role = any(role_id in user_role_ids for role_id in first_line_role_ids)
+        
+        return has_required_role
+    
+    async def _check_reject_permissions(self, interaction: discord.Interaction) -> bool:
+        """
+        Check if user has permission to reject applications
+        - Admins can reject anything
+        - Moderators can reject if they have at least one role from ANY LINE of content
+        """
+        config = load_config()
+        administrators = config.get('administrators', {})
+        moderators = config.get('moderators', {})
+        user_role_ids = [role.id for role in interaction.user.roles]
+        
+        # Check if user is administrator (can reject anything)
+        is_admin = (
+            interaction.user.id in administrators.get('users', []) or
+            any(role_id in user_role_ids for role_id in administrators.get('roles', []))
+        )
+        
+        if is_admin:
+            return True
+        
+        # Check if user is moderator
+        is_moderator = (
+            interaction.user.id in moderators.get('users', []) or
+            any(role_id in user_role_ids for role_id in moderators.get('roles', []))
+        )
+        
+        if not is_moderator:
+            return False
+        
+        # Extract roles from all lines of content
+        content = interaction.message.content if interaction.message else ""
+        role_lines = self._extract_role_mentions_from_content(content)
+        
+        if not role_lines:
+            # No roles in content - fallback to old logic
+            return await self._check_moderator_permissions(interaction)
+        
+        # Collect all role IDs from all lines
+        all_role_ids = []
+        for line_roles in role_lines:
+            all_role_ids.extend(line_roles)
+        
+        if not all_role_ids:
+            # No roles found - fallback to old logic
+            return await self._check_moderator_permissions(interaction)
+        
+        # Check if moderator has at least one role from any line
+        has_required_role = any(role_id in user_role_ids for role_id in all_role_ids)
+        
+        return has_required_role
+    
+    async def _check_permission_permissions(self, interaction: discord.Interaction) -> bool:
+        """
+        Check if user has permission to give permission for transfers
+        - Admins can give permission for anything
+        - Moderators can give permission if they have at least one role from SECOND LINE of content
+        """
+        config = load_config()
+        administrators = config.get('administrators', {})
+        moderators = config.get('moderators', {})
+        user_role_ids = [role.id for role in interaction.user.roles]
+        
+        # Check if user is administrator (can give permission for anything)
+        is_admin = (
+            interaction.user.id in administrators.get('users', []) or
+            any(role_id in user_role_ids for role_id in administrators.get('roles', []))
+        )
+        
+        if is_admin:
+            return True
+        
+        # Check if user is moderator
+        is_moderator = (
+            interaction.user.id in moderators.get('users', []) or
+            any(role_id in user_role_ids for role_id in moderators.get('roles', []))
+        )
+        
+        if not is_moderator:
+            return False
+        
+        # Extract roles from second line of content
+        content = interaction.message.content if interaction.message else ""
+        role_lines = self._extract_role_mentions_from_content(content)
+        
+        if not role_lines or len(role_lines) < 2 or not role_lines[1]:
+            # No roles in content or no second line - fallback to old logic
+            return await self._check_moderator_permissions(interaction)
+        
+        second_line_role_ids = role_lines[1]
+        
+        # Check if moderator has at least one role from second line
+        has_required_role = any(role_id in user_role_ids for role_id in second_line_role_ids)
+        
+        return has_required_role
+    
+    def _get_approve_permission_error_message(self, interaction: discord.Interaction) -> str:
+        """Get error message for approve permission denial"""
+        content = interaction.message.content if interaction.message else ""
+        role_lines = self._extract_role_mentions_from_content(content)
+        
+        if role_lines and role_lines[0]:
+            first_line_roles = [interaction.guild.get_role(role_id) for role_id in role_lines[0]]
+            valid_roles = [role for role in first_line_roles if role is not None]
+            
+            if valid_roles:
+                role_names = [role.name for role in valid_roles]
+                return f"❌ Вы не можете одобрить это заявление.\n\n" \
+                       f"**Для одобрения требуется одна из ролей:**\n" \
+                       f"• {chr(10).join(f'`{name}`' for name in role_names)}"
+        
+        return "❌ У вас нет прав для одобрения этого заявления."
+    
+    def _get_reject_permission_error_message(self, interaction: discord.Interaction) -> str:
+        """Get error message for reject permission denial"""
+        content = interaction.message.content if interaction.message else ""
+        role_lines = self._extract_role_mentions_from_content(content)
+        
+        all_role_ids = []
+        for line_roles in role_lines:
+            all_role_ids.extend(line_roles)
+        
+        if all_role_ids:
+            all_roles = [interaction.guild.get_role(role_id) for role_id in all_role_ids]
+            valid_roles = list(set([role for role in all_roles if role is not None]))  # Remove duplicates
+            
+            if valid_roles:
+                role_names = [role.name for role in valid_roles]
+                return f"❌ Вы не можете отклонить это заявление.\n\n" \
+                       f"**Для отклонения требуется одна из ролей:**\n" \
+                       f"• {chr(10).join(f'`{name}`' for name in role_names)}"
+        
+        return "❌ У вас нет прав для отклонения этого заявления."
+    
+    def _get_permission_error_message(self, interaction: discord.Interaction) -> str:
+        """Get error message for permission denial"""
+        content = interaction.message.content if interaction.message else ""
+        role_lines = self._extract_role_mentions_from_content(content)
+        
+        if role_lines and len(role_lines) >= 2 and role_lines[1]:
+            second_line_roles = [interaction.guild.get_role(role_id) for role_id in role_lines[1]]
+            valid_roles = [role for role in second_line_roles if role is not None]
+            
+            if valid_roles:
+                role_names = [role.name for role in valid_roles]
+                return f"❌ Вы не можете дать разрешение на этот перевод.\n\n" \
+                       f"**Для выдачи разрешения требуется одна из ролей:**\n" \
+                       f"• {chr(10).join(f'`{name}`' for name in role_names)}"
+        
+        return "❌ У вас нет прав для выдачи разрешения на этот перевод."
 
 class RejectionReasonModal(ui.Modal):
     """Modal for entering rejection reason"""
@@ -1021,6 +1702,7 @@ class RejectionReasonModal(ui.Modal):
             
             # Clear all buttons and add single disabled "Rejected" button
             view = DepartmentApplicationView(self.application_data)
+            view.setup_buttons()
             view.clear_items()
             
             # Clear user's cache since status changed
@@ -1203,6 +1885,7 @@ def _clear_user_cache(user_id: int):
 
 async def check_user_active_applications(guild: discord.Guild, user_id: int, department_code: str = None) -> Dict:
     """
+   
     Check if user has any active (pending) applications - OPTIMIZED WITH CACHE
     
     Args:
@@ -1305,90 +1988,3 @@ async def check_user_active_applications(guild: discord.Guild, user_id: int, dep
     except Exception as e:
         logger.error(f"Error checking user active applications: {e}")
         return result
-
-    def _get_permission_error_message(self, interaction: discord.Interaction) -> str:
-        """Get detailed permission error message"""
-        try:
-            config = load_config()
-            administrators = config.get('administrators', {})
-            moderators = config.get('moderators', {})
-            user_role_ids = [role.id for role in interaction.user.roles]
-            application_user_id = self.application_data['user_id']
-            
-            # Check if user is administrator
-            is_admin = (
-                interaction.user.id in administrators.get('users', []) or
-                any(role_id in user_role_ids for role_id in administrators.get('roles', []))
-            )
-            
-            if is_admin:
-                return "✅ У вас есть права администратора"
-            
-            # Check if user is moderator
-            is_moderator_by_user = interaction.user.id in moderators.get('users', [])
-            moderator_roles = [role for role in interaction.user.roles if role.id in moderators.get('roles', [])]
-            is_moderator_by_role = len(moderator_roles) > 0
-            
-            if not (is_moderator_by_user or is_moderator_by_role):
-                return "❌ **Недостаточно прав для модерации**\n\nУ вас нет прав модератора или администратора."
-            
-            # Check self-moderation
-            if interaction.user.id == application_user_id:
-                return "❌ **Недостаточно прав для модерации**\n\nВы не можете модерировать собственные заявления."
-            
-            # Check application author permissions
-            application_user = interaction.guild.get_member(application_user_id)
-            if not application_user:
-                return "✅ У вас есть права модератора"
-            
-            app_user_role_ids = [role.id for role in application_user.roles]
-            
-            # Check if application author is admin
-            app_user_is_admin = (
-                application_user_id in administrators.get('users', []) or
-                any(role_id in app_user_role_ids for role_id in administrators.get('roles', []))
-            )
-            
-            if app_user_is_admin:
-                return "❌ **Недостаточно прав для модерации**\n\nВы не можете модерировать заявления администраторов."
-            
-            # Check moderator hierarchy
-            app_is_moderator_by_user = application_user_id in moderators.get('users', [])
-            app_moderator_roles = [role for role in application_user.roles if role.id in moderators.get('roles', [])]
-            app_is_moderator_by_role = len(app_moderator_roles) > 0
-            
-            if not (app_is_moderator_by_user or app_is_moderator_by_role):
-                return "✅ У вас есть права модератора"
-            
-            # Both are moderators - check hierarchy
-            if is_moderator_by_role and app_is_moderator_by_role:
-                user_highest_position = max(role.position for role in moderator_roles)
-                app_highest_position = max(role.position for role in app_moderator_roles)
-                
-                if user_highest_position > app_highest_position:
-                    return "✅ У вас более высокая модераторская роль"
-                else:
-                    user_highest_role = max(moderator_roles, key=lambda r: r.position)
-                    app_highest_role = max(app_moderator_roles, key=lambda r: r.position)
-                    
-                    return (
-                        f"❌ **Недостаточно прав для модерации**\n\n"
-                        f"Ваша роль: **{user_highest_role.name}** (позиция {user_highest_position})\n"
-                        f"Роль автора заявления: **{app_highest_role.name}** (позиция {app_highest_position})\n\n"
-                        f"Вы можете модерировать только пользователей с более низкими ролями."
-                    )
-            
-            if is_moderator_by_user and app_is_moderator_by_role:
-                return "❌ **Недостаточно прав для модерации**\n\nВы не можете модерировать пользователей с модераторскими ролями."
-            
-            if is_moderator_by_role and app_is_moderator_by_user:
-                return "✅ У вас есть модераторская роль"
-            
-            if is_moderator_by_user and app_is_moderator_by_user:
-                return "❌ **Недостаточно прав для модерации**\n\nВы не можете модерировать других модераторов с персональными правами."
-            
-            return "✅ У вас есть права модератора"
-            
-        except Exception as e:
-            logger.error(f"Error getting permission error message: {e}")
-            return "❌ Произошла ошибка при проверке прав доступа."

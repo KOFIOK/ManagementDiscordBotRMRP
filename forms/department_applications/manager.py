@@ -388,6 +388,7 @@ class DepartmentApplicationManager:
                                         # Create and add the view
                                         from .views import DepartmentApplicationView
                                         view = DepartmentApplicationView(application_data)
+                                        view.setup_buttons()
                                         await message.edit(view=view)
                                         restored_count += 1
                                         logger.info(f"Restored moderation view for application {message.id}")
@@ -406,8 +407,16 @@ class DepartmentApplicationManager:
         try:
             application_data = {
                 'department_code': dept_code,
-                'timestamp': embed.timestamp.isoformat() if embed.timestamp else None
+                'timestamp': embed.timestamp.isoformat() if embed.timestamp else None,
+                'application_type': 'join'  # Default to join
             }
+            
+            # Determine application type from description
+            if embed.description:
+                if "Заявление на перевод" in embed.description:
+                    application_data['application_type'] = 'transfer'
+                elif "Заявление на вступление" in embed.description:
+                    application_data['application_type'] = 'join'
             
             # Extract user ID and other data from embed fields
             for field in embed.fields:
@@ -422,14 +431,34 @@ class DepartmentApplicationManager:
                 elif field.name == "🔢 Статик":
                     application_data['static'] = field.value
                 elif field.name == "📋 Тип заявления":
-                    application_data['application_type'] = field.value
+                    # Legacy field support
+                    if "перевод" in field.value.lower():
+                        application_data['application_type'] = 'transfer'
+                    else:
+                        application_data['application_type'] = 'join'
                 elif field.name == "🎖️ Текущее звание":
                     application_data['current_rank'] = field.value
                 elif field.name == "📝 Причина перехода" or field.name == "📝 Причина поступления":
                     application_data['reason'] = field.value
+                elif field.name == "📋 IC Информация":
+                    # Parse IC information field for newer format
+                    lines = field.value.split('\n')
+                    for line in lines:
+                        if '**Имя Фамилия:**' in line:
+                            application_data['name'] = line.split('**Имя Фамилия:**')[-1].strip()
+                        elif '**Статик:**' in line:
+                            application_data['static'] = line.split('**Статик:**')[-1].strip()
+            
+            # Extract user ID from description if not found in fields (newer format)
+            if 'user_id' not in application_data and embed.description:
+                import re
+                match = re.search(r'<@!?(\d+)>', embed.description)
+                if match:
+                    application_data['user_id'] = int(match.group(1))
             
             # Check if we have minimum required data
             if 'user_id' in application_data:
+                logger.info(f"Extracted application data: type={application_data['application_type']}, user_id={application_data['user_id']}")
                 return application_data
             else:
                 logger.warning(f"Could not extract user_id from embed for dept {dept_code}")

@@ -59,7 +59,7 @@ class UserDatabase:
             
             # Constants for new recruits
             rank = "Рядовой"
-            department = "Военная Академия"
+            department = "Военная Академия - ВА"
             position = ""  # Empty position
             
             # Prepare row data

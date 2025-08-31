@@ -1,439 +1,253 @@
 """
-Rank synchronization system - monitors Discord activity and syncs ranks with roles
+Новая система синхронизации званий - простая и эффективная
+Логика: Если у пользователя есть ключевая роль И активность RMRP с званием - выдаем роль звания
 """
+import discord
 import re
 import asyncio
-import discord
-from typing import Optional, Dict, List, Tuple
+from typing import Optional
 from utils.config_manager import load_config
-from utils.google_sheets import sheets_manager
 
 
-class RankSyncManager:
-    """Manager for synchronizing ranks from game activity to Discord roles"""
+class RankSync:
+    """Простая система синхронизации званий"""
     
     def __init__(self, bot):
         self.bot = bot
-        self.server_patterns = [
-            "RMRP.ru - Арбат",
-            "RMRP.ru - Арбат",  # Possible variations
-            "rmrp.ru - арбат",
-            "RMRP - Арбат"
+        
+    async def sync_user(self, member: discord.Member, force: bool = False) -> bool:
+        """Синхронизирует звание одного пользователя"""
+        try:
+            print(f"🔄 Синхронизация {member.display_name}...")
+            
+            # 1. Проверяем ключевую роль (если не force)
+            if not force and not self._has_key_role(member):
+                print(f"⚠️ {member.display_name} не имеет ключевой роли")
+                return False
+            
+            # 2. Ищем RMRP активность
+            rmrp_text = self._find_rmrp_activity(member)
+            if not rmrp_text:
+                print(f"❌ {member.display_name} не играет в RMRP")
+                return False
+            
+            print(f"🎮 Найдена RMRP активность: {rmrp_text}")
+            
+            # 3. Извлекаем звание
+            rank = self._extract_rank(rmrp_text)
+            if not rank:
+                print(f"❌ Звание не найдено в активности")
+                return False
+            
+            print(f"🎖️ Обнаружено звание: {rank}")
+            
+            # 4. Синхронизируем роли
+            success = await self._sync_roles(member, rank)
+            
+            if success:
+                print(f"✅ {member.display_name} синхронизирован с званием {rank}")
+                return True
+            else:
+                print(f"❌ Не удалось синхронизировать {member.display_name}")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Ошибка синхронизации {member.display_name}: {e}")
+            return False
+    
+    def _has_key_role(self, member: discord.Member) -> bool:
+        """Проверяет, есть ли у пользователя ключевая роль"""
+        config = load_config()
+        key_role_id = config.get('rank_sync_key_role')
+        
+        if not key_role_id:
+            print("ℹ️ Ключевая роль не настроена, пропускаем проверку")
+            return True
+        
+        key_role = member.guild.get_role(key_role_id)
+        if not key_role:
+            print(f"⚠️ Ключевая роль {key_role_id} не найдена на сервере")
+            return True
+        
+        has_role = key_role in member.roles
+        print(f"🔑 Ключевая роль '{key_role.name}': {'✅' if has_role else '❌'}")
+        return has_role
+    
+    def _find_rmrp_activity(self, member: discord.Member) -> Optional[str]:
+        """Ищет RMRP активность в статусе пользователя"""
+        for activity in member.activities:
+            # Проверяем все возможные поля активности
+            activity_texts = []
+            
+            # Собираем все текстовые поля
+            if hasattr(activity, 'name') and activity.name:
+                activity_texts.append(activity.name)
+            if hasattr(activity, 'details') and activity.details:
+                activity_texts.append(activity.details)
+            if hasattr(activity, 'state') and activity.state:
+                activity_texts.append(activity.state)
+            if hasattr(activity, 'large_text') and activity.large_text:
+                activity_texts.append(activity.large_text)
+            if hasattr(activity, 'small_text') and activity.small_text:
+                activity_texts.append(activity.small_text)
+            
+            # Ищем RMRP в любом из полей
+            for text in activity_texts:
+                if self._is_rmrp_server(text):
+                    return text
+        
+        return None
+    
+    def _is_rmrp_server(self, text: str) -> bool:
+        """Проверяет, содержит ли текст информацию о сервере RMRP"""
+        if not text:
+            return False
+        
+        text_lower = text.lower()
+        rmrp_indicators = [
+            "rmrp.ru",
+            "rmrp - арбат",
+            "арбат",
+            "rmrp",
         ]
         
-        # Rank variations mapping - handles different formats and abbreviations
-        self.rank_variations = {
-            # Рядовые
-            "рядовой": ["рядовой", "рдв", "р"],
-            "ефрейтор": ["ефрейтор", "еф", "ефр"],
-            
-            # Сержанты
-            "мл. сержант": ["мл. сержант", "младший сержант", "мл сержант", "мл.сержант", "мл сер", "мс"],
-            "сержант": ["сержант", "сер", "с", "сер."],
-            "ст. сержант": ["ст. сержант", "старший сержант", "ст сержант", "ст.сержант", "ст сер", "сс"],
-            "старшина": ["старшина", "ст", "стар"],
-            
-            # Прапорщики
-            "прапорщик": ["прапорщик", "пр", "прап"],
-            "ст. прапорщик": ["ст. прапорщик", "старший прапорщик", "ст прапорщик", "ст.прапорщик", "ст пр", "сп"],
-            
-            # Лейтенанты
-            "мл. лейтенант": ["мл. лейтенант", "младший лейтенант", "мл лейтенант", "мл.лейтенант", "мл лт", "мл"],
-            "лейтенант": ["лейтенант", "лт", "л", "лт.", "лейт.", "лейт"],
-            "ст. лейтенант": ["ст. лейтенант", "старший лейтенант", "ст лейтенант", "ст.лейтенант", "ст лт", "сл", "ст лт.", "ст.лт."],
-            
-            # Капитан и выше
-            "капитан": ["капитан", "кап", "к", "кап.", "капит.", "капит"],
-            "майор": ["майор", "май", "м"],
-            "подполковник": ["подполковник", "пп", "ппк"],
-            "полковник": ["полковник", "п", "плк"],
-            "генерал-майор": ["генерал-майор", "генерал майор", "ген-май", "ген май", "гм"],
-            "генерал-лейтенант": ["генерал-лейтенант", "генерал лейтенант", "ген-лт", "ген лт", "гл"],
-            "генерал-полковник": ["генерал-полковник", "генерал полковник", "ген-плк", "ген плк", "гп"],
-            "генерал армии": ["генерал армии", "ген армии", "га"],
-            "маршал": ["маршал", "мар", "мш"]
-        }
-        
-        # Reverse mapping for quick lookup
-        self.variation_to_rank = {}
-        for rank, variations in self.rank_variations.items():
-            for variation in variations:
-                self.variation_to_rank[variation.lower()] = rank
+        return any(indicator in text_lower for indicator in rmrp_indicators)
     
-    def extract_rank_from_activity(self, activity_text: str) -> Optional[str]:
-        """Extract rank from Discord activity text"""
+    def _extract_rank(self, activity_text: str) -> Optional[str]:
+        """Извлекает звание из текста активности"""
         if not activity_text:
             return None
         
-        # Check if playing on correct server first
-        if not self.is_rmrp_arbat_server(activity_text):
-            return None
-        
-        # Convert to lowercase for matching
-        activity_lower = activity_text.lower()
-        
-        # Enhanced patterns to find rank in activity text
-        # Common patterns: "1553-326 | Капитан (1153 из 5000)" or "Капитан | 1553-326"
-        patterns = [
-            # Pattern 1: "| Капитан (число из число)"
-            r'\|\s*([а-яё\.\s]+?)\s*\([0-9]+\s*из\s*[0-9]+\)',
-            # Pattern 2: "| Капитан | число"  
-            r'\|\s*([а-яё\.\s]+?)\s*\|',
-            # Pattern 3: "| Капитан" at end of string
-            r'\|\s*([а-яё\.\s]+?)(?:\s*$|\s*\()',
-            # Pattern 4: "Капитан (число"
-            r'([а-яё\.\s]+?)\s*\([0-9]+',
-            # Pattern 5: Just rank name between pipes
-            r'\|\s*([а-яё\.\s]{3,20})\s*\|',
-            # Pattern 6: Rank at the end after pipe
-            r'\|\s*([а-яё\.\s]{3,20})\s*$',
-            # Pattern 7: "Арбат (Капитан)" - rank in parentheses after server name
-            r'арбат\s*\(([а-яё\.\s]+)\)',
-            # Pattern 8: Generic "(Капитан)" - rank in parentheses
-            r'\(([а-яё\.\s]{3,20})\)(?:\s*$)',
-            # Pattern 9: "- Арбат (Капитан)" - with dash
-            r'-\s*арбат\s*\(([а-яё\.\s]+)\)',
-            # Pattern 10: "(Капитан Имя)" - rank with name in parentheses
-            r'\(([а-яё\.\s]{3,20})\s+[А-ЯЁ][а-яё]+\)',
-            # Pattern 11: "(лт. Имя)" - abbreviation with name in parentheses 
-            r'\(([а-яё\.]{2,10})\s+[А-ЯЁ][а-яё]+\)'
-        ]
-        
-        for pattern in patterns:
-            matches = re.finditer(pattern, activity_text, re.IGNORECASE | re.UNICODE)
-            for match in matches:
-                potential_rank = match.group(1).strip().lower()
-                
-                # Skip if it's obviously not a rank (contains numbers, too long, etc.)
-                if (len(potential_rank) < 3 or len(potential_rank) > 20 or 
-                    any(char.isdigit() for char in potential_rank) or
-                    any(char in '🔹🎮⚡️💎' for char in potential_rank)):
-                    continue
-                
-                # Try to normalize the rank
-                normalized_rank = self.normalize_rank(potential_rank)
-                if normalized_rank:
-                    return normalized_rank
-        
-        return None
-    
-    def normalize_rank(self, rank_text: str) -> Optional[str]:
-        """Normalize rank text to standard format"""
-        rank_lower = rank_text.lower().strip()
-        
-        # Clean up the rank text
-        rank_lower = re.sub(r'\s+', ' ', rank_lower)  # Normalize spaces
-        rank_lower = rank_lower.replace('ё', 'е')      # Replace ё with е
-        
-        # Direct lookup
-        if rank_lower in self.variation_to_rank:
-            return self.variation_to_rank[rank_lower]
-        
-        # Try partial matching for complex cases
-        for standard_rank, variations in self.rank_variations.items():
-            if rank_lower in variations:
-                return standard_rank
-        
-        # Try fuzzy matching for abbreviations and partial matches
-        for standard_rank in self.rank_variations.keys():
-            if self.is_rank_match(rank_lower, standard_rank):
-                return standard_rank
-        
-        # Try matching individual words for compound ranks
-        rank_words = rank_lower.split()
-        if len(rank_words) >= 2:
-            # For ranks like "мл. лейтенант" try matching "мл лейтенант", "младший лейтенант" etc
-            for standard_rank, variations in self.rank_variations.items():
-                for variation in variations:
-                    if all(word in variation for word in rank_words):
-                        return standard_rank
-        
-        return None
-    
-    def is_rank_match(self, test_rank: str, standard_rank: str) -> bool:
-        """Enhanced matching for ranks including abbreviations"""
-        # Exact match
-        if test_rank == standard_rank:
-            return True
+        # Словарь всех возможных вариантов званий
+        rank_patterns = {
+            # Рядовые
+            'рядовой': r'\b(?:рядовой|рдв|р\.?)\b',
+            'ефрейтор': r'\b(?:ефрейтор|еф|ефр\.?)\b',
             
-        # Check if test_rank is in variations
-        variations = self.rank_variations.get(standard_rank, [])
-        if test_rank in variations:
-            return True
+            # Сержанты  
+            'мл. сержант': r'\b(?:мл\.?\s*сержант|младший\s+сержант|мл\.?\s*сер\.?|мс)\b',
+            'сержант': r'\b(?:сержант|сер\.?|с\.)\b',
+            'ст. сержант': r'\b(?:ст\.?\s*сержант|старший\s+сержант|ст\.?\s*сер\.?|сс)\b',
+            'старшина': r'\b(?:старшина|стар\.?|ст\.)\b',
+            
+            # Прапорщики
+            'прапорщик': r'\b(?:прапорщик|прап\.?|пр\.?)\b',
+            'ст. прапорщик': r'\b(?:ст\.?\s*прапорщик|старший\s+прапорщик|ст\.?\s*прап\.?|сп)\b',
+            
+            # Лейтенанты
+            'мл. лейтенант': r'\b(?:мл\.?\s*лейтенант|младший\s+лейтенант|мл\.?\s*лт\.?|мл)\b',
+            'лейтенант': r'\b(?:лейтенант|лт\.?|л\.?|лейт\.?)\b',
+            'ст. лейтенант': r'\b(?:ст\.?\s*лейтенант|старший\s+лейтенант|ст\.?\s*лт\.?|сл)\b',
+            
+            # Высшие звания
+            'капитан': r'\b(?:капитан|кап\.?|к\.?|капит\.?)\b',
+            'майор': r'\b(?:майор|май\.?|м\.?)\b',
+            'подполковник': r'\b(?:подполковник|пп|ппк)\b',
+            'полковник': r'\b(?:полковник|п\.?|плк)\b',
+            'генерал': r'\b(?:генерал.*?|ген\.?\s*.*?|гм|гл|гп|га)\b',
+            'маршал': r'\b(?:маршал|мар\.?|мш)\b'
+        }
         
-        # For ranks with dots (like "мл. сержант")
-        if "." in standard_rank or "." in test_rank:
-            return self.is_rank_abbreviation_match(test_rank, standard_rank)
+        text_lower = activity_text.lower()
         
-        # Check partial matching for compound ranks
-        standard_words = standard_rank.split()
-        test_words = test_rank.split()
+        # Ищем звание в тексте
+        for rank, pattern in rank_patterns.items():
+            if re.search(pattern, text_lower, re.IGNORECASE):
+                print(f"🔍 Найдено совпадение '{rank}' по паттерну '{pattern}'")
+                return rank
         
-        if len(standard_words) == 2 and len(test_words) >= 1:
-            # Check if test contains key parts of the rank
-            if (test_words[0].startswith(standard_words[0][:2]) or 
-                any(word.startswith(standard_words[1][:3]) for word in test_words)):
-                return True
-        
-        return False
+        print(f"❌ Звание не найдено в тексте: {activity_text}")
+        return None
     
-    def is_rank_abbreviation_match(self, abbrev: str, full_rank: str) -> bool:
-        """Check if abbreviation matches full rank"""
-        abbrev_clean = abbrev.replace(".", "").replace(" ", "")
-        
-        # For ranks with dots (like "мл. сержант")
-        if "." in full_rank:
-            parts = full_rank.split()
-            if len(parts) == 2:
-                first_abbrev = parts[0].replace(".", "")[:2]  # "мл"
-                second_abbrev = parts[1][:3]  # "сер"
-                possible_abbrevs = [
-                    first_abbrev + second_abbrev,  # "млсер"
-                    first_abbrev + parts[1][:2],   # "млсе"
-                    first_abbrev,                  # "мл"
-                ]
-                return abbrev_clean in possible_abbrevs
-        
-        return False
-    
-    def is_rmrp_arbat_server(self, activity_text: str) -> bool:
-        """Check if the activity is from RMRP Arbat server"""
-        activity_lower = activity_text.lower()
-        
-        for pattern in self.server_patterns:
-            if pattern.lower() in activity_lower:
-                return True
-        
-        return False
-    
-    async def sync_user_rank(self, member: discord.Member, activity_rank: str, force: bool = False) -> bool:
-        """Sync user's Discord roles based on detected rank"""
+    async def _sync_roles(self, member: discord.Member, rank: str) -> bool:
+        """Синхронизирует роли пользователя с обнаруженным званием"""
         try:
             config = load_config()
             rank_roles = config.get('rank_roles', {})
             
-            print(f"🔧 Starting sync for {member.display_name}, detected rank: '{activity_rank}'")
-            print(f"📋 Available rank roles: {list(rank_roles.keys())}")
-            
-            # Find role with case-insensitive matching
+            # Ищем роль для звания (без учета регистра)
             target_role_id = None
-            matched_rank_key = None
-            
             for config_rank, role_id in rank_roles.items():
-                if config_rank.lower() == activity_rank.lower():
+                if config_rank.lower() == rank.lower():
                     target_role_id = role_id
-                    matched_rank_key = config_rank
-                    print(f"✅ Found matching role: '{config_rank}' -> {role_id}")
                     break
             
             if not target_role_id:
-                print(f"❌ Rank '{activity_rank}' not found in config for {member.display_name}")
-                print(f"🔍 Available ranks: {list(rank_roles.keys())}")
+                print(f"❌ Роль для звания '{rank}' не настроена")
                 return False
             
             target_role = member.guild.get_role(target_role_id)
-            
             if not target_role:
-                print(f"❌ Role with ID {target_role_id} not found in guild for rank '{activity_rank}'")
+                print(f"❌ Роль {target_role_id} не найдена на сервере")
                 return False
             
-            print(f"🎯 Target role: {target_role.name} (ID: {target_role_id})")
+            print(f"🎯 Целевая роль: {target_role.name}")
             
-            # Check if user already has this role
+            # Проверяем, есть ли уже эта роль
             if target_role in member.roles:
-                print(f"✅ {member.display_name} already has role {target_role.name}")
+                print(f"✅ {member.display_name} уже имеет роль {target_role.name}")
                 return True
             
-            # Check key role requirement (skip if force is True)
-            key_role_id = config.get('rank_sync_key_role')
-            if key_role_id and not force:
-                key_role = member.guild.get_role(key_role_id)
-                if key_role and key_role not in member.roles:
-                    print(f"⚠️ {member.display_name} doesn't have key role {key_role.name}, skipping sync")
-                    return False
-                elif not key_role:
-                    print(f"⚠️ Key role with ID {key_role_id} not found in guild")
-            elif force:
-                print(f"🚀 Force mode: skipping key role check")
-            
-            # Remove other rank roles first
+            # Удаляем другие роли званий
             roles_to_remove = []
             for role in member.roles:
                 if role.id in rank_roles.values() and role.id != target_role_id:
                     roles_to_remove.append(role)
             
             if roles_to_remove:
-                print(f"🔄 Removing old rank roles: {[role.name for role in roles_to_remove]}")
-                await member.remove_roles(*roles_to_remove, reason="Rank synchronization")
-                removed_names = [role.name for role in roles_to_remove]
-                print(f"✅ Removed roles from {member.display_name}: {', '.join(removed_names)}")
+                print(f"🗑️ Удаляем старые роли: {[r.name for r in roles_to_remove]}")
+                await member.remove_roles(*roles_to_remove, reason="Синхронизация званий")
             
-            # Add new rank role
-            print(f"➕ Adding role {target_role.name} to {member.display_name}")
-            await member.add_roles(target_role, reason=f"Rank sync: detected '{activity_rank}' in game")
-            print(f"✅ Added role {target_role.name} to {member.display_name}")
-            
-            # Log to audit if configured
-            await self.log_rank_sync(member, activity_rank, target_role, roles_to_remove)
+            # Добавляем новую роль
+            print(f"➕ Добавляем роль: {target_role.name}")
+            await member.add_roles(target_role, reason=f"Обнаружено звание: {rank}")
             
             return True
             
         except Exception as e:
-            print(f"❌ Error syncing rank for {member.display_name}: {e}")
+            print(f"❌ Ошибка синхронизации ролей: {e}")
             return False
     
-    async def log_rank_sync(self, member: discord.Member, detected_rank: str, 
-                           new_role: discord.Role, removed_roles: List[discord.Role]):
-        """Log rank synchronization to audit channel"""
-        try:
-            config = load_config()
-            audit_channel_id = config.get('audit_channel')
-            
-            if not audit_channel_id:
-                return
-            
-            audit_channel = member.guild.get_channel(audit_channel_id)
-            if not audit_channel:
-                return
-            
-            embed = discord.Embed(
-                title="🎖️ Автоматическая синхронизация звания",
-                description=f"Обнаружено изменение звания в игре",
-                color=discord.Color.blue(),
-                timestamp=discord.utils.utcnow()
-            )
-            
-            embed.add_field(
-                name="👤 Игрок",
-                value=f"{member.mention} ({member.display_name})",
-                inline=False
-            )
-            
-            embed.add_field(
-                name="🎖️ Обнаруженное звание",
-                value=f"`{detected_rank}`",
-                inline=True
-            )
-            
-            embed.add_field(
-                name="🆕 Назначена роль",
-                value=new_role.mention,
-                inline=True
-            )
-            
-            if removed_roles:
-                removed_names = [role.mention for role in removed_roles]
-                embed.add_field(
-                    name="🗑️ Удалены роли",
-                    value="\n".join(removed_names),
-                    inline=False
-                )
-            
-            embed.set_footer(text="Автоматическая система синхронизации званий")
-            
-            await audit_channel.send(embed=embed)
-            
-        except Exception as e:
-            print(f"⚠️ Failed to log rank sync: {e}")
-    
-    async def monitor_member_activity(self, member: discord.Member, force: bool = False):
-        """Monitor a single member's activity for rank changes"""
-        try:
-            # Find game activity
-            game_activity = None
-            activity_text = None
-            
-            for activity in member.activities:
-                if hasattr(activity, 'name') and activity.name:
-                    # Check all possible fields that might contain rank information
-                    possible_fields = ['details', 'state', 'large_text', 'small_text']
-                    
-                    for field_name in possible_fields:
-                        if hasattr(activity, field_name):
-                            field_value = getattr(activity, field_name)
-                            if field_value and self.is_rmrp_arbat_server(field_value):
-                                game_activity = activity
-                                activity_text = field_value
-                                print(f"🎮 Found RMRP activity in {field_name}: {field_value}")
-                                break
-                    
-                    if game_activity:
-                        break
-            
-            if not game_activity or not activity_text:
-                print(f"🔍 No RMRP activity found for {member.display_name}")
-                return
-            
-            # Extract rank from activity text
-            detected_rank = self.extract_rank_from_activity(activity_text)
-            
-            if detected_rank:
-                print(f"�️ Detected rank '{detected_rank}' for {member.display_name}")
-                success = await self.sync_user_rank(member, detected_rank, force)
-                
-                if success:
-                    print(f"✅ Successfully synced rank for {member.display_name}")
-                else:
-                    print(f"⚠️ Failed to sync rank for {member.display_name}")
+    async def sync_all(self, guild: discord.Guild) -> tuple[int, int]:
+        """Синхронизирует всех пользователей сервера"""
+        print(f"🚀 Начинаю массовую синхронизацию сервера {guild.name}")
+        
+        config = load_config()
+        key_role_id = config.get('rank_sync_key_role')
+        
+        # Фильтруем пользователей
+        if key_role_id:
+            key_role = guild.get_role(key_role_id)
+            if key_role:
+                members_to_sync = [m for m in guild.members if not m.bot and key_role in m.roles]
+                print(f"🔑 Фильтрация по ключевой роли '{key_role.name}': {len(members_to_sync)} пользователей")
             else:
-                print(f"❓ No rank detected in activity for {member.display_name}: {activity_text}")
-            
-        except Exception as e:
-            print(f"❌ Error monitoring activity for {member.display_name}: {e}")
-            import traceback
-            traceback.print_exc()
-    
-    async def monitor_all_activities(self, guild: discord.Guild):
-        """Monitor all guild members' activities for rank synchronization"""
-        print("🔍 Starting rank synchronization scan...")
+                members_to_sync = [m for m in guild.members if not m.bot]
+                print(f"⚠️ Ключевая роль не найдена, синхронизируем всех: {len(members_to_sync)} пользователей")
+        else:
+            members_to_sync = [m for m in guild.members if not m.bot]
+            print(f"ℹ️ Ключевая роль не настроена, синхронизируем всех: {len(members_to_sync)} пользователей")
         
         synced_count = 0
-        checked_count = 0
         
-        for member in guild.members:
-            if member.bot:
-                continue
-                
-            checked_count += 1
+        for member in members_to_sync:
+            success = await self.sync_user(member, force=False)
+            if success:
+                synced_count += 1
             
-            try:
-                old_roles = set(role.id for role in member.roles)
-                await self.monitor_member_activity(member, False)  # Force=False for mass sync
-                new_roles = set(role.id for role in member.roles)
-                
-                if old_roles != new_roles:
-                    synced_count += 1
-                
-            except Exception as e:
-                print(f"❌ Error checking {member.display_name}: {e}")
+            # Небольшая пауза для избежания rate limit
+            await asyncio.sleep(0.1)
         
-        print(f"✅ Rank sync completed: {synced_count} members synced out of {checked_count} checked")
-        return synced_count, checked_count
+        print(f"✅ Массовая синхронизация завершена: {synced_count}/{len(members_to_sync)} пользователей")
+        return synced_count, len(members_to_sync)
 
 
-# Initialize global rank sync manager
-rank_sync_manager = None
+# Глобальный экземпляр
+rank_sync = None
 
 def initialize_rank_sync(bot):
-    """Initialize the rank synchronization system"""
-    global rank_sync_manager
-    rank_sync_manager = RankSyncManager(bot)
-    print("✅ Rank synchronization system initialized")
-    return rank_sync_manager
-
-async def sync_ranks_for_guild(guild: discord.Guild) -> Tuple[int, int]:
-    """Sync ranks for all members in a guild"""
-    if not rank_sync_manager:
-        print("❌ Rank sync manager not initialized")
-        return 0, 0
-    
-    return await rank_sync_manager.monitor_all_activities(guild)
-
-async def sync_ranks_for_member(member: discord.Member, force: bool = False) -> bool:
-    """Sync ranks for a specific member"""
-    if not rank_sync_manager:
-        print("❌ Rank sync manager not initialized")
-        return False
-    
-    await rank_sync_manager.monitor_member_activity(member, force)
-    return True
+    """Инициализирует систему синхронизации"""
+    global rank_sync
+    rank_sync = RankSync(bot)
+    print("✅ Новая система синхронизации званий инициализирована")
+    return rank_sync

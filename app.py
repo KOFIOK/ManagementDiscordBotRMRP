@@ -109,18 +109,14 @@ async def on_ready():
     
     # ИНИЦИАЛИЗАЦИЯ СИСТЕМЫ СИНХРОНИЗАЦИИ ЗВАНИЙ
     try:
-        print('🎖️ Initializing optimized rank synchronization system...')
+        print('🎖️ Initializing rank synchronization system...')
         from utils.rank_sync import initialize_rank_sync
-        from utils.optimized_rank_sync import initialize_optimized_rank_sync, start_optimized_monitoring
         
-        # Initialize both systems
-        rank_sync = initialize_rank_sync(bot)
-        optimized_sync = initialize_optimized_rank_sync(bot)
+        # Initialize new simple system
+        rank_sync_system = initialize_rank_sync(bot)
         
-        if rank_sync and optimized_sync:
-            print('✅ Rank synchronization systems initialized successfully')
-            # Start optimized monitoring
-            asyncio.create_task(start_optimized_monitoring())
+        if rank_sync_system:
+            print('✅ Rank synchronization system initialized successfully')
         else:
             print('⚠️ Rank synchronization system initialization failed')
     except Exception as e:
@@ -390,14 +386,14 @@ async def on_member_update(before, after):
                     channel_sent = await send_notification_to_channel(after.guild, after, 'moderator')
                     print(f"📢 Авто-уведомление модератору {after.display_name} (роль выдана): DM {'✅' if dm_sent else '❌'}")
         
-        # Check for activity changes (optimized rank synchronization)
+        # Check for activity changes (новая система синхронизации званий)
         if before.activities != after.activities:
-            from utils.optimized_rank_sync import optimized_rank_sync
+            from utils.rank_sync import rank_sync
             
-            # Only queue for check if optimized sync is available and real-time is enabled
-            if optimized_rank_sync and optimized_rank_sync.sync_modes.get('realtime', False):
-                # Non-blocking queue for activity check
-                asyncio.create_task(optimized_rank_sync.queue_activity_check(after))
+            # Если система инициализирована, проверяем пользователя
+            if rank_sync:
+                # Неблокирующая проверка активности
+                asyncio.create_task(rank_sync.sync_user(after, force=False))
             
     except Exception as e:
         print(f"❌ Error handling member update for {after.name}: {e}")

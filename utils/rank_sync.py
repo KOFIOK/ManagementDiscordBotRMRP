@@ -29,7 +29,7 @@ class RankSyncManager:
             
             # Сержанты
             "мл. сержант": ["мл. сержант", "младший сержант", "мл сержант", "мл.сержант", "мл сер", "мс"],
-            "сержант": ["сержант", "сер", "с"],
+            "сержант": ["сержант", "сер", "с", "сер."],
             "ст. сержант": ["ст. сержант", "старший сержант", "ст сержант", "ст.сержант", "ст сер", "сс"],
             "старшина": ["старшина", "ст", "стар"],
             
@@ -39,11 +39,11 @@ class RankSyncManager:
             
             # Лейтенанты
             "мл. лейтенант": ["мл. лейтенант", "младший лейтенант", "мл лейтенант", "мл.лейтенант", "мл лт", "мл"],
-            "лейтенант": ["лейтенант", "лт", "л"],
-            "ст. лейтенант": ["ст. лейтенант", "старший лейтенант", "ст лейтенант", "ст.лейтенант", "ст лт", "сл"],
+            "лейтенант": ["лейтенант", "лт", "л", "лт.", "лейт.", "лейт"],
+            "ст. лейтенант": ["ст. лейтенант", "старший лейтенант", "ст лейтенант", "ст.лейтенант", "ст лт", "сл", "ст лт.", "ст.лт."],
             
             # Капитан и выше
-            "капитан": ["капитан", "кап", "к"],
+            "капитан": ["капитан", "кап", "к", "кап.", "капит.", "капит"],
             "майор": ["майор", "май", "м"],
             "подполковник": ["подполковник", "пп", "ппк"],
             "полковник": ["полковник", "п", "плк"],
@@ -86,7 +86,17 @@ class RankSyncManager:
             # Pattern 5: Just rank name between pipes
             r'\|\s*([а-яё\.\s]{3,20})\s*\|',
             # Pattern 6: Rank at the end after pipe
-            r'\|\s*([а-яё\.\s]{3,20})\s*$'
+            r'\|\s*([а-яё\.\s]{3,20})\s*$',
+            # Pattern 7: "Арбат (Капитан)" - rank in parentheses after server name
+            r'арбат\s*\(([а-яё\.\s]+)\)',
+            # Pattern 8: Generic "(Капитан)" - rank in parentheses
+            r'\(([а-яё\.\s]{3,20})\)(?:\s*$)',
+            # Pattern 9: "- Арбат (Капитан)" - with dash
+            r'-\s*арбат\s*\(([а-яё\.\s]+)\)',
+            # Pattern 10: "(Капитан Имя)" - rank with name in parentheses
+            r'\(([а-яё\.\s]{3,20})\s+[А-ЯЁ][а-яё]+\)',
+            # Pattern 11: "(лт. Имя)" - abbreviation with name in parentheses 
+            r'\(([а-яё\.]{2,10})\s+[А-ЯЁ][а-яё]+\)'
         ]
         
         for pattern in patterns:
@@ -202,11 +212,20 @@ class RankSyncManager:
             config = load_config()
             rank_roles = config.get('rank_roles', {})
             
-            if activity_rank not in rank_roles:
+            # Find role with case-insensitive matching
+            target_role_id = None
+            matched_rank_key = None
+            
+            for config_rank, role_id in rank_roles.items():
+                if config_rank.lower() == activity_rank.lower():
+                    target_role_id = role_id
+                    matched_rank_key = config_rank
+                    break
+            
+            if not target_role_id:
                 print(f"⚠️ Rank '{activity_rank}' not found in config for {member.display_name}")
                 return False
             
-            target_role_id = rank_roles[activity_rank]
             target_role = member.guild.get_role(target_role_id)
             
             if not target_role:

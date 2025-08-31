@@ -24,6 +24,7 @@ load_dotenv()
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
+intents.presences = True  # Нужен для чтения активностей пользователей (Rich Presence)
 
 # Initialize the bot with a command prefix and intents
 bot = commands.Bot(command_prefix='!', intents=intents)
@@ -397,6 +398,29 @@ async def on_member_update(before, after):
             
     except Exception as e:
         print(f"❌ Error handling member update for {after.name}: {e}")
+
+@bot.event
+async def on_presence_update(before, after):
+    """Handle presence changes (status, activities, Rich Presence)"""
+    try:
+        # Игнорируем ботов
+        if after.bot:
+            return
+        
+        # Проверяем изменения в активностях (более точно, чем on_member_update)
+        if before.activities != after.activities:
+            print(f"🔄 Обнаружено изменение активности у {after.display_name}")
+            
+            from utils.rank_sync import rank_sync
+            
+            # Если система инициализирована, проверяем пользователя
+            if rank_sync:
+                print(f"🎮 Запуск синхронизации для {after.display_name} (изменение активности)")
+                # Неблокирующая проверка активности
+                asyncio.create_task(rank_sync.sync_user(after, force=False))
+            
+    except Exception as e:
+        print(f"❌ Error handling presence update for {after.name}: {e}")
 
 async def restore_channel_messages(config):
     """Check and restore button messages for all configured channels."""    # Restore dismissal channel message

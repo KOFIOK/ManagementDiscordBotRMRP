@@ -37,6 +37,12 @@ class MainSettingsSelect(ui.Select):
                 value="excluded_roles"
             ),
             discord.SelectOption(
+                label="Роли званий",
+                description="Настроить связывание званий с ролями на сервере",
+                emoji="🎖️",
+                value="rank_roles"
+            ),
+            discord.SelectOption(
                 label="Настройки склада",
                 description="Настроить систему запросов и выдачи складского имущества",
                 emoji="📦",
@@ -71,6 +77,8 @@ class MainSettingsSelect(ui.Select):
             await self.show_current_config(interaction)
         elif selected_option == "excluded_roles":
             await self.show_excluded_roles_config(interaction)
+        elif selected_option == "rank_roles":
+            await self.show_rank_roles_config(interaction)
         elif selected_option == "warehouse_settings":
             await self.show_warehouse_settings_menu(interaction)
     
@@ -214,6 +222,45 @@ class MainSettingsSelect(ui.Select):
         
         embed.add_field(name="📢 Пинги чёрного списка", value=blacklist_ping_text, inline=False)
         
+        # Rank roles
+        rank_roles = config.get('rank_roles', {})
+        key_role_id = config.get('rank_sync_key_role')
+        
+        if rank_roles:
+            rank_roles_text = []
+            
+            # Add key role info first
+            if key_role_id:
+                key_role = interaction.guild.get_role(key_role_id)
+                if key_role:
+                    rank_roles_text.append(f"🔑 **Ключевая роль:** {key_role.mention}")
+                else:
+                    rank_roles_text.append(f"🔑 **Ключевая роль:** ❌ Роль не найдена (ID: {key_role_id})")
+            else:
+                rank_roles_text.append("⚠️ **Ключевая роль:** Не настроена")
+            
+            rank_roles_text.append("")  # Empty line
+            
+            for rank_name, role_id in sorted(rank_roles.items()):
+                role = interaction.guild.get_role(int(role_id))
+                if role:
+                    rank_roles_text.append(f"• **{rank_name}** → {role.mention}")
+                else:
+                    rank_roles_text.append(f"• **{rank_name}** → ❌ Роль не найдена (ID: {role_id})")
+            
+            rank_roles_display = "\n".join(rank_roles_text[:12])  # Limit for display
+            if len(rank_roles_text) > 12:
+                rank_roles_display += f"\n... и ещё {len(rank_roles_text) - 12} элементов"
+        else:
+            if key_role_id:
+                key_role = interaction.guild.get_role(key_role_id)
+                key_role_display = key_role.mention if key_role else f"❌ Роль не найдена (ID: {key_role_id})"
+                rank_roles_display = f"🔑 **Ключевая роль:** {key_role_display}\n❌ Звания не настроены"
+            else:
+                rank_roles_display = "❌ Не настроены"
+                
+        embed.add_field(name="🎖️ Роли званий", value=rank_roles_display, inline=False)
+        
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
     async def show_excluded_roles_config(self, interaction: discord.Interaction):
@@ -256,6 +303,11 @@ class MainSettingsSelect(ui.Select):
         )        
         view = ExcludedRolesView()
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+    async def show_rank_roles_config(self, interaction: discord.Interaction):
+        """Show interface for managing rank roles"""
+        from .rank_roles import show_rank_roles_config
+        await show_rank_roles_config(interaction)
 
     async def show_warehouse_settings_menu(self, interaction: discord.Interaction):
         """Show warehouse settings configuration menu"""

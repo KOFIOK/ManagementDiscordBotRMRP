@@ -206,11 +206,14 @@ class RankSyncManager:
         
         return False
     
-    async def sync_user_rank(self, member: discord.Member, activity_rank: str) -> bool:
+    async def sync_user_rank(self, member: discord.Member, activity_rank: str, force: bool = False) -> bool:
         """Sync user's Discord roles based on detected rank"""
         try:
             config = load_config()
             rank_roles = config.get('rank_roles', {})
+            
+            print(f"🔧 Starting sync for {member.display_name}, detected rank: '{activity_rank}'")
+            print(f"📋 Available rank roles: {list(rank_roles.keys())}")
             
             # Find role with case-insensitive matching
             target_role_id = None
@@ -220,22 +223,38 @@ class RankSyncManager:
                 if config_rank.lower() == activity_rank.lower():
                     target_role_id = role_id
                     matched_rank_key = config_rank
+                    print(f"✅ Found matching role: '{config_rank}' -> {role_id}")
                     break
             
             if not target_role_id:
-                print(f"⚠️ Rank '{activity_rank}' not found in config for {member.display_name}")
+                print(f"❌ Rank '{activity_rank}' not found in config for {member.display_name}")
+                print(f"🔍 Available ranks: {list(rank_roles.keys())}")
                 return False
             
             target_role = member.guild.get_role(target_role_id)
             
             if not target_role:
-                print(f"❌ Role with ID {target_role_id} not found for rank '{activity_rank}'")
+                print(f"❌ Role with ID {target_role_id} not found in guild for rank '{activity_rank}'")
                 return False
+            
+            print(f"🎯 Target role: {target_role.name} (ID: {target_role_id})")
             
             # Check if user already has this role
             if target_role in member.roles:
                 print(f"✅ {member.display_name} already has role {target_role.name}")
                 return True
+            
+            # Check key role requirement (skip if force is True)
+            key_role_id = config.get('rank_sync_key_role')
+            if key_role_id and not force:
+                key_role = member.guild.get_role(key_role_id)
+                if key_role and key_role not in member.roles:
+                    print(f"⚠️ {member.display_name} doesn't have key role {key_role.name}, skipping sync")
+                    return False
+                elif not key_role:
+                    print(f"⚠️ Key role with ID {key_role_id} not found in guild")
+            elif force:
+                print(f"🚀 Force mode: skipping key role check")
             
             # Remove other rank roles first
             roles_to_remove = []
@@ -244,11 +263,13 @@ class RankSyncManager:
                     roles_to_remove.append(role)
             
             if roles_to_remove:
+                print(f"🔄 Removing old rank roles: {[role.name for role in roles_to_remove]}")
                 await member.remove_roles(*roles_to_remove, reason="Rank synchronization")
                 removed_names = [role.name for role in roles_to_remove]
-                print(f"🔄 Removed roles from {member.display_name}: {', '.join(removed_names)}")
+                print(f"✅ Removed roles from {member.display_name}: {', '.join(removed_names)}")
             
             # Add new rank role
+            print(f"➕ Adding role {target_role.name} to {member.display_name}")
             await member.add_roles(target_role, reason=f"Rank sync: detected '{activity_rank}' in game")
             print(f"✅ Added role {target_role.name} to {member.display_name}")
             
@@ -315,38 +336,52 @@ class RankSyncManager:
         except Exception as e:
             print(f"⚠️ Failed to log rank sync: {e}")
     
-    async def monitor_member_activity(self, member: discord.Member):
+    async def monitor_member_activity(self, member: discord.Member, force: bool = False):
         """Monitor a single member's activity for rank changes"""
         try:
             # Find game activity
             game_activity = None
+            activity_text = None
+            
             for activity in member.activities:
-                if (hasattr(activity, 'name') and 
-                    hasattr(activity, 'details') and
-                    activity.details):
+                if hasattr(activity, 'name') and activity.name:
+                    # Check all possible fields that might contain rank information
+                    possible_fields = ['details', 'state', 'large_text', 'small_text']
                     
-                    # Check if it's RMRP activity
-                    if self.is_rmrp_arbat_server(activity.details):
-                        game_activity = activity
+                    for field_name in possible_fields:
+                        if hasattr(activity, field_name):
+                            field_value = getattr(activity, field_name)
+                            if field_value and self.is_rmrp_arbat_server(field_value):
+                                game_activity = activity
+                                activity_text = field_value
+                                print(f"🎮 Found RMRP activity in {field_name}: {field_value}")
+                                break
+                    
+                    if game_activity:
                         break
             
-            if not game_activity:
+            if not game_activity or not activity_text:
+                print(f"🔍 No RMRP activity found for {member.display_name}")
                 return
             
-            # Extract rank from activity
-            detected_rank = self.extract_rank_from_activity(game_activity.details)
+            # Extract rank from activity text
+            detected_rank = self.extract_rank_from_activity(activity_text)
             
             if detected_rank:
-                print(f"🎮 Detected rank '{detected_rank}' for {member.display_name}")
-                success = await self.sync_user_rank(member, detected_rank)
+                print(f"�️ Detected rank '{detected_rank}' for {member.display_name}")
+                success = await self.sync_user_rank(member, detected_rank, force)
                 
                 if success:
                     print(f"✅ Successfully synced rank for {member.display_name}")
                 else:
                     print(f"⚠️ Failed to sync rank for {member.display_name}")
+            else:
+                print(f"❓ No rank detected in activity for {member.display_name}: {activity_text}")
             
         except Exception as e:
             print(f"❌ Error monitoring activity for {member.display_name}: {e}")
+            import traceback
+            traceback.print_exc()
     
     async def monitor_all_activities(self, guild: discord.Guild):
         """Monitor all guild members' activities for rank synchronization"""
@@ -363,7 +398,7 @@ class RankSyncManager:
             
             try:
                 old_roles = set(role.id for role in member.roles)
-                await self.monitor_member_activity(member)
+                await self.monitor_member_activity(member, False)  # Force=False for mass sync
                 new_roles = set(role.id for role in member.roles)
                 
                 if old_roles != new_roles:
@@ -394,11 +429,11 @@ async def sync_ranks_for_guild(guild: discord.Guild) -> Tuple[int, int]:
     
     return await rank_sync_manager.monitor_all_activities(guild)
 
-async def sync_ranks_for_member(member: discord.Member) -> bool:
+async def sync_ranks_for_member(member: discord.Member, force: bool = False) -> bool:
     """Sync ranks for a specific member"""
     if not rank_sync_manager:
         print("❌ Rank sync manager not initialized")
         return False
     
-    await rank_sync_manager.monitor_member_activity(member)
+    await rank_sync_manager.monitor_member_activity(member, force)
     return True

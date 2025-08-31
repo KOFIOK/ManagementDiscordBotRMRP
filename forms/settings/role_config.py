@@ -18,7 +18,7 @@ class RolesConfigView(BaseSettingsView):
     @discord.ui.button(label="👤 Роли гражданских", style=discord.ButtonStyle.secondary, custom_id="set_civilian_roles")
     async def set_civilian_roles(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = SetMultipleRolesModal("civilian_roles", "👤 Настройка ролей гражданских", "Укажите роли для гражданских (через запятую)")
-        await interaction.response.send_modal(modal)
+        await interaction.response.send_mal(modal)
     
     @discord.ui.button(label="📢 Настроить ping-роли", style=discord.ButtonStyle.primary, custom_id="configure_ping_roles")
     async def configure_ping_roles(self, interaction: discord.Interaction, button: discord.ui.Button):

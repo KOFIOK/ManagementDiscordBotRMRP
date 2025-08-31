@@ -8,7 +8,7 @@ import discord
 from datetime import datetime, timezone, timedelta
 from typing import Dict
 from utils.warehouse_manager import WarehouseManager
-from .cart import WarehouseRequestCart, get_user_cart, clear_user_cart_safe, get_user_cart_message, user_cart_messages
+from .cart import WarehouseRequestCart, clear_user_cart_safe, get_user_cart_message, user_cart_messages
 
 
 class WarehouseCategorySelect(discord.ui.Select):

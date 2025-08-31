@@ -268,7 +268,7 @@ class PingContextModal(BaseSettingsModal):
             current_text = ", ".join(f"<@&{role_id}>" for role_id in current_role_ids)
         
         self.roles_input = ui.TextInput(
-            label=f"Роли для уведомлений: {context_name}",
+            label=f"Роли уведомлений: {context_name}",
             placeholder="@Роль1, @Роль2, ID1, ID2 или 'очистить' для удаления",
             style=discord.TextStyle.paragraph,
             default=current_text,

@@ -1478,17 +1478,24 @@ class DepartmentApplicationView(ui.View):
         - Admins can approve anything
         - Moderators can only approve if they have at least one role from FIRST LINE of content
         """
+
+        print("вызов _check_approve_permissions")
+
         config = load_config()
         administrators = config.get('administrators', {})
         moderators = config.get('moderators', {})
         user_role_ids = [role.id for role in interaction.user.roles]
-        
+
+        print(f"DEBUG: Роли пользователя (ID): {user_role_ids}")
+
         # Check if user is administrator (can approve anything)
         is_admin = (
             interaction.user.id in administrators.get('users', []) or
             any(role_id in user_role_ids for role_id in administrators.get('roles', []))
         )
-        
+
+        print(f"DEBUG: Является ли пользователь администратором: {is_admin}")
+
         if is_admin:
             return True
         
@@ -1497,23 +1504,26 @@ class DepartmentApplicationView(ui.View):
             interaction.user.id in moderators.get('users', []) or
             any(role_id in user_role_ids for role_id in moderators.get('roles', []))
         )
-        
+        print(f"DEBUG: Является ли пользователь модератором: {is_moderator}")
         if not is_moderator:
             return False
-        
+
         # Extract roles from first line of content
         content = interaction.message.content if interaction.message else ""
+        print(f"DEBUG: Содержимое сообщения (для извлечения ролей): '{content}'")
         role_lines = self._extract_role_mentions_from_content(content)
+        print(f"DEBUG: Извлеченные строки ролей (role_lines): {role_lines}")
         
         if not role_lines or not role_lines[0]:
             # No roles in content or empty first line - fallback to old logic
-            return await self._check_moderator_permissions(interaction)
+            return await self._eck_moderator_permissions(interaction)
         
         first_line_role_ids = role_lines[0]
-        
+        print(f"DEBUG: Требуемые роли из первой строки сообщения (ID): {first_line_role_ids}")
+
         # Check if moderator has at least one role from first line
         has_required_role = any(role_id in user_role_ids for role_id in first_line_role_ids)
-        
+
         return has_required_role
     
     async def _check_reject_permissions(self, interaction: discord.Interaction) -> bool:

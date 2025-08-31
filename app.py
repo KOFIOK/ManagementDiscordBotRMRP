@@ -61,6 +61,12 @@ async def on_ready():
     try:
         config = load_config()
         print('✅ Configuration loaded successfully')
+        
+        # Initialize default rank roles if not present
+        from forms.settings.rank_roles import initialize_default_ranks
+        if initialize_default_ranks():
+            print('✅ Default rank roles initialized')
+        
         print(f'Dismissal channel: {config.get("dismissal_channel", "Not set")}')
         print(f'Audit channel: {config.get("audit_channel", "Not set")}')
         print(f'Blacklist channel: {config.get("blacklist_channel", "Not set")}')
@@ -98,6 +104,27 @@ async def on_ready():
             print('⚠️ User cache bulk preload failed - will use fallback loading')
     except Exception as e:
         print(f'❌ Error initializing user cache: {e}')
+        import traceback
+        traceback.print_exc()
+    
+    # ИНИЦИАЛИЗАЦИЯ СИСТЕМЫ СИНХРОНИЗАЦИИ ЗВАНИЙ
+    try:
+        print('🎖️ Initializing optimized rank synchronization system...')
+        from utils.rank_sync import initialize_rank_sync
+        from utils.optimized_rank_sync import initialize_optimized_rank_sync, start_optimized_monitoring
+        
+        # Initialize both systems
+        rank_sync = initialize_rank_sync(bot)
+        optimized_sync = initialize_optimized_rank_sync(bot)
+        
+        if rank_sync and optimized_sync:
+            print('✅ Rank synchronization systems initialized successfully')
+            # Start optimized monitoring
+            asyncio.create_task(start_optimized_monitoring())
+        else:
+            print('⚠️ Rank synchronization system initialization failed')
+    except Exception as e:
+        print(f'❌ Error initializing rank sync system: {e}')
         import traceback
         traceback.print_exc()
       # Create persistent button views
@@ -362,6 +389,15 @@ async def on_member_update(before, after):
                     dm_sent = await send_moderator_welcome_dm(after)
                     channel_sent = await send_notification_to_channel(after.guild, after, 'moderator')
                     print(f"📢 Авто-уведомление модератору {after.display_name} (роль выдана): DM {'✅' if dm_sent else '❌'}")
+        
+        # Check for activity changes (optimized rank synchronization)
+        if before.activities != after.activities:
+            from utils.optimized_rank_sync import optimized_rank_sync
+            
+            # Only queue for check if optimized sync is available and real-time is enabled
+            if optimized_rank_sync and optimized_rank_sync.sync_modes.get('realtime', False):
+                # Non-blocking queue for activity check
+                asyncio.create_task(optimized_rank_sync.queue_activity_check(after))
             
     except Exception as e:
         print(f"❌ Error handling member update for {after.name}: {e}")

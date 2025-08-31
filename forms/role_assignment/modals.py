@@ -635,6 +635,7 @@ class SupplierApplicationModal(ui.Modal):
             )
 
 
+
 # =============== МОДАЛЬНЫЕ ФОРМЫ ДЛЯ РЕДАКТИРОВАНИЯ ===============
 
 class MilitaryEditModal(ui.Modal):

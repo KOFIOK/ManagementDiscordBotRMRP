@@ -81,7 +81,6 @@ class RoleAssignmentView(ui.View):
         modal = CivilianApplicationModal()
         await interaction.response.send_modal(modal)
 
-
 class ApprovedApplicationView(ui.View):
     """View to show after application is approved"""
     

@@ -5,8 +5,6 @@ import discord
 from discord import ui
 from utils.config_manager import load_config, is_moderator_or_admin
 from utils.leave_request_storage import LeaveRequestStorage
-
-
 class LeaveRequestButton(ui.View):
     """Persistent button for submitting leave requests"""
     

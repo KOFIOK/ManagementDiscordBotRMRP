@@ -87,8 +87,8 @@ class ChannelSelectionModal(BaseSettingsModal):
                 await send_role_assignment_button_message(channel)
                 button_message_added = True
             elif self.config_type == "moderator_registration":
-                from forms.moderator_registration import send_moderator_registration_button_message
-                await send_moderator_registration_button_message(channel)
+                from forms.moderator_registration import ensure_moderator_registration_message
+                await ensure_moderator_registration_message(channel)
                 button_message_added = True
             elif self.config_type == "leave_requests":
                 from forms.leave_request_form import send_leave_request_button_message

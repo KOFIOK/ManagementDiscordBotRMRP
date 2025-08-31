@@ -52,7 +52,7 @@ class RankSyncCog(commands.Cog):
                 
                 await interaction.followup.send(embed=embed, ephemeral=True)
                 
-                success = await sync_ranks_for_member(target)
+                success = await sync_ranks_for_member(target, force)
                 
                 if success:
                     embed.description = f"✅ Синхронизация для {target.mention} завершена"

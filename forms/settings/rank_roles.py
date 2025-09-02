@@ -20,8 +20,15 @@ class RankRoleModal(BaseSettingsModal):
         
         # If editing, get current values
         current_role_id = ""
+        current_rank_level = ""
         if edit_rank and edit_rank in rank_roles:
-            current_role_id = str(rank_roles[edit_rank])
+            rank_data = rank_roles[edit_rank]
+            if isinstance(rank_data, dict):
+                current_role_id = str(rank_data.get('role_id', ''))
+                current_rank_level = str(rank_data.get('rank', ''))
+            else:
+                # Old format - just role_id
+                current_role_id = str(rank_data)
         
         self.rank_name = ui.TextInput(
             label="Название звания",
@@ -42,11 +49,40 @@ class RankRoleModal(BaseSettingsModal):
             default=current_role_id
         )
         self.add_item(self.role_id)
+        
+        self.rank_level = ui.TextInput(
+            label="Ранг звания (число)",
+            placeholder="Например: 1 для Рядового, 12 для Капитана",
+            min_length=1,
+            max_length=3,
+            required=True,
+            default=current_rank_level
+        )
+        self.add_item(self.rank_level)
     
     async def on_submit(self, interaction: discord.Interaction):
         try:
             rank_name = self.rank_name.value.strip()
             role_input = self.role_id.value.strip()
+            rank_level_input = self.rank_level.value.strip()
+            
+            # Parse and validate rank level
+            try:
+                rank_level = int(rank_level_input)
+                if rank_level < 1 or rank_level > 50:
+                    await self.send_error_message(
+                        interaction,
+                        "Неверный ранг",
+                        "Ранг звания должен быть числом от 1 до 50."
+                    )
+                    return
+            except ValueError:
+                await self.send_error_message(
+                    interaction,
+                    "Неверный формат ранга",
+                    "Ранг звания должен быть числом."
+                )
+                return
             
             # Parse role ID
             role_id = self._parse_role_input(role_input)
@@ -68,16 +104,31 @@ class RankRoleModal(BaseSettingsModal):
                 )
                 return
             
-            # Save to config
+            # Check for duplicate ranks
             config = load_config()
             if 'rank_roles' not in config:
                 config['rank_roles'] = {}
+                
+            for existing_rank, existing_data in config['rank_roles'].items():
+                if existing_rank != self.edit_rank:  # Skip current rank when editing
+                    existing_rank_level = existing_data.get('rank', 0) if isinstance(existing_data, dict) else 0
+                    if existing_rank_level == rank_level:
+                        await self.send_error_message(
+                            interaction,
+                            "Дублирующийся ранг",
+                            f"Ранг {rank_level} уже используется для звания '{existing_rank}'. Выберите другой ранг."
+                        )
+                        return
             
             # If editing and name changed, remove old entry
             if self.edit_rank and self.edit_rank != rank_name and self.edit_rank in config['rank_roles']:
                 del config['rank_roles'][self.edit_rank]
             
-            config['rank_roles'][rank_name] = role_id
+            # Save new format with rank hierarchy
+            config['rank_roles'][rank_name] = {
+                'role_id': role_id,
+                'rank': rank_level
+            }
             save_config(config)
             
             # Success message
@@ -90,7 +141,7 @@ class RankRoleModal(BaseSettingsModal):
             )
             embed.add_field(
                 name="📋 Детали:",
-                value=f"**Звание:** {rank_name}\n**Роль:** {role.mention} (`{role_id}`)",
+                value=f"**Звание:** {rank_name}\n**Роль:** {role.mention} (`{role_id}`)\n**Ранг:** {rank_level}",
                 inline=False
             )
             
@@ -271,57 +322,91 @@ class RankRolesSelect(ui.Select):
     """Select menu for managing rank roles"""
     
     def __init__(self):
-        config = load_config()
-        rank_roles = config.get('rank_roles', {})
-        
-        options = [
-            discord.SelectOption(
-                label="➕ Добавить звание",
-                description="Добавить новое звание",
-                emoji="➕",
-                value="add_rank"
-            ),
-            discord.SelectOption(
-                label="🔑 Настроить ключевую роль",
-                description="Роль для проверки активности игроков",
-                emoji="🔑",
-                value="set_key_role"
-            )
-        ]
-        
-        # Add existing ranks for editing/deletion
-        for rank_name in sorted(rank_roles.keys()):
-            if len(options) < 25:  # Discord limit
-                options.append(
-                    discord.SelectOption(
-                        label=f"✏️ {rank_name}",
-                        description=f"Редактировать звание {rank_name}",
-                        emoji="✏️",
-                        value=f"edit_{rank_name}"
-                    )
+        try:
+            config = load_config()
+            rank_roles = config.get('rank_roles', {})
+            
+            options = [
+                discord.SelectOption(
+                    label="➕ Добавить звание",
+                    description="Добавить новое звание",
+                    emoji="➕",
+                    value="add_rank"
+                ),
+                discord.SelectOption(
+                    label="🔑 Настроить ключевую роль",
+                    description="Роль для проверки активности игроков",
+                    emoji="🔑",
+                    value="set_key_role"
                 )
-        
-        super().__init__(
-            placeholder="Выберите действие...",
-            min_values=1,
-            max_values=1,
-            options=options,
-            custom_id="rank_roles_select"
-        )
+            ]
+            
+            # Add existing ranks for editing/deletion
+            for rank_name in sorted(rank_roles.keys()):
+                if len(options) < 25:  # Discord limit
+                    options.append(
+                        discord.SelectOption(
+                            label=f"✏️ {rank_name}",
+                            description=f"Редактировать звание {rank_name}",
+                            emoji="✏️",
+                            value=f"edit_{rank_name}"
+                        )
+                    )
+            
+            super().__init__(
+                placeholder="Выберите действие...",
+                min_values=1,
+                max_values=1,
+                options=options,
+                custom_id="rank_roles_select"
+            )
+        except Exception as e:
+            print(f"❌ Error in RankRolesSelect.__init__: {e}")
+            import traceback
+            traceback.print_exc()
+            # Fallback options
+            options = [
+                discord.SelectOption(
+                    label="❌ Ошибка загрузки",
+                    description="Произошла ошибка при загрузке настроек",
+                    emoji="❌",
+                    value="error"
+                )
+            ]
+            super().__init__(
+                placeholder="Ошибка загрузки...",
+                min_values=1,
+                max_values=1,
+                options=options,
+                custom_id="rank_roles_select"
+            )
     
     async def callback(self, interaction: discord.Interaction):
-        selected_value = self.values[0]
-        
-        if selected_value == "add_rank":
-            modal = RankRoleModal()
-            await interaction.response.send_modal(modal)
-        elif selected_value == "set_key_role":
-            modal = KeyRoleModal()
-            await interaction.response.send_modal(modal)
-        elif selected_value.startswith("edit_"):
-            rank_name = selected_value[5:]  # Remove "edit_" prefix
-            modal = RankRoleModal(edit_rank=rank_name)
-            await interaction.response.send_modal(modal)
+        try:
+            selected_value = self.values[0]
+            
+            if selected_value == "error":
+                await interaction.response.send_message("❌ Произошла ошибка при загрузке настроек", ephemeral=True)
+                return
+            
+            if selected_value == "add_rank":
+                modal = RankRoleModal()
+                await interaction.response.send_modal(modal)
+            elif selected_value == "set_key_role":
+                modal = KeyRoleModal()
+                await interaction.response.send_modal(modal)
+            elif selected_value.startswith("edit_"):
+                rank_name = selected_value[5:]  # Remove "edit_" prefix
+                modal = RankRoleModal(edit_rank=rank_name)
+                await interaction.response.send_modal(modal)
+        except Exception as e:
+            print(f"❌ Error in RankRolesSelect.callback: {e}")
+            import traceback
+            traceback.print_exc()
+            try:
+                await interaction.response.send_message("❌ Произошла ошибка при обработке действия", ephemeral=True)
+            except:
+                await interaction.followup.send("❌ Произошла ошибка при обработке действия", ephemeral=True)
 
 
 class RankRoleDeleteSelect(ui.Select):
@@ -390,86 +475,109 @@ class RankRolesConfigView(BaseSettingsView):
 
 async def show_rank_roles_config(interaction: discord.Interaction):
     """Show rank roles configuration interface"""
-    config = load_config()
-    rank_roles = config.get('rank_roles', {})
-    key_role_id = config.get('rank_sync_key_role')
-    
-    embed = discord.Embed(
-        title="🎖️ Настройка ролей званий",
-        description="Управление связыванием званий с ролями на сервере.",
-        color=discord.Color.gold(),
-        timestamp=discord.utils.utcnow()
-    )
-    
-    # Show key role
-    if key_role_id:
-        key_role = interaction.guild.get_role(key_role_id)
-        if key_role:
+    try:
+        config = load_config()
+        rank_roles = config.get('rank_roles', {})
+        key_role_id = config.get('rank_sync_key_role')
+        
+        embed = discord.Embed(
+            title="🎖️ Настройка ролей званий",
+            description="Управление связыванием званий с ролями на сервере.",
+            color=discord.Color.gold(),
+            timestamp=discord.utils.utcnow()
+        )
+        
+        # Show key role
+        if key_role_id:
+            key_role = interaction.guild.get_role(key_role_id)
+            if key_role:
+                embed.add_field(
+                    name="🔑 Ключевая роль:",
+                    value=f"{key_role.mention} - только участники с этой ролью проверяются системой",
+                    inline=False
+                )
+            else:
+                embed.add_field(
+                    name="🔑 Ключевая роль:",
+                    value=f"❌ Роль не найдена (ID: {key_role_id})",
+                    inline=False
+                )
+        else:
             embed.add_field(
-                name="🔑 Ключевая роль:",
-                value=f"{key_role.mention} - только участники с этой ролью проверяются системой",
+                name="⚠️ Ключевая роль не настроена",
+                value="Система будет проверять всех участников сервера (не рекомендуется для больших серверов)",
+                inline=False
+            )
+        
+        if rank_roles:
+            ranks_list = []
+            for rank_name, rank_data in sorted(rank_roles.items()):
+                # Handle both old format (direct role_id) and new format (dict with role_id)
+                if isinstance(rank_data, dict):
+                    role_id = rank_data.get('role_id')
+                else:
+                    role_id = rank_data
+                
+                if role_id:
+                    role = interaction.guild.get_role(int(role_id))
+                    if role:
+                        ranks_list.append(f"• **{rank_name}** → {role.mention}")
+                    else:
+                        ranks_list.append(f"• **{rank_name}** → `{role_id}` ❌ (роль не найдена)")
+                else:
+                    ranks_list.append(f"• **{rank_name}** → ❌ (role_id не найден)")
+            
+            embed.add_field(
+                name="📋 Текущие звания:",
+                value="\n".join(ranks_list) if ranks_list else "Нет настроенных званий",
                 inline=False
             )
         else:
             embed.add_field(
-                name="🔑 Ключевая роль:",
-                value=f"❌ Роль не найдена (ID: {key_role_id})",
+                name="❌ Звания не настроены",
+                value="Добавьте первое звание, используя кнопку ниже.",
                 inline=False
             )
-    else:
-        embed.add_field(
-            name="⚠️ Ключевая роль не настроена",
-            value="Система будет проверять всех участников сервера (не рекомендуется для больших серверов)",
-            inline=False
-        )
-    
-    if rank_roles:
-        ranks_list = []
-        for rank_name, role_id in sorted(rank_roles.items()):
-            role = interaction.guild.get_role(int(role_id))
-            if role:
-                ranks_list.append(f"• **{rank_name}** → {role.mention}")
-            else:
-                ranks_list.append(f"• **{rank_name}** → `{role_id}` ❌ (роль не найдена)")
         
         embed.add_field(
-            name="📋 Текущие звания:",
-            value="\n".join(ranks_list) if ranks_list else "Нет настроенных званий",
+            name="🔧 Доступные действия:",
+            value=(
+                "• **Настроить ключевую роль** - роль для проверки активности\n"
+                "• **Добавить звание** - связать новое звание с ролью\n"
+                "• **Редактировать звание** - изменить существующее звание\n"
+                "• **Удалить звание** - удалить звание из конфигурации"
+            ),
             inline=False
         )
-    else:
+        
         embed.add_field(
-            name="❌ Звания не настроены",
-            value="Добавьте первое звание, используя кнопку ниже.",
+            name="ℹ️ Информация:",
+            value=(
+                "Звания используются для автоматического назначения ролей "
+                "при различных операциях в системе кадрового учёта.\n\n"
+                "**Ключевая роль** ограничивает проверку только участниками с определённой ролью, "
+                "что повышает производительность на больших серверах."
+            ),
             inline=False
         )
+        
+        view = RankRolesConfigView()
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     
-    embed.add_field(
-        name="🔧 Доступные действия:",
-        value=(
-            "• **Настроить ключевую роль** - роль для проверки активности\n"
-            "• **Добавить звание** - связать новое звание с ролью\n"
-            "• **Редактировать звание** - изменить существующее звание\n"
-            "• **Удалить звание** - удалить звание из конфигурации"
-        ),
-        inline=False
-    )
-    
-    embed.add_field(
-        name="ℹ️ Информация:",
-        value=(
-            "Звания используются для автоматического назначения ролей "
-            "при различных операциях в системе кадрового учёта.\n\n"
-            "**Ключевая роль** ограничивает проверку только участниками с определённой ролью, "
-            "что повышает производительность на больших серверах."
-        ),
-        inline=False
-    )
-    
-    view = RankRolesConfigView()
-    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-
-
+    except Exception as e:
+        print(f"❌ Error in show_rank_roles_config: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        error_embed = discord.Embed(
+            title="❌ Ошибка",
+            description=f"Произошла ошибка при загрузке настроек ролей званий: {str(e)}",
+            color=discord.Color.red()
+        )
+        try:
+            await interaction.response.send_message(embed=error_embed, ephemeral=True)
+        except:
+            await interaction.followup.send(embed=error_embed, ephemeral=True)
 def initialize_default_ranks():
     """Initialize default rank roles in config if not present"""
     config = load_config()
@@ -477,23 +585,26 @@ def initialize_default_ranks():
     
     if 'rank_roles' not in config or not config['rank_roles']:
         default_ranks = {
-            "Рядовой": 1246114675574313021,
-            "Ефрейтор": 1246114674638983270,
-            "Мл. Сержант": 1261982952275972187,
-            "Сержант": 1246114673997123595,
-            "Ст. Сержант": 1246114672352952403,
-            "Старшина": 1246114604958879754,
-            "Прапорщик": 1246114604329865327,
-            "Ст. Прапорщик": 1251045305793773648,
-            "Мл. Лейтенант": 1251045263062335590,
-            "Лейтенант": 1246115365746901094,
-            "Ст. Лейтенант": 1246114469340250214,
-            "Капитан": 1246114469336322169
+            "Рядовой": {"role_id": 1246114675574313021, "rank": 1},
+            "Ефрейтор": {"role_id": 1246114674638983270, "rank": 2},
+            "Мл. Сержант": {"role_id": 1261982952275972187, "rank": 3},
+            "Сержант": {"role_id": 1246114673997123595, "rank": 4},
+            "Ст. Сержант": {"role_id": 1246114672352952403, "rank": 5},
+            "Старшина": {"role_id": 1246114604958879754, "rank": 6},
+            "Прапорщик": {"role_id": 1246114604329865327, "rank": 7},
+            "Ст. Прапорщик": {"role_id": 1251045305793773648, "rank": 8},
+            "Мл. Лейтенант": {"role_id": 1251045263062335590, "rank": 9},
+            "Лейтенант": {"role_id": 1246115365746901094, "rank": 10},
+            "Ст. Лейтенант": {"role_id": 1246114469340250214, "rank": 11},
+            "Капитан": {"role_id": 1246114469336322169, "rank": 12},
+            "Майор": {"role_id": 1246114042821607424, "rank": 13},
+            "Подполковник": {"role_id": 1246114038744875090, "rank": 14},
+            "Полковник": {"role_id": 1246113825791672431, "rank": 15}
         }
         
         config['rank_roles'] = default_ranks
         changes_made = True
-        print("✅ Initialized default rank roles in config")
+        print("✅ Initialized default rank roles with hierarchy in config")
     
     # Initialize default key role if not present (military role from config)
     if 'rank_sync_key_role' not in config and config.get('military_role'):

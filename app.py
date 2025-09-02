@@ -10,7 +10,7 @@ from utils.config_manager import load_config, create_backup, get_config_status
 from utils.google_sheets import sheets_manager
 from utils.notification_scheduler import PromotionNotificationScheduler
 from forms.dismissal import DismissalReportButton, DismissalApprovalView, AutomaticDismissalApprovalView, send_dismissal_button_message, restore_dismissal_approval_views, restore_dismissal_button_views
-from forms.settings_form import SettingsView
+from forms.settings import SettingsView
 from forms.role_assignment_form import RoleAssignmentView, send_role_assignment_message, restore_role_assignment_views, restore_approval_views
 from forms.moderator_registration import ModeratorRegistrationView, ensure_moderator_registration_message
 from forms.leave_request_form import LeaveRequestButton, LeaveRequestApprovalView, restore_leave_request_views
@@ -51,6 +51,16 @@ async def on_ready():
       # Load all extension cogs
     await load_extensions()
     
+    # Setup personnel context menu commands
+    try:
+        from forms.personnel_context import setup_context_commands
+        setup_context_commands(bot)
+        print('✅ Personnel context menu commands loaded')
+    except Exception as e:
+        print(f'❌ Error loading personnel context commands: {e}')
+        import traceback
+        traceback.print_exc()
+    
     # Sync commands with Discord
     try:
         synced = await bot.tree.sync()
@@ -67,6 +77,14 @@ async def on_ready():
         from forms.settings.rank_roles import initialize_default_ranks
         if initialize_default_ranks():
             print('✅ Default rank roles initialized')
+        
+        # Migrate old rank data to hierarchical format
+        from forms.personnel_context.rank_utils import migrate_old_rank_format
+        migrated = migrate_old_rank_format()
+        if migrated:
+            print('✅ Migrated old rank data to hierarchical format')
+        else:
+            print('ℹ️ No old rank data to migrate or already migrated')
         
         print(f'Dismissal channel: {config.get("dismissal_channel", "Not set")}')
         print(f'Audit channel: {config.get("audit_channel", "Not set")}')
@@ -235,6 +253,62 @@ async def on_ready():
         import traceback
         print(f"🔍 Safe documents traceback: {traceback.format_exc()}")
 
+    # Add supplies persistent views
+    print("🔄 Adding supplies persistent views...")
+    try:
+        from forms.supplies import SuppliesControlView, SuppliesSubscriptionView
+        
+        # Add persistent views
+        bot.add_view(SuppliesControlView())  # Persistent control view
+        print("✅ SuppliesControlView added")
+        
+        bot.add_view(SuppliesSubscriptionView())  # Persistent subscription view
+        print("✅ SuppliesSubscriptionView added")
+        
+        print('✅ Supplies persistent views added to bot')
+    except Exception as e:
+        print(f"❌ Error adding supplies views to bot: {e}")
+        import traceback
+        print(f"🔍 Supplies traceback: {traceback.format_exc()}")
+
+    # Add safe documents persistent views
+    print("🔄 Adding safe documents persistent views...")
+    try:
+        from forms.safe_documents import SafeDocumentsPinView, SafeDocumentsApplicationView, SafeDocumentsApprovedView, SafeDocumentsRejectedView, setup_safe_documents_system
+        print("✅ Safe documents views imported successfully")
+        
+        # Add persistent views
+        bot.add_view(SafeDocumentsPinView())  # Persistent pin message view
+        print("✅ SafeDocumentsPinView added")
+        
+        # Add SafeDocumentsApplicationView with dummy data for persistent view functionality
+        dummy_application_data = {
+            'user_id': 0,
+            'username': 'dummy',
+            'timestamp': '2024-01-01T00:00:00',
+            'status': 'pending',
+            'name': 'dummy',
+            'static': 'dummy',
+            'documents': 'dummy',
+            'phone': 'dummy',
+            'email': 'dummy'
+        }
+        bot.add_view(SafeDocumentsApplicationView(dummy_application_data))
+        print("✅ SafeDocumentsApplicationView added with dummy data")
+        
+        # Add specialized views for different statuses
+        bot.add_view(SafeDocumentsApprovedView(dummy_application_data))
+        print("✅ SafeDocumentsApprovedView added")
+        
+        bot.add_view(SafeDocumentsRejectedView(dummy_application_data))
+        print("✅ SafeDocumentsRejectedView added")
+        
+        print('✅ Safe documents persistent views added to bot')
+    except Exception as e:
+        print(f"❌ Error adding safe documents views to bot: {e}")
+        import traceback
+        print(f"🔍 Safe documents traceback: {traceback.format_exc()}")
+
     # Setup safe documents system
     print("🔄 Setting up safe documents system...")
     try:
@@ -277,6 +351,21 @@ async def on_ready():
         import traceback
         traceback.print_exc()
     
+    # Start supplies scheduler
+    try:
+        print("🔄 Starting supplies scheduler...")
+        from utils.supplies_scheduler import initialize_supplies_scheduler
+        supplies_scheduler = initialize_supplies_scheduler(bot)
+        if supplies_scheduler:
+            supplies_scheduler.start()
+            print("✅ Supplies scheduler started")
+        else:
+            print("❌ Failed to initialize supplies scheduler")
+    except Exception as e:
+        print(f"❌ Error starting supplies scheduler: {e}")
+        import traceback
+        traceback.print_exc()
+    
     # Start leave requests daily cleanup
     try:
         print("🔄 Starting leave requests cleanup...")
@@ -306,6 +395,21 @@ async def on_ready():
         print("✅ Channel messages restoration complete")
     except Exception as e:
         print(f"❌ Error during channel messages restoration: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    # Restore supplies messages
+    try:
+        print("🔄 Starting supplies messages restoration...")
+        from utils.supplies_restore import initialize_supplies_restore_manager
+        supplies_restore = initialize_supplies_restore_manager(bot)
+        if supplies_restore:
+            await supplies_restore.restore_all_messages()
+            print("✅ Supplies messages restoration complete")
+        else:
+            print("❌ Failed to initialize supplies restore manager")
+    except Exception as e:
+        print(f"❌ Error during supplies messages restoration: {e}")
         import traceback
         traceback.print_exc()
 

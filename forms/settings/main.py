@@ -49,6 +49,12 @@ class MainSettingsSelect(ui.Select):
                 value="warehouse_settings"
             ),
             discord.SelectOption(
+                label="Система поставок",
+                description="Настроить управление военными объектами и поставками",
+                emoji="🚚",
+                value="supplies_settings"
+            ),
+            discord.SelectOption(
                 label="Показать текущие настройки",
                 description="Посмотреть все текущие настройки",
                 emoji="⚙️",
@@ -81,6 +87,8 @@ class MainSettingsSelect(ui.Select):
             await self.show_rank_roles_config(interaction)
         elif selected_option == "warehouse_settings":
             await self.show_warehouse_settings_menu(interaction)
+        elif selected_option == "supplies_settings":
+            await self.show_supplies_settings_menu(interaction)
     
     async def show_channels_menu(self, interaction: discord.Interaction):
         """Show submenu for channel configuration"""
@@ -241,12 +249,21 @@ class MainSettingsSelect(ui.Select):
             
             rank_roles_text.append("")  # Empty line
             
-            for rank_name, role_id in sorted(rank_roles.items()):
-                role = interaction.guild.get_role(int(role_id))
-                if role:
-                    rank_roles_text.append(f"• **{rank_name}** → {role.mention}")
+            for rank_name, rank_data in sorted(rank_roles.items()):
+                # Handle both old format (direct role_id) and new format (dict with role_id)
+                if isinstance(rank_data, dict):
+                    role_id = rank_data.get('role_id')
                 else:
-                    rank_roles_text.append(f"• **{rank_name}** → ❌ Роль не найдена (ID: {role_id})")
+                    role_id = rank_data
+                
+                if role_id:
+                    role = interaction.guild.get_role(int(role_id))
+                    if role:
+                        rank_roles_text.append(f"• **{rank_name}** → {role.mention}")
+                    else:
+                        rank_roles_text.append(f"• **{rank_name}** → ❌ Роль не найдена (ID: {role_id})")
+                else:
+                    rank_roles_text.append(f"• **{rank_name}** → ❌ role_id не найден")
             
             rank_roles_display = "\n".join(rank_roles_text[:12])  # Limit for display
             if len(rank_roles_text) > 12:
@@ -343,6 +360,33 @@ class MainSettingsSelect(ui.Select):
         
         view = WarehouseSettingsView()
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+    async def show_supplies_settings_menu(self, interaction: discord.Interaction):
+        """Show supplies settings menu"""
+        try:
+            from .supplies import SuppliesSettingsView
+            view = SuppliesSettingsView()
+            embed = view.create_embed()
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            
+        except Exception as e:
+            print(f"❌ Error in show_supplies_settings_menu: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(
+                        f"❌ Ошибка открытия настроек поставок: {str(e)}",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.response.send_message(
+                        f"❌ Ошибка открытия настроек поставок: {str(e)}",
+                        ephemeral=True
+                    )
+            except:
+                pass
 
     async def show_departments_management_menu(self, interaction: discord.Interaction):
         """Show departments management interface"""

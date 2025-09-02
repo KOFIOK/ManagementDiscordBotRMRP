@@ -1018,6 +1018,201 @@ class GoogleSheetsManager:
             print(f"Error searching in 'Личный Состав' sheet: {e}")
             raise  # Let the retry decorator handle it
 
+    @retry_on_google_error(retries=3, delay=1)
+    async def update_user_position(self, discord_id, new_position):
+        """
+        Update user's position in 'Личный Состав' sheet.
+        
+        Returns:
+            bool: True if update was successful, False otherwise
+        """
+        try:
+            print(f"📋 POSITION UPDATE: Updating position for Discord ID '{discord_id}' to '{new_position}'")
+            
+            # Ensure connection
+            if not self._ensure_connection():
+                print("❌ POSITION UPDATE: Failed to establish connection")
+                return False
+            
+            # Get the 'Личный Состав' worksheet
+            personal_worksheet = None
+            all_worksheets = self.spreadsheet.worksheets()
+            
+            for worksheet in all_worksheets:
+                if worksheet.title == 'Личный Состав':
+                    personal_worksheet = worksheet
+                    break
+            
+            if not personal_worksheet:
+                print("❌ POSITION UPDATE: 'Личный Состав' worksheet not found")
+                return False
+            
+            print("✅ POSITION UPDATE: Found 'Личный Состав' worksheet")
+            
+            # Get all values
+            try:
+                all_values = personal_worksheet.get_all_values()
+                print(f"📋 POSITION UPDATE: Retrieved {len(all_values)} rows from sheet")
+            except Exception as e:
+                print(f"❌ POSITION UPDATE: Failed to get sheet values: {e}")
+                return False
+            
+            # Find the user row by Discord ID
+            discord_id_str = str(discord_id)
+            user_row_index = None
+            
+            for i, row in enumerate(all_values[1:], start=2):  # start=2 because row 1 is header
+                if len(row) >= 7:
+                    row_discord_id = str(row[6]).strip()
+                    if row_discord_id == discord_id_str:
+                        user_row_index = i
+                        break
+            
+            if user_row_index is None:
+                print(f"❌ POSITION UPDATE: User with Discord ID '{discord_id}' not found in sheet")
+                return False
+            
+            print(f"✅ POSITION UPDATE: Found user at row {user_row_index}")
+            
+            # Update position in column F (index 6 in 0-based, F in A1 notation)
+            cell_address = f'F{user_row_index}'
+            try:
+                # Use update with proper format - pass as list of lists
+                personal_worksheet.update(cell_address, [[new_position]])
+                print(f"✅ POSITION UPDATE: Successfully updated position to '{new_position}' at cell {cell_address}")
+                return True
+            except Exception as e:
+                print(f"❌ POSITION UPDATE: Failed to update cell {cell_address}: {e}")
+                return False
+                
+        except Exception as e:
+            print(f"❌ POSITION UPDATE: Error updating user position: {e}")
+            return False
+
+    @retry_on_google_error(retries=3, delay=1)
+    async def delete_user_from_personal_list(self, discord_id):
+        """
+        Delete user from 'Личный Состав' sheet by Discord ID.
+        
+        Returns:
+            bool: True if deletion was successful, False otherwise
+        """
+        try:
+            print(f"📋 USER DELETE: Deleting Discord ID '{discord_id}' from 'Личный Состав' sheet")
+            
+            # Ensure connection
+            if not self._ensure_connection():
+                print("❌ USER DELETE: Failed to establish connection")
+                return False
+            
+            # Get the 'Личный Состав' worksheet
+            personal_worksheet = None
+            all_worksheets = self.spreadsheet.worksheets()
+            
+            for worksheet in all_worksheets:
+                if worksheet.title == 'Личный Состав':
+                    personal_worksheet = worksheet
+                    break
+            
+            if not personal_worksheet:
+                print("❌ USER DELETE: 'Личный Состав' worksheet not found")
+                return False
+            
+            print("✅ USER DELETE: Found 'Личный Состав' worksheet")
+            
+            # Get all values
+            try:
+                all_values = personal_worksheet.get_all_values()
+                print(f"📋 USER DELETE: Retrieved {len(all_values)} rows from sheet")
+            except Exception as e:
+                print(f"❌ USER DELETE: Failed to get sheet values: {e}")
+                return False
+            
+            # Find the user row by Discord ID
+            discord_id_str = str(discord_id)
+            user_row_index = None
+            
+            for i, row in enumerate(all_values[1:], start=2):  # start=2 because row 1 is header
+                if len(row) >= 7:
+                    row_discord_id = str(row[6]).strip()
+                    if row_discord_id == discord_id_str:
+                        user_row_index = i
+                        break
+            
+            if user_row_index is None:
+                print(f"❌ USER DELETE: User with Discord ID '{discord_id}' not found in sheet")
+                return False
+            
+            print(f"✅ USER DELETE: Found user at row {user_row_index}")
+            
+            # Delete the entire row
+            try:
+                personal_worksheet.delete_rows(user_row_index)
+                print(f"✅ USER DELETE: Successfully deleted row {user_row_index}")
+                return True
+            except Exception as e:
+                print(f"❌ USER DELETE: Failed to delete row {user_row_index}: {e}")
+                return False
+                
+        except Exception as e:
+            print(f"❌ USER DELETE: Error deleting user: {e}")
+            return False
+
+    @retry_on_google_error(retries=3, delay=1)
+    async def add_user_to_personal_list(self, discord_id, first_name, last_name, static, rank, department="Военная Академия - ВА", position=""):
+        """
+        Add new user to 'Личный Состав' sheet.
+        
+        Returns:
+            bool: True if addition was successful, False otherwise
+        """
+        try:
+            print(f"📋 USER ADD: Adding Discord ID '{discord_id}' to 'Личный Состав' sheet")
+            
+            # Ensure connection
+            if not self._ensure_connection():
+                print("❌ USER ADD: Failed to establish connection")
+                return False
+            
+            # Get the 'Личный Состав' worksheet
+            personal_worksheet = None
+            all_worksheets = self.spreadsheet.worksheets()
+            
+            for worksheet in all_worksheets:
+                if worksheet.title == 'Личный Состав':
+                    personal_worksheet = worksheet
+                    break
+            
+            if not personal_worksheet:
+                print("❌ USER ADD: 'Личный Состав' worksheet not found")
+                return False
+            
+            print("✅ USER ADD: Found 'Личный Состав' worksheet")
+            
+            # Prepare row data for "Личный Состав" (columns A-G)
+            row_data = [
+                first_name,       # A: Имя
+                last_name,        # B: Фамилия
+                static,           # C: Статик
+                rank,             # D: Звание
+                department,       # E: Подразделение
+                position,         # F: Должность
+                str(discord_id)   # G: Discord ID
+            ]
+            
+            try:
+                # Add record at the end
+                personal_worksheet.append_row(row_data)
+                print(f"✅ USER ADD: Successfully added new record for Discord ID '{discord_id}'")
+                return True
+            except Exception as e:
+                print(f"❌ USER ADD: Failed to add row: {e}")
+                return False
+                
+        except Exception as e:
+            print(f"❌ USER ADD: Error adding user: {e}")
+            return False
+
 
 # Global instance
 sheets_manager = GoogleSheetsManager()

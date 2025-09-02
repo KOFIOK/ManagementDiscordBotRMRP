@@ -8,6 +8,7 @@ from .warehouse_settings import WarehouseSettingsView
 from .excluded_roles import ExcludedRolesView, AddExcludedRolesModal, RemoveExcludedRolesModal
 from .ping_settings_modern import ModernPingSettingsView
 from .role_config import RolesConfigView, SetRoleModal, SetMultipleRolesModal
+from .rank_roles import RankRolesConfigView, RankRoleModal, KeyRoleModal, RankRoleDeleteConfirmModal, show_rank_roles_config
 from .utils import get_user_department_role, get_ping_roles_for_department
 
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
     'ExcludedRolesView', 'AddExcludedRolesModal', 'RemoveExcludedRolesModal',
     'ModernPingSettingsView',
     'RolesConfigView', 'SetRoleModal', 'SetMultipleRolesModal',
+    'RankRolesConfigView', 'RankRoleModal', 'KeyRoleModal', 'RankRoleDeleteConfirmModal', 'show_rank_roles_config',
     'get_user_department_role', 'get_ping_roles_for_department'
 ]

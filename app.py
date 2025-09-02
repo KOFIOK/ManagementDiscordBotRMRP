@@ -10,7 +10,7 @@ from utils.config_manager import load_config, create_backup, get_config_status
 from utils.google_sheets import sheets_manager
 from utils.notification_scheduler import PromotionNotificationScheduler
 from forms.dismissal import DismissalReportButton, DismissalApprovalView, AutomaticDismissalApprovalView, send_dismissal_button_message, restore_dismissal_approval_views, restore_dismissal_button_views
-from forms.settings_form import SettingsView
+from forms.settings import SettingsView
 from forms.role_assignment_form import RoleAssignmentView, send_role_assignment_message, restore_role_assignment_views, restore_approval_views
 from forms.moderator_registration import ModeratorRegistrationView, ensure_moderator_registration_message
 from forms.leave_request_form import LeaveRequestButton, LeaveRequestApprovalView, restore_leave_request_views
@@ -51,6 +51,16 @@ async def on_ready():
       # Load all extension cogs
     await load_extensions()
     
+    # Setup personnel context menu commands
+    try:
+        from forms.personnel_context import setup_context_commands
+        setup_context_commands(bot)
+        print('✅ Personnel context menu commands loaded')
+    except Exception as e:
+        print(f'❌ Error loading personnel context commands: {e}')
+        import traceback
+        traceback.print_exc()
+    
     # Sync commands with Discord
     try:
         synced = await bot.tree.sync()
@@ -67,6 +77,14 @@ async def on_ready():
         from forms.settings.rank_roles import initialize_default_ranks
         if initialize_default_ranks():
             print('✅ Default rank roles initialized')
+        
+        # Migrate old rank data to hierarchical format
+        from forms.personnel_context.rank_utils import migrate_old_rank_format
+        migrated = migrate_old_rank_format()
+        if migrated:
+            print('✅ Migrated old rank data to hierarchical format')
+        else:
+            print('ℹ️ No old rank data to migrate or already migrated')
         
         print(f'Dismissal channel: {config.get("dismissal_channel", "Not set")}')
         print(f'Audit channel: {config.get("audit_channel", "Not set")}')

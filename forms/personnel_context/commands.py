@@ -263,12 +263,25 @@ async def recruit_user(interaction: discord.Interaction, user: discord.Member):
 
 
 def setup_context_commands(bot):
-    """Setup context menu commands"""
-    # Add context menu commands to bot's command tree
-    bot.tree.add_command(promote_user)
-    bot.tree.add_command(demote_user)
-    bot.tree.add_command(dismiss_user)
-    bot.tree.add_command(assign_position)
-    bot.tree.add_command(recruit_user)
+    """Setup context menu commands (avoid duplicates)"""
+    # Check if commands are already added to avoid duplicates
+    existing_commands = [cmd.name for cmd in bot.tree.get_commands()]
     
-    print("✅ Personnel context menu commands loaded")
+    commands_to_add = [
+        ('Повысить', promote_user),
+        ('Разжаловать', demote_user), 
+        ('Уволить', dismiss_user),
+        ('Назначить должность', assign_position),
+        ('Принять на службу', recruit_user)
+    ]
+    
+    added_count = 0
+    for name, command in commands_to_add:
+        if name not in existing_commands:
+            bot.tree.add_command(command)
+            added_count += 1
+    
+    if added_count > 0:
+        print(f"✅ Personnel context menu commands loaded ({added_count} new commands)")
+    else:
+        print("ℹ️ Personnel context menu commands already loaded")

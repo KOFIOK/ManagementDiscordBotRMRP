@@ -64,7 +64,7 @@ async def on_ready():
     # Sync commands with Discord
     try:
         synced = await bot.tree.sync()
-        print(f'Synced {len(synced)} command(s)')
+        print(f'🔄 Synced {len(synced)} command(s) - updated permissions')
     except Exception as e:
         print(f'Failed to sync commands: {e}')
     
@@ -679,6 +679,47 @@ async def load_extensions():
                 print(f'Loaded extension: {cog_name}')
             except Exception as e:
                 print(f'Failed to load extension {cog_name}: {e}')
+
+@bot.tree.command(name="force-sync", description="🔄 Принудительная синхронизация команд (только для администраторов)")
+async def force_sync(interaction: discord.Interaction):
+    """Force sync commands for debugging permission issues"""
+    from utils.config_manager import is_administrator, load_config
+    config = load_config()
+    
+    # Check if user has administrator permissions
+    if not (interaction.user.guild_permissions.administrator or is_administrator(interaction.user, config)):
+        await interaction.response.send_message(
+            "❌ У вас нет прав для выполнения этой команды. Требуются права администратора.", 
+            ephemeral=True
+        )
+        return
+    
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        # Clear and re-sync commands
+        bot.tree.clear_commands(guild=None)
+        
+        # Re-add personnel context menu commands
+        from forms.personnel_context import setup_context_commands
+        setup_context_commands(bot)
+        
+        synced = await bot.tree.sync()
+        
+        await interaction.followup.send(
+            f"✅ Принудительная синхронизация завершена!\n"
+            f"🔄 Синхронизировано команд: {len(synced)}\n"
+            f"⚡ Контекстные команды должны быть видны всем пользователям",
+            ephemeral=True
+        )
+        print(f"🔄 Force sync completed by {interaction.user.display_name}: {len(synced)} commands")
+        
+    except Exception as e:
+        await interaction.followup.send(
+            f"❌ Ошибка при синхронизации команд:\n```{str(e)}```",
+            ephemeral=True
+        )
+        print(f"❌ Force sync failed: {e}")
 
 async def shutdown_handler():
     """Gracefully shutdown the bot."""

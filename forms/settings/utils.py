@@ -94,3 +94,22 @@ def validate_role_hierarchy(role: discord.Role, bot_member: discord.Member) -> t
         return False, f"Роль {role.mention} управляется интеграцией и не может быть изменена ботом."
     
     return True, "Роль может быть управляема ботом"
+
+
+def create_channel_select(placeholder: str = "Выберите канал") -> discord.ui.ChannelSelect:
+    """Создает селектор каналов"""
+    return discord.ui.ChannelSelect(
+        placeholder=placeholder,
+        channel_types=[discord.ChannelType.text],
+        min_values=1,
+        max_values=1
+    )
+
+
+def create_role_select(placeholder: str = "Выберите роль") -> discord.ui.RoleSelect:
+    """Создает селектор ролей"""
+    return discord.ui.RoleSelect(
+        placeholder=placeholder,
+        min_values=1,
+        max_values=1
+    )

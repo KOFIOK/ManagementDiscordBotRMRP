@@ -227,16 +227,10 @@ class SuppliesControlView(discord.ui.View):
                                                config.get('supplies', {}).get('timer_duration_hours', 4) * 60)
             warning_minutes = config.get('supplies', {}).get('warning_minutes', 20)
             
-            # Форматируем длительность для отображения
-            hours = timer_duration_minutes // 60
-            remaining_minutes = timer_duration_minutes % 60
-            
-            if hours > 0 and remaining_minutes > 0:
-                duration_display = f"{hours}ч {remaining_minutes}м"
-            elif hours > 0:
-                duration_display = f"{hours}ч"
-            else:
-                duration_display = f"{remaining_minutes}м"
+            # Получаем текущее оставшееся время вместо изначальной длительности
+            from .supplies_manager import SuppliesManager
+            supplies_manager = SuppliesManager()
+            duration_display = supplies_manager.get_remaining_time(object_key)
             
             # Вычисляем время до предупреждения
             warning_time_minutes = timer_duration_minutes - warning_minutes
@@ -249,11 +243,6 @@ class SuppliesControlView(discord.ui.View):
                 warning_display = f"{warning_hours}ч"
             else:
                 warning_display = f"{warning_mins}м"
-            
-            # Удаление старых сообщений происходит в supplies_manager.start_timer()
-            from .supplies_manager import SuppliesManager
-            supplies_manager = SuppliesManager()
-            # await supplies_manager.clear_warning_messages(channel) - уже не нужно
             
             # Создаем embed
             embed = discord.Embed(

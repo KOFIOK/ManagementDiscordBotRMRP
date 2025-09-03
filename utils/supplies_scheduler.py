@@ -116,6 +116,12 @@ class SuppliesScheduler:
             # Обновляем сообщение управления каждую минуту (не только при изменениях)
             # Это нужно для обновления оставшегося времени в embed'ах
             await self._update_control_message()
+            
+            # Обновляем сообщения в канале оповещений
+            await self._update_notification_messages(notification_channel)
+            
+            # Обновляем сообщения предупреждений в канале оповещений
+            await self._update_warning_messages(notification_channel)
                     
         except Exception as e:
             print(f"❌ Ошибка при проверке таймеров поставок: {e}")
@@ -133,6 +139,14 @@ class SuppliesScheduler:
                 print("❌ Менеджер восстановления не найден")
         except Exception as e:
             print(f"❌ Ошибка обновления сообщения управления: {e}")
+
+    async def _update_notification_messages(self, notification_channel):
+        """Обновляет сообщения в канале оповещений с актуальным временем"""
+        try:
+            if notification_channel:
+                await self.supplies_manager.update_notification_messages(notification_channel)
+        except Exception as e:
+            print(f"❌ Ошибка обновления сообщений оповещений: {e}")
     
     async def _send_ready_notification(self, channel: discord.TextChannel, object_key: str, 
                                      timer_info: dict, subscription_role_id: Optional[int]):
@@ -226,6 +240,14 @@ class SuppliesScheduler:
                 
         except Exception as e:
             print(f"❌ Ошибка при отметке отправленного предупреждения для {object_key}: {e}")
+
+    async def _update_warning_messages(self, channel):
+        """Обновляет сообщения предупреждений в канале оповещений"""
+        try:
+            if channel:
+                await self.supplies_manager.update_warning_messages(channel)
+        except Exception as e:
+            print(f"❌ Ошибка обновления сообщений предупреждений: {e}")
 
 
 # Глобальная переменная для планировщика

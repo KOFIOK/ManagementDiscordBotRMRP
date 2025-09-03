@@ -392,3 +392,186 @@ class SuppliesManager:
                         
         except Exception as e:
             print(f"❌ Ошибка удаления старых сообщений для {object_key}: {e}")
+
+    async def update_notification_messages(self, channel):
+        """Обновляет стартовые сообщения в канале оповещений с актуальным временем"""
+        try:
+            data = self._load_data()
+            active_timers = data.get("active_timers", {})
+            
+            if not active_timers:
+                return
+            
+            print(f"🔄 Обновление {len(active_timers)} сообщений в канале оповещений...")
+            
+            for object_key, timer_info in active_timers.items():
+                notification_messages = timer_info.get("notification_messages", {})
+                start_message_id = notification_messages.get("start_message_id")
+                
+                if not start_message_id:
+                    continue
+                
+                try:
+                    # Получаем сообщение
+                    message = await channel.fetch_message(start_message_id)
+                    
+                    # Получаем актуальное оставшееся время
+                    remaining_time = self.get_remaining_time(object_key)
+                    
+                    if remaining_time == "Истек" or remaining_time == "Не активен":
+                        continue  # Таймер истек, сообщение скоро удалится
+                    
+                    # Получаем данные объекта
+                    object_name = timer_info.get("object_name", object_key)
+                    emoji = timer_info.get("emoji", "📦")
+                    started_by_name = timer_info.get("started_by_name", "Неизвестно")
+                    
+                    # Создаем обновленный embed
+                    embed = discord.Embed(
+                        title=f"{emoji} Поставка **{object_name}** запущена",
+                        description="",
+                        color=discord.Color.blue(),
+                        timestamp=datetime.now()
+                    )
+                    
+                    embed.add_field(
+                        name=f"⏰ Будет доступно через: **{remaining_time}**",
+                        value="",
+                        inline=False
+                    )
+                    
+                    embed.add_field(
+                        name="👤 Запустил",
+                        value=started_by_name,
+                        inline=True
+                    )
+                    
+                    embed.set_footer(text="Уведомление будет отправлено за несколько минут до конца таймера")
+                    
+                    # Обновляем сообщение (оставляем контент без изменений)
+                    await message.edit(embed=embed)
+                    
+                except discord.NotFound:
+                    # Сообщение удалено, очищаем ID
+                    notification_messages["start_message_id"] = None
+                    print(f"⚠️ Стартовое сообщение {start_message_id} для {object_key} не найдено")
+                except Exception as e:
+                    print(f"❌ Ошибка обновления сообщения {start_message_id} для {object_key}: {e}")
+            
+            # Сохраняем изменения (если были очищены ID)
+            self._save_data(data)
+            
+        except Exception as e:
+            print(f"❌ Ошибка обновления сообщений в канале оповещений: {e}")
+
+    async def update_warning_messages(self, channel):
+        """Обновляет сообщения с предупреждениями в канале оповещений с актуальным временем"""
+        try:
+            data = self._load_data()
+            active_timers = data.get("active_timers", {})
+            
+            for object_key, timer_info in active_timers.items():
+                notification_messages = timer_info.get("notification_messages", {})
+                
+                # Поддержка как единственной, так и множественной формы ID
+                warning_message_id = notification_messages.get("warning_message_id")
+                warning_message_ids = notification_messages.get("warning_message_ids", [])
+                
+                # Объединяем в список для обработки
+                all_warning_ids = []
+                if warning_message_id:
+                    all_warning_ids.append(warning_message_id)
+                all_warning_ids.extend(warning_message_ids)
+                
+                if not all_warning_ids:
+                    continue
+                
+                # Получаем актуальное оставшееся время
+                remaining_time = self.get_remaining_time(object_key)
+                
+                # Получаем данные объекта
+                object_name = timer_info.get("object_name", object_key)
+                emoji = timer_info.get("emoji", "📦")
+                
+                # Обновляем каждое сообщение с предупреждением
+                for message_id in all_warning_ids[:]:  # Копия списка для безопасного изменения
+                    print(f"🔍 Пытаемся обновить warning сообщение {message_id}")
+                    try:
+                        # Получаем сообщение
+                        message = await channel.fetch_message(message_id)
+                        
+                        # Определяем статус и цвет
+                        if remaining_time == "Истек" or remaining_time == "Не активен":
+                            # Таймер истек - делаем сообщение зеленым
+                            embed = discord.Embed(
+                                title="✅ Поставка готова!",
+                                description=f"{emoji} **{object_name}** готов к новой поставке!",
+                                color=discord.Color.green(),
+                                timestamp=datetime.now()
+                            )
+                            
+                            embed.add_field(
+                                name="🎯 Статус",
+                                value=(
+                                    f"**Объект:** {object_name}\n"
+                                    f"**Статус:** Доступно\n"
+                                ),
+                                inline=False
+                            )
+                        else:
+                            # Таймер еще активен - обновляем оставшееся время
+                            # Вычисляем минуты для отображения
+                            if "ч" in remaining_time and "м" in remaining_time:
+                                # Парсим время вида "1ч 30м"
+                                parts = remaining_time.replace("ч", "").replace("м", "").split()
+                                hours = int(parts[0]) if len(parts) > 0 else 0
+                                minutes = int(parts[1]) if len(parts) > 1 else 0
+                                total_minutes = hours * 60 + minutes
+                            elif "ч" in remaining_time:
+                                # Только часы "2ч"
+                                hours = int(remaining_time.replace("ч", ""))
+                                total_minutes = hours * 60
+                            elif "м" in remaining_time:
+                                # Только минуты "15м"
+                                total_minutes = int(remaining_time.replace("м", ""))
+                            else:
+                                total_minutes = 0
+                            
+                            embed = discord.Embed(
+                                title="⚠️ Скоро будет доступна поставка!",
+                                description=f"{emoji} **{object_name}** будет готов через **{total_minutes} минут**!",
+                                color=discord.Color.orange(),
+                                timestamp=datetime.now()
+                            )
+                            
+                            embed.add_field(
+                                name="⏰ Предупреждение",
+                                value=(
+                                    f"**Объект:** {object_name}\n"
+                                    f"**Осталось:** {remaining_time}\n"
+                                ),
+                                inline=False
+                            )
+                        
+                        embed.set_footer(text="Система управления поставками")
+                        
+                        # Обновляем сообщение (оставляем контент без изменений)
+                        await message.edit(embed=embed)
+                        
+                    except discord.NotFound:
+                        # Сообщение удалено, убираем ID из соответствующих списков
+                        if message_id == warning_message_id:
+                            notification_messages["warning_message_id"] = None
+                            print(f"⚠️ Очищен warning_message_id {message_id} для {object_key}")
+                        if message_id in warning_message_ids:
+                            warning_message_ids.remove(message_id)
+                            print(f"⚠️ Удален из warning_message_ids {message_id} для {object_key}")
+                        print(f"⚠️ Сообщение предупреждения {message_id} для {object_key} не найдено")
+                    except Exception as e:
+                        print(f"❌ Ошибка обновления сообщения предупреждения {message_id} для {object_key}: {e}")
+            
+            # Сохраняем изменения (если были убраны ID)
+            self._save_data(data)
+            
+        except Exception as e:
+            print(f"❌ Ошибка обновления сообщений предупреждений в канале оповещений: {e}")

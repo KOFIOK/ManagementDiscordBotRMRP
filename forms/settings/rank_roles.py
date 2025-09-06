@@ -25,7 +25,7 @@ class RankRoleModal(BaseSettingsModal):
             rank_data = rank_roles[edit_rank]
             if isinstance(rank_data, dict):
                 current_role_id = str(rank_data.get('role_id', ''))
-                current_rank_level = str(rank_data.get('rank', ''))
+                current_rank_level = str(rank_data.get('rank_level', ''))
             else:
                 # Old format - just role_id
                 current_role_id = str(rank_data)
@@ -111,7 +111,7 @@ class RankRoleModal(BaseSettingsModal):
                 
             for existing_rank, existing_data in config['rank_roles'].items():
                 if existing_rank != self.edit_rank:  # Skip current rank when editing
-                    existing_rank_level = existing_data.get('rank', 0) if isinstance(existing_data, dict) else 0
+                    existing_rank_level = existing_data.get('rank_level', 0) if isinstance(existing_data, dict) else 0
                     if existing_rank_level == rank_level:
                         await self.send_error_message(
                             interaction,
@@ -127,7 +127,7 @@ class RankRoleModal(BaseSettingsModal):
             # Save new format with rank hierarchy
             config['rank_roles'][rank_name] = {
                 'role_id': role_id,
-                'rank': rank_level
+                'rank_level': rank_level
             }
             save_config(config)
             
@@ -585,21 +585,21 @@ def initialize_default_ranks():
     
     if 'rank_roles' not in config or not config['rank_roles']:
         default_ranks = {
-            "Рядовой": {"role_id": 1246114675574313021, "rank": 1},
-            "Ефрейтор": {"role_id": 1246114674638983270, "rank": 2},
-            "Мл. Сержант": {"role_id": 1261982952275972187, "rank": 3},
-            "Сержант": {"role_id": 1246114673997123595, "rank": 4},
-            "Ст. Сержант": {"role_id": 1246114672352952403, "rank": 5},
-            "Старшина": {"role_id": 1246114604958879754, "rank": 6},
-            "Прапорщик": {"role_id": 1246114604329865327, "rank": 7},
-            "Ст. Прапорщик": {"role_id": 1251045305793773648, "rank": 8},
-            "Мл. Лейтенант": {"role_id": 1251045263062335590, "rank": 9},
-            "Лейтенант": {"role_id": 1246115365746901094, "rank": 10},
-            "Ст. Лейтенант": {"role_id": 1246114469340250214, "rank": 11},
-            "Капитан": {"role_id": 1246114469336322169, "rank": 12},
-            "Майор": {"role_id": 1246114042821607424, "rank": 13},
-            "Подполковник": {"role_id": 1246114038744875090, "rank": 14},
-            "Полковник": {"role_id": 1246113825791672431, "rank": 15}
+            "Рядовой": {"role_id": 1246114675574313021, "rank_level": 1},
+            "Ефрейтор": {"role_id": 1246114674638983270, "rank_level": 2},
+            "Мл. Сержант": {"role_id": 1261982952275972187, "rank_level": 3},
+            "Сержант": {"role_id": 1246114673997123595, "rank_level": 4},
+            "Ст. Сержант": {"role_id": 1246114672352952403, "rank_level": 5},
+            "Старшина": {"role_id": 1246114604958879754, "rank_level": 6},
+            "Прапорщик": {"role_id": 1246114604329865327, "rank_level": 7},
+            "Ст. Прапорщик": {"role_id": 1251045305793773648, "rank_level": 8},
+            "Мл. Лейтенант": {"role_id": 1251045263062335590, "rank_level": 9},
+            "Лейтенант": {"role_id": 1246115365746901094, "rank_level": 10},
+            "Ст. Лейтенант": {"role_id": 1246114469340250214, "rank_level": 11},
+            "Капитан": {"role_id": 1246114469336322169, "rank_level": 12},
+            "Майор": {"role_id": 1246114042821607424, "rank_level": 13},
+            "Подполковник": {"role_id": 1246114038744875090, "rank_level": 14},
+            "Полковник": {"role_id": 1246113825791672431, "rank_level": 15}
         }
         
         config['rank_roles'] = default_ranks

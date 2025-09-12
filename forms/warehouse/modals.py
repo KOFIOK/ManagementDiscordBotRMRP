@@ -6,7 +6,6 @@
 import re
 import discord
 from datetime import datetime
-from typing import Optional
 from utils.warehouse_manager import WarehouseManager
 from utils.user_database import UserDatabase
 from .cart import (

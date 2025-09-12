@@ -44,7 +44,7 @@ class WarehouseManager:
                 "emoji": "📦",
                 "key": "другое",
                 "items": [
-                    "Материалы", "Патроны", "Бодикамеры", "Комплект Боец", "Прочее"
+                    "Материалы", "Патроны", "Бодикамеры", "Прочее"
                 ]
             }
         }        # Ограниченные виды оружия для определенных должностей
@@ -112,7 +112,6 @@ class WarehouseManager:
         
         cooldown_hours = self.get_cooldown_hours()
         moscow_tz = timezone(timedelta(hours=3))  # UTC+3 для Москвы
-        print(f"🕐 COOLDOWN CHECK: Проверяем кулдаун для пользователя {user_id}, лимит: {cooldown_hours} часов")
         
         # Ищем последнее сообщение с заявкой этого пользователя
         found_message = False
@@ -149,7 +148,6 @@ class WarehouseManager:
                 
                 # Если заявка отклонена - кулдаун не применяется
                 if status == "rejected":
-                    print(f"✅ COOLDOWN CHECK: Последняя заявка отклонена, можно подавать новую сразу")
                     return True, None
                 
                 # Для одобренных и на рассмотрении заявок проверяем время
@@ -158,20 +156,12 @@ class WarehouseManager:
                 message_time_moscow = message_time_utc + timedelta(hours=3)  # UTC -> Moscow
                 current_time_moscow = datetime.now(moscow_tz).replace(tzinfo=None)
                 
-                print(f"📋 COOLDOWN CHECK: Заявка от {message_time_moscow.strftime('%Y-%m-%d %H:%M:%S')} (МСК)")
-                print(f"📋 COOLDOWN CHECK: Текущее время {current_time_moscow.strftime('%Y-%m-%d %H:%M:%S')} (МСК)")
-                
                 time_since = current_time_moscow - message_time_moscow
-                hours_passed = time_since.total_seconds() / 3600
-                
-                print(f"⏰ COOLDOWN CHECK: Прошло {hours_passed:.2f} часов из {cooldown_hours}")
                 
                 if time_since < timedelta(hours=cooldown_hours):
                     next_time_moscow = message_time_moscow + timedelta(hours=cooldown_hours)
                     print(f"❌ COOLDOWN CHECK: Кулдаун активен! Следующий запрос: {next_time_moscow.strftime('%Y-%m-%d %H:%M:%S')} МСК")
                     return False, next_time_moscow
-                else:
-                    print(f"✅ COOLDOWN CHECK: Кулдаун прошел, можно делать запрос")
                 break
         
         if not found_message:
@@ -338,8 +328,8 @@ class WarehouseManager:
         
         # Базовые лимиты по умолчанию
         return {
-            "оружие": 3,
-            "бронежилеты": 15,
+            "оружие": 2,
+            "бронежилеты": 10,
             "аптечки": 20,
             "weapon_restrictions": []
         }

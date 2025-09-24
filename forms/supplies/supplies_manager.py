@@ -14,21 +14,52 @@ class SuppliesManager:
         self.data_file = "data/supplies_timers.json"
         self._ensure_data_file()
         
-        # Объекты поставок с их настройками
-        self.objects = {
-            "object_7": {
-                "name": "Объект №7", 
-                "emoji": "🏭"
+        # Объекты поставок по категориям (каждая категория = ряд кнопок)
+        self.categories = {
+            "army": {
+                "object_7": {
+                    "name": "Объект №7", 
+                    "emoji": "🏭"
+                },
+                "military_warehouses": {
+                    "name": "Военные Склады",
+                    "emoji": "📦" 
+                },
+                "radar_orbit": {
+                    "name": "РЛС Орбита",
+                    "emoji": "📡"
+                }
             },
-            "military_warehouses": {
-                "name": "Военные Склады",
-                "emoji": "📦" 
+            "medical": {
+                "gsmo": {
+                    "name": "ГСМО",
+                    "emoji": "💉"
+                },
+                "zmh": {
+                    "name": "ЗМХ",
+                    "emoji": "🧑‍⚕️"
+                },
+                "ms": {
+                    "name": "МС", 
+                    "emoji": "😷"
+                },
+                "cms": {
+                    "name": "ЦМС", 
+                    "emoji": "⚕️"
+                }
             },
-            "radar_orbit": {
-                "name": "РЛС Орбита",
-                "emoji": "📡"
+            "gov": {
+                "finka": {
+                    "name": "Финансовая поставка",
+                    "emoji": "💰"
+                }
             }
         }
+        
+        # Плоский словарь всех объектов для обратной совместимости
+        self.objects = {}
+        for category_key, category_objects in self.categories.items():
+            self.objects.update(category_objects)
     
     def _ensure_data_file(self):
         """Создает файл данных если его нет"""
@@ -57,6 +88,26 @@ class SuppliesManager:
                 json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception as e:
             print(f"❌ Ошибка сохранения данных поставок: {e}")
+    
+    def get_categories(self) -> Dict[str, Dict[str, Dict[str, str]]]:
+        """Возвращает все категории с объектами"""
+        return self.categories
+    
+    def get_category_objects(self, category_key: str) -> Dict[str, Dict[str, str]]:
+        """Возвращает объекты определенной категории"""
+        return self.categories.get(category_key, {})
+    
+    def get_all_objects_for_choices(self) -> list:
+        """Возвращает список всех объектов в формате для discord.app_commands.Choice"""
+        choices = []
+        for category_key, category_objects in self.categories.items():
+            for object_key, object_info in category_objects.items():
+                choice_name = f"{object_info['emoji']} {object_info['name']}"
+                choices.append({
+                    'name': choice_name,
+                    'value': object_key
+                })
+        return choices
     
     async def start_timer(self, object_key: str, user) -> bool:
         """Запускает таймер для объекта"""
@@ -470,108 +521,175 @@ class SuppliesManager:
             data = self._load_data()
             active_timers = data.get("active_timers", {})
             
+            # Сначала обновляем активные таймеры
             for object_key, timer_info in active_timers.items():
-                notification_messages = timer_info.get("notification_messages", {})
-                
-                # Поддержка как единственной, так и множественной формы ID
-                warning_message_id = notification_messages.get("warning_message_id")
-                warning_message_ids = notification_messages.get("warning_message_ids", [])
-                
-                # Объединяем в список для обработки
-                all_warning_ids = []
-                if warning_message_id:
-                    all_warning_ids.append(warning_message_id)
-                all_warning_ids.extend(warning_message_ids)
-                
-                if not all_warning_ids:
-                    continue
-                
-                # Получаем актуальное оставшееся время
-                remaining_time = self.get_remaining_time(object_key)
-                
-                # Получаем данные объекта
-                object_name = timer_info.get("object_name", object_key)
-                emoji = timer_info.get("emoji", "📦")
-                
-                # Обновляем каждое сообщение с предупреждением
-                for message_id in all_warning_ids[:]:  # Копия списка для безопасного изменения
-                    print(f"🔍 Пытаемся обновить warning сообщение {message_id}")
-                    try:
-                        # Получаем сообщение
-                        message = await channel.fetch_message(message_id)
-                        
-                        # Определяем статус и цвет
-                        if remaining_time == "Истек" or remaining_time == "Не активен":
-                            # Таймер истек - делаем сообщение зеленым
-                            embed = discord.Embed(
-                                title="✅ Поставка готова!",
-                                description=f"{emoji} **{object_name}** готов к новой поставке!",
-                                color=discord.Color.green(),
-                                timestamp=datetime.now()
-                            )
-                            
-                            embed.add_field(
-                                name="🎯 Статус",
-                                value=(
-                                    f"**Объект:** {object_name}\n"
-                                    f"**Статус:** Доступно\n"
-                                ),
-                                inline=False
-                            )
-                        else:
-                            # Таймер еще активен - обновляем оставшееся время
-                            # Вычисляем минуты для отображения
-                            if "ч" in remaining_time and "м" in remaining_time:
-                                # Парсим время вида "1ч 30м"
-                                parts = remaining_time.replace("ч", "").replace("м", "").split()
-                                hours = int(parts[0]) if len(parts) > 0 else 0
-                                minutes = int(parts[1]) if len(parts) > 1 else 0
-                                total_minutes = hours * 60 + minutes
-                            elif "ч" in remaining_time:
-                                # Только часы "2ч"
-                                hours = int(remaining_time.replace("ч", ""))
-                                total_minutes = hours * 60
-                            elif "м" in remaining_time:
-                                # Только минуты "15м"
-                                total_minutes = int(remaining_time.replace("м", ""))
-                            else:
-                                total_minutes = 0
-                            
-                            embed = discord.Embed(
-                                title="⚠️ Скоро будет доступна поставка!",
-                                description=f"{emoji} **{object_name}** будет готов через **{total_minutes} минут**!",
-                                color=discord.Color.orange(),
-                                timestamp=datetime.now()
-                            )
-                            
-                            embed.add_field(
-                                name="⏰ Предупреждение",
-                                value=(
-                                    f"**Объект:** {object_name}\n"
-                                    f"**Осталось:** {remaining_time}\n"
-                                ),
-                                inline=False
-                            )
-                        
-                        embed.set_footer(text="Система управления поставками")
-                        
-                        # Обновляем сообщение (оставляем контент без изменений)
-                        await message.edit(embed=embed)
-                        
-                    except discord.NotFound:
-                        # Сообщение удалено, убираем ID из соответствующих списков
-                        if message_id == warning_message_id:
-                            notification_messages["warning_message_id"] = None
-                            print(f"⚠️ Очищен warning_message_id {message_id} для {object_key}")
-                        if message_id in warning_message_ids:
-                            warning_message_ids.remove(message_id)
-                            print(f"⚠️ Удален из warning_message_ids {message_id} для {object_key}")
-                        print(f"⚠️ Сообщение предупреждения {message_id} для {object_key} не найдено")
-                    except Exception as e:
-                        print(f"❌ Ошибка обновления сообщения предупреждения {message_id} для {object_key}: {e}")
+                await self._update_warning_message_for_timer(channel, object_key, timer_info, data)
+            
+            # Затем ищем и обновляем сообщения от истекших таймеров
+            await self._update_expired_warning_messages(channel)
             
             # Сохраняем изменения (если были убраны ID)
             self._save_data(data)
             
         except Exception as e:
             print(f"❌ Ошибка обновления сообщений предупреждений в канале оповещений: {e}")
+    
+    async def _update_warning_message_for_timer(self, channel, object_key, timer_info, data):
+        """Обновляет warning сообщения для конкретного таймера"""
+        try:
+            notification_messages = timer_info.get("notification_messages", {})
+            
+            # Поддержка как единственной, так и множественной формы ID
+            warning_message_id = notification_messages.get("warning_message_id")
+            warning_message_ids = notification_messages.get("warning_message_ids", [])
+            
+            # Объединяем в список для обработки
+            all_warning_ids = []
+            if warning_message_id:
+                all_warning_ids.append(warning_message_id)
+            all_warning_ids.extend(warning_message_ids)
+            
+            if not all_warning_ids:
+                return
+            
+            # Получаем актуальное оставшееся время
+            remaining_time = self.get_remaining_time(object_key)
+            
+            # Получаем данные объекта
+            object_name = timer_info.get("object_name", object_key)
+            emoji = timer_info.get("emoji", "📦")
+            
+            # Обновляем каждое сообщение с предупреждением
+            for message_id in all_warning_ids[:]:  # Копия списка для безопасного изменения
+                print(f"🔍 Пытаемся обновить warning сообщение {message_id}")
+                try:
+                    # Получаем сообщение
+                    message = await channel.fetch_message(message_id)
+                    
+                    # Определяем статус и цвет
+                    if remaining_time == "Истек" or remaining_time == "Не активен":
+                        # Таймер истек - делаем сообщение зеленым
+                        embed = discord.Embed(
+                            title="✅ Поставка готова к запуску!",
+                            description=f"{emoji} **{object_name}** готов к новой поставке материалов!",
+                            color=discord.Color.green(),
+                            timestamp=datetime.now()
+                        )
+                        
+                        embed.add_field(
+                            name="🎯 Статус",
+                            value=(
+                                f"**Объект:** {object_name}\n"
+                                f"**Статус:** Готов к запуску\n"
+                            ),
+                            inline=False
+                        )
+                    else:
+                        # Таймер еще активен - обновляем оставшееся время
+                        # Вычисляем минуты для отображения
+                        if "ч" in remaining_time and "м" in remaining_time:
+                            # Парсим время вида "1ч 30м"
+                            parts = remaining_time.replace("ч", "").replace("м", "").split()
+                            hours = int(parts[0]) if len(parts) > 0 else 0
+                            minutes = int(parts[1]) if len(parts) > 1 else 0
+                            total_minutes = hours * 60 + minutes
+                        elif "ч" in remaining_time:
+                            # Только часы "2ч"
+                            hours = int(remaining_time.replace("ч", ""))
+                            total_minutes = hours * 60
+                        elif "м" in remaining_time:
+                            # Только минуты "15м"
+                            total_minutes = int(remaining_time.replace("м", ""))
+                        else:
+                            total_minutes = 0
+                        
+                        embed = discord.Embed(
+                            title="⚠️ Скоро будет доступна поставка!",
+                            description=f"{emoji} **{object_name}** будет готов через **{total_minutes} минут**!",
+                            color=discord.Color.orange(),
+                            timestamp=datetime.now()
+                        )
+                        
+                        embed.add_field(
+                            name="⏰ Предупреждение",
+                            value=(
+                                f"**Объект:** {object_name}\n"
+                                f"**Осталось:** {remaining_time}\n"
+                            ),
+                            inline=False
+                        )
+                    
+                    embed.set_footer(text="Система управления поставками")
+                    
+                    # Обновляем сообщение (оставляем контент без изменений)
+                    await message.edit(embed=embed)
+                    
+                except discord.NotFound:
+                    # Сообщение удалено, убираем ID из соответствующих списков
+                    if message_id == warning_message_id:
+                        notification_messages["warning_message_id"] = None
+                        print(f"⚠️ Очищен warning_message_id {message_id} для {object_key}")
+                    if message_id in warning_message_ids:
+                        warning_message_ids.remove(message_id)
+                        print(f"⚠️ Удален из warning_message_ids {message_id} для {object_key}")
+                    print(f"⚠️ Сообщение предупреждения {message_id} для {object_key} не найдено")
+                except Exception as e:
+                    print(f"❌ Ошибка обновления сообщения предупреждения {message_id} для {object_key}: {e}")
+                    
+        except Exception as e:
+            print(f"❌ Ошибка обновления warning сообщения для {object_key}: {e}")
+    
+    async def _update_expired_warning_messages(self, channel):
+        """Ищет и обновляет warning сообщения от истекших таймеров"""
+        try:
+            print("🔍 Ищем warning сообщения от истекших таймеров...")
+            
+            # Ищем сообщения бота с предупреждениями в последних 100 сообщениях
+            async for message in channel.history(limit=100):
+                if (message.author == channel.guild.me and message.embeds and 
+                    len(message.embeds) > 0 and message.embeds[0].title and
+                    "⚠️ Скоро будет доступна поставка!" in message.embeds[0].title):
+                    
+                    embed = message.embeds[0]
+                    description = embed.description or ""
+                    
+                    # Ищем название объекта и эмодзи в описании
+                    for object_key, object_info in self.objects.items():
+                        object_name = object_info["name"]
+                        emoji = object_info["emoji"]
+                        
+                        if object_name in description and emoji in description:
+                            # Проверяем, истек ли таймер для этого объекта
+                            remaining_time = self.get_remaining_time(object_key)
+                            
+                            if remaining_time == "Не активен" or remaining_time == "Истек":
+                                # Обновляем сообщение до статуса "готово"
+                                print(f"🔄 Обновляем истекшее warning сообщение для {object_name}")
+                                
+                                new_embed = discord.Embed(
+                                    title="✅ Поставка готова к запуску!",
+                                    description=f"{emoji} **{object_name}** готов к новой поставке материалов!",
+                                    color=discord.Color.green(),
+                                    timestamp=datetime.now()
+                                )
+                                
+                                new_embed.add_field(
+                                    name="🎯 Статус",
+                                    value=(
+                                        f"**Объект:** {object_name}\n"
+                                        f"**Статус:** Готов к запуску\n"
+                                    ),
+                                    inline=False
+                                )
+                                
+                                new_embed.set_footer(text="Система управления поставками")
+                                
+                                try:
+                                    await message.edit(embed=new_embed)
+                                    print(f"✅ Обновлено истекшее warning сообщение для {object_name}")
+                                except Exception as e:
+                                    print(f"❌ Ошибка обновления истекшего warning сообщения: {e}")
+                            break
+                            
+        except Exception as e:
+            print(f"❌ Ошибка поиска истекших warning сообщений: {e}")

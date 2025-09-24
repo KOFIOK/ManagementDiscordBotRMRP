@@ -1,8 +1,6 @@
 import discord
-from discord.ext import commands
 from utils.config_manager import load_config
-import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime
 
 
 class SuppliesControlView(discord.ui.View):
@@ -10,7 +8,43 @@ class SuppliesControlView(discord.ui.View):
     
     def __init__(self):
         super().__init__(timeout=None)
-        self._update_button_states()
+        self._create_dynamic_buttons()
+        
+    def _create_dynamic_buttons(self):
+        """Создает кнопки динамически на основе категорий"""
+        try:
+            from .supplies_manager import SuppliesManager
+            supplies_manager = SuppliesManager()
+            categories = supplies_manager.get_categories()
+            
+            row = 0
+            for category_key, category_objects in categories.items():
+                if not category_objects:  # Пропускаем пустые категории
+                    continue
+                    
+                for object_key, object_info in category_objects.items():
+                    button = discord.ui.Button(
+                        label=object_info["name"],
+                        emoji=object_info["emoji"],
+                        style=discord.ButtonStyle.primary,
+                        custom_id=f"supplies_{object_key}",
+                        row=row
+                    )
+                    button.callback = self._create_button_callback(object_key, object_info["name"], object_info["emoji"])
+                    self.add_item(button)
+                
+                row += 1  # Каждая категория в новом ряду
+                
+            self._update_button_states()
+            
+        except Exception as e:
+            print(f"❌ Ошибка создания динамических кнопок: {e}")
+    
+    def _create_button_callback(self, object_key: str, object_name: str, emoji: str):
+        """Создает callback функцию для кнопки"""
+        async def button_callback(interaction: discord.Interaction):
+            await self._handle_object_button(interaction, object_key, object_name, emoji)
+        return button_callback
         
     def _update_button_states(self):
         """Обновляет состояние кнопок на основе активных таймеров"""
@@ -25,50 +59,17 @@ class SuppliesControlView(discord.ui.View):
             
             # Обновляем состояние каждой кнопки
             for item in self.children:
-                if isinstance(item, discord.ui.Button):
-                    object_key = None
-                    if item.custom_id == "supplies_object_7":
-                        object_key = "object_7"
-                    elif item.custom_id == "supplies_military_warehouses":
-                        object_key = "military_warehouses"
-                    elif item.custom_id == "supplies_radar_orbit":
-                        object_key = "radar_orbit"
+                if isinstance(item, discord.ui.Button) and item.custom_id and item.custom_id.startswith("supplies_"):
+                    object_key = item.custom_id.replace("supplies_", "")
                     
-                    if object_key:
-                        is_active = object_key in active_timers
-                        item.disabled = is_active
-                        item.style = discord.ButtonStyle.secondary if is_active else discord.ButtonStyle.primary
-                        print(f"   {object_key}: {'заблокирован' if is_active else 'доступен'}")
+                    is_active = object_key in active_timers
+                    item.disabled = is_active
+                    item.style = discord.ButtonStyle.secondary if is_active else discord.ButtonStyle.primary
+                    print(f"   {object_key}: {'заблокирован' if is_active else 'доступен'}")
+                    
         except Exception as e:
             print(f"❌ Ошибка обновления состояния кнопок: {e}")
         
-    @discord.ui.button(
-        label="Объект №7",
-        emoji="🏭",
-        style=discord.ButtonStyle.primary,
-        custom_id="supplies_object_7"
-    )
-    async def object_7_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._handle_object_button(interaction, "object_7", "Объект №7", "🏭")
-    
-    @discord.ui.button(
-        label="Военные Склады", 
-        emoji="📦",
-        style=discord.ButtonStyle.primary,
-        custom_id="supplies_military_warehouses"
-    )
-    async def military_warehouses_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._handle_object_button(interaction, "military_warehouses", "Военные Склады", "📦")
-    
-    @discord.ui.button(
-        label="РЛС Орбита",
-        emoji="📡", 
-        style=discord.ButtonStyle.primary,
-        custom_id="supplies_radar_orbit"
-    )
-    async def radar_orbit_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._handle_object_button(interaction, "radar_orbit", "РЛС Орбита", "📡")
-    
     async def _handle_object_button(self, interaction: discord.Interaction, object_key: str, object_name: str, emoji: str):
         """Обработка нажатия на кнопку объекта"""
         try:
@@ -297,10 +298,7 @@ async def send_supplies_control_message(channel: discord.TextChannel):
             title="🚚 Управление поставками",
             description=(
                 "**Военные объекты для поставки материалов**\n\n"
-                "🏭 **Объект №7**\n"
-                "📦 **Военные Склады**\n" 
-                "📡 **РЛС Орбита**\n\n"
-                "⚠️ *Доступно только для модераторов*"
+                "⚠️ *Доступно только от Капитана*"
             ),
             color=discord.Color.green()
         )

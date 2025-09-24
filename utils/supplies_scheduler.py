@@ -73,6 +73,7 @@ class SuppliesScheduler:
             
             current_time = datetime.now()
             timers_changed = False
+            expired_timers = []  # Список истекших таймеров для обработки
             
             for object_key, timer_info in active_timers.items():
                 end_time = datetime.fromisoformat(timer_info["end_time"])
@@ -80,17 +81,7 @@ class SuppliesScheduler:
                 
                 # Проверяем, истек ли таймер (готов к поставке)
                 if current_time >= end_time:
-                    await self._send_ready_notification(
-                        notification_channel, 
-                        object_key, 
-                        timer_info, 
-                        subscription_role_id
-                    )
-                    # Удаляем стартовое сообщение при завершении
-                    await self.supplies_manager.clear_start_message(object_key, notification_channel)
-                    # Удаляем истекший таймер
-                    self.supplies_manager.cancel_timer(object_key)
-                    timers_changed = True
+                    expired_timers.append((object_key, timer_info))
                     continue
                 
                 # Проверяем, нужно ли отправить предупреждение
@@ -113,15 +104,29 @@ class SuppliesScheduler:
                     await self._mark_warning_sent(object_key)
                     timers_changed = True
             
+            # Сначала обновляем warning сообщения (пока таймеры еще существуют)
+            await self._update_warning_messages(notification_channel)
+            
+            # Теперь обрабатываем истекшие таймеры
+            for object_key, timer_info in expired_timers:
+                await self._send_ready_notification(
+                    notification_channel, 
+                    object_key, 
+                    timer_info, 
+                    subscription_role_id
+                )
+                # Удаляем стартовое сообщение при завершении
+                await self.supplies_manager.clear_start_message(object_key, notification_channel)
+                # Удаляем истекший таймер
+                self.supplies_manager.cancel_timer(object_key)
+                timers_changed = True
+            
             # Обновляем сообщение управления каждую минуту (не только при изменениях)
             # Это нужно для обновления оставшегося времени в embed'ах
             await self._update_control_message()
             
             # Обновляем сообщения в канале оповещений
             await self._update_notification_messages(notification_channel)
-            
-            # Обновляем сообщения предупреждений в канале оповещений
-            await self._update_warning_messages(notification_channel)
                     
         except Exception as e:
             print(f"❌ Ошибка при проверке таймеров поставок: {e}")

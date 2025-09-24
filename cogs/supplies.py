@@ -11,6 +11,27 @@ class SuppliesCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.supplies_manager = SuppliesManager(self.bot)
+
+    async def supplies_object_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ) -> list[discord.app_commands.Choice[str]]:
+        """Автодополнение для объектов поставок"""
+        try:
+            choices = []
+            for category_key, category_objects in self.supplies_manager.categories.items():
+                for object_key, object_info in category_objects.items():
+                    choice_name = f"{object_info['emoji']} {object_info['name']}"
+                    # Фильтруем по введенному тексту
+                    if current.lower() in choice_name.lower() or current.lower() in object_key.lower():
+                        choices.append(discord.app_commands.Choice(name=choice_name, value=object_key))
+                        
+            # Ограничиваем до 25 вариантов (лимит Discord)
+            return choices[:25]
+        except Exception as e:
+            print(f"❌ Ошибка автодополнения объектов поставок: {e}")
+            return []
     
     @discord.app_commands.command(
         name="supplies-reset",
@@ -19,11 +40,7 @@ class SuppliesCog(commands.Cog):
     @discord.app_commands.describe(
         объект="Выберите объект для сброса таймера"
     )
-    @discord.app_commands.choices(объект=[
-        discord.app_commands.Choice(name="🏭 Объект №7", value="object_7"),
-        discord.app_commands.Choice(name="📦 Военные Склады", value="military_warehouses"),
-        discord.app_commands.Choice(name="📡 РЛС Орбита", value="radar_orbit")
-    ])
+    @discord.app_commands.autocomplete(объект=supplies_object_autocomplete)
     async def supplies_reset(self, interaction: discord.Interaction, объект: str):
         """Сброс таймера для выбранного объекта"""
         try:

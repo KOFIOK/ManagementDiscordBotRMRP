@@ -48,24 +48,6 @@ class MedicalRegistrationView(BaseMedicalView):
         autofill_data = await self.get_autofill_data(str(interaction.user.id))
         await interaction.response.send_modal(VVKModal(autofill_data))
     
-    @discord.ui.button(label="Лекция по медподготовке", style=discord.ButtonStyle.secondary, custom_id="lecture_button", emoji="📚")
-    async def lecture_button(self, interaction: discord.Interaction, button: Button):
-        """Лекция - только для настраиваемой роли"""
-        config = load_config()
-        allowed_roles = config.get('medical_lecture_allowed_roles', [])
-        
-        if allowed_roles and not any(role.id in allowed_roles for role in interaction.user.roles):
-            embed = discord.Embed(
-                title="❌ Недостаточно прав",
-                description="Запись на лекцию доступна только определенным ролям.",
-                color=discord.Color.red()
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
-        
-        autofill_data = await self.get_autofill_data(str(interaction.user.id))
-        await interaction.response.send_modal(LectureModal(autofill_data))
-    
     @discord.ui.button(label="Обновление документов", style=discord.ButtonStyle.success, custom_id="docs_button", emoji="📄")
     async def docs_button(self, interaction: discord.Interaction, button: Button):
         """Документы - доступно всем"""
@@ -179,61 +161,6 @@ class VVKModal(BaseMedicalModal):
         )
         
         await self.send_to_channel(interaction, embed)
-
-
-class LectureModal(BaseMedicalModal):
-    """Modal for medical lecture registration"""
-    def __init__(self, autofill_data=""):
-        super().__init__(title="Запись на лекцию")
-        
-        self.notice = TextInput(
-            label="Важная информация",
-            default="Лекция проводится от трёх заявок на прослушивание. Если заявок не хватает, следите за расписанием",
-            style=discord.TextStyle.long,
-            required=False
-        )
-        self.name = TextInput(
-            label="Имя Фамилия | Статик",
-            placeholder="Пример: Иван Иванов | 000-000",
-            default=autofill_data,
-            max_length=100,
-            required=True
-        )
-        self.time = TextInput(
-            label="Удобное время",
-            placeholder="Примеры: 18:00, после поверки, в любое удобное время",
-            max_length=200,
-            required=True
-        )
-        
-        self.add_item(self.notice)
-        self.add_item(self.name)
-        self.add_item(self.time)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        # Moscow timezone
-        moscow_tz = timezone(timedelta(hours=3))
-        now = datetime.now(moscow_tz)
-        
-        embed = discord.Embed(
-            title="📚 Новая заявка на лекцию",
-            description="Запись на лекцию по медицинской подготовке",
-            color=discord.Color.green(),
-            timestamp=now
-        )
-        
-        embed.add_field(name="👤 Заявитель", value=interaction.user.mention, inline=True)
-        embed.add_field(name="📝 Имя и статик", value=self.name.value, inline=True)
-        embed.add_field(name="⏰ Удобное время", value=self.time.value, inline=False)
-        embed.add_field(name="ℹ️ Условия проведения", value="Лекция проводится от 3 заявок", inline=False)
-        
-        embed.set_footer(
-            text=f"Заявка отправлена • {now.strftime('%d.%m.%Y %H:%M:%S')} МСК",
-            icon_url=interaction.user.display_avatar.url
-        )
-        
-        await self.send_to_channel(interaction, embed)
-
 
 class DocumentsModal(BaseMedicalModal):
     """Modal for medical documents update"""

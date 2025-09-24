@@ -11,6 +11,55 @@ from utils.config_manager import load_config, is_moderator_or_admin
 from utils.google_sheets import sheets_manager
 
 
+async def send_audit_message(channel: discord.TextChannel, audit_data: dict, action_type: str = "default"):
+    """Common function to send audit messages to channel"""
+    moscow_tz = timezone(timedelta(hours=3))
+    current_time = datetime.now(moscow_tz)
+    
+    # Color based on action type
+    color_map = {
+        "promotion": discord.Color.green(),
+        "demotion": discord.Color.orange(),
+        "position": discord.Color.blue(),
+        "recruitment": discord.Color.green(),
+        "dismissal": discord.Color.red(),
+        "default": discord.Color.blue()
+    }
+    
+    # Title based on action type
+    title_map = {
+        "recruitment": "📊 Кадровый аудит - Принятие на службу",
+        "dismissal": "🥀 Кадровый аудит - Увольнение",
+        "default": "📊 Кадровый аудит"
+    }
+    
+    embed = discord.Embed(
+        title=title_map.get(action_type, title_map["default"]),
+        color=color_map.get(action_type, color_map["default"]),
+        timestamp=discord.utils.utcnow()
+    )
+    
+    # Format name with static
+    name_with_static = audit_data['full_name']
+    if audit_data.get('static'):
+        name_with_static = f"{audit_data['full_name']} | {audit_data['static']}"
+    
+    embed.add_field(name="Имя Фамилия | 6 цифр статика", value=name_with_static, inline=False)
+    embed.add_field(name="Действие", value=audit_data['action'], inline=False)
+    if audit_data.get('reason', ''):
+        embed.add_field(name="Причина", value=audit_data['reason'], inline=False)
+    embed.add_field(name="Дата Действия", value=current_time.strftime('%d.%m.%Y'), inline=False)
+    embed.add_field(name="Подразделение", value=audit_data.get('department', 'Не указано'), inline=False)
+    embed.add_field(name="Воинское звание", value=audit_data['rank'], inline=False)
+    if audit_data.get('position'):
+        embed.add_field(name="Должность", value=audit_data['position'], inline=False)
+    embed.add_field(name="Кадровую отписал", value=audit_data['moderator_signed_name'], inline=False)
+    
+    embed.set_thumbnail(url="https://i.imgur.com/07MRSyl.png")
+    
+    await channel.send(content=f"<@{audit_data['discord_id']}>", embed=embed)
+
+
 class PromotionModal(ui.Modal, title="Повышение в звании"):
     """Modal for rank promotion"""
     
@@ -128,6 +177,16 @@ class PromotionModal(ui.Modal, title="Повышение в звании"):
                 if new_role:
                     await self.target_user.add_roles(new_role, reason=f"Rank promotion by {interaction.user}")
             
+            # Update Personal List sheet with new rank
+            try:
+                sheet_update_success = await sheets_manager.update_user_rank(self.target_user.id, new_rank)
+                if sheet_update_success:
+                    print(f"✅ PROMOTION: Updated Personal List sheet with new rank: {new_rank}")
+                else:
+                    print(f"❌ PROMOTION: Failed to update Personal List sheet for user {self.target_user.id}")
+            except Exception as e:
+                print(f"❌ PROMOTION: Error updating Personal List sheet: {e}")
+            
             # Add to audit using existing personnel system
             from cogs.personnel_commands import PersonnelCommands
             personnel_cog = interaction.client.get_cog('PersonnelCommands')
@@ -156,50 +215,29 @@ class PromotionModal(ui.Modal, title="Повышение в звании"):
                     'moderator_signed_name': moderator_signed_name
                 }
                 
+                # Add to Audit sheet
+                try:
+                    sheets_success = await personnel_cog._add_to_audit_sheet(audit_data)
+                    if sheets_success:
+                        print(f"✅ PROMOTION: Added to Audit sheet successfully")
+                    else:
+                        print(f"❌ PROMOTION: Failed to add to Audit sheet")
+                except Exception as e:
+                    print(f"❌ PROMOTION: Error adding to Audit sheet: {e}")
+                
                 # Send to audit channel
                 config = load_config()
                 audit_channel_id = config.get('audit_channel')
                 if audit_channel_id:
                     audit_channel = interaction.guild.get_channel(audit_channel_id)
                     if audit_channel:
-                        await self._send_audit_message(audit_channel, audit_data)
+                        await send_audit_message(audit_channel, audit_data, "promotion")
             
             return True
             
         except Exception as e:
             print(f"Error processing promotion: {e}")
             return False
-    
-    async def _send_audit_message(self, channel: discord.TextChannel, audit_data: dict):
-        """Send audit message to channel"""
-        moscow_tz = timezone(timedelta(hours=3))
-        current_time = datetime.now(moscow_tz)
-        
-        embed = discord.Embed(
-            title="📊 Кадровый аудит",
-            color=discord.Color.green(),
-            timestamp=discord.utils.utcnow()
-        )
-        
-        # Format name with static
-        name_with_static = audit_data['full_name']
-        if audit_data.get('static'):
-            name_with_static = f"{audit_data['full_name']} | {audit_data['static']}"
-        
-        embed.add_field(name="Имя Фамилия | 6 цифр статика", value=name_with_static, inline=False)
-        embed.add_field(name="Действие", value=audit_data['action'], inline=False)
-        if audit_data.get('reason', ''):
-            embed.add_field(name="Причина", value=audit_data['reason'], inline=False)
-        embed.add_field(name="Дата Действия", value=current_time.strftime('%d.%m.%Y'), inline=False)
-        embed.add_field(name="Подразделение", value=audit_data.get('department', 'Не указано'), inline=False)
-        embed.add_field(name="Воинское звание", value=audit_data['rank'], inline=False)
-        if audit_data.get('position'):
-            embed.add_field(name="Должность", value=audit_data['position'], inline=False)
-        embed.add_field(name="Кадровую отписал", value=audit_data['moderator_signed_name'], inline=False)
-        
-        embed.set_thumbnail(url="https://i.imgur.com/07MRSyl.png")
-        
-        await channel.send(content=f"<@{audit_data['discord_id']}>", embed=embed)
 
 
 class DemotionModal(ui.Modal, title="Разжалование в звании"):
@@ -305,6 +343,16 @@ class DemotionModal(ui.Modal, title="Разжалование в звании"):
                 if new_role:
                     await self.target_user.add_roles(new_role, reason=f"Rank demotion by {interaction.user}")
             
+            # Update Personal List sheet with new rank
+            try:
+                sheet_update_success = await sheets_manager.update_user_rank(self.target_user.id, new_rank)
+                if sheet_update_success:
+                    print(f"✅ DEMOTION: Updated Personal List sheet with new rank: {new_rank}")
+                else:
+                    print(f"❌ DEMOTION: Failed to update Personal List sheet for user {self.target_user.id}")
+            except Exception as e:
+                print(f"❌ DEMOTION: Error updating Personal List sheet: {e}")
+            
             personnel_cog = interaction.client.get_cog('PersonnelCommands')
             
             if personnel_cog:
@@ -331,19 +379,30 @@ class DemotionModal(ui.Modal, title="Разжалование в звании"):
                     'moderator_signed_name': moderator_signed_name
                 }
                 
+                # Add to Audit sheet
+                try:
+                    sheets_success = await personnel_cog._add_to_audit_sheet(audit_data)
+                    if sheets_success:
+                        print(f"✅ DEMOTION: Added to Audit sheet successfully")
+                    else:
+                        print(f"❌ DEMOTION: Failed to add to Audit sheet")
+                except Exception as e:
+                    print(f"❌ DEMOTION: Error adding to Audit sheet: {e}")
+                
                 # Send to audit channel
                 config = load_config()
                 audit_channel_id = config.get('audit_channel')
                 if audit_channel_id:
                     audit_channel = interaction.guild.get_channel(audit_channel_id)
                     if audit_channel:
-                        await self._send_audit_message(audit_channel, audit_data)
+                        await send_audit_message(audit_channel, audit_data, "demotion")
             
             return True
             
         except Exception as e:
             print(f"Error processing demotion: {e}")
             return False
+
 
 class PositionModal(ui.Modal, title="Назначение/Снятие должности"):
     """Modal for position assignment/removal"""
@@ -474,7 +533,14 @@ class PositionModal(ui.Modal, title="Назначение/Снятие долж�
                 }
                 
                 # Add to sheets and audit channel
-                sheets_success = await personnel_cog._add_to_audit_sheet(audit_data)
+                try:
+                    sheets_success = await personnel_cog._add_to_audit_sheet(audit_data)
+                    if sheets_success:
+                        print(f"✅ POSITION: Added to Audit sheet successfully")
+                    else:
+                        print(f"❌ POSITION: Failed to add to Audit sheet")
+                except Exception as e:
+                    print(f"❌ POSITION: Error adding to Audit sheet: {e}")
                 
                 # Send to audit channel
                 config = load_config()
@@ -482,13 +548,14 @@ class PositionModal(ui.Modal, title="Назначение/Снятие долж�
                 if audit_channel_id:
                     audit_channel = interaction.guild.get_channel(audit_channel_id)
                     if audit_channel:
-                        await self._send_audit_message(audit_channel, audit_data)
+                        await send_audit_message(audit_channel, audit_data, "position")
             
             return True
             
         except Exception as e:
             print(f"Error processing position change: {e}")
             return False
+
 
 class RecruitmentModal(ui.Modal, title="Принятие на службу"):
     """Modal for recruiting new personnel - Based on proven MilitaryApplicationModal"""
@@ -756,7 +823,7 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                         audit_channel = interaction.guild.get_channel(audit_channel_id)
                         if audit_channel:
                             print(f"🔄 RECRUITMENT: Sending audit message to channel")
-                            await self._send_recruitment_audit_message(audit_channel, audit_data)
+                            await send_audit_message(audit_channel, audit_data, "recruitment")
                             print(f"✅ RECRUITMENT: Sent audit message")
                         else:
                             print(f"❌ RECRUITMENT: Audit channel {audit_channel_id} not found")
@@ -775,36 +842,6 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
             import traceback
             traceback.print_exc()
             return False
-
-    async def _send_recruitment_audit_message(self, channel: discord.TextChannel, audit_data: dict):
-        """Send recruitment audit message to channel"""
-        moscow_tz = timezone(timedelta(hours=3))
-        current_time = datetime.now(moscow_tz)
-        
-        embed = discord.Embed(
-            title="📊 Кадровый аудит - Принятие на службу",
-            color=discord.Color.green(),
-            timestamp=discord.utils.utcnow()
-        )
-        
-        # Format name with static
-        name_with_static = f"{audit_data['full_name']} | {audit_data['static']}"
-        
-        
-        embed.add_field(name="Имя Фамилия | 6 цифр статика", value=name_with_static, inline=False)
-        embed.add_field(name="Действие", value=audit_data['action'], inline=False)
-        if audit_data.get('reason', ''):
-            embed.add_field(name="Причина", value=audit_data['reason'], inline=False)
-        embed.add_field(name="Дата Действия", value=current_time.strftime('%d.%m.%Y'), inline=False)
-        embed.add_field(name="Подразделение", value=audit_data.get('department', 'Не указано'), inline=False)
-        if audit_data.get('position'):
-            embed.add_field(name="Должность", value=audit_data['position'], inline=False)
-        embed.add_field(name="Воинское звание", value=audit_data['rank'], inline=False)
-        embed.add_field(name="Кадровую отписал", value=audit_data['moderator_signed_name'], inline=False)
-        
-        embed.set_thumbnail(url="https://i.imgur.com/07MRSyl.png")
-        
-        await channel.send(content=f"<@{audit_data['discord_id']}>", embed=embed)
 
 class DismissalModal(ui.Modal, title="Увольнение"):
     """Modal for dismissing personnel"""
@@ -933,7 +970,7 @@ class DismissalModal(ui.Modal, title="Увольнение"):
                     if audit_channel_id:
                         audit_channel = interaction.guild.get_channel(audit_channel_id)
                         if audit_channel:
-                            await self._send_dismissal_audit_message(audit_channel, audit_data)
+                            await send_audit_message(audit_channel, audit_data, "dismissal")
                             
                     print(f"✅ DISMISSAL: Successfully added audit record for user {self.user.id}")
             except Exception as e:
@@ -944,36 +981,3 @@ class DismissalModal(ui.Modal, title="Увольнение"):
         except Exception as e:
             print(f"❌ DISMISSAL: Error processing dismissal: {e}")
             return False
-
-    async def _send_dismissal_audit_message(self, channel: discord.TextChannel, audit_data: dict):
-        """Send dismissal audit message to channel"""
-        from datetime import timezone, timedelta
-        moscow_tz = timezone(timedelta(hours=3))
-        current_time = datetime.now(moscow_tz)
-        
-        embed = discord.Embed(
-            title="🥀 Кадровый аудит - Увольнение",
-            color=discord.Color.red(),
-            timestamp=discord.utils.utcnow()
-        )
-        
-        # Format name with static
-        name_with_static = audit_data['full_name']
-        if audit_data.get('static'):
-            name_with_static = f"{audit_data['full_name']} | {audit_data['static']}"
-        
-        embed.add_field(name="Имя Фамилия | 6 цифр статика", value=name_with_static, inline=False)
-        embed.add_field(name="Действие", value=audit_data['action'], inline=False)
-        if audit_data.get('reason', ''):
-            embed.add_field(name="Причина", value=audit_data['reason'], inline=False)
-        embed.add_field(name="Дата Действия", value=current_time.strftime('%d.%m.%Y'), inline=False)
-        embed.add_field(name="Подразделение", value=audit_data.get('department', 'Не указано'), inline=False)
-        if audit_data.get('position'):
-            embed.add_field(name="Должность", value=audit_data['position'], inline=False)
-        embed.add_field(name="Воинское звание", value=audit_data['rank'], inline=False)
-        embed.add_field(name="Кадровую отписал", value=audit_data['moderator_signed_name'], inline=False)
-        
-        embed.set_thumbnail(url="https://i.imgur.com/07MRSyl.png")
-        
-        await channel.send(content=f"<@{audit_data['discord_id']}>", embed=embed)
-

@@ -1090,6 +1090,85 @@ class GoogleSheetsManager:
             return False
 
     @retry_on_google_error(retries=3, delay=1)
+    async def update_user_rank(self, discord_id, new_rank):
+        """
+        Update user's rank in 'Личный Состав' sheet.
+        
+        Args:
+            discord_id: Discord ID of the user
+            new_rank (str): New rank name
+        
+        Returns:
+            bool: True if update was successful, False otherwise
+        """
+        try:
+            print(f"📋 RANK UPDATE: Updating rank for Discord ID '{discord_id}' to '{new_rank}'")
+            
+            # Ensure connection
+            if not self._ensure_connection():
+                print("❌ RANK UPDATE: Failed to establish connection")
+                return False
+            
+            # Get the 'Личный Состав' worksheet
+            personal_worksheet = None
+            all_worksheets = self.spreadsheet.worksheets()
+            
+            for worksheet in all_worksheets:
+                if worksheet.title == 'Личный Состав':
+                    personal_worksheet = worksheet
+                    break
+            
+            if not personal_worksheet:
+                print("❌ RANK UPDATE: 'Личный Состав' worksheet not found")
+                return False
+            
+            print("✅ RANK UPDATE: Found 'Личный Состав' worksheet")
+            
+            # Get all values and find user by Discord ID
+            try:
+                all_values = personal_worksheet.get_all_values()
+                print(f"📋 RANK UPDATE: Retrieved {len(all_values)} rows from sheet")
+            except Exception as e:
+                print(f"❌ RANK UPDATE: Failed to get sheet values: {e}")
+                return False
+            
+            # Skip header row (row 0) and search in data rows
+            discord_id_str = str(discord_id)
+            user_row_number = None
+            
+            for i, row in enumerate(all_values[1:], start=2):  # start=2 because we skip header and use 1-based indexing
+                # Ensure row has enough columns (A-G: 7 columns)
+                if len(row) >= 7:
+                    # Column G (index 6) contains Discord ID
+                    row_discord_id = str(row[6]).strip()
+                    
+                    if row_discord_id == discord_id_str:
+                        user_row_number = i
+                        print(f"✅ RANK UPDATE: Found user at row {user_row_number}")
+                        break
+            
+            if user_row_number is None:
+                print(f"❌ RANK UPDATE: User with Discord ID '{discord_id}' not found in sheet")
+                return False
+            
+            print(f"✅ RANK UPDATE: Found user at row {user_row_number}")
+            
+            # Update rank in column D (D in A1 notation)
+            cell_address = f'D{user_row_number}'
+            try:
+                # Use update with proper format - pass as list of lists
+                personal_worksheet.update(cell_address, [[new_rank]])
+                print(f"✅ RANK UPDATE: Successfully updated rank to '{new_rank}' at cell {cell_address}")
+                return True
+            except Exception as e:
+                print(f"❌ RANK UPDATE: Failed to update cell {cell_address}: {e}")
+                return False
+                
+        except Exception as e:
+            print(f"❌ RANK UPDATE: Error updating user rank: {e}")
+            return False
+
+    @retry_on_google_error(retries=3, delay=1)
     async def delete_user_from_personal_list(self, discord_id):
         """
         Delete user from 'Личный Состав' sheet by Discord ID.

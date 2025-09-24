@@ -43,7 +43,7 @@ def handle_context_errors(func):
 
 # Global context menu commands - cannot be inside a cog class
 
-@app_commands.context_menu(name='Повысить')
+@app_commands.context_menu(name='Повысить (BETA)')
 @handle_context_errors
 async def promote_user(interaction: discord.Interaction, user: discord.Member):
     """Context menu command to promote user"""
@@ -52,16 +52,6 @@ async def promote_user(interaction: discord.Interaction, user: discord.Member):
     if not is_moderator_or_admin(interaction.user, config):
         await interaction.response.send_message(
             "❌ У вас нет прав для выполнения этой команды. Требуются права модератора или администратора.",
-            ephemeral=True
-        )
-        return
-    # Load config for permission checking
-    config = load_config()
-    
-    # Check moderator permissions
-    if not is_moderator_or_admin(interaction.user, config):
-        await interaction.response.send_message(
-            "❌ У вас нет прав для выполнения этой операции.", 
             ephemeral=True
         )
         return
@@ -100,7 +90,7 @@ async def promote_user(interaction: discord.Interaction, user: discord.Member):
     print(f"✅ Promotion modal sent for {user.display_name}")
 
 
-@app_commands.context_menu(name='Разжаловать')
+@app_commands.context_menu(name='Разжаловать (BETA)')
 @handle_context_errors
 async def demote_user(interaction: discord.Interaction, user: discord.Member):
     """Context menu command to demote user"""
@@ -112,17 +102,7 @@ async def demote_user(interaction: discord.Interaction, user: discord.Member):
             ephemeral=True
         )
         return
-    # Load config for permission checking
-    config = load_config()
-    
-    # Check moderator permissions
-    if not is_moderator_or_admin(interaction.user, config):
-        await interaction.response.send_message(
-            "❌ У вас нет прав для выполнения этой операции.", 
-            ephemeral=True
-        )
-        return
-    
+
     # Check if user exists in personnel database
     personnel_data = await sheets_manager.get_user_info_from_personal_list(user.id)
     if not personnel_data:
@@ -157,7 +137,7 @@ async def demote_user(interaction: discord.Interaction, user: discord.Member):
     print(f"✅ Demotion modal sent for {user.display_name}")
 
 
-@app_commands.context_menu(name='Уволить')
+@app_commands.context_menu(name='Уволить (BETA)')
 @handle_context_errors
 async def dismiss_user(interaction: discord.Interaction, user: discord.Member):
     """Context menu command to dismiss user"""
@@ -166,16 +146,6 @@ async def dismiss_user(interaction: discord.Interaction, user: discord.Member):
     if not is_moderator_or_admin(interaction.user, config):
         await interaction.response.send_message(
             "❌ У вас нет прав для выполнения этой команды. Требуются права модератора или администратора.",
-            ephemeral=True
-        )
-        return
-    # Load config for permission checking
-    config = load_config()
-    
-    # Check moderator permissions
-    if not is_moderator_or_admin(interaction.user, config):
-        await interaction.response.send_message(
-            "❌ У вас нет прав для выполнения этой операции.", 
             ephemeral=True
         )
         return
@@ -195,7 +165,7 @@ async def dismiss_user(interaction: discord.Interaction, user: discord.Member):
     print(f"✅ Dismissal modal sent for {user.display_name}")
 
 
-@app_commands.context_menu(name='Назначить должность')
+@app_commands.context_menu(name='Назначить должность (BETA)')
 @handle_context_errors
 async def assign_position(interaction: discord.Interaction, user: discord.Member):
     """Context menu command to assign/remove position"""
@@ -204,16 +174,6 @@ async def assign_position(interaction: discord.Interaction, user: discord.Member
     if not is_moderator_or_admin(interaction.user, config):
         await interaction.response.send_message(
             "❌ У вас нет прав для выполнения этой команды. Требуются права модератора или администратора.",
-            ephemeral=True
-        )
-        return
-    # Load config for permission checking
-    config = load_config()
-    
-    # Check moderator permissions
-    if not is_moderator_or_admin(interaction.user, config):
-        await interaction.response.send_message(
-            "❌ У вас нет прав для выполнения этой операции.", 
             ephemeral=True
         )
         return
@@ -233,7 +193,7 @@ async def assign_position(interaction: discord.Interaction, user: discord.Member
     print(f"✅ Position modal sent for {user.display_name}")
 
 
-@app_commands.context_menu(name='Принять на службу')
+@app_commands.context_menu(name='Принять на службу (BETA)')
 @handle_context_errors
 async def recruit_user(interaction: discord.Interaction, user: discord.Member):
     """Context menu command to recruit user"""
@@ -242,16 +202,6 @@ async def recruit_user(interaction: discord.Interaction, user: discord.Member):
     if not is_moderator_or_admin(interaction.user, config):
         await interaction.response.send_message(
             "❌ У вас нет прав для выполнения этой команды. Требуются права модератора или администратора.",
-            ephemeral=True
-        )
-        return
-    # Load config for permission checking
-    config = load_config()
-    
-    # Check moderator permissions
-    if not is_moderator_or_admin(interaction.user, config):
-        await interaction.response.send_message(
-            "❌ У вас нет прав для выполнения этой операции.", 
             ephemeral=True
         )
         return
@@ -268,11 +218,11 @@ def setup_context_commands(bot):
     existing_commands = [cmd.name for cmd in bot.tree.get_commands()]
     
     commands_to_add = [
-        ('Повысить', promote_user),
-        ('Разжаловать', demote_user), 
-        ('Уволить', dismiss_user),
-        ('Назначить должность', assign_position),
-        ('Принять на службу', recruit_user)
+        ('Повысить (BETA)', promote_user),
+        ('Разжаловать (BETA)', demote_user), 
+        ('Уволить (BETA)', dismiss_user),
+        ('Назначить должность (BETA)', assign_position),
+        ('Принять на службу (BETA)', recruit_user)
     ]
     
     added_count = 0

@@ -16,12 +16,32 @@ class RankHierarchy:
         config = load_config()
         rank_roles = config.get('rank_roles', {})
         
+        # Auto-fix any remaining 'rank' keys to 'rank_level'
+        fix_rank_level_keys()
+        
+        # Reload config after potential fix
+        config = load_config()
+        rank_roles = config.get('rank_roles', {})
+        
         # Convert old format to new format if needed
         converted_roles = {}
         for rank_name, data in rank_roles.items():
             if isinstance(data, dict):
-                # New format with rank hierarchy
-                converted_roles[rank_name] = data
+                # New format - ensure we have rank_level (not rank)
+                if 'rank_level' in data:
+                    converted_roles[rank_name] = data
+                elif 'rank' in data:
+                    # Fix old key name
+                    converted_roles[rank_name] = {
+                        'role_id': data.get('role_id'),
+                        'rank_level': data.get('rank', 0)
+                    }
+                    print(f"🔄 RANK FIX: Converted '{rank_name}' from 'rank' to 'rank_level'")
+                else:
+                    converted_roles[rank_name] = {
+                        'role_id': data.get('role_id'),
+                        'rank_level': 0  # Default for missing hierarchy
+                    }
             else:
                 # Old format - just role_id
                 converted_roles[rank_name] = {
@@ -216,3 +236,39 @@ def migrate_old_rank_format():
     
     print("✅ Rank roles migration completed!")
     return True
+
+
+def fix_rank_level_keys():
+    """Fix any remaining 'rank' keys to 'rank_level' keys in config"""
+    from utils.config_manager import save_config
+    config = load_config()
+    rank_roles = config.get('rank_roles', {})
+    
+    changes_made = False
+    fixed_ranks = {}
+    
+    for rank_name, data in rank_roles.items():
+        if isinstance(data, dict):
+            if 'rank' in data and 'rank_level' not in data:
+                # Fix the key name
+                fixed_ranks[rank_name] = {
+                    'role_id': data.get('role_id'),
+                    'rank_level': data.get('rank')
+                }
+                changes_made = True
+                print(f"🔧 FIXED: '{rank_name}' - changed 'rank' to 'rank_level'")
+            else:
+                # Keep as is
+                fixed_ranks[rank_name] = data
+        else:
+            # Old format, keep as is
+            fixed_ranks[rank_name] = data
+    
+    if changes_made:
+        config['rank_roles'] = fixed_ranks
+        save_config(config)
+        print("✅ Fixed rank_level keys in config!")
+        return True
+    else:
+        print("ℹ️  No rank key fixes needed.")
+        return False

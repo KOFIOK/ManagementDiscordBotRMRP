@@ -1187,6 +1187,8 @@ class PositionSelect(ui.Select):
                 return
             
             # Step 2: Process position assignment in database (only if position selected)
+            position_had_no_position_before = False  # Track if user had no position before
+            
             if position_name is not None and position_id != "no_position":
                 position_success = await self._assign_position_in_db(
                     self.target_user.id, 
@@ -1216,9 +1218,14 @@ class PositionSelect(ui.Select):
                             await interaction.followup.send(f"❌ **Ошибка БД (снятие должности):** Не удалось снять должность", ephemeral=True)
                             return
                         
+                        # Set position_name to None to trigger demotion audit
+                        position_name = None
                         print(f"✅ Position removed from database: {current_position} for user {self.target_user.id}")
                     else:
-                        print(f"ℹ️ User {self.target_user.id} had no position to remove")
+                        # User had no position to remove, skip position audit
+                        position_name = "skip_audit"
+                        position_had_no_position_before = True
+                        print(f"ℹ️ User {self.target_user.id} had no position to remove - skipping position audit")
                         
                 except Exception as e:
                     print(f"❌ Error checking/removing current position: {e}")
@@ -1386,8 +1393,11 @@ class PositionSelect(ui.Select):
                 position_info = f", должность: **{position_name or 'разжалован с должности'}**"
                 audit_count = "2 кадровых аудита: подразделение + должность"
             else:
-                # No position audit needed
-                position_info = ", должность: **без изменений**"
+                # No position audit needed (user had no position before)
+                if position_had_no_position_before:
+                    position_info = ", должность: **без должности (как и ранее)**"
+                else:
+                    position_info = ", должность: **без изменений**"
                 audit_count = "1 кадровый аудит: подразделение"
             
             # Step 7: Success message

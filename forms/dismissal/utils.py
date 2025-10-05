@@ -38,16 +38,22 @@ async def send_dismissal_button_message(channel):
                     break
     except Exception as e:
         print(f"Error checking pinned messages for dismissal: {e}")
-        # Create new message if none exists or old one couldn't be updated
+    # Create new message if none exists or old one couldn't be updated
     embed = discord.Embed(
         title="Рапорты на увольнение",
-        description="Нажмите на кнопку ниже, чтобы отправить рапорт на увольнение.",
+        description="Выберите причину увольнения и заполните форму.",
         color=discord.Color.blue()
     )
     
     embed.add_field(
+        name="Доступные варианты", 
+        value="• **ПСЖ** - По собственному желанию\n• **Перевод** - Перевод в другую фракцию",
+        inline=False
+    )
+    
+    embed.add_field(
         name="Инструкция", 
-        value="1. Нажмите на кнопку и заполните открывшуюся форму\n2. Нажмите 'Отправить'\n3. Ваш рапорт будет рассматриваться в течении __24 часов__.", 
+        value="1. Выберите причину увольнения\n2. Заполните автоматически открывшуюся форму\n3. Ваш рапорт будет рассматриваться в течении __24 часов__.", 
         inline=False
     )
     
@@ -59,6 +65,12 @@ async def send_dismissal_button_message(channel):
     try:
         await message.pin()
         print(f"Pinned new dismissal message {message.id}")
+        
+        # TODO: Save message ID for footer links when we implement clickable solution
+        # from utils.config_manager import save_dismissal_message_id
+        # save_dismissal_message_id(message.id)
+        # print(f"Saved dismissal message ID: {message.id}")
+        
     except Exception as e:
         print(f"Error pinning dismissal message: {e}")
 
@@ -70,8 +82,8 @@ async def restore_dismissal_approval_views(bot, channel):
             # Check if message is from bot and has dismissal report embed
             if (message.author == bot.user and 
                 message.embeds and
-                message.embeds[0].description and
-                "подал рапорт на увольнение!" in message.embeds[0].description):
+                message.embeds[0].title and
+                "Рапорт на увольнение" in message.embeds[0].title):
                 
                 embed = message.embeds[0]
                 
@@ -79,21 +91,28 @@ async def restore_dismissal_approval_views(bot, channel):
                 # We check if there's no "Обработано" field, which means it's still pending
                 status_pending = True
                 for field in embed.fields:
-                    if field.name == "Обработано":
+                    if field.name in ["Обработано", "Отказано"]:
                         status_pending = False
                         break
                 
                 if status_pending:
-                    # Extract user ID from footer if possible
-                    # This is a fallback since we can't perfectly restore user_id
-                    # but the view will still work for approval/rejection
-                    from .views import DismissalApprovalView
-                    view = DismissalApprovalView(user_id=None)
+                    # Try to extract user ID from content mention
+                    user_id = None
+                    if message.content:
+                        import re
+                        user_mention_pattern = r'<@(\d+)>'
+                        match = re.search(user_mention_pattern, message.content)
+                        if match:
+                            user_id = int(match.group(1))
+                    
+                    # Use the new SimplifiedDismissalApprovalView
+                    from .views import SimplifiedDismissalApprovalView
+                    view = SimplifiedDismissalApprovalView(user_id=user_id)
                       
                     # Edit message to restore the view
                     try:
                         await message.edit(view=view)
-                        print(f"Restored approval view for dismissal report message {message.id}")
+                        print(f"Restored simplified approval view for dismissal report message {message.id}")
                     except discord.NotFound:
                         continue
                     except Exception as e:

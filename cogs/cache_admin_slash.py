@@ -234,7 +234,7 @@ class CacheAdminSlashCommands(commands.Cog):
         try:
             await interaction.response.defer()
             
-            from utils.warehouse_user_data import get_warehouse_user_data, prepare_modal_data
+            from utils.user_cache import get_warehouse_user_data, prepare_modal_data
             
             # Тест 1: Полные данные пользователя
             start_time = time.time()
@@ -528,7 +528,7 @@ class CacheAdminSlashCommands(commands.Cog):
                     f"• Статус: {'Активен' if is_cache_initialized() else 'Ошибка'}\n\n"
                     f"🚀 **Эффект:**\n"
                     f"• Мгновенное автозаполнение форм\n"
-                    f"• Отсутствие 429 ошибок Google API\n"
+                    f"• Отсутствие ошибок PostgreSQL\n"
                     f"• Быстрая работа всех систем",
                     ephemeral=True
                 )
@@ -538,7 +538,7 @@ class CacheAdminSlashCommands(commands.Cog):
                     f"⏱️ Время выполнения: {load_time:.2f} секунд\n"
                     f"📝 Проверьте логи бота для деталей\n"
                     f"💡 Возможные причины:\n"
-                    f"• Проблемы с Google Sheets API\n"
+                    f"• Проблемы с PostgreSQL подключением\n"
                     f"• Превышение лимитов запросов\n"
                     f"• Недоступность листа 'Личный Состав'",
                     ephemeral=True

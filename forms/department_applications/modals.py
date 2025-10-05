@@ -9,7 +9,7 @@ import logging
 from typing import Dict, Any, Optional
 from datetime import datetime, timezone, timedelta
 
-from utils.user_database import UserDatabase
+from utils.database_manager import personnel_manager
 from utils.ping_manager import ping_manager
 
 logger = logging.getLogger(__name__)
@@ -173,9 +173,38 @@ class DepartmentApplicationStage1Modal(ui.Modal):
             self.user_ic_data = None
     
     async def _load_user_data_fast(self):
-        """Быстрая загрузка данных пользователя"""
-        from utils.user_database import UserDatabase
-        return await UserDatabase.get_user_info(self.user_id)
+        """Быстрая загрузка данных пользователя - унифицированная с кэшем"""
+        try:
+            # Сначала попробуем загрузить из кэша асинхронно
+            from utils.user_cache import get_cached_user_info
+            cached_data = await get_cached_user_info(self.user_id)
+            
+            if cached_data:
+                logger.info(f"✅ User data loaded from cache for {self.user_id}")
+                return cached_data
+            
+            # Если в кэше нет - загружаем из базы напрямую
+            from utils.database_manager import PersonnelManager
+            pm = PersonnelManager()
+            user_data = await pm.get_personnel_summary(self.user_id)
+            if user_data:
+                # Преобразуем в унифицированный формат (совместимый с кэшем)
+                formatted_data = {
+                    'full_name': f"{user_data.get('first_name', '')} {user_data.get('last_name', '')}".strip(),
+                    'static': user_data.get('static', ''),
+                    'first_name': user_data.get('first_name', ''),  # Для совместимости
+                    'last_name': user_data.get('last_name', ''),   # Для совместимости
+                    'position': user_data.get('position', 'Не указано'),  # Теперь есть в данных
+                    'rank': user_data.get('rank', 'Не указано'),     # Теперь есть в данных
+                    'department': user_data.get('department', 'Не определено')  # Теперь есть в данных
+                }
+                logger.info(f"✅ User data loaded from database for {self.user_id}")
+                return formatted_data
+                
+        except Exception as e:
+            logger.error(f"❌ Error loading user data for {self.user_id}: {e}")
+        
+        return None
     
     def _setup_fields_with_data(self):
         """Setup form fields with loaded data or empty if not available"""
@@ -186,11 +215,18 @@ class DepartmentApplicationStage1Modal(ui.Modal):
         
         if self.user_ic_data:
             # Данные найдены в базе/кэше - автозаполняем
-            ic_first_name = self.user_ic_data.get('first_name', '')
-            ic_last_name = self.user_ic_data.get('last_name', '')
-            ic_static = self.user_ic_data.get('static', '')
+            # Проверяем формат данных (может быть как full_name, так и first_name/last_name)
+            full_name = ""
+            if 'full_name' in self.user_ic_data:
+                # Данные из кэша (новый формат)
+                full_name = self.user_ic_data.get('full_name', '')
+            else:
+                # Данные из базы (старый формат)
+                ic_first_name = self.user_ic_data.get('first_name', '')
+                ic_last_name = self.user_ic_data.get('last_name', '')
+                full_name = f"{ic_first_name} {ic_last_name}".strip()
             
-            full_name = f"{ic_first_name} {ic_last_name}".strip()
+            ic_static = self.user_ic_data.get('static', '')
             
             if full_name:
                 default_name = full_name
@@ -256,10 +292,20 @@ class DepartmentApplicationStage1Modal(ui.Modal):
         self.add_item(self.reason_input)
     
     async def _load_user_data_async(self):
-        """Асинхронно загружает данные пользователя из Google Sheets"""
+        """Асинхронно загружает данные пользователя из базы данных"""
         try:
-            from utils.user_database import UserDatabase
-            self.user_ic_data = await UserDatabase.get_user_info(self.user_id)
+            from utils.database_manager import PersonnelManager
+            pm = PersonnelManager()
+            user_data = await pm.get_personnel_summary(self.user_id)
+            if user_data:
+                # Преобразуем в ожидаемый формат
+                self.user_ic_data = {
+                    'full_name': f"{user_data.get('first_name', '')} {user_data.get('last_name', '')}".strip(),
+                    'static': user_data.get('static', ''),
+                    'position': user_data.get('position', 'Не указано'),
+                    'rank': user_data.get('rank', 'Не указано'),
+                    'department': user_data.get('department', 'Не определено')
+                }
             
             if self.user_ic_data:
                 # Автозаполняем поля если данные найдены

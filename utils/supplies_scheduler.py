@@ -53,8 +53,6 @@ class SuppliesScheduler:
             active_timers = self.supplies_manager.get_active_timers()
             config = load_config()
             
-            print(f"🔍 Проверка таймеров: найдено {len(active_timers)} активных")
-            
             # Получаем настройки
             notification_channel_id = config.get('supplies', {}).get('notification_channel_id')
             subscription_role_id = config.get('supplies', {}).get('subscription_role_id')
@@ -134,12 +132,10 @@ class SuppliesScheduler:
     async def _update_control_message(self):
         """Обновляет сообщение управления поставками"""
         try:
-            print("🔄 Обновление сообщения управления поставками...")
             from utils.supplies_restore import get_supplies_restore_manager
             restore_manager = get_supplies_restore_manager()
             if restore_manager:
                 await restore_manager.update_control_message_timers()
-                print("✅ Сообщение управления обновлено")
             else:
                 print("❌ Менеджер восстановления не найден")
         except Exception as e:

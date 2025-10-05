@@ -29,8 +29,9 @@ class WarehouseAuditPinMessageView(discord.ui.View):
         """Создать запись аудита выдачи"""
         try:
             # Проверка прав модератора
-            from utils.moderator_auth import has_moderator_permissions
-            if not await has_moderator_permissions(interaction.user, interaction.guild):
+            from utils.config_manager import is_moderator_or_admin, load_config
+            config = load_config()
+            if not is_moderator_or_admin(interaction.user, config):
                 await interaction.response.send_message(
                     "❌ У вас нет прав для создания записей аудита!\n"
                     "Доступно только модераторам и администраторам.",
@@ -57,8 +58,9 @@ class WarehouseAuditPinMessageView(discord.ui.View):
         """Создать запись аудита чистки"""
         try:
             # Проверка прав модератора
-            from utils.moderator_auth import has_moderator_permissions
-            if not await has_moderator_permissions(interaction.user, interaction.guild):
+            from utils.config_manager import is_moderator_or_admin, load_config
+            config = load_config()
+            if not is_moderator_or_admin(interaction.user, config):
                 await interaction.response.send_message(
                     "❌ У вас нет прав для создания записей аудита!\n"
                     "Доступно только модераторам и администраторам.",

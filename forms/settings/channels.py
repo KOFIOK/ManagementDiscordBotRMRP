@@ -11,7 +11,6 @@ from .channels_role_assignment import show_role_assignment_config
 from .channels_dismissal import show_dismissal_config
 from .channels_other import (
     show_blacklist_config, 
-    show_moderator_registration_config, 
     show_leave_requests_config, 
     show_medical_registration_config,
     show_safe_documents_config
@@ -56,12 +55,6 @@ class ChannelConfigSelect(ui.Select):
                 description="Настроить канал для выбора военной/гражданской роли",
                 emoji="🎖️",
                 value="role_assignment"
-            ),
-            discord.SelectOption(
-                label="Регистрация модераторов",
-                description="Настроить канал для регистрации модераторов в системе",
-                emoji="🔐",
-                value="moderator_registration"
             ),
             discord.SelectOption(
                 label="Каналы отчётов на повышение",
@@ -122,8 +115,6 @@ class ChannelConfigSelect(ui.Select):
                 await show_dismissal_config(interaction)
             elif config_type == "blacklist":
                 await show_blacklist_config(interaction)
-            elif config_type == "moderator_registration":
-                await show_moderator_registration_config(interaction)
             elif config_type == "promotion_reports":
                 await show_promotion_reports_config(interaction)
             elif config_type == "leave_requests":

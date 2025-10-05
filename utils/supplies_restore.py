@@ -165,7 +165,6 @@ class SuppliesRestoreManager:
                         embeds.append(timer_embed)
                     
                     await message.edit(embeds=embeds, view=new_view)
-                    print("✅ Обновлено сообщение управления поставками")
                     break
             
             # Ищем сообщение управления
@@ -216,7 +215,6 @@ class SuppliesRestoreManager:
                         embeds.append(timer_embed)
                     
                     await message.edit(embeds=embeds, view=new_view)
-                    print("✅ Обновлено сообщение управления поставками")
                     break
                     
         except Exception as e:

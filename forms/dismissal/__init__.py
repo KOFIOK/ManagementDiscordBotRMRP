@@ -2,7 +2,7 @@
 Dismissal system - Modular structure
 
 This package contains all dismissal-related functionality split into logical modules:
-- modals.py: Modal forms (StaticRequestModal, DismissalReportModal)
+- modals.py: Modal forms (SimplifiedDismissalModal, StaticRequestModal, RejectionReasonModal)
 - views.py: Interactive components (DismissalApprovalView, DismissalReportButton)  
 - automatic.py: Automatic dismissal handling
 - utils.py: Message utilities and view restoration
@@ -13,13 +13,15 @@ All components are re-exported here for backward compatibility.
 # Import all modals
 from .modals import (
     StaticRequestModal,
-    DismissalReportModal
+    SimplifiedDismissalModal,
+    RejectionReasonModal,
+    AutomaticDismissalEditModal
 )
 
 # Import all views
 from .views import (
-    DismissalApprovalView,
     DismissalReportButton,
+    SimplifiedDismissalApprovalView,
     AutomaticDismissalApprovalView,
     DeletionConfirmationView
 )
@@ -41,10 +43,13 @@ from .utils import (
 __all__ = [
     # Modals
     'StaticRequestModal',
-    'DismissalReportModal',
-      # Views
-    'DismissalApprovalView', 
+    'SimplifiedDismissalModal',
+    'RejectionReasonModal',
+    'AutomaticDismissalEditModal',
+    
+    # Views
     'DismissalReportButton',
+    'SimplifiedDismissalApprovalView',
     'AutomaticDismissalApprovalView',
     'DeletionConfirmationView',
     

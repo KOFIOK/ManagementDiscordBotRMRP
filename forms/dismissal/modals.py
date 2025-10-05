@@ -144,6 +144,9 @@ class SimplifiedDismissalModal(ui.Modal):
             if dismissal_channel_id:
                 dismissal_channel = interaction.guild.get_channel(dismissal_channel_id)
                 if dismissal_channel:
+                    # Initialize ping_content
+                    ping_content = ""
+                    
                     # Get ping roles using adapter
                     try:
                         from utils.ping_adapter import ping_adapter

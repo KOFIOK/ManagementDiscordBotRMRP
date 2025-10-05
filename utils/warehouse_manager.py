@@ -9,11 +9,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional, Tuple, Any, List
 import re
 from .config_manager import load_config
-from .google_sheets import GoogleSheetsManager
+# Google Sheets удален - используется PostgreSQL
 
 class WarehouseManager:
-    def __init__(self, sheets_manager: GoogleSheetsManager):
-        self.sheets_manager = sheets_manager
+    def __init__(self):
+        # PostgreSQL-based warehouse manager - без sheets_manager
         
         # Категории предметов склада
         self.item_categories = {
@@ -172,10 +172,10 @@ class WarehouseManager:
     async def get_user_info(self, user: discord.Member) -> Tuple[str, str, str, str]:
         """
         Получить информацию о пользователе (имя, статик, должность, звание)
-        Сначала ищет в Google Sheets (лист "Личный Состав"), потом в ролях Discord
+        Сначала ищет в PostgreSQL (таблица personnel), потом в ролях Discord
         """
         try:
-            # Используем UserDatabase для поиска в Google Sheets с защитой от rate limiting
+            # Используем UserDatabase для поиска в PostgreSQL
             from utils.user_cache import get_cached_user_info
             
             # Retry с защитой от API ошибок
@@ -517,15 +517,16 @@ class WarehouseManager:
         Модераторы и администраторы могут подавать заявки без ограничений по времени
         """
         try:
-            from utils.moderator_auth import has_moderator_permissions, has_admin_permissions
+            from utils.config_manager import is_administrator, is_moderator_or_admin, load_config
+            config = load_config()
             
             # Администраторы могут всегда обходить кулдаун
-            if await has_admin_permissions(user, user.guild):
+            if is_administrator(user, config):
                 print(f"🛡️ COOLDOWN BYPASS: Администратор {user.display_name} обходит кулдаун")
                 return True
             
             # Модераторы могут всегда обходить кулдаун  
-            elif await has_moderator_permissions(user, user.guild):
+            elif is_moderator_or_admin(user, config):
                 print(f"👮 COOLDOWN BYPASS: Модератор {user.display_name} обходит кулдаун")
                 return True
             

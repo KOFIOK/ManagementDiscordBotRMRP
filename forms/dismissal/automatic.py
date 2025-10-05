@@ -5,7 +5,7 @@ Handles creation of automatic dismissal reports when members leave the server
 
 import discord
 from utils.config_manager import load_config
-from utils.google_sheets import sheets_manager
+from utils.rank_utils import get_rank_from_roles_postgresql
 
 
 async def create_automatic_dismissal_report(guild, member, target_role_name="Военнослужащий ВС РФ"):
@@ -30,16 +30,19 @@ async def create_automatic_dismissal_report(guild, member, target_role_name="В�
             print(f"Dismissal channel {dismissal_channel_id} not found, skipping automatic report for {member.name}")
             return False
         
-        # Try to get user data from personnel database first
-        from utils.user_cache import get_cached_user_info
-        user_data = await get_cached_user_info(member.id)
+        # Try to get user data from personnel database first using PersonnelManager
+        from utils.database_manager import PersonnelManager
+        pm = PersonnelManager()
+        user_data = await pm.get_personnel_summary(member.id)
         
         if user_data:
             # Use data from personnel database
-            extracted_name = user_data['full_name']
-            static_value = user_data['static']
-            user_department = user_data['department']
-            user_rank = user_data['rank']
+            extracted_name = f"{user_data.get('first_name', '')} {user_data.get('last_name', '')}".strip()
+            if not extracted_name:
+                extracted_name = user_data.get('full_name', '')
+            static_value = user_data.get('static', 'Не найден в реестре')
+            user_department = user_data.get('department', 'Неизвестно')
+            user_rank = user_data.get('rank', 'Неизвестно')
             print(f"✅ Auto-filled data from personnel database for {member.name}")
         else:
             # Fallback to extracting from roles and nickname
@@ -57,10 +60,33 @@ async def create_automatic_dismissal_report(guild, member, target_role_name="В�
             static_value = "Не найден в реестре"
             
             # Get department and rank from roles BEFORE member left
-            from utils.department_manager import DepartmentManager
-            dept_manager = DepartmentManager()
-            user_department = dept_manager.get_user_department_name(member)
-            user_rank = sheets_manager.get_rank_from_roles(member)
+            # First, try to determine department from ping roles (which roles will be pinged)
+            from utils.ping_adapter import ping_adapter
+            ping_roles_list = ping_adapter.get_ping_roles_for_dismissals(member)
+            
+            # Extract department name from ping roles if available
+            user_department = "Неизвестно"
+            if ping_roles_list:
+                # Use the name of the first ping role as department indicator
+                # This matches what we show in pings
+                from utils.ping_manager import ping_manager
+                dept_code = ping_manager.get_user_department_code(member)
+                if dept_code:
+                    # Try to get readable department name
+                    from utils.department_manager import DepartmentManager
+                    departments = DepartmentManager.get_all_departments()
+                    dept_data = departments.get(dept_code, {})
+                    user_department = dept_data.get('name', dept_code.upper())
+                    print(f"📍 Determined department from ping roles: {user_department} (code: {dept_code})")
+                else:
+                    # Fallback: use first ping role name as department
+                    user_department = ping_roles_list[0].name
+                    print(f"📍 Using first ping role as department: {user_department}")
+            else:
+                print(f"⚠️ No ping roles found for user, department remains unknown")
+            
+            # Get rank from roles
+            user_rank = get_rank_from_roles_postgresql(member)
           # Create embed for automatic dismissal report
         embed = discord.Embed(
             description=f"## 🚨 Автоматический рапорт на увольнение\n**{member.mention} покинул сервер!**",
@@ -78,7 +104,12 @@ async def create_automatic_dismissal_report(guild, member, target_role_name="В�
         embed.set_footer(text=f"Автоматически создан: {member.name} (ID: {member.id})")
         if member.avatar:
             embed.set_thumbnail(url=member.avatar.url)
-          # Import here to avoid circular imports
+        
+        # Add dismissal footer with link to submit new applications (temporarily disabled)
+        from .views import add_dismissal_footer_to_embed
+        embed = add_dismissal_footer_to_embed(embed, guild.id)
+        
+        # Import here to avoid circular imports
         from .views import AutomaticDismissalApprovalView
         
         # Create special approval view for automatic dismissals with three buttons

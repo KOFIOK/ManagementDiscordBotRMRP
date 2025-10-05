@@ -54,6 +54,27 @@ class RoleAssignmentView(ui.View):
     @discord.ui.button(label="📜 Призыв / Экскурсия", style=discord.ButtonStyle.green, custom_id="role_military")
     async def military_application(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Open military service application form"""
+        # Check if user has active blacklist entry
+        from utils.audit_logger import audit_logger
+        
+        blacklist_info = await audit_logger.check_active_blacklist(interaction.user.id)
+        
+        if blacklist_info:
+            # User is blacklisted, deny application
+            start_date_str = blacklist_info['start_date'].strftime('%d.%m.%Y')
+            end_date_str = blacklist_info['end_date'].strftime('%d.%m.%Y') if blacklist_info['end_date'] else 'Бессрочно'
+            
+            await interaction.response.send_message(
+                f"❌ **Вам запрещен приём на службу**\n\n"
+                f"📋 **Вы находитесь в Чёрном списке ВС РФ**\n"
+                f"> **Причина:** {blacklist_info['reason']}\n"
+                f"> **Период:** {start_date_str} - {end_date_str}\n\n"
+                f"*Обратитесь к руководству бригады для снятия с чёрного списка.*",
+                ephemeral=True
+            )
+            return
+        
+        # No blacklist, proceed with application
         modal = MilitaryApplicationModal()
         await interaction.response.send_modal(modal)
     

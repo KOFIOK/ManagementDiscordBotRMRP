@@ -642,8 +642,6 @@ class SuppliesManager:
     async def _update_expired_warning_messages(self, channel):
         """Ищет и обновляет warning сообщения от истекших таймеров"""
         try:
-            print("🔍 Ищем warning сообщения от истекших таймеров...")
-            
             # Ищем сообщения бота с предупреждениями в последних 100 сообщениях
             async for message in channel.history(limit=100):
                 if (message.author == channel.guild.me and message.embeds and 

@@ -53,10 +53,6 @@ class SuppliesControlView(discord.ui.View):
             supplies_manager = SuppliesManager()
             active_timers = supplies_manager.get_active_timers()
             
-            print(f"🔄 Обновление состояния кнопок. Активных таймеров: {len(active_timers)}")
-            if active_timers:
-                print(f"   Активные объекты: {list(active_timers.keys())}")
-            
             # Обновляем состояние каждой кнопки
             for item in self.children:
                 if isinstance(item, discord.ui.Button) and item.custom_id and item.custom_id.startswith("supplies_"):
@@ -65,7 +61,6 @@ class SuppliesControlView(discord.ui.View):
                     is_active = object_key in active_timers
                     item.disabled = is_active
                     item.style = discord.ButtonStyle.secondary if is_active else discord.ButtonStyle.primary
-                    print(f"   {object_key}: {'заблокирован' if is_active else 'доступен'}")
                     
         except Exception as e:
             print(f"❌ Ошибка обновления состояния кнопок: {e}")

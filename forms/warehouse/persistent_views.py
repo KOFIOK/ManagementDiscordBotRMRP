@@ -21,8 +21,9 @@ class WarehousePersistentRequestView(discord.ui.View):
         """Одобрить запрос склада"""
         try:
             # Проверка прав модератора
-            from utils.moderator_auth import has_moderator_permissions
-            if not await has_moderator_permissions(interaction.user, interaction.guild):
+            from utils.config_manager import is_moderator_or_admin, load_config
+            config = load_config()
+            if not is_moderator_or_admin(interaction.user, config):
                 await interaction.response.send_message(
                     "❌ У вас нет прав для выполнения этого действия!", ephemeral=True
                 )
@@ -111,8 +112,9 @@ class WarehousePersistentRequestView(discord.ui.View):
         """Отклонить запрос склада"""
         try:
             # Проверка прав модератора
-            from utils.moderator_auth import has_moderator_permissions
-            if not await has_moderator_permissions(interaction.user, interaction.guild):
+            from utils.config_manager import is_moderator_or_admin, load_config
+            config = load_config()
+            if not is_moderator_or_admin(interaction.user, config):
                 await interaction.response.send_message(
                     "❌ У вас нет прав для выполнения этого действия!", ephemeral=True
                 )
@@ -159,8 +161,9 @@ class WarehousePersistentRequestView(discord.ui.View):
         """Редактировать заявку (доступно только модераторам)"""
         try:
             # Проверка прав модератора
-            from utils.moderator_auth import has_moderator_permissions
-            if not await has_moderator_permissions(interaction.user, interaction.guild):
+            from utils.config_manager import is_moderator_or_admin, load_config
+            config = load_config()
+            if not is_moderator_or_admin(interaction.user, config):
                 await interaction.response.send_message(
                     "❌ У вас нет прав для редактирования заявок!", ephemeral=True
                 )
@@ -195,8 +198,8 @@ class WarehousePersistentRequestView(discord.ui.View):
         """Проверить права на удаление запроса"""
         try:
             # 1. Проверяем, является ли пользователь системным или Discord администратором
-            from utils.moderator_auth import has_admin_permissions
-            if await has_admin_permissions(interaction.user, interaction.guild):
+            from utils.config_manager import is_administrator, load_config
+            if is_administrator(interaction.user, load_config()):
                 return True
             
             # 2. Проверяем, является ли пользователь автором запроса
@@ -240,8 +243,9 @@ class WarehousePersistentMultiRequestView(discord.ui.View):
         """Одобрить все запросы в заявке"""
         try:
             # Проверка прав модератора
-            from utils.moderator_auth import has_moderator_permissions
-            if not await has_moderator_permissions(interaction.user, interaction.guild):
+            from utils.config_manager import is_moderator_or_admin, load_config
+            config = load_config()
+            if not is_moderator_or_admin(interaction.user, config):
                 await interaction.response.send_message(
                     "❌ У вас нет прав для выполнения этого действия!", ephemeral=True
                 )
@@ -329,8 +333,9 @@ class WarehousePersistentMultiRequestView(discord.ui.View):
         """Отклонить всю заявку"""
         try:
             # Проверка прав модератора
-            from utils.moderator_auth import has_moderator_permissions
-            if not await has_moderator_permissions(interaction.user, interaction.guild):
+            from utils.config_manager import is_moderator_or_admin, load_config
+            config = load_config()
+            if not is_moderator_or_admin(interaction.user, config):
                 await interaction.response.send_message(
                     "❌ У вас нет прав для выполнения этого действия!", ephemeral=True
                 )
@@ -377,8 +382,9 @@ class WarehousePersistentMultiRequestView(discord.ui.View):
         """Редактировать множественную заявку (доступно только модераторам)"""
         try:
             # Проверка прав модератора
-            from utils.moderator_auth import has_moderator_permissions
-            if not await has_moderator_permissions(interaction.user, interaction.guild):
+            from utils.config_manager import is_moderator_or_admin, load_config
+            config = load_config()
+            if not is_moderator_or_admin(interaction.user, config):
                 await interaction.response.send_message(
                     "❌ У вас нет прав для редактирования заявок!", ephemeral=True
                 )
@@ -413,8 +419,8 @@ class WarehousePersistentMultiRequestView(discord.ui.View):
         """Проверить права на удаление запроса"""
         try:
             # 1. Проверяем, является ли пользователь системным или Discord администратором
-            from utils.moderator_auth import has_admin_permissions
-            if await has_admin_permissions(interaction.user, interaction.guild):
+            from utils.config_manager import is_administrator, load_config
+            if is_administrator(interaction.user, load_config()):
                 return True
             
             # 2. Проверяем, является ли пользователь автором запроса

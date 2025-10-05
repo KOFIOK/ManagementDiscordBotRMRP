@@ -11,6 +11,78 @@ from utils.warehouse_manager import WarehouseManager
 from .cart import WarehouseRequestCart, clear_user_cart_safe, get_user_cart_message, user_cart_messages
 
 
+async def safe_interaction_response(interaction: discord.Interaction, content: str = None, embed: discord.Embed = None, 
+                                  view: discord.ui.View = None, file: discord.File = None, ephemeral: bool = True):
+    """
+    Безопасная отправка ответа на интеракцию с защитой от истёкших интеракций
+    """
+    try:
+        # Подготавливаем параметры, исключая None значения
+        kwargs = {"ephemeral": ephemeral}
+        if content is not None:
+            kwargs["content"] = content
+        if embed is not None:
+            kwargs["embed"] = embed
+        if view is not None:
+            kwargs["view"] = view
+        if file is not None:
+            kwargs["file"] = file
+            
+        if not interaction.response.is_done():
+            await interaction.response.send_message(**kwargs)
+        else:
+            # Интеракция уже была обработана, используем followup
+            await interaction.followup.send(**kwargs)
+    except discord.NotFound as e:
+        if e.code == 10062:  # Unknown interaction
+            print(f"⚠️ INTERACTION EXPIRED: Истекла интеракция для {interaction.user.display_name}")
+            return False
+        else:
+            raise
+    except Exception as e:
+        print(f"❌ Ошибка при отправке ответа на интеракцию: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+    return True
+
+
+async def safe_modal_response(interaction: discord.Interaction, modal: discord.ui.Modal):
+    """
+    Безопасная отправка модального окна с защитой от истёкших интеракций
+    """
+    try:
+        if modal is None:
+            print(f"❌ MODAL ERROR: Модальное окно равно None для {interaction.user.display_name}")
+            return False
+            
+        if not interaction.response.is_done():
+            await interaction.response.send_modal(modal)
+            return True
+        else:
+            print(f"⚠️ INTERACTION: Интеракция уже была обработана для {interaction.user.display_name}")
+            # Для модальных окон followup не работает, отправляем уведомление
+            try:
+                await interaction.followup.send(
+                    "⚠️ Интеракция истекла. Попробуйте выбрать предмет заново.",
+                    ephemeral=True
+                )
+            except:
+                pass
+            return False
+    except discord.NotFound as e:
+        if e.code == 10062:  # Unknown interaction
+            print(f"⚠️ INTERACTION EXPIRED: Истекла интеракция для {interaction.user.display_name}")
+            return False
+        else:
+            raise
+    except Exception as e:
+        print(f"❌ Ошибка при отправке модального окна: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 class WarehouseCategorySelect(discord.ui.Select):
     """Выбор категории склада"""
     
@@ -52,10 +124,9 @@ class WarehouseCategorySelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         """Обработка выбора категории"""
         try:
-            # Создаем warehouse_manager для проверок
-            from utils.google_sheets import GoogleSheetsManager
-            sheets_manager = GoogleSheetsManager()
-            warehouse_manager = WarehouseManager(sheets_manager)
+            # Используем локальный warehouse_manager из utils
+            from utils.warehouse_manager import WarehouseManager
+            warehouse_manager = WarehouseManager()
             
             # Проверка кулдауна для всех пользователей (включая админов)
             submission_channel_id = warehouse_manager.get_warehouse_submission_channel()
@@ -111,13 +182,19 @@ class WarehouseCategorySelect(discord.ui.Select):
             # Создание выбора предметов
             view = WarehouseItemSelectView(selected_category, category_info, warehouse_manager)
             
+            # Безопасное получение emoji с fallback
+            category_emoji = category_info.get('emoji', '📦')
+            
             embed = discord.Embed(
-                title=f"{category_info['emoji']} {selected_category}",
+                title=f"{category_emoji} {selected_category}",
                 description="Выберите конкретный предмет для запроса:",
                 color=discord.Color.blue()
             )
             
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            # Безопасная отправка с защитой от истёкших интеракций
+            success = await safe_interaction_response(interaction, embed=embed, view=view)
+            if not success:
+                print(f"⚠️ Не удалось отправить выбор предметов для категории {selected_category}")
             
         except Exception as e:
             print(f"❌ Ошибка при выборе категории склада: {e}")
@@ -156,21 +233,27 @@ class WarehouseItemSelectView(discord.ui.View):
         items = category_info["items"]
         for i, item in enumerate(items):
             if i < 20:  # Максимум 20 кнопок (4 ряда по 5)
-                # Делаем custom_id уникальным для каждой категории!
-                unique_id = f"warehouse_{self.category.lower()}_{i}_{hash(item) % 10000}"
-                
-                # Для категории "Оружие" сдвигаем кнопки, чтобы освободить место для кнопки характеристик
-                row_offset = 1 if category == "Оружие" else 0
-                current_row = (i // 5) + row_offset
-                
-                button = discord.ui.Button(
-                    label=item[:80] if len(item) > 80 else item,  # Ограничение длины
-                    style=discord.ButtonStyle.secondary,
-                    custom_id=unique_id,  # Уникальный ID!
-                    row=current_row  # Распределение по рядам с учетом offset
-                )
-                button.callback = self._create_item_callback(item)
-                self.add_item(button)
+                try:
+                    # Делаем custom_id уникальным для каждой категории!
+                    unique_id = f"warehouse_{self.category.lower()}_{i}_{hash(item) % 10000}"
+                    
+                    # Для категории "Оружие" сдвигаем кнопки, чтобы освободить место для кнопки характеристик
+                    row_offset = 1 if category == "Оружие" else 0
+                    current_row = (i // 5) + row_offset
+                    
+                    button = discord.ui.Button(
+                        label=item[:80] if len(item) > 80 else item,  # Ограничение длины
+                        style=discord.ButtonStyle.secondary,
+                        custom_id=unique_id,  # Уникальный ID!
+                        row=current_row  # Распределение по рядам с учетом offset
+                    )
+                    button.callback = self._create_item_callback(item)
+                    self.add_item(button)
+                    print(f"🔍 BUTTON_ADDED: {item} в ряд {current_row}")
+                except Exception as e:
+                    print(f"❌ Ошибка создания кнопки для предмета '{item}': {e}")
+        
+        print(f"🔍 VIEW_CREATED: Добавлено {len(self.children)} элементов в view")
 
     def _create_item_callback(self, item_name: str):
         """Создать callback для кнопки предмета"""        # ВАЖНО: захватываем значения по значению, а не по ссылке!
@@ -189,7 +272,11 @@ class WarehouseItemSelectView(discord.ui.View):
                 # Создание упрощенного модального окна только для количества
                 from .modals import WarehouseQuantityModal
                 modal = WarehouseQuantityModal(category, item_name, warehouse_manager)
-            await interaction.response.send_modal(modal)
+            
+            # Защита от истёкших интеракций при отправке модального окна
+            success = await safe_modal_response(interaction, modal)
+            if not success:
+                print(f"⚠️ Не удалось отправить модальное окно для предмета {item_name}")
             
         return callback
 
@@ -210,11 +297,15 @@ class WarehouseItemSelectView(discord.ui.View):
             
             # Отправляем файл как ephemeral сообщение
             file = discord.File(weapons_info_path, filename="weapons_info.png")
-            await interaction.response.send_message(
-                "📊 **Характеристики оружия:**",
-                file=file,
-                ephemeral=True
+            
+            # Безопасная отправка с защитой от истёкших интеракций
+            success = await safe_interaction_response(
+                interaction, 
+                content="📊 **Характеристики оружия:**", 
+                file=file
             )
+            if not success:
+                print(f"⚠️ Не удалось отправить характеристики оружия")
             
         except Exception as e:
             print(f"❌ Ошибка при отправке характеристик оружия: {e}")
@@ -284,7 +375,7 @@ class WarehouseCartView(discord.ui.View):
             # НЕ устанавливаем флаг отправки здесь - только после реальной отправки в канал!
               # Показываем модальное окно
             try:
-                from utils.warehouse_user_data import prepare_modal_data
+                from utils.user_cache import prepare_modal_data
                 from .modals import WarehouseFinalDetailsModal
                 modal_data = await prepare_modal_data(interaction.user.id)
                 modal = WarehouseFinalDetailsModal.create_with_prefilled_data(

@@ -1,9 +1,10 @@
 """
-Rank roles configuration management
+Rank roles configuration management with PostgreSQL integration
 """
 import discord
 from discord import ui
 from utils.config_manager import load_config, save_config
+from utils.database_manager import rank_manager
 from .base import BaseSettingsView, BaseSettingsModal
 
 
@@ -85,7 +86,7 @@ class RankRoleModal(BaseSettingsModal):
                 return
             
             # Parse role ID
-            role_id = self._parse_role_input(role_input)
+            role_id = self._parse_role_input(role_input, interaction.guild)
             if not role_id:
                 await self.send_error_message(
                     interaction,
@@ -131,6 +132,14 @@ class RankRoleModal(BaseSettingsModal):
             }
             save_config(config)
             
+            # 🔥 NEW: Add rank to database automatically
+            try:
+                db_success, db_message = await rank_manager.add_rank_to_database(rank_name, role_id, rank_level)
+                db_status = "✅" if db_success else "⚠️"
+                db_info = f"\n**База данных:** {db_status} {db_message}"
+            except Exception as db_error:
+                db_info = f"\n**База данных:** ⚠️ Ошибка: {str(db_error)}"
+            
             # Success message
             action = "обновлено" if self.edit_rank else "добавлено"
             embed = discord.Embed(
@@ -141,7 +150,7 @@ class RankRoleModal(BaseSettingsModal):
             )
             embed.add_field(
                 name="📋 Детали:",
-                value=f"**Звание:** {rank_name}\n**Роль:** {role.mention} (`{role_id}`)\n**Ранг:** {rank_level}",
+                value=f"**Звание:** {rank_name}\n**Роль:** {role.mention} (`{role_id}`)\n**Ранг:** {rank_level}{db_info}",
                 inline=False
             )
             
@@ -155,18 +164,51 @@ class RankRoleModal(BaseSettingsModal):
                 f"Произошла ошибка при сохранении звания: {e}"
             )
     
-    def _parse_role_input(self, role_input: str) -> int:
-        """Parse role input and extract role ID"""
-        try:
-            # Remove mention brackets if present
-            role_input = role_input.strip()
-            if role_input.startswith('<@&') and role_input.endswith('>'):
-                role_input = role_input[3:-1]
-            
-            # Try to convert to int
-            return int(role_input)
-        except ValueError:
+    def _parse_role_input(self, role_input: str, guild: discord.Guild = None) -> int:
+        """Parse role input and extract role ID.
+
+        Accepts:
+        - role mention: <@&123456789012345678>
+        - numeric ID: 123456789012345678
+        - role name (if guild provided): "Рядовой" (case-insensitive, exact -> startswith -> substring)
+        Returns role ID (int) or None if not found/parseable.
+        """
+        if not role_input:
             return None
+
+        role_input = role_input.strip()
+
+        # Strip mention format <@&ID>
+        if role_input.startswith('<@&') and role_input.endswith('>'):
+            role_input = role_input[3:-1]
+
+        # If looks like an ID, try to convert
+        try:
+            return int(role_input)
+        except (ValueError, TypeError):
+            pass
+
+        # If a guild is provided, try to resolve by role name
+        if guild:
+            lowered = role_input.lower()
+
+            # 1) Exact case-insensitive match
+            for role in guild.roles:
+                if role.name.lower() == lowered:
+                    return role.id
+
+            # 2) Startswith match (useful for shortened input)
+            for role in guild.roles:
+                if role.name.lower().startswith(lowered):
+                    return role.id
+
+            # 3) Substring match
+            for role in guild.roles:
+                if lowered in role.name.lower():
+                    return role.id
+
+        # Not found
+        return None
 
 
 class KeyRoleModal(BaseSettingsModal):
@@ -189,77 +231,51 @@ class KeyRoleModal(BaseSettingsModal):
         )
         self.add_item(self.role_input)
     
-    async def on_submit(self, interaction: discord.Interaction):
-        try:
-            role_input = self.role_input.value.strip()
-            
-            # Parse role ID
-            role_id = self._parse_role_input(role_input)
-            if not role_id:
-                await self.send_error_message(
-                    interaction,
-                    "Неверный формат роли",
-                    f"Не удалось распознать роль из '{role_input}'"
-                )
-                return
-            
-            # Verify role exists
-            role = interaction.guild.get_role(role_id)
-            if not role:
-                await self.send_error_message(
-                    interaction,
-                    "Роль не найдена",
-                    f"Роль с ID {role_id} не найдена на сервере."
-                )
-                return
-            
-            # Save to config
-            config = load_config()
-            config['rank_sync_key_role'] = role_id
-            save_config(config)
-            
-            embed = discord.Embed(
-                title="✅ Ключевая роль настроена",
-                description=f"Теперь система будет проверять активность только у участников с ролью **{role.name}**",
-                color=discord.Color.green(),
-                timestamp=discord.utils.utcnow()
-            )
-            embed.add_field(
-                name="🔑 Ключевая роль:",
-                value=f"{role.mention} (`{role_id}`)",
-                inline=False
-            )
-            embed.add_field(
-                name="ℹ️ Информация:",
-                value=(
-                    "Участники без этой роли не будут проверяться системой синхронизации званий.\n"
-                    "Это значительно повышает производительность на больших серверах."
-                ),
-                inline=False
-            )
-            
-            view = RankRolesConfigView()
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-            
-        except Exception as e:
-            await self.send_error_message(
-                interaction,
-                "Ошибка сохранения",
-                f"Произошла ошибка при сохранении ключевой роли: {e}"
-            )
-    
-    def _parse_role_input(self, role_input: str) -> int:
-        """Parse role input and extract role ID"""
-        try:
-            # Remove mention brackets if present
-            role_input = role_input.strip()
-            if role_input.startswith('<@&') and role_input.endswith('>'):
-                role_input = role_input[3:-1]
-            
-            # Try to convert to int
-            return int(role_input)
-        except ValueError:
+    def _parse_role_input(self, role_input: str, guild: discord.Guild = None) -> int:
+        """Parse role input and extract role ID.
+
+        Accepts:
+        - role mention: <@&123456789012345678>
+        - numeric ID: 123456789012345678
+        - role name (if guild provided): "Рядовой" (case-insensitive, exact -> startswith -> substring)
+        Returns role ID (int) or None if not found/parseable.
+        """
+        if not role_input:
             return None
+
+        role_input = role_input.strip()
+
+        # Strip mention format <@&ID>
+        if role_input.startswith('<@&') and role_input.endswith('>'):
+            role_input = role_input[3:-1]
+
+        # If looks like an ID, try to convert
+        try:
+            return int(role_input)
+        except (ValueError, TypeError):
+            pass
+
+        # If a guild is provided, try to resolve by role name
+        if guild:
+            lowered = role_input.lower()
+
+            # 1) Exact case-insensitive match
+            for role in guild.roles:
+                if role.name.lower() == lowered:
+                    return role.id
+
+            # 2) Startswith match (useful for shortened input)
+            for role in guild.roles:
+                if role.name.lower().startswith(lowered):
+                    return role.id
+
+            # 3) Substring match
+            for role in guild.roles:
+                if lowered in role.name.lower():
+                    return role.id
+
+        # Not found
+        return None
 
 
 class RankRoleDeleteConfirmModal(BaseSettingsModal):
@@ -294,9 +310,17 @@ class RankRoleDeleteConfirmModal(BaseSettingsModal):
                 del config['rank_roles'][self.rank_name]
                 save_config(config)
                 
+                # 🔥 NEW: Remove rank from database automatically
+                try:
+                    db_success, db_message = await rank_manager.remove_rank_from_database(self.rank_name)
+                    db_status = "✅" if db_success else "⚠️"
+                    db_info = f"\n**База данных:** {db_status} {db_message}"
+                except Exception as db_error:
+                    db_info = f"\n**База данных:** ⚠️ Ошибка: {str(db_error)}"
+                
                 embed = discord.Embed(
                     title="✅ Звание удалено",
-                    description=f"Звание **{self.rank_name}** успешно удалено из конфигурации.",
+                    description=f"Звание **{self.rank_name}** успешно удалено из конфигурации.{db_info}",
                     color=discord.Color.green(),
                     timestamp=discord.utils.utcnow()
                 )
@@ -328,16 +352,10 @@ class RankRolesSelect(ui.Select):
             
             options = [
                 discord.SelectOption(
-                    label="➕ Добавить звание",
+                    label="Добавить звание",
                     description="Добавить новое звание",
                     emoji="➕",
                     value="add_rank"
-                ),
-                discord.SelectOption(
-                    label="🔑 Настроить ключевую роль",
-                    description="Роль для проверки активности игроков",
-                    emoji="🔑",
-                    value="set_key_role"
                 )
             ]
             
@@ -346,7 +364,7 @@ class RankRolesSelect(ui.Select):
                 if len(options) < 25:  # Discord limit
                     options.append(
                         discord.SelectOption(
-                            label=f"✏️ {rank_name}",
+                            label=f"{rank_name}",
                             description=f"Редактировать звание {rank_name}",
                             emoji="✏️",
                             value=f"edit_{rank_name}"
@@ -423,7 +441,7 @@ class RankRoleDeleteSelect(ui.Select):
             if len(options) < 25:  # Discord limit
                 options.append(
                     discord.SelectOption(
-                        label=f"🗑️ {rank_name}",
+                        label=f"{rank_name}",
                         description=f"Удалить звание {rank_name}",
                         emoji="🗑️",
                         value=rank_name
@@ -471,6 +489,84 @@ class RankRolesConfigView(BaseSettingsView):
         super().__init__()
         self.add_item(RankRolesSelect())
         self.add_item(RankRoleDeleteSelect())
+    
+    @ui.button(label="🔄 Синхронизировать с БД", style=discord.ButtonStyle.secondary, row=2)
+    async def sync_database(self, interaction: discord.Interaction, button: ui.Button):
+        """Sync ranks from database to config (load data from PostgreSQL)"""
+        try:
+            await interaction.response.defer(ephemeral=True)
+            
+            # Perform synchronization FROM database TO config
+            success, message = await rank_manager.sync_database_to_config()
+            
+            if success:
+                embed = discord.Embed(
+                    title="✅ Синхронизация завершена",
+                    description=message,
+                    color=discord.Color.green(),
+                    timestamp=discord.utils.utcnow()
+                )
+                embed.add_field(
+                    name="📋 Что было сделано:",
+                    value="Данные загружены из PostgreSQL в кэш бота",
+                    inline=False
+                )
+            else:
+                embed = discord.Embed(
+                    title="⚠️ Ошибка синхронизации",
+                    description=message,
+                    color=discord.Color.orange(),
+                    timestamp=discord.utils.utcnow()
+                )
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            error_embed = discord.Embed(
+                title="❌ Ошибка",
+                description=f"Произошла ошибка при синхронизации: {str(e)}",
+                color=discord.Color.red()
+            )
+            await interaction.followup.send(embed=error_embed, ephemeral=True)
+    
+    @ui.button(label="📤 Отправить в БД", style=discord.ButtonStyle.secondary, row=3)
+    async def push_to_database(self, interaction: discord.Interaction, button: ui.Button):
+        """Push ranks from config to database"""
+        try:
+            await interaction.response.defer(ephemeral=True)
+            
+            # Perform synchronization FROM config TO database
+            success, message = await rank_manager.sync_config_to_database()
+            
+            if success:
+                embed = discord.Embed(
+                    title="✅ Отправка завершена",
+                    description=message,
+                    color=discord.Color.blue(),
+                    timestamp=discord.utils.utcnow()
+                )
+                embed.add_field(
+                    name="📋 Что было сделано:",
+                    value="Данные из кэша бота отправлены в PostgreSQL",
+                    inline=False
+                )
+            else:
+                embed = discord.Embed(
+                    title="⚠️ Ошибка отправки",
+                    description=message,
+                    color=discord.Color.orange(),
+                    timestamp=discord.utils.utcnow()
+                )
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            error_embed = discord.Embed(
+                title="❌ Ошибка",
+                description=f"Произошла ошибка при отправке в БД: {str(e)}",
+                color=discord.Color.red()
+            )
+            await interaction.followup.send(embed=error_embed, ephemeral=True)
 
 
 async def show_rank_roles_config(interaction: discord.Interaction):
@@ -542,19 +638,20 @@ async def show_rank_roles_config(interaction: discord.Interaction):
         embed.add_field(
             name="🔧 Доступные действия:",
             value=(
-                "• **Настроить ключевую роль** - роль для проверки активности\n"
                 "• **Добавить звание** - связать новое звание с ролью\n"
                 "• **Редактировать звание** - изменить существующее звание\n"
-                "• **Удалить звание** - удалить звание из конфигурации"
+                "• **Удалить звание** - удалить звание из конфигурации\n"
+                "• **🔄 Синхронизировать с БД** - загрузить данные из PostgreSQL\n"
+                "• **📤 Отправить в БД** - сохранить текущие данные в PostgreSQL"
             ),
             inline=False
         )
         
         embed.add_field(
-            name="ℹ️ Информация:",
+            name="ℹ️ Информация о синхронизации:",
             value=(
-                "Звания используются для автоматического назначения ролей "
-                "при различных операциях в системе кадрового учёта.\n\n"
+                "**🔄 Синхронизировать с БД**: загружает актуальные данные из PostgreSQL в кэш бота\n"
+                "**📤 Отправить в БД**: сохраняет текущие данные из кэша в PostgreSQL\n\n"
                 "**Ключевая роль** ограничивает проверку только участниками с определённой ролью, "
                 "что повышает производительность на больших серверах."
             ),

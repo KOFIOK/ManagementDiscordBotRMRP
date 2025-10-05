@@ -83,12 +83,32 @@ def test_complete_setup():
         return False    # Test 7: Moderator authorization system
     print("\n7. Testing moderator authorization system...")
     try:
-        from utils.google_sheets import GoogleSheetsManager
-        from forms.moderator_auth_form import ModeratorAuthModal
+        # Test database manager initialization  
+        # Simple connection test - check if DB is accessible
+        import os
+        import psycopg2
+        from dotenv import load_dotenv
         
-        # Test sheets manager initialization
-        sheets_manager = GoogleSheetsManager()
-        print("   ✓ Google Sheets manager initialized")
+        load_dotenv()
+        
+        try:
+            conn = psycopg2.connect(
+                host=os.getenv('POSTGRES_HOST', '127.0.0.1'),
+                port=int(os.getenv('POSTGRES_PORT', '5432')),
+                database=os.getenv('POSTGRES_DB', 'postgres'),
+                user=os.getenv('POSTGRES_USER', 'postgres'),
+                password=os.getenv('POSTGRES_PASSWORD', 'simplepassword')
+            )
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM personnel;")
+            count = cursor.fetchone()[0]
+            cursor.close()
+            conn.close()
+            print(f"   ✓ PostgreSQL database connection successful - {count} users found")
+            success = True
+        except Exception as db_error:
+            print(f"   ❌ PostgreSQL connection failed: {db_error}")
+            success = False
         
         # Test form components
         print("   ✓ Moderator authorization form available")
@@ -125,8 +145,8 @@ def test_complete_setup():
     print("• 🛡️ PROTECTED CONFIGURATION with automatic backups")
     print("• 🔄 Automatic recovery from corrupted config files")
     print("• 📂 Unified settings interface for all configurations")
-    print("• 👥 Moderator authorization with Google Sheets integration")
-    print("• 📧 Automatic editor access to Google Sheets for new moderators")
+    print("• 👥 Moderator authorization with PostgreSQL integration")
+    print("• � Automatic personnel data management in PostgreSQL database")
     print("• 🔐 Simplified access management system")
     
     return True

@@ -2,7 +2,6 @@ import discord
 from typing import Optional
 
 from utils.user_cache import get_cached_user_info
-from utils.warehouse_user_data import get_warehouse_user_data
 from .manager import SafeDocumentsManager
 
 
@@ -109,21 +108,10 @@ class SafeDocumentsModal(discord.ui.Modal):
                 elif 'position' in cached_data and cached_data['position']:
                     self.static_field.default = cached_data['position']
             
-            # Если нет данных в user_cache, пробуем warehouse_user_data
+            # Если нет данных в user_cache, используем fallback значения
             if not cached_data:
-                warehouse_data = await get_warehouse_user_data(user_id)
-                if warehouse_data:
-                    if 'static' in warehouse_data:
-                        static_data = warehouse_data['static']
-                        
-                        # Заполняем имя и фамилию из warehouse_user_data
-                        if 'name' in static_data and static_data['name']:
-                            self.name_field.default = static_data['name']
-                        
-                        if 'static' in static_data and static_data['static']:
-                            self.static_field.default = static_data['static']
-                        elif 'position' in static_data and static_data['position']:
-                            self.static_field.default = static_data['position']
+                print(f"Warning: No cached data found for user {user_id} in safe documents form")
+                # Оставляем поля пустыми для ручного заполнения
                             
         except Exception as e:
             # Если автозаполнение не удалось, просто продолжаем с пустыми полями

@@ -7,7 +7,6 @@ import re
 import discord
 from datetime import datetime
 from utils.warehouse_manager import WarehouseManager
-from utils.user_database import UserDatabase
 from .cart import (
     WarehouseRequestItem, WarehouseRequestCart, get_user_cart, 
     clear_user_cart_safe, get_user_cart_message, set_user_cart_message
@@ -72,10 +71,15 @@ class WarehouseRequestModal(discord.ui.Modal):
     async def create_with_user_data(cls, category: str, item_name: str, warehouse_manager: WarehouseManager, user_id: int):
         """
         Create WarehouseRequestModal with auto-filled user data from database
+        
+        🎯 ИСТОЧНИК ДАННЫХ: PostgreSQL через utils.user_cache.get_cached_user_info()
+        Данные получаются из таблиц: personnel → employees → ranks/subdivisions/positions
+        Кэширование для производительности, но данные всегда актуальные из БД
         """
         try:
-            # Try to get user data from personnel database
-            user_data = await UserDatabase.get_user_info(user_id)
+            # 🔗 Четкий источник данных: PostgreSQL через систему кеширования
+            from utils.user_cache import get_cached_user_info
+            user_data = await get_cached_user_info(user_id)
             return cls(category, item_name, warehouse_manager, user_data=user_data)
         except Exception as e:
             print(f"❌ Error loading user data for warehouse modal: {e}")
@@ -724,7 +728,11 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
         # Информация о пользователе в правильном порядке
         embed.add_field(name="👤 Заявитель", value=f"{item.user_name} | {item.user_static}", inline=False)
         embed.add_field(name="🏢 Подразделение", value=department, inline=True)
-        embed.add_field(name="📍 Должность", value=item.position, inline=True)
+        
+        # Добавляем должность только если она указана
+        if item.position and item.position.strip() and item.position != "Не указано":
+            embed.add_field(name="📍 Должность", value=item.position, inline=True)
+        
         embed.add_field(name="🎖️ Звание", value=item.rank, inline=True)
         
         # Пустое поле для разделения
@@ -786,7 +794,11 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
         # Информация о пользователе в правильном порядке
         embed.add_field(name="👤 Заявитель", value=f"{first_item.user_name} | {first_item.user_static}", inline=False)
         embed.add_field(name="🏢 Подразделение", value=department, inline=True)
-        embed.add_field(name="📍 Должность", value=first_item.position, inline=True)
+        
+        # Добавляем должность только если она указана
+        if first_item.position and first_item.position.strip() and first_item.position != "Не указано":
+            embed.add_field(name="📍 Должность", value=first_item.position, inline=True)
+        
         embed.add_field(name="🎖️ Звание", value=first_item.rank, inline=True)
         
         # Пустое поле для разделения

@@ -5,39 +5,23 @@ import os
 import json
 import shutil
 import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 # Configuration file to store channel IDs
 CONFIG_FILE = 'data/config.json'
 BACKUP_DIR = 'data/backups'
 TEMP_CONFIG_FILE = 'data/config.json.tmp'
 
-# Default configuration
 default_config = {
     'dismissal_channel': None,
+    'dismissal_message_id': None,  # ID of the pinned message with dismissal buttons
     'audit_channel': None,
     'blacklist_channel': None,
     'role_assignment_channel': None,
     'role_assignment_message_id': None,  # ID of the pinned message with role assignment buttons
     'moderator_registration_channel': None,  # Channel for moderator registration
     'leave_requests_channel': None,  # Channel for leave requests
-    'leave_requests_allowed_roles': [],  # Rol        # Офицерский состав
-        "Младший лейтенант": {
-            "оружие": 3,
-            "бронежилеты": 15,
-            "аптечки": 20,
-            "обезболивающее": 8,
-            "дефибрилляторы": 4,
-            "weapon_restrictions": []
-        },
-        "Лейтенант": {
-            "оружие": 3,
-            "бронежилеты": 15,
-            "аптечки": 20,
-            "обезболивающее": 8,
-            "дефибрилляторы": 4,
-            "weapon_restrictions": []
-        },
+    'leave_requests_allowed_roles': [],  # Roles allowed to submit leave requests
     
     # Promotion report channels
     'promotion_report_channels': {
@@ -93,7 +77,26 @@ default_config = {
     'medical_registration_channel': None,  # Channel for medical registration forms
     'medical_role_id': None,  # Role to ping for medical requests
     'medical_vvk_allowed_roles': [],  # Roles allowed to submit VVK medical forms
-    'medical_lecture_allowed_roles': []  # Roles allowed to submit lecture medical forms
+    'medical_lecture_allowed_roles': [],  # Roles allowed to submit lecture medical forms
+    
+    # Departments configuration (NEW ARCHITECTURE)
+    # Note: position_role_ids are now retrieved from PostgreSQL via position_subdivision table
+    'departments': {},  # Will be populated with department settings (Discord-specific only)
+    
+    # Safe documents channel
+    'safe_documents_channel': None,
+    
+    # Nickname auto-replacement settings
+    'nickname_auto_replacement': {
+        'enabled': True,  # Global enable/disable
+        'departments': {},  # Per-department settings (populated dynamically)
+        'modules': {
+            'dismissal': True,    # Always enabled - dismissal changes nickname regardless
+            'transfer': True,     # Transfer operations
+            'promotion': True,    # Promotion operations
+            'demotion': True      # Demotion operations
+        }
+    }
 }
 
 def create_backup(reason: str = "auto") -> str:
@@ -246,8 +249,6 @@ def load_config() -> Dict[Any, Any]:
         if migrate_config(config):
             print("🔄 Configuration migrated to new format")
             safe_save_config(config)
-        
-        print("✅ Configuration loaded successfully")
         return config
         
     except json.JSONDecodeError as e:
@@ -644,6 +645,32 @@ def get_role_assignment_message_link(guild_id: int):
         return None
     except Exception as e:
         print(f"❌ Error getting role assignment message link: {e}")
+        return None
+
+def save_dismissal_message_id(message_id: int):
+    """Save the ID of the dismissal message with buttons"""
+    try:
+        config = load_config()
+        config['dismissal_message_id'] = message_id
+        save_config(config)
+        print(f"✅ Saved dismissal message ID: {message_id}")
+        return True
+    except Exception as e:
+        print(f"❌ Error saving dismissal message ID: {e}")
+        return False
+
+def get_dismissal_message_link(guild_id: int):
+    """Get the direct link to the dismissal message"""
+    try:
+        config = load_config()
+        message_id = config.get('dismissal_message_id')
+        channel_id = config.get('dismissal_channel')
+        
+        if message_id and channel_id:
+            return f"https://discord.com/channels/{guild_id}/{channel_id}/{message_id}"
+        return None
+    except Exception as e:
+        print(f"❌ Error getting dismissal message link: {e}")
         return None
 
 def get_default_warehouse_limits():

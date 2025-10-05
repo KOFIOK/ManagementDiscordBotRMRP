@@ -7,12 +7,11 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 from utils.config_manager import load_config, create_backup, get_config_status
-from utils.google_sheets import sheets_manager
+# from utils.sheets_manager import sheets_manager  # Отключено - используем PostgreSQL
 from utils.notification_scheduler import PromotionNotificationScheduler
-from forms.dismissal import DismissalReportButton, DismissalApprovalView, AutomaticDismissalApprovalView, send_dismissal_button_message, restore_dismissal_approval_views, restore_dismissal_button_views
+from forms.dismissal import DismissalReportButton, AutomaticDismissalApprovalView, SimplifiedDismissalApprovalView, send_dismissal_button_message, restore_dismissal_approval_views, restore_dismissal_button_views
 from forms.settings import SettingsView
 from forms.role_assignment_form import RoleAssignmentView, send_role_assignment_message, restore_role_assignment_views, restore_approval_views
-from forms.moderator_registration import ModeratorRegistrationView, ensure_moderator_registration_message
 from forms.leave_request_form import LeaveRequestButton, LeaveRequestApprovalView, restore_leave_request_views
 from forms.medical_registration import MedicalRegistrationView
 from forms.welcome_system import setup_welcome_events
@@ -24,7 +23,6 @@ load_dotenv()
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
-intents.presences = True  # Нужен для чтения активностей пользователей (Rich Presence)
 
 # Initialize the bot with a command prefix and intents
 bot = commands.Bot(command_prefix='!', intents=intents)
@@ -48,12 +46,30 @@ async def on_ready():
         print(f"📊 Config status: {status['backup_count']} backups available")
     else:
         print("⚠️  Configuration issues detected - check /config-backup status")
-      # Load all extension cogs
+    
+    # Initialize optimized PostgreSQL system
+    print("\n🚀 Initializing optimized PostgreSQL system...")
+    from utils.user_cache import bulk_preload_all_users, print_cache_status
+    from utils.postgresql_pool import print_connection_pool_status
+    
+    try:
+        # Предзагрузка пользователей
+        preload_result = await bulk_preload_all_users()
+        print(f"✅ User cache preloaded: {preload_result.get('users_loaded', 0)} users")
+        
+        # Показать статистику системы
+        print_cache_status()
+        print_connection_pool_status()
+        
+    except Exception as e:
+        print(f"⚠️ Warning: Cache preload failed: {e}")
+    
+    # Load all extension cogs
     await load_extensions()
     
     # Setup personnel context menu commands
     try:
-        from forms.personnel_context import setup_context_commands
+        from forms.personnel_context.commands_clean import setup_context_commands
         setup_context_commands(bot)
         print('✅ Personnel context menu commands loaded')
     except Exception as e:
@@ -90,7 +106,6 @@ async def on_ready():
         print(f'Audit channel: {config.get("audit_channel", "Not set")}')
         print(f'Blacklist channel: {config.get("blacklist_channel", "Not set")}')
         print(f'Role assignment channel: {config.get("role_assignment_channel", "Not set")}')
-        print(f'Moderator registration channel: {config.get("moderator_registration_channel", "Not set")}')
         print(f'Military role: {config.get("military_role", "Not set")}')
         print(f'Civilian role: {config.get("civilian_role", "Not set")}')
     except Exception as e:
@@ -99,22 +114,9 @@ async def on_ready():
         traceback.print_exc()
         return
     
-    # Initialize Google Sheets
+    # ИНИЦИАЛИЗАЦИЯ КЭША ПОЛЬЗОВАТЕЛЕЙ - теперь использует PostgreSQL
     try:
-        print('🔄 Initializing Google Sheets...')
-        sheets_success = sheets_manager.initialize()
-        if sheets_success:
-            print('✅ Google Sheets initialized successfully')
-        else:
-            print('⚠️ Google Sheets initialization failed - dismissal logging will not work')
-    except Exception as e:
-        print(f'❌ Error initializing Google Sheets: {e}')
-        import traceback
-        traceback.print_exc()
-
-    # ИНИЦИАЛИЗАЦИЯ КЭША ПОЛЬЗОВАТЕЛЕЙ - предотвращает превышение лимитов API
-    try:
-        print('🚀 Initializing user cache with bulk preload...')
+        print('🚀 Initializing user cache with PostgreSQL...')
         from utils.user_cache import initialize_user_cache
         cache_success = await initialize_user_cache()
         if cache_success:
@@ -126,29 +128,12 @@ async def on_ready():
         import traceback
         traceback.print_exc()
     
-    # ИНИЦИАЛИЗАЦИЯ СИСТЕМЫ СИНХРОНИЗАЦИИ ЗВАНИЙ
-    try:
-        print('🎖️ Initializing rank synchronization system...')
-        from utils.rank_sync import initialize_rank_sync
-        
-        # Initialize new simple system
-        rank_sync_system = initialize_rank_sync(bot)
-        
-        if rank_sync_system:
-            print('✅ Rank synchronization system initialized successfully')
-        else:
-            print('⚠️ Rank synchronization system initialization failed')
-    except Exception as e:
-        print(f'❌ Error initializing rank sync system: {e}')
-        import traceback
-        traceback.print_exc()
-      # Create persistent button views
+    # Create persistent button views
     try:
         print("🔄 Adding persistent button views...")
         bot.add_view(DismissalReportButton())
         bot.add_view(SettingsView())
         bot.add_view(RoleAssignmentView())
-        bot.add_view(ModeratorRegistrationView())
         bot.add_view(LeaveRequestButton())
         bot.add_view(MedicalRegistrationView())
         print("✅ Basic persistent views added")
@@ -162,7 +147,7 @@ async def on_ready():
     
     # Add generic approval views for persistent buttons
     print("🔄 Adding approval views...")
-    bot.add_view(DismissalApprovalView())
+    bot.add_view(SimplifiedDismissalApprovalView())  # Persistent view for manual dismissals
     bot.add_view(AutomaticDismissalApprovalView(None))  # Persistent view for automatic dismissals
     bot.add_view(LeaveRequestApprovalView("dummy"))  # Dummy ID for persistent view
     print("✅ Approval views added")
@@ -377,14 +362,14 @@ async def on_ready():
         import traceback
         traceback.print_exc()
     
-    # 🚀 ЗАПУСК СИСТЕМЫ ПРЕДЗАГРУЗКИ КЭША ДЛЯ СКЛАДА
+    # 🚀 ЗАПУСК СИСТЕМЫ ПРЕДЗАГРУЗКИ КЭША
     try:
-        print("🔄 Starting warehouse cache preloader...")
-        from utils.warehouse_cache_preloader import start_cache_preloading
-        start_cache_preloading(bot)
-        print("🚀 Warehouse cache preloader started")
+        print("🔄 Starting user cache preloader...")
+        from utils.user_cache import bulk_preload_all_users
+        await bulk_preload_all_users()
+        print("🚀 User cache preloader started")
     except Exception as e:
-        print(f"❌ Error starting warehouse cache preloader: {e}")
+        print(f"❌ Error starting user cache preloader: {e}")
         import traceback
         traceback.print_exc()
     
@@ -490,41 +475,9 @@ async def on_member_update(before, after):
                     dm_sent = await send_moderator_welcome_dm(after)
                     channel_sent = await send_notification_to_channel(after.guild, after, 'moderator')
                     print(f"📢 Авто-уведомление модератору {after.display_name} (роль выдана): DM {'✅' if dm_sent else '❌'}")
-        
-        # Check for activity changes (новая система синхронизации званий)
-        if before.activities != after.activities:
-            from utils.rank_sync import rank_sync
-            
-            # Если система инициализирована, проверяем пользователя
-            if rank_sync:
-                # Неблокирующая проверка активности
-                asyncio.create_task(rank_sync.sync_user(after, force=False))
             
     except Exception as e:
         print(f"❌ Error handling member update for {after.name}: {e}")
-
-@bot.event
-async def on_presence_update(before, after):
-    """Handle presence changes (status, activities, Rich Presence)"""
-    try:
-        # Игнорируем ботов
-        if after.bot:
-            return
-        
-        # Проверяем изменения в активностях (более точно, чем on_member_update)
-        if before.activities != after.activities:
-            print(f"🔄 Обнаружено изменение активности у {after.display_name}")
-            
-            from utils.rank_sync import rank_sync
-            
-            # Если система инициализирована, проверяем пользователя
-            if rank_sync:
-                print(f"🎮 Запуск синхронизации для {after.display_name} (изменение активности)")
-                # Неблокирующая проверка активности
-                asyncio.create_task(rank_sync.sync_user(after, force=False))
-            
-    except Exception as e:
-        print(f"❌ Error handling presence update for {after.name}: {e}")
 
 async def restore_channel_messages(config):
     """Check and restore button messages for all configured channels."""    # Restore dismissal channel message
@@ -558,14 +511,6 @@ async def restore_channel_messages(config):
               # Restore approval views for existing applications
             print(f"Restoring approval views for role applications in {channel.name}")
             await restore_approval_views(bot, channel)
-    
-    # Restore moderator registration channel message
-    moderator_registration_channel_id = config.get('moderator_registration_channel')
-    if moderator_registration_channel_id:
-        channel = bot.get_channel(moderator_registration_channel_id)
-        if channel:
-            print(f"Ensuring moderator registration message in {channel.name}")
-            await ensure_moderator_registration_message(bot.guilds[0], moderator_registration_channel_id)
     
     # Restore audit channel message
     audit_channel_id = config.get('audit_channel')
@@ -665,7 +610,7 @@ async def check_for_button_message(channel, title_keyword):
 async def load_extensions():
     """Load all extension cogs from the cogs directory."""
     # Список исключений - cogs которые не нужно загружать
-    excluded_cogs = {'warehouse_commands', 'cache_admin', 'department_applications_views'}  # department_applications_views восстановление в app.py
+    excluded_cogs = {'warehouse_commands', 'cache_admin', 'department_applications_views'}  # personnel_commands теперь включен
     
     for filename in os.listdir('./cogs'):
         if filename.endswith('.py') and not filename.startswith('_'):
@@ -679,6 +624,62 @@ async def load_extensions():
                 print(f'Loaded extension: {cog_name}')
             except Exception as e:
                 print(f'Failed to load extension {cog_name}: {e}')
+
+@bot.tree.command(name="automatic_report", description="🚨 Создать тестовый автоматический рапорт на увольнение")
+async def automatic_report(interaction: discord.Interaction, пользователь: discord.Member):
+    """
+    Simulate automatic dismissal report for testing purposes.
+    
+    Args:
+        пользователь: User to create automatic dismissal report for
+    """
+    from utils.config_manager import is_administrator, load_config
+    config = load_config()
+    
+    # Check if user has moderator/admin permissions
+    if not is_administrator(interaction.user, config):
+        await interaction.response.send_message(
+            "❌ У вас нет прав для выполнения этой команды. Требуются права модератора.", 
+            ephemeral=True
+        )
+        return
+    
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        # Import automatic dismissal creation function
+        from forms.dismissal.automatic import create_automatic_dismissal_report
+        
+        # Create automatic dismissal report using the target member
+        success = await create_automatic_dismissal_report(
+            guild=interaction.guild,
+            member=пользователь,
+            target_role_name=config.get('military_role_name', 'Военнослужащий ВС РФ')
+        )
+        
+        if success:
+            await interaction.followup.send(
+                f"✅ Тестовый автоматический рапорт создан для {пользователь.mention}!\n"
+                f"📋 Проверьте канал рапортов на увольнение.",
+                ephemeral=True
+            )
+            print(f"🚨 Test automatic dismissal created by {interaction.user.display_name} for {пользователь.display_name}")
+        else:
+            await interaction.followup.send(
+                f"❌ Не удалось создать автоматический рапорт для {пользователь.mention}.\n"
+                f"⚠️ Проверьте настройку канала и логи бота.",
+                ephemeral=True
+            )
+            print(f"❌ Failed to create test automatic dismissal for {пользователь.display_name}")
+            
+    except Exception as e:
+        await interaction.followup.send(
+            f"❌ Ошибка при создании автоматического рапорта:\n```{str(e)}```",
+            ephemeral=True
+        )
+        print(f"❌ Error in automatic_report command: {e}")
+        import traceback
+        traceback.print_exc()
 
 @bot.tree.command(name="force-sync", description="🔄 Принудительная синхронизация команд (только для администраторов)")
 async def force_sync(interaction: discord.Interaction):
@@ -701,7 +702,7 @@ async def force_sync(interaction: discord.Interaction):
         bot.tree.clear_commands(guild=None)
         
         # Re-add personnel context menu commands
-        from forms.personnel_context import setup_context_commands
+        from forms.personnel_context.commands_clean import setup_context_commands
         setup_context_commands(bot)
         
         synced = await bot.tree.sync()

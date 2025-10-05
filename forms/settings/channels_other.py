@@ -1,5 +1,5 @@
 """
-Other channels configuration (audit, blacklist, moderators, medical, leave requests)
+Other channels configuration (audit, blacklist, medical, leave requests)
 """
 import discord
 from discord import ui
@@ -139,16 +139,6 @@ class BlacklistPingRoleModal(BaseSettingsModal):
                 "Ошибка",
                 f"Произошла ошибка при обработке роли: {str(e)}"
             )
-
-
-# Moderator Registration Channel Configuration
-class ModeratorRegistrationChannelView(BaseSettingsView):
-    """View for moderator registration channel configuration"""
-    
-    @discord.ui.button(label="📂 Настроить канал", style=discord.ButtonStyle.green)
-    async def set_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        modal = ChannelSelectionModal("moderator_registration")
-        await interaction.response.send_modal(modal)
 
 
 # Leave Requests Channel Configuration
@@ -530,60 +520,6 @@ async def show_blacklist_config(interaction: discord.Interaction):
     )
     
     view = BlacklistChannelView()
-    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-
-
-async def show_moderator_registration_config(interaction: discord.Interaction):
-    """Show moderator registration channel configuration"""
-    config = load_config()
-    
-    embed = discord.Embed(
-        title="🔐 Настройка канала регистрации модераторов",
-        description="Управление каналом для регистрации модераторов в системе.",
-        color=discord.Color.blue(),
-        timestamp=discord.utils.utcnow()
-    )
-    
-    # Show current channel
-    channel_id = config.get('moderator_registration_channel')
-    if channel_id:
-        channel = interaction.guild.get_channel(channel_id)
-        if channel:
-            embed.add_field(
-                name="📂 Текущий канал:",
-                value=channel.mention,
-                inline=False
-            )
-        else:
-            embed.add_field(
-                name="❌ Канал не найден",
-                value=f"Канал с ID {channel_id} не найден",
-                inline=False
-            )
-    else:
-        embed.add_field(
-            name="❌ Канал не настроен",
-            value="Установите канал для регистрации модераторов",
-            inline=False
-        )
-    
-    embed.add_field(
-        name="ℹ️ Описание функции:",
-        value=(
-            "В этом канале будет размещено закреплённое сообщение с кнопкой "
-            "для регистрации модераторов в системе кадрового учёта.\n\n"
-            "**Регистрироваться могут только пользователи с правами модератора.**"
-        ),
-        inline=False
-    )
-    
-    embed.add_field(
-        name="🔧 Доступные действия:",
-        value="• **Настроить канал** - установить канал для регистрации",
-        inline=False
-    )
-    
-    view = ModeratorRegistrationChannelView()
     await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 

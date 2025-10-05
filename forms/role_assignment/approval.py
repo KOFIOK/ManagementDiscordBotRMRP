@@ -9,8 +9,9 @@ from discord import ui
 import asyncio
 from datetime import datetime, timezone
 from utils.config_manager import load_config, is_moderator_or_admin
-from utils.google_sheets import sheets_manager
-from utils.user_database import user_database
+# PostgreSQL integration with enhanced personnel management
+from utils.database_manager import personnel_manager
+from utils.nickname_manager import nickname_manager
 from .base import get_channel_with_fallback
 from .views import ApprovedApplicationView, RejectedApplicationView, ProcessingApplicationView
 
@@ -100,6 +101,37 @@ class RoleApplicationApprovalView(ui.View):
             )
             return
         
+        # Get current application data (including applicant user_id)
+        current_data = self._get_current_application_data(interaction)
+        applicant_user_id = current_data.get('user_id')
+        
+        if not applicant_user_id:
+            await interaction.response.send_message(
+                "❌ Не удалось определить ID заявителя из заявки.",
+                ephemeral=True
+            )
+            return
+        
+        # Check if APPLICANT has active blacklist entry
+        from utils.audit_logger import audit_logger
+        
+        blacklist_info = await audit_logger.check_active_blacklist(applicant_user_id)
+        
+        if blacklist_info:
+            # Applicant is blacklisted, deny application
+            start_date_str = blacklist_info['start_date'].strftime('%d.%m.%Y')
+            end_date_str = blacklist_info['end_date'].strftime('%d.%m.%Y') if blacklist_info['end_date'] else 'Бессрочно'
+            
+            await interaction.response.send_message(
+                f"❌ **Вы не можете одобрить заявку этого человека**\n\n"
+                f"📋 **Заявитель находится в Чёрном списке ВС РФ**\n"
+                f"> **Причина:** {blacklist_info['reason']}\n"
+                f"> **Период:** {start_date_str} - {end_date_str}\n\n"
+                f"*Обратитесь к руководству бригады для снятия с чёрного списка.*",
+                ephemeral=True
+            )
+            return
+        
         try:
             await self._process_approval(interaction)
         except Exception as e:
@@ -137,13 +169,13 @@ class RoleApplicationApprovalView(ui.View):
                 )
                 return
             
-            from utils.config_manager import is_administrator, load_config
+            from utils.config_manager import is_moderator_or_admin, load_config
             config = load_config()
             
             # Проверяем права на редактирование: автор заявки или администратор
             can_edit = (
                 interaction.user.id == current_application_data.get('user_id') or  # Автор заявки
-                is_administrator(interaction.user, config)  # Администратор
+                is_moderator_or_admin(interaction.user, config)  # Администратор
             )
             
             if not can_edit:
@@ -246,13 +278,10 @@ class RoleApplicationApprovalView(ui.View):
                     ephemeral=True
                 )
                 return
-              # Handle moderator authorization first
-            signed_by_name = await self._handle_moderator_authorization(interaction, user, guild, config)
-            if signed_by_name is None:
-                # Authorization failed or modal was shown, processing will continue in callback
-                return
+              # Direct processing without authorization modal
+            signed_by_name = interaction.user.display_name
             
-            # Continue with approval processing if authorization was successful
+            # Continue with approval processing
             await self._continue_approval_process(interaction, user, guild, config, signed_by_name)
                 
         except Exception as e:
@@ -443,27 +472,44 @@ class RoleApplicationApprovalView(ui.View):
             raise  # Re-raise the exception to be caught by the caller
     
     async def _set_military_nickname(self, user):
-        """Set nickname for military users"""
+        """Set nickname for military users using nickname_manager"""
         try:
+            # Извлекаем имя и фамилию из заявки
             full_name = self.application_data['name']
-            full_nickname = f"ВА | {full_name}"
+            name_parts = full_name.split()
             
-            if len(full_nickname) <= 32:
-                new_nickname = full_nickname
+            if len(name_parts) >= 2:
+                first_name = name_parts[0]
+                last_name = ' '.join(name_parts[1:])
             else:
-                # Shorten if too long
-                name_parts = full_name.split()
-                if len(name_parts) >= 2:
-                    first_initial = name_parts[0][0] if name_parts[0] else "И"
-                    last_name = name_parts[-1]
-                    new_nickname = f"ВА | {first_initial}. {last_name}"
-                else:
-                    new_nickname = f"ВА | {full_name[:25]}"
+                first_name = full_name
+                last_name = ''
             
-            await user.edit(nick=new_nickname, reason="Одобрение заявки на роль военнослужащего")
-            print(f"✅ Successfully set nickname for {user} to {new_nickname}")
+            # Получаем звание из заявки
+            rank_name = self.application_data.get('rank', 'Рядовой')
             
-        except discord.Forbidden as e:            print(f"Warning: No permission to change nickname for {user}")
+            # Получаем статик из заявки
+            static = self.application_data.get('static', '')
+            
+            print(f"🎆 NICKNAME INTEGRATION: Приём на службу {user.display_name} -> {first_name} {last_name} (звание: {rank_name})")
+            
+            # Используем nickname_manager для автоматической обработки никнейма
+            new_nickname = await nickname_manager.handle_hiring(
+                member=user,
+                rank_name=rank_name,
+                first_name=first_name,
+                last_name=last_name,
+                static=static
+            )
+            
+            if new_nickname:
+                await user.edit(nick=new_nickname, reason="Одобрение заявки на роль военнослужащего")
+                print(f"✅ NICKNAME MANAGER: Успешно установлен никнейм {user} -> {new_nickname}")
+            else:
+                print(f"⚠️ NICKNAME MANAGER: Не удалось сгенерировать никнейм для {user}")
+            
+        except discord.Forbidden as e:
+            print(f"Warning: No permission to change nickname for {user} to \"{new_nickname}\"")
             # Don't raise the error, just log it
         except Exception as e:
             print(f"Error setting nickname for {user}: {e}")
@@ -523,57 +569,6 @@ class RoleApplicationApprovalView(ui.View):
         )
         
         return embed
-    
-    async def _handle_auto_processing(self, interaction, user, guild, config):
-        """Handle automatic processing (Google Sheets + Audit)"""
-        try:
-            # Get moderator authorization
-            auth_result = await sheets_manager.check_moderator_authorization(interaction.user)
-            
-            if not auth_result["found"]:
-                print(f"Moderator not found in system, skipping auto-processing")
-                return
-            
-            signed_by_name = auth_result["info"]
-            hiring_time = datetime.now(timezone.utc)
-              # Log to Google Sheets
-            sheets_success = await sheets_manager.add_hiring_record(
-                self.application_data,
-                user,
-                interaction.user,
-                hiring_time,
-                override_moderator_info=None
-            )
-            
-            if sheets_success:
-                print(f"✅ Successfully logged hiring for {self.application_data.get('name', 'Unknown')}")
-              # Update personnel registry (only for Призыв/Экскурсия applications)
-            recruitment_type = self.application_data.get("recruitment_type", "").lower()
-            if recruitment_type in ["призыв", "экскурсия"]:
-                registry_success = await user_database.add_or_update_user(
-                    self.application_data,
-                    user.id
-                )
-                
-                if registry_success:
-                    print(f"✅ Successfully updated personnel registry for {self.application_data.get('name', 'Unknown')}")
-                else:
-                    print(f"⚠️ Failed to update personnel registry for {self.application_data.get('name', 'Unknown')}")
-                    # Send error message to moderator
-                    await self._send_registry_error_message(interaction)
-            else:
-                print(f"📝 Skipping personnel registry update for recruitment type: {recruitment_type}")
-                registry_success = True  # Not an error, just not applicable
-            
-            # Send audit notification
-            audit_channel_id = config.get('audit_channel')
-            if audit_channel_id:
-                audit_channel = await get_channel_with_fallback(guild, audit_channel_id, "audit channel")
-                if audit_channel:
-                    await self._send_audit_notification(audit_channel, user, signed_by_name)
-            
-        except Exception as e:
-            print(f"Error in auto-processing: {e}")
     
     async def _send_audit_notification(self, audit_channel, user, signed_by_name):
         """Send notification to audit channel"""
@@ -665,41 +660,15 @@ class RoleApplicationApprovalView(ui.View):
                 except:
                     pass  # Give up
     
-    async def _handle_moderator_authorization(self, interaction, user, guild, config):
-        """Handle moderator authorization flow and return signed_by_name if successful."""
-        from utils.moderator_auth import ModeratorAuthHandler
-        
-        # Use unified authorization handler
-        signed_by_name = await ModeratorAuthHandler.handle_moderator_authorization(
-            interaction,
-            self._continue_approval_with_manual_auth,
-            user, guild, config, interaction.message
-        )
-        
-        if signed_by_name:
-            # Show processing state with just button change
-            processing_view = ProcessingApplicationView()
-            if interaction.response.is_done():
-                await interaction.edit_original_response(view=processing_view)
-            else:
-                await interaction.response.edit_message(view=processing_view)
-        return signed_by_name
-    
-    async def _continue_approval_with_manual_auth(self, interaction, moderator_data, user, guild, config, original_message):
-        """Continue approval process after manual moderator authorization"""
-        try:
-            # Extract signed_by_name from moderator_data
-            signed_by_name = moderator_data['full_info'] if isinstance(moderator_data, dict) else moderator_data
-            await self._continue_approval_process_with_message(original_message, user, guild, config, signed_by_name)
-        except Exception as e:
-            print(f"Error in manual auth continuation: {e}")
-            await interaction.followup.send(
-                "❌ Произошла ошибка при продолжении обработки заявки.",
-                ephemeral=True
-            )
     async def _continue_approval_process(self, interaction, user, guild, config, signed_by_name):
         """Continue with approval processing after authorization is successful"""
-        try:            # First show processing state
+        try:
+            # ВАЖНО: Получаем актуальные данные из embed (на случай редактирования)
+            current_data = self._get_current_application_data(interaction)
+            if current_data:
+                self.application_data = current_data
+            
+            # First show processing state
             processing_view = ProcessingApplicationView()
             if interaction.response.is_done():
                 await interaction.edit_original_response(view=processing_view)
@@ -720,7 +689,7 @@ class RoleApplicationApprovalView(ui.View):
             # Only do personnel processing for military recruits with rank 'рядовой'
             if self._should_process_personnel():
                 try:
-                    await self._handle_auto_processing_with_auth(user, guild, config, signed_by_name)
+                    await self._handle_auto_processing_with_auth(user, guild, config, signed_by_name, interaction.user.id)
                 except Exception as e:
                     print(f"Warning: Error in personnel processing: {e}")
                     # Continue processing even if personnel processing fails
@@ -752,38 +721,24 @@ class RoleApplicationApprovalView(ui.View):
             except Exception as followup_error:
                 print(f"Failed to send error message: {followup_error}")
     
-    async def _handle_auto_processing_with_auth(self, user, guild, config, signed_by_name):
-        """Handle automatic processing with pre-authorized moderator"""
+    async def _handle_auto_processing_with_auth(self, user, guild, config, signed_by_name, moderator_discord_id):
+        """Handle automatic processing with pre-authorized moderator using enhanced PersonnelManager"""
         try:
-            hiring_time = datetime.now(timezone.utc)
-              # Log to Google Sheets
-            sheets_success = await sheets_manager.add_hiring_record(
+            # Step 1: Personnel Processing with PersonnelManager
+            # PersonnelManager теперь полностью отвечает за запись в БД
+            personnel_success, personnel_message = await personnel_manager.process_role_application_approval(
                 self.application_data,
-                user,
-                None,  # moderator_user not needed since we have signed_by_name
-                hiring_time,
-                override_moderator_info=signed_by_name
+                user.id,
+                moderator_discord_id,
+                signed_by_name
             )
             
-            if sheets_success:
-                print(f"✅ Successfully logged hiring for {self.application_data.get('name', 'Unknown')}")
-              # Update personnel registry (only for Призыв/Экскурсия applications)
-            recruitment_type = self.application_data.get("recruitment_type", "").lower()
-            if recruitment_type in ["призыв", "экскурсия"]:
-                registry_success = await user_database.add_or_update_user(
-                    self.application_data,
-                    user.id
-                )
-                
-                if registry_success:
-                    print(f"✅ Successfully updated personnel registry for {self.application_data.get('name', 'Unknown')}")
-                else:
-                    print(f"⚠️ Failed to update personnel registry for {self.application_data.get('name', 'Unknown')}")
+            if personnel_success:
+                print(f"✅ PersonnelManager: {personnel_message}")
             else:
-                print(f"📝 Skipping personnel registry update for recruitment type: {recruitment_type}")
-                registry_success = True  # Not an error, just not applicable
-                
-              # Send audit notification
+                print(f"⚠️ PersonnelManager: {personnel_message}")
+            
+            # Step 2: Send audit notification
             audit_channel_id = config.get('audit_channel')
             if audit_channel_id:
                 audit_channel = await get_channel_with_fallback(guild, audit_channel_id, "audit channel")
@@ -814,7 +769,7 @@ class RoleApplicationApprovalView(ui.View):
             # Only do personnel processing for military recruits with rank 'рядовой'
             if self._should_process_personnel():
                 try:
-                    await self._handle_auto_processing_with_auth(user, guild, config, signed_by_name)
+                    await self._handle_auto_processing_with_auth(user, guild, config, signed_by_name, 0)  # Нет доступа к moderator_discord_id в этом контексте
                 except Exception as e:
                     print(f"Warning: Error in personnel processing: {e}")
                     # Continue processing even if personnel processing fails

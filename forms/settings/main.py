@@ -43,6 +43,12 @@ class MainSettingsSelect(ui.Select):
                 value="rank_roles"
             ),
             discord.SelectOption(
+                label="Роли должностей",
+                description="Настроить связывание должностей с ролями на сервере",
+                emoji="📋",
+                value="position_roles"
+            ),
+            discord.SelectOption(
                 label="Настройки склада",
                 description="Настроить систему запросов и выдачи складского имущества",
                 emoji="📦",
@@ -55,10 +61,16 @@ class MainSettingsSelect(ui.Select):
                 value="supplies_settings"
             ),
             discord.SelectOption(
-                label="Показать текущие настройки",
-                description="Посмотреть все текущие настройки",
+                label="Автозамена никнеймов",
+                description="Настройка автоматической замены никнеймов при кадровых операциях",
+                emoji="🏷️",
+                value="nickname_settings"
+            ),
+            discord.SelectOption(
+                label="Настройки команд",
+                description="Настройка доступности действий для различных команд",
                 emoji="⚙️",
-                value="show_config"
+                value="commands_settings"
             )
         ]
         
@@ -79,16 +91,20 @@ class MainSettingsSelect(ui.Select):
             await self.show_ping_settings_menu(interaction)
         elif selected_option == "departments_management":
             await self.show_departments_management_menu(interaction)
-        elif selected_option == "show_config":
-            await self.show_current_config(interaction)
         elif selected_option == "excluded_roles":
             await self.show_excluded_roles_config(interaction)
         elif selected_option == "rank_roles":
             await self.show_rank_roles_config(interaction)
+        elif selected_option == "position_roles":
+            await self.show_position_roles_config(interaction)
         elif selected_option == "warehouse_settings":
             await self.show_warehouse_settings_menu(interaction)
         elif selected_option == "supplies_settings":
             await self.show_supplies_settings_menu(interaction)
+        elif selected_option == "commands_settings":
+            await self.show_commands_settings_menu(interaction)
+        elif selected_option == "nickname_settings":
+            await self.show_nickname_settings_menu(interaction)
     
     async def show_channels_menu(self, interaction: discord.Interaction):
         """Show submenu for channel configuration"""
@@ -108,7 +124,6 @@ class MainSettingsSelect(ui.Select):
                 "• **Канал аудита** - для кадрового аудита\n"
                 "• **Канал чёрного списка** - для записей чёрного списка\n"
                 "• **Канал получения ролей** - для выбора военной/гражданской роли\n"
-                "• **Регистрация модераторов** - для регистрации модераторов в системе\n"
                 "• **Каналы отчётов на повышение** - для отчётов по подразделениям\n"
                 "• **Канал отгулов** - для заявок на отгулы\n"
                 "• **Сейф документов** - для заявок на безопасное хранение документов"
@@ -130,155 +145,6 @@ class MainSettingsSelect(ui.Select):
         from .ping_settings_modern import show_ping_settings_overview
         
         await show_ping_settings_overview(interaction)
-    
-    async def show_current_config(self, interaction: discord.Interaction):
-        """Show current configuration"""
-        config = load_config()
-        helper = ConfigDisplayHelper()
-        
-        embed = discord.Embed(
-            title="⚙️ Текущие настройки",
-            color=discord.Color.blue(),
-            timestamp=discord.utils.utcnow()
-        )
-        
-        # Channel configurations
-        embed.add_field(
-            name="📝 Канал увольнений", 
-            value=helper.format_channel_info(config, 'dismissal_channel', interaction.guild), 
-            inline=False
-        )
-        embed.add_field(
-            name="🔍 Канал аудита", 
-            value=helper.format_channel_info(config, 'audit_channel', interaction.guild), 
-            inline=False
-        )
-        embed.add_field(
-            name="🚫 Канал чёрного списка", 
-            value=helper.format_channel_info(config, 'blacklist_channel', interaction.guild), 
-            inline=False
-        )
-        embed.add_field(
-            name="🎖️ Канал получения ролей", 
-            value=helper.format_channel_info(config, 'role_assignment_channel', interaction.guild), 
-            inline=False
-        )
-        embed.add_field(
-            name="📋 Сейф документов", 
-            value=helper.format_channel_info(config, 'safe_documents_channel', interaction.guild), 
-            inline=False
-        )
-        # Role configurations
-        embed.add_field(
-            name="🛡️ Роли-исключения", 
-            value=helper.format_roles_list(config, 'excluded_roles', interaction.guild), 
-            inline=False
-        )
-        embed.add_field(
-            name="🪖 Роли военнослужащих", 
-            value=helper.format_roles_list(config, 'military_roles', interaction.guild), 
-            inline=False
-        )
-        embed.add_field(
-            name="👤 Роли гражданских", 
-            value=helper.format_roles_list(config, 'civilian_roles', interaction.guild), 
-            inline=False
-        )
-        embed.add_field(
-            name="📢 Ping-роли для военных заявок", 
-            value=helper.format_roles_list(config, 'military_role_assignment_ping_roles', interaction.guild), 
-            inline=False
-        )
-        embed.add_field(
-            name="📢 Ping-роли для гражданских заявок", 
-            value=helper.format_roles_list(config, 'civilian_role_assignment_ping_roles', interaction.guild), 
-            inline=False
-        )
-        
-        # Ping settings
-        ping_settings = config.get('ping_settings', {})
-        if ping_settings:
-            ping_text = ""
-            for department_role_id, ping_roles_ids in ping_settings.items():
-                department_role = interaction.guild.get_role(int(department_role_id))
-                if department_role:
-                    ping_roles = []
-                    for ping_role_id in ping_roles_ids:
-                        ping_role = interaction.guild.get_role(ping_role_id)
-                        if ping_role:
-                            ping_roles.append(ping_role.mention)
-                    if ping_roles:
-                        ping_text += f"• {department_role.mention} → {', '.join(ping_roles)}\n"
-            ping_text = ping_text or "❌ Настройки не найдены"
-        else:
-            ping_text = "❌ Не настроены"
-        embed.add_field(name="📢 Настройки пингов (увольнения)", value=ping_text, inline=False)
-        
-        # Blacklist ping settings
-        blacklist_role_mentions = config.get('blacklist_role_mentions', [])
-        if blacklist_role_mentions:
-            blacklist_ping_roles = []
-            for role_id in blacklist_role_mentions:
-                role = interaction.guild.get_role(role_id)
-                if role:
-                    blacklist_ping_roles.append(role.mention)
-                else:
-                    blacklist_ping_roles.append(f"❌ Роль не найдена (ID: {role_id})")
-            blacklist_ping_text = ", ".join(blacklist_ping_roles)
-        else:
-            blacklist_ping_text = "❌ Не настроены"
-        
-        embed.add_field(name="📢 Пинги чёрного списка", value=blacklist_ping_text, inline=False)
-        
-        # Rank roles
-        rank_roles = config.get('rank_roles', {})
-        key_role_id = config.get('rank_sync_key_role')
-        
-        if rank_roles:
-            rank_roles_text = []
-            
-            # Add key role info first
-            if key_role_id:
-                key_role = interaction.guild.get_role(key_role_id)
-                if key_role:
-                    rank_roles_text.append(f"🔑 **Ключевая роль:** {key_role.mention}")
-                else:
-                    rank_roles_text.append(f"🔑 **Ключевая роль:** ❌ Роль не найдена (ID: {key_role_id})")
-            else:
-                rank_roles_text.append("⚠️ **Ключевая роль:** Не настроена")
-            
-            rank_roles_text.append("")  # Empty line
-            
-            for rank_name, rank_data in sorted(rank_roles.items()):
-                # Handle both old format (direct role_id) and new format (dict with role_id)
-                if isinstance(rank_data, dict):
-                    role_id = rank_data.get('role_id')
-                else:
-                    role_id = rank_data
-                
-                if role_id:
-                    role = interaction.guild.get_role(int(role_id))
-                    if role:
-                        rank_roles_text.append(f"• **{rank_name}** → {role.mention}")
-                    else:
-                        rank_roles_text.append(f"• **{rank_name}** → ❌ Роль не найдена (ID: {role_id})")
-                else:
-                    rank_roles_text.append(f"• **{rank_name}** → ❌ role_id не найден")
-            
-            rank_roles_display = "\n".join(rank_roles_text[:12])  # Limit for display
-            if len(rank_roles_text) > 12:
-                rank_roles_display += f"\n... и ещё {len(rank_roles_text) - 12} элементов"
-        else:
-            if key_role_id:
-                key_role = interaction.guild.get_role(key_role_id)
-                key_role_display = key_role.mention if key_role else f"❌ Роль не найдена (ID: {key_role_id})"
-                rank_roles_display = f"🔑 **Ключевая роль:** {key_role_display}\n❌ Звания не настроены"
-            else:
-                rank_roles_display = "❌ Не настроены"
-                
-        embed.add_field(name="🎖️ Роли званий", value=rank_roles_display, inline=False)
-        
-        await interaction.response.send_message(embed=embed, ephemeral=True)
     
     async def show_excluded_roles_config(self, interaction: discord.Interaction):
         """Show interface for managing excluded roles"""
@@ -325,6 +191,16 @@ class MainSettingsSelect(ui.Select):
         """Show interface for managing rank roles"""
         from .rank_roles import show_rank_roles_config
         await show_rank_roles_config(interaction)
+
+    async def show_position_roles_config(self, interaction: discord.Interaction):
+        """Show interface for managing position roles"""
+        from .position_roles import PositionSettingsView, create_position_settings_embed
+        
+        view = PositionSettingsView()
+        await view.update_position_options(interaction.guild)
+        embed = await create_position_settings_embed()
+        
+        await interaction.response.edit_message(embed=embed, view=view)
 
     async def show_warehouse_settings_menu(self, interaction: discord.Interaction):
         """Show warehouse settings configuration menu"""
@@ -388,6 +264,58 @@ class MainSettingsSelect(ui.Select):
             except:
                 pass
 
+    async def show_commands_settings_menu(self, interaction: discord.Interaction):
+        """Show commands settings menu"""
+        try:
+            from .commands_settings import CommandsSettingsView
+            view = CommandsSettingsView()
+            
+            embed = discord.Embed(
+                title="⚙️ Настройки команд",
+                description="Настройка доступности действий для различных команд бота.",
+                color=discord.Color.blue(),
+                timestamp=discord.utils.utcnow()
+            )
+            
+            embed.add_field(
+                name="📋 Доступные настройки:",
+                value=(
+                    "• **📋 Команда /аудит** - настроить доступные действия для аудита персонала\n"
+                    "• **Больше команд будет добавлено позже**"
+                ),
+                inline=False
+            )
+            
+            embed.add_field(
+                name="ℹ️ Информация:",
+                value=(
+                    "Здесь можно включать и отключать отдельные действия для различных команд. "
+                    "Это позволяет точно настроить функциональность бота под нужды сервера."
+                ),
+                inline=False
+            )
+            
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            
+        except Exception as e:
+            print(f"❌ Error in show_commands_settings_menu: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(
+                        f"❌ Ошибка открытия настроек команд: {str(e)}",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.response.send_message(
+                        f"❌ Ошибка открытия настроек команд: {str(e)}",
+                        ephemeral=True
+                    )
+            except:
+                pass
+
     async def show_departments_management_menu(self, interaction: discord.Interaction):
         """Show departments management interface"""
         from .departments_management import DepartmentsManagementView
@@ -432,6 +360,12 @@ class MainSettingsSelect(ui.Select):
         
         view = DepartmentsManagementView()
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+    
+    async def show_nickname_settings_menu(self, interaction: discord.Interaction):
+        """Show nickname auto-replacement settings menu"""
+        from .nickname_settings import show_nickname_settings_overview
+        
+        await show_nickname_settings_overview(interaction)
         
 
 class SettingsView(BaseSettingsView):

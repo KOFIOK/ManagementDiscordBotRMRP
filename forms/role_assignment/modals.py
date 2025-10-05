@@ -3,12 +3,10 @@ Application modals for role assignment system
 """
 
 import discord
-import os
 import re
-from datetime import datetime, timezone, timedelta
 from discord import ui
 from utils.config_manager import load_config, has_pending_role_application
-from utils.google_sheets import sheets_manager, retry_on_google_error
+# Google Sheets удален - используется PostgreSQL
 
 
 class MilitaryApplicationModal(ui.Modal):
@@ -35,15 +33,7 @@ class MilitaryApplicationModal(ui.Modal):
         )
         self.add_item(self.static_input)
         
-        self.rank_input = ui.TextInput(
-            label="Звание",
-            placeholder="Обычно: Рядовой",
-            min_length=1,
-            max_length=30,
-            required=True,
-            default="Рядовой"
-        )
-        self.add_item(self.rank_input)
+        # Rank is always "Рядовой" for new military recruits, no need for input field
         
         self.recruitment_type_input = ui.TextInput(
             label="Порядок набора",
@@ -107,7 +97,7 @@ class MilitaryApplicationModal(ui.Modal):
             "type": "military",
             "name": self.name_input.value.strip(),
             "static": formatted_static,
-            "rank": self.rank_input.value.strip(),
+            "rank": "Рядовой",  # Always set rank as "Рядовой" for new military recruits
             "recruitment_type": recruitment_type,
             "user_id": interaction.user.id,
             "user_mention": interaction.user.mention
@@ -125,91 +115,18 @@ class MilitaryApplicationModal(ui.Modal):
         elif len(digits_only) == 6:
             return f"{digits_only[:3]}-{digits_only[3:]}"
         else:
-            return ""      @retry_on_google_error(retries=3, delay=1.0)
+            return ""
+    
     async def _check_blacklist_status(self, static: str):
-        """Check if user is in blacklist using Google Sheets"""
+        """Check if user is in blacklist using PostgreSQL (stub)"""
         try:
-            # Check if Google Sheets credentials exist
-            if not os.path.exists(sheets_manager.credentials_path):
-                print("Google Sheets credentials not found, allowing application")
-                return {"is_blocked": False}
-            
-            # Ensure connection
-            if not sheets_manager._ensure_connection():
-                print("Could not connect to Google Sheets, allowing application")
-                return {"is_blocked": False}
-            
-            # Get the 'Отправлено (НЕ РЕДАКТИРОВАТЬ)' worksheet
-            blacklist_worksheet = None
-            for worksheet in sheets_manager.spreadsheet.worksheets():
-                if worksheet.title == "Отправлено (НЕ РЕДАКТИРОВАТЬ)":
-                    blacklist_worksheet = worksheet
-                    break
-            
-            if not blacklist_worksheet:
-                print("'Отправлено (НЕ РЕДАКТИРОВАТЬ)' sheet not found, allowing application")
-                return {"is_blocked": False}
-              # Get all values from the sheet
-            sheet_data = blacklist_worksheet.get_all_values()
-            if not sheet_data:
-                print("No data found in blacklist sheet, allowing application")
-                return {"is_blocked": False}
-              # Find the most recent entry for this static (first match from top)
-            print(f"🔍 Searching for static {static} in blacklist...")
-            for row_index, row in enumerate(sheet_data):
-                if len(row) >= 2:  # Check if column B exists
-                    column_b = row[1].strip()  # Column B (index 1) contains "Name | Static"
-                    # Debug: Print first few rows to see the format
-                    if row_index < 5:
-                        print(f"  Row {row_index}: Column B = '{column_b}'")
-                    # Check if column B ends with " | {static}"
-                    if column_b.endswith(f" | {static}"):
-                        print(f"✅ Found matching entry: '{column_b}'")
-                        if len(row) >= 5 and row[4]:  # Column E (index 4) contains end date
-                            try:
-                                # Parse end date (DD.MM.YYYY format)
-                                end_date_str = row[4].strip()
-                                end_date = datetime.strptime(end_date_str, "%d.%m.%Y")
-                                
-                                # Set timezone to Moscow
-                                moscow_tz = timezone(timedelta(hours=3))
-                                end_date = end_date.replace(hour=23, minute=59, second=59, tzinfo=moscow_tz)
-                                
-                                # Check if punishment is still active
-                                current_time = datetime.now(moscow_tz)
-                                
-                                if current_time <= end_date:
-                                    # Punishment is still active
-                                    reason = row[2] if len(row) >= 3 else "Не указана"
-                                    officer = row[5] if len(row) >= 4 else "Не указан"
-                                    
-                                    return {
-                                        "is_blocked": True,
-                                        "reason": reason,
-                                        "officer": officer,
-                                        "end_date": end_date_str
-                                    }
-                                else:
-                                    # Punishment expired, but this is the most recent entry
-                                    print(f"Found expired punishment for {static}, allowing application")
-                                    return {"is_blocked": False}
-                            except ValueError as e:
-                                print(f"Error parsing date for static {static}: {e}")
-                                continue
-                        else:
-                            # Entry found but no end date, assume not blocked
-                            print(f"Found entry for {static} but no end date, allowing application")
-                            return {"is_blocked": False}
-            
-            # No entry found for this static
-            print(f"No blacklist entry found for static {static}, allowing application")
+            # TODO: Implement PostgreSQL blacklist check
+            print(f"Blacklist check for static {static} - skipped (using PostgreSQL stub)")
             return {"is_blocked": False}
-            
         except Exception as e:
             print(f"Error checking blacklist status: {e}")
-            # If there's an error, allow the application to proceed
             return {"is_blocked": False}
-    
+
     async def _send_application_for_approval(self, interaction, application_data):
         """Send application to moderation channel"""
         try:
@@ -666,15 +583,7 @@ class MilitaryEditModal(ui.Modal):
         )
         self.add_item(self.static_input)
         
-        self.rank_input = ui.TextInput(
-            label="Звание",
-            placeholder="Обычно: Рядовой",
-            min_length=1,
-            max_length=30,
-            required=True,
-            default=application_data.get('rank', 'Рядовой')
-        )
-        self.add_item(self.rank_input)
+        # Rank is always "Рядовой" for military personnel, no need for input field
         
         self.recruitment_type_input = ui.TextInput(
             label="Порядок набора",
@@ -713,7 +622,7 @@ class MilitaryEditModal(ui.Modal):
             updated_data = {
                 'name': self.name_input.value.strip(),
                 'static': formatted_static,
-                'rank': self.rank_input.value.strip(),
+                'rank': "Рядовой",  # Always set rank as "Рядовой" for military personnel
                 'recruitment_type': recruitment_type.title(),
                 # Сохраняем оригинальные данные
                 'type': self.application_data['type'],

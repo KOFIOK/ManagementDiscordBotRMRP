@@ -15,8 +15,8 @@ warnings.warn(
 )
 
 # Re-export only essential components to avoid circular imports and duplicates
-from .dismissal.modals import DismissalReportModal
-from .dismissal.views import DismissalApprovalView, DismissalReportButton
+from .dismissal.modals import SimplifiedDismissalModal
+from .dismissal.views import DismissalReportButton
 from .dismissal.utils import send_dismissal_button_message
 
 # Note: Automatic dismissal functions should be imported directly from forms.dismissal.automatic

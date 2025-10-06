@@ -778,7 +778,7 @@ class DismissalModal(ui.Modal, title="Увольнение"):
 
 @app_commands.context_menu(name='Уволить')
 @handle_context_errors
-async def dismiss_user(interaction: discord.Interaction, user: discord.Member):
+async def dismiss_user(interaction: discord.Interaction, user: discord.User):
     """Context menu command to dismiss user using PersonnelManager"""
     # Check permissions
     config = load_config()
@@ -789,8 +789,29 @@ async def dismiss_user(interaction: discord.Interaction, user: discord.Member):
         )
         return
     
+    # Get member object if user is on server, or create mock user
+    if isinstance(user, discord.Member):
+        target_user = user
+    else:
+        # Try to get member object from guild
+        target_user = interaction.guild.get_member(user.id)
+        if not target_user:
+            # Create mock user object for users who left the server
+            class MockUser:
+                def __init__(self, user_obj):
+                    self.id = user_obj.id
+                    self.display_name = user_obj.display_name
+                    self.mention = user_obj.mention
+                    self.name = user_obj.name
+                    self._is_mock = True
+                    # Add required attributes for moderation checks
+                    self.roles = []  # Empty roles list
+                    self.guild_permissions = discord.Permissions.none()  # No permissions
+            
+            target_user = MockUser(user)
+    
     # Check if moderator can moderate this user (hierarchy check)
-    if not can_moderate_user(interaction.user, user, config):
+    if not can_moderate_user(interaction.user, target_user, config):
         await interaction.response.send_message(
             "❌ Вы не можете выполнять действия над этим пользователем. Недостаточно прав в иерархии.",
             ephemeral=True
@@ -798,9 +819,9 @@ async def dismiss_user(interaction: discord.Interaction, user: discord.Member):
         return
     
     # Open dismissal modal
-    modal = DismissalModal(user)
+    modal = DismissalModal(target_user)
     await interaction.response.send_modal(modal)
-    print(f"✅ Dismissal modal sent for {user.display_name}")
+    print(f"✅ Dismissal modal sent for {target_user.display_name}")
 
 
 class DepartmentActionView(ui.View):

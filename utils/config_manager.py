@@ -305,15 +305,16 @@ def is_moderator(user, config):
     if user.id in moderators.get('users', []):
         return True
     
-    # Check if user has any of the moderator roles
-    user_role_ids = [role.id for role in user.roles]
-    moderator_role_ids = moderators.get('roles', [])
+    # Check if user has any of the moderator roles (only if user has roles attribute)
+    if hasattr(user, 'roles') and user.roles:
+        user_role_ids = [role.id for role in user.roles]
+        moderator_role_ids = moderators.get('roles', [])
+        
+        if any(role_id in user_role_ids for role_id in moderator_role_ids):
+            return True
     
-    if any(role_id in user_role_ids for role_id in moderator_role_ids):
-        return True
-    
-    # Discord administrators have moderator privileges but are handled separately
-    if user.guild_permissions.administrator:
+    # Discord administrators have moderator privileges but are handled separately (only if user has guild_permissions)
+    if hasattr(user, 'guild_permissions') and user.guild_permissions.administrator:
         return True
     
     return False
@@ -506,22 +507,23 @@ def get_config_status() -> Dict[str, Any]:
     return status
 
 def is_administrator(user, config):
-    """Check if a user has administrator permissions (custom administrators, not Discord admins)."""
+    """Check if a user has administrator permissions."""
     administrators = config.get('administrators', {'users': [], 'roles': []})
     
     # Check if user is in administrator users list
     if user.id in administrators.get('users', []):
         return True
     
-    # Check if user has any of the administrator roles
-    user_role_ids = [role.id for role in user.roles]
-    administrator_role_ids = administrators.get('roles', [])
+    # Check if user has any of the administrator roles (only if user has roles attribute)
+    if hasattr(user, 'roles') and user.roles:
+        user_role_ids = [role.id for role in user.roles]
+        administrator_role_ids = administrators.get('roles', [])
+        
+        if any(role_id in user_role_ids for role_id in administrator_role_ids):
+            return True
     
-    if any(role_id in user_role_ids for role_id in administrator_role_ids):
-        return True
-    
-    # Discord administrators are always considered administrators
-    if user.guild_permissions.administrator:
+    # Discord administrators are always considered administrators (only if user has guild_permissions)
+    if hasattr(user, 'guild_permissions') and user.guild_permissions.administrator:
         return True
     
     return False

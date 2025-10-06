@@ -309,6 +309,9 @@ class RejectionReasonModal(ui.Modal, title="Причина отказа"):
                                             self.id = user_id
                                             self.display_name = "Покинувший пользователь"
                                             self._is_mock = True
+                                            # Add required attributes for moderation checks
+                                            self.roles = []  # Empty roles list
+                                            self.guild_permissions = discord.Permissions.none()  # No permissions
                                     target_user = MockUser(user_id)
                     except Exception as e:
                         print(f"Error extracting target user for rejection: {e}")

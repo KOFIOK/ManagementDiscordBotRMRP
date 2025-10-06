@@ -135,13 +135,18 @@ class SimplifiedDismissalApprovalView(ui.View):
             # Get target user
             target_user = interaction.guild.get_member(self.user_id) if self.user_id else None
             if not target_user:
-                # User left server - create mock user object
-                target_user = type('MockUser', (), {
-                    'id': self.user_id,
-                    'display_name': 'Покинул сервер',
-                    'mention': f'<@{self.user_id}>',
-                    '_is_mock': True
-                })()
+                # User left server - create mock user object with required attributes
+                class MockUser:
+                    def __init__(self, user_id):
+                        self.id = user_id
+                        self.display_name = 'Покинул сервер'
+                        self.mention = f'<@{user_id}>'
+                        self._is_mock = True
+                        # Add required attributes for moderation checks
+                        self.roles = []  # Empty roles list
+                        self.guild_permissions = discord.Permissions.none()  # No permissions
+                
+                target_user = MockUser(self.user_id)
             
             # Check moderator hierarchy - can this moderator approve this user's dismissal?
             if not can_moderate_user(interaction.user, target_user, config):
@@ -256,13 +261,18 @@ class SimplifiedDismissalApprovalView(ui.View):
             # Get target user for hierarchy check
             target_user = interaction.guild.get_member(self.user_id) if self.user_id else None
             if not target_user:
-                # User left server - create mock user object
-                target_user = type('MockUser', (), {
-                    'id': self.user_id,
-                    'display_name': 'Покинул сервер',
-                    'mention': f'<@{self.user_id}>',
-                    '_is_mock': True
-                })()
+                # User left server - create mock user object with required attributes
+                class MockUser:
+                    def __init__(self, user_id):
+                        self.id = user_id
+                        self.display_name = 'Покинул сервер'
+                        self.mention = f'<@{user_id}>'
+                        self._is_mock = True
+                        # Add required attributes for moderation checks
+                        self.roles = []  # Empty roles list
+                        self.guild_permissions = discord.Permissions.none()  # No permissions
+                
+                target_user = MockUser(self.user_id)
             
             # Check moderator hierarchy - can this moderator reject this user's dismissal?
             if not can_moderate_user(interaction.user, target_user, config):
@@ -964,6 +974,8 @@ class AutomaticDismissalApprovalView(ui.View):
                             self.mention = f"<@{user_id}>"
                             self.roles = []
                             self._is_mock = True
+                            # Add required attributes for moderation checks
+                            self.guild_permissions = discord.Permissions.none()  # No permissions
                         
                         def __str__(self):
                             return self.display_name

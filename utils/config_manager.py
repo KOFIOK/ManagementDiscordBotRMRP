@@ -334,7 +334,7 @@ def can_moderate_user(moderator, target_user, config):
         return True
     
     # Check if moderator has Discord admin permissions (Discord admins can moderate anyone, including themselves)
-    if moderator.guild_permissions.administrator:
+    if hasattr(moderator, 'guild_permissions') and moderator.guild_permissions.administrator:
         return True
     
     # Self-moderation is not allowed for regular moderators (but allowed for administrators above)
@@ -355,8 +355,16 @@ def can_moderate_user(moderator, target_user, config):
         return True
     
     # Both are moderators - check hierarchy
-    moderator_roles = [role for role in moderator.roles if role.id in config.get('moderators', {}).get('roles', [])]
-    target_roles = [role for role in target_user.roles if role.id in config.get('moderators', {}).get('roles', [])]
+    moderator_roles = []
+    target_roles = []
+    
+    # Get moderator roles only if user has roles attribute
+    if hasattr(moderator, 'roles') and moderator.roles:
+        moderator_roles = [role for role in moderator.roles if role.id in config.get('moderators', {}).get('roles', [])]
+    
+    # Get target user roles only if user has roles attribute
+    if hasattr(target_user, 'roles') and target_user.roles:
+        target_roles = [role for role in target_user.roles if role.id in config.get('moderators', {}).get('roles', [])]
     
     if not moderator_roles:
         # Moderator is individual user, not role-based

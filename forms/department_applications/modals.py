@@ -516,8 +516,22 @@ class Stage1ReviewView(ui.View):
     """View for reviewing Stage 1 data with continue/cancel options"""
     
     def __init__(self, stage1_data: Dict):
-        super().__init__(timeout=300)
+        # Увеличиваем timeout до 10 минут для удобства пользователя
+        super().__init__(timeout=600)
         self.stage1_data = stage1_data
+    
+    async def on_timeout(self):
+        """Handle view timeout"""
+        try:
+            # Disable all buttons when timeout occurs
+            for item in self.children:
+                item.disabled = True
+            
+            # Try to edit the message to show timeout
+            # Note: This might fail if the interaction has already expired
+            logger.info(f"Stage1ReviewView timed out for department {self.stage1_data.get('department_code', 'unknown')}")
+        except Exception as e:
+            logger.warning(f"Error handling Stage1ReviewView timeout: {e}")
     
     @ui.button(label="❌ Отменить", style=discord.ButtonStyle.red)
     async def cancel_button(self, interaction: discord.Interaction, button: ui.Button):
@@ -541,16 +555,74 @@ class Stage1ReviewView(ui.View):
     async def continue_button(self, interaction: discord.Interaction, button: ui.Button):
         """Continue to Stage 2"""
         try:
+            # КРИТИЧЕСКИ ВАЖНО: проверяем состояние interaction
+            if interaction.response.is_done():
+                logger.warning(f"Interaction already responded for user {interaction.user.id}")
+                # Пытаемся использовать followup для отправки сообщения с инструкцией
+                try:
+                    await interaction.followup.send(
+                        "⚠️ **Истекло время ожидания**\n"
+                        "Попробуйте начать заявление заново, нажав кнопку в канале подразделения.",
+                        ephemeral=True
+                    )
+                except:
+                    pass
+                return
+            
             # Create Stage 2 modal
             modal = DepartmentApplicationStage2Modal(self.stage1_data)
-            await interaction.response.send_modal(modal)
+            
+            # Пытаемся отправить модальное окно
+            try:
+                await interaction.response.send_modal(modal)
+                logger.info(f"✅ Stage 2 modal sent successfully for user {interaction.user.id}")
+            except discord.InteractionResponded:
+                logger.warning(f"Interaction already responded when sending Stage 2 modal for user {interaction.user.id}")
+                # Отправляем сообщение с инструкцией через followup
+                await interaction.followup.send(
+                    "⚠️ **Не удалось открыть форму OOC информации**\n"
+                    "Возможно, истекло время ожидания. Попробуйте начать заявление заново.",
+                    ephemeral=True
+                )
+            except discord.NotFound as e:
+                if e.code == 10062:  # Unknown interaction
+                    logger.warning(f"Unknown interaction error for user {interaction.user.id}")
+                    # Interaction истек, ничего не можем сделать
+                    pass
+                else:
+                    raise
+            except Exception as modal_error:
+                logger.error(f"Error sending Stage 2 modal: {modal_error}")
+                # Пытаемся отправить сообщение об ошибке
+                try:
+                    if not interaction.response.is_done():
+                        await interaction.response.send_message(
+                            "❌ Произошла ошибка при переходе к следующему этапу. Попробуйте начать заново.",
+                            ephemeral=True
+                        )
+                    else:
+                        await interaction.followup.send(
+                            "❌ Произошла ошибка при переходе к следующему этапу. Попробуйте начать заново.",
+                            ephemeral=True
+                        )
+                except:
+                    pass
             
         except Exception as e:
-            logger.error(f"Error proceeding to Stage 2: {e}")
-            await interaction.response.send_message(
-                "❌ Произошла ошибка при переходе к следующему этапу.",
-                ephemeral=True
-            )
+            logger.error(f"Error in continue_button: {e}")
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        "❌ Произошла ошибка при переходе к следующему этапу.",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.followup.send(
+                        "❌ Произошла ошибка при переходе к следующему этапу.",
+                        ephemeral=True
+                    )
+            except:
+                pass
 
 
 class DepartmentApplicationStage2Modal(ui.Modal):

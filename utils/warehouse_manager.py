@@ -114,13 +114,29 @@ class WarehouseManager:
         moscow_tz = timezone(timedelta(hours=3))  # UTC+3 для Москвы
         
         # Ищем последнее сообщение с заявкой этого пользователя
+        # Уменьшаем лимит с 200 до 50 для ускорения
         found_message = False
-        async for message in channel.history(limit=200):
-            # Ищем сообщения с embed'ами о заявках склада
-            if (message.embeds and 
-                "Запрос склада" in message.embeds[0].title and
-                message.embeds[0].footer and
-                f"ID пользователя: {user_id}" in message.embeds[0].footer.text):
+        try:
+            # Добавляем таймаут для предотвращения зависания
+            import asyncio
+            
+            async def check_messages():
+                nonlocal found_message
+                async for message in channel.history(limit=50):  # Уменьшен лимит
+                    # Ищем сообщения с embed'ами о заявках склада
+                    if (message.embeds and 
+                        len(message.embeds) > 0 and
+                        message.embeds[0].title and
+                        "Запрос склада" in message.embeds[0].title and
+                        message.embeds[0].footer and
+                        f"ID пользователя: {user_id}" in message.embeds[0].footer.text):
+                        return message
+                return None
+            
+            # Проверяем с таймаутом 5 секунд
+            message = await asyncio.wait_for(check_messages(), timeout=5.0)
+            
+            if message:
                 found_message = True
                 
                 embed = message.embeds[0]
@@ -162,7 +178,15 @@ class WarehouseManager:
                     next_time_moscow = message_time_moscow + timedelta(hours=cooldown_hours)
                     print(f"❌ COOLDOWN CHECK: Кулдаун активен! Следующий запрос: {next_time_moscow.strftime('%Y-%m-%d %H:%M:%S')} МСК")
                     return False, next_time_moscow
-                break
+            
+        except asyncio.TimeoutError:
+            print(f"⚠️ COOLDOWN CHECK: Таймаут при проверке истории сообщений (5 сек)")
+            # При таймауте разрешаем запрос (лучше разрешить, чем заблокировать)
+            return True, None
+        except Exception as e:
+            print(f"❌ COOLDOWN CHECK: Ошибка при проверке: {e}")
+            # При ошибке разрешаем запрос
+            return True, None
         
         if not found_message:
             print(f"✅ COOLDOWN CHECK: Предыдущих заявок не найдено, можно делать запрос")

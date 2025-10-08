@@ -124,6 +124,9 @@ class WarehouseCategorySelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         """Обработка выбора категории"""
         try:
+            # КРИТИЧЕСКИ ВАЖНО: немедленно откладываем ответ, чтобы избежать timeout
+            await interaction.response.defer(ephemeral=True)
+            
             # Используем локальный warehouse_manager из utils
             from utils.warehouse_manager import WarehouseManager
             warehouse_manager = WarehouseManager()
@@ -145,7 +148,7 @@ class WarehouseCategorySelect(discord.ui.Select):
                         hours = int(time_left.total_seconds() // 3600)
                         minutes = int((time_left.total_seconds() % 3600) // 60)
                         
-                        await interaction.response.send_message(
+                        await interaction.followup.send(
                             f"⏰ Кулдаун! Вы можете подать следующий запрос через {hours}ч {minutes}мин",
                             ephemeral=True
                         )
@@ -163,7 +166,7 @@ class WarehouseCategorySelect(discord.ui.Select):
             selected_category = category_mapping.get(selected_value)
             
             if not selected_category:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "❌ Неизвестная категория! Попробуйте ещё раз.",
                     ephemeral=True
                 )
@@ -173,7 +176,7 @@ class WarehouseCategorySelect(discord.ui.Select):
             category_info = warehouse_manager.item_categories.get(selected_category)
             
             if not category_info:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"❌ Категория '{selected_category}' не найдена в системе!",
                     ephemeral=True
                 )
@@ -192,8 +195,18 @@ class WarehouseCategorySelect(discord.ui.Select):
             )
             
             # Безопасная отправка с защитой от истёкших интеракций
-            success = await safe_interaction_response(interaction, embed=embed, view=view)
-            if not success:
+            # Используем followup так как interaction уже deferred
+            try:
+                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                print(f"✅ Отправлен выбор предметов для категории {selected_category}")
+            except discord.NotFound as e:
+                if e.code == 10062:  # Unknown interaction
+                    print(f"⚠️ INTERACTION EXPIRED: Истекла интеракция для {interaction.user.display_name}")
+                    print(f"⚠️ Не удалось отправить выбор предметов для категории {selected_category}")
+                else:
+                    raise
+            except Exception as e:
+                print(f"❌ Ошибка при отправке выбора предметов: {e}")
                 print(f"⚠️ Не удалось отправить выбор предметов для категории {selected_category}")
             
         except Exception as e:
@@ -201,9 +214,15 @@ class WarehouseCategorySelect(discord.ui.Select):
             import traceback
             traceback.print_exc()
             try:
-                await interaction.response.send_message(
-                    f"❌ Произошла ошибка: {str(e)}", ephemeral=True
-                )
+                # Пробуем followup сначала (если interaction был deferred)
+                if interaction.response.is_done():
+                    await interaction.followup.send(
+                        f"❌ Произошла ошибка: {str(e)}", ephemeral=True
+                    )
+                else:
+                    await interaction.response.send_message(
+                        f"❌ Произошла ошибка: {str(e)}", ephemeral=True
+                    )
             except:
                 print("❌ Не удалось отправить сообщение об ошибке пользователю")
 
@@ -249,7 +268,6 @@ class WarehouseItemSelectView(discord.ui.View):
                     )
                     button.callback = self._create_item_callback(item)
                     self.add_item(button)
-                    print(f"🔍 BUTTON_ADDED: {item} в ряд {current_row}")
                 except Exception as e:
                     print(f"❌ Ошибка создания кнопки для предмета '{item}': {e}")
         
@@ -345,8 +363,11 @@ class WarehouseCartView(discord.ui.View):
             return
         
         try:
+            # КРИТИЧЕСКИ ВАЖНО: откладываем ответ для длительных операций
+            await interaction.response.defer(ephemeral=True)
+            
             if self.cart.is_empty():
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "❌ Корзина пуста! Добавьте предметы перед отправкой.",
                     ephemeral=True
                 )
@@ -366,7 +387,7 @@ class WarehouseCartView(discord.ui.View):
                         time_left = next_time - current_time_moscow
                         hours = int(time_left.total_seconds() // 3600)
                         minutes = int((time_left.total_seconds() % 3600) // 60)
-                        await interaction.response.send_message(
+                        await interaction.followup.send(
                             f"⏰ Кулдаун! Вы можете подать следующий запрос через {hours}ч {minutes}мин",
                             ephemeral=True
                         )

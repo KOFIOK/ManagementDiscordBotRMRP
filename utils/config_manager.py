@@ -89,12 +89,49 @@ default_config = {
     # Nickname auto-replacement settings
     'nickname_auto_replacement': {
         'enabled': True,  # Global enable/disable
-        'departments': {},  # Per-department settings (populated dynamically)
+        'departments': {
+            'УВП': True,
+            'ВА': True,
+            'ВК': True,
+            'РОиО': True,
+            'ГШ': True,
+            'ССО': True,
+            'МР': True
+        },  # Per-department settings
         'modules': {
             'dismissal': True,    # Always enabled - dismissal changes nickname regardless
-            'transfer': True,     # Transfer operations
-            'promotion': True,    # Promotion operations
-            'demotion': True      # Demotion operations
+            'department_applications': True,  # Department application operations
+            'personnel_commands': True   # Personnel command operations
+        },
+        'known_positions': [
+            'Нач.',
+            'Нач. по КР',
+            'Зам.', 
+            'Зам. Ком.',
+            'Ком.',
+            'Ком. Бриг',
+            'Нач. Штаба',
+            'Нач. Отдела',
+            'Зам. Нач. Отдела'
+        ],  # List of known positions for parsing
+        'format_support': {
+            'standard_with_subgroup': True,    # Support for "РОиО[ПГ] | ..." format
+            'positional_with_subgroup': True,  # Support for "ГШ[АТ] | Зам. Ком. | ..." format
+            'auto_detect_positions': True      # Automatically detect positions vs ranks
+        },
+        'custom_templates': {
+            # Template customizations stored here
+            # Example structure:
+            # 'dismissed': {
+            #     'status_text': 'Позорище',
+            #     'separator': '|',  # Пробелы добавляются автоматически в коде
+            #     'name_chars': 'А-ЯЁа-яёA-Za-z\\-\\.\\s'
+            # },
+            # 'standard': {
+            #     'separator': '-',  # Пробелы добавляются автоматически в коде
+            #     'name_chars': 'А-ЯЁа-яёA-Za-z\\-\\.\\s',
+            #     'subdivision_chars': 'А-ЯЁA-Zа-яё\\d'
+            # }
         }
     }
 }
@@ -426,11 +463,22 @@ def migrate_config(config):
             migrated = True
         del config['civilian_role']
     
-    # Ensure all new keys exist with proper defaults
-    for key, default_value in default_config.items():
-        if key not in config:
-            config[key] = default_value
-            migrated = True
+    # Ensure all new keys exist with proper defaults (including nested structures)
+    def merge_defaults(config_dict, default_dict):
+        """Recursively merge default values into config"""
+        local_migrated = False
+        for key, default_value in default_dict.items():
+            if key not in config_dict:
+                config_dict[key] = default_value
+                local_migrated = True
+            elif isinstance(default_value, dict) and isinstance(config_dict[key], dict):
+                # Recursively merge nested dictionaries
+                nested_migrated = merge_defaults(config_dict[key], default_value)
+                local_migrated = local_migrated or nested_migrated
+        return local_migrated
+    
+    if merge_defaults(config, default_config):
+        migrated = True
     
     return migrated
 

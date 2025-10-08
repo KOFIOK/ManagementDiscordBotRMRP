@@ -35,33 +35,14 @@ class NicknameManager:
     
     # Максимальная длина никнейма в Discord
     MAX_NICKNAME_LENGTH = 32
-    
-    # Паттерны для распознавания форматов никнеймов
-    PATTERNS = {
-        # Стандартный формат: "ПОДР | РАНГ | Имя Фамилия" или "ПОДР | Имя Фамилия"
-        # Поддерживает номера подразделений: "РОиО[1] | Ст-на | Петя Петров"
-        'standard': re.compile(r'^([А-ЯЁA-Zа-яё]{1,15}(?:\[\d+\])?)\s*\|\s*([А-ЯЁа-яёA-Za-z\-\.\s]+?)\s*(?:\|\s*(.+))?$'),
-        
-        # Сложный особый формат: "!![Должность] Имя" или "![Должность] Имя"
-        'complex_special': re.compile(r'^!{1,2}\[([^\]]+)\]\s*(.+)$'),
-        
-        # Должностной формат: "[Должность] И.Фамилия"
-        'position': re.compile(r'^\[([^\]]+)\]\s*([А-ЯA-Z]\.?\s*[А-Яа-яA-Za-z]+)$'),
-        
-        # Простой особый формат: "! Имя Фамилия"
-        'simple_special': re.compile(r'^!\s+(.+)$'),
-        
-        # Простой формат: "Имя Фамилия" или "И.Фамилия"
-        'simple': re.compile(r'^([А-ЯA-Z]\.?\s*[А-Яа-яA-Za-z]+\s*[А-Яа-яA-Za-z]+)$'),
-        
-        # Уволенный: "Уволен | Имя Фамилия"
-        'dismissed': re.compile(r'^Уволен\s*\|\s*(.+)$')
-    }
-    
+
     def __init__(self):
         self.subdivision_mapper = SubdivisionMapper()
         
-        # Список известных рангов для определения должностей
+        # Загружаем конфигурацию
+        self.config = load_config()
+        
+        # Список известных рангов (встроенный список)
         self.known_ranks = {
             'Рядовой', 'Ефрейтор', 'Мл. Сержант', 'Сержант', 'Ст. Сержант', 
             'Старшина', 'Прапорщик', 'Ст. Прапорщик', 'Мл. Лейтенант',
@@ -69,6 +50,92 @@ class NicknameManager:
             # Аббревиатуры
             'Ефр-р', 'Мл. С-т', 'С-т', 'Ст. С-т', 'Ст-на', 'Ст. Прап-к', 'Мл. Л-т', 'Ст. Л-т', 'Подполк-к'
         }
+        
+        # Инициализируем паттерны с учетом кастомных настроек
+        self._init_patterns()
+        
+    def _init_patterns(self):
+        """Инициализация паттернов с учетом кастомных настроек"""
+        # Получаем кастомные шаблоны из конфига
+        custom_templates = self.config.get('nickname_auto_replacement', {}).get('custom_templates', {})
+        
+        # Базовые паттерны (могут быть переопределены кастомными)
+        base_patterns = {
+            # Стандартный формат с подгруппами: "РОиО[ПГ] | Ст. Л-т | Виктор Верпов"
+            'standard_with_subgroup': r'^([А-ЯЁA-Zа-яё]{1,15})\[([А-ЯЁA-Zа-яё]{1,10})\]\s*\|\s*([А-ЯЁа-яёA-Za-z\-\.\s]+?)\s*\|\s*(.+)$',
+            
+            # Стандартный формат: "ПОДР | РАНГ | Имя Фамилия" или "ПОДР | Имя Фамилия"
+            'standard': r'^([А-ЯЁA-Zа-яё]{1,15}(?:\[\d+\])?)\s*\|\s*([А-ЯЁа-яёA-Za-z\-\.\s]+?)\s*(?:\|\s*(.+))?$',
+            
+            # Сложный особый формат: "!![Должность] Имя" или "![Должность] Имя"
+            'complex_special': r'^!{1,2}\[([^\]]+)\]\s*(.+)$',
+            
+            # Должностной формат: "[Должность] И.Фамилия"
+            'position': r'^\[([^\]]+)\]\s*([А-ЯA-Z]\.?\s*[А-Яа-яA-Za-z]+)$',
+            
+            # Простой особый формат: "! Имя Фамилия"
+            'simple_special': r'^!\s+(.+)$',
+            
+            # Простой формат: "Имя Фамилия" или "И.Фамилия"
+            'simple': r'^([А-ЯA-Z]\.?\s*[А-Яа-яA-Za-z]+\s*[А-Яа-яA-Za-z]+)$',
+            
+            # Уволенный: "Уволен | Имя Фамилия"
+            'dismissed': r'^Уволен\s*\|\s*(.+)$'
+        }
+        
+        # Применяем кастомные настройки
+        for template_id, custom_settings in custom_templates.items():
+            if template_id in base_patterns:
+                pattern = self._build_custom_pattern(template_id, custom_settings, base_patterns[template_id])
+                base_patterns[template_id] = pattern
+        
+        # Компилируем паттерны
+        self.PATTERNS = {name: re.compile(pattern) for name, pattern in base_patterns.items()}
+        
+    def _build_custom_pattern(self, template_id: str, custom_settings: dict, base_pattern: str) -> str:
+        """Создает кастомный паттерн на основе пользовательских настроек"""
+        
+        # Получаем настройки с дефолтными значениями
+        separator_raw = custom_settings.get('separator', '|')
+        name_chars = custom_settings.get('name_chars', 'А-ЯЁа-яёA-Za-z\\-\\.\\s')
+        subdivision_chars = custom_settings.get('subdivision_chars', 'А-ЯЁA-Zа-яё\\d')
+        
+        # Автоматически добавляем пробелы вокруг разделителя для паттерна
+        separator = f" {separator_raw.strip()} "
+        
+        # Экранируем специальные символы в разделителях
+        separator_escaped = re.escape(separator).replace(' ', '\\s*')
+        
+        if template_id == 'standard':
+            # Паттерн: ПОДР | РАНГ | Имя Фамилия (единый разделитель)
+            return f'^([{subdivision_chars}]{{1,15}}(?:\\[\\d+\\])?){separator_escaped}([{name_chars}]+?){separator_escaped}(?:(.+))?$'
+            
+        elif template_id == 'standard_with_subgroup':
+            # Паттерн: ПОДР[ПГ] | РАНГ | Имя Фамилия (единый разделитель)
+            subgroup_brackets = custom_settings.get('subgroup_brackets', '[ ]')
+            if len(subgroup_brackets) >= 2:
+                open_br = re.escape(subgroup_brackets[0])
+                close_br = re.escape(subgroup_brackets[-1])
+            else:
+                open_br, close_br = '\\[', '\\]'
+                
+            return f'^([{subdivision_chars}]{{1,15}}){open_br}([{subdivision_chars}]{{1,10}}){close_br}{separator_escaped}([{name_chars}]+?){separator_escaped}(.+)$'
+            
+        elif template_id == 'positional':
+            # Паттерн: ПОДР | ДОЛЖНОСТЬ | Имя Фамилия (единый разделитель)
+            return f'^([{subdivision_chars}]{{1,15}}){separator_escaped}([{name_chars}]+?){separator_escaped}(.+)$'
+            
+        elif template_id == 'simple':
+            # Паттерн: Имя Фамилия
+            return f'^([{name_chars}]+)$'
+            
+        elif template_id == 'dismissed':
+            # Паттерн: Уволен | Имя Фамилия (автоматически добавляем пробелы)
+            status_text = custom_settings.get('status_text', 'Уволен')
+            return f'^{re.escape(status_text)}{separator_escaped}(.+)$'
+        
+        # Если неизвестный тип, возвращаем базовый паттерн
+        return base_pattern
     
     def _is_rank(self, text: str) -> bool:
         """Проверяет, является ли текст званием"""
@@ -76,6 +143,19 @@ class NicknameManager:
     
     def _is_position(self, text: str) -> bool:
         """Проверяет, является ли текст должностью"""
+        # Получаем список должностей из настроек
+        try:
+            config = load_config()
+            nickname_settings = config.get('nickname_auto_replacement', {})
+            custom_positions = nickname_settings.get('known_positions', [])
+            
+            # Проверяем точные совпадения с настроенными должностями
+            if text in custom_positions:
+                return True
+        except Exception:
+            pass
+        
+        # Fallback к старой логике
         position_keywords = ['Нач.', 'Зам.', 'Ком.', 'по', 'Отдела', 'Бриг', 'КР', 'Штаба']
         return any(keyword in text for keyword in position_keywords)
     
@@ -175,10 +255,10 @@ class NicknameManager:
         Анализирует никнейм и извлекает компоненты
         
         Returns:
-            Dict с полями: subdivision, rank, name, format_type, is_special
+            Dict с полями: subdivision, rank, position, name, format_type, is_special, subgroup
         """
         if not nickname:
-            return {'subdivision': None, 'rank': None, 'name': None, 'format_type': 'empty', 'is_special': False}
+            return {'subdivision': None, 'rank': None, 'position': None, 'name': None, 'format_type': 'empty', 'is_special': False, 'subgroup': None}
         
         # Проверяем сложный особый формат первым
         match = self.PATTERNS['complex_special'].match(nickname)
@@ -186,9 +266,11 @@ class NicknameManager:
             return {
                 'subdivision': None,
                 'rank': None,
+                'position': None,
                 'name': match.group(2).strip(),
                 'format_type': 'complex_special',
-                'is_special': True
+                'is_special': True,
+                'subgroup': None
             }
         
         # Проверяем простой особый формат
@@ -197,10 +279,53 @@ class NicknameManager:
             return {
                 'subdivision': None,
                 'rank': None,
+                'position': None,
                 'name': match.group(1).strip(),
                 'format_type': 'simple_special',
-                'is_special': True
+                'is_special': True,
+                'subgroup': None
             }
+        
+        # НОВЫЙ: Проверяем формат с подгруппой: "РОиО[ПГ] | Ст. Л-т | Виктор Верпов"
+        match = self.PATTERNS['standard_with_subgroup'].match(nickname)
+        if match:
+            subdivision = match.group(1).strip()
+            subgroup = match.group(2).strip()
+            middle_part = match.group(3).strip()
+            name_part = match.group(4).strip()
+            
+            # Определяем тип средней части
+            if self._is_rank(middle_part):
+                return {
+                    'subdivision': subdivision,
+                    'subgroup': subgroup,
+                    'rank': middle_part,
+                    'position': None,
+                    'name': name_part,
+                    'format_type': 'standard_with_subgroup',
+                    'is_special': False
+                }
+            elif self._is_position(middle_part):
+                return {
+                    'subdivision': subdivision,
+                    'subgroup': subgroup,
+                    'rank': None,
+                    'position': middle_part,
+                    'name': name_part,
+                    'format_type': 'positional_with_subgroup',
+                    'is_special': True  # Должностные никнеймы не трогаем
+                }
+            else:
+                # Неизвестный тип, считаем рангом
+                return {
+                    'subdivision': subdivision,
+                    'subgroup': subgroup,
+                    'rank': middle_part,
+                    'position': None,
+                    'name': name_part,
+                    'format_type': 'standard_with_subgroup',
+                    'is_special': False
+                }
         
         # Проверяем стандартный формат
         match = self.PATTERNS['standard'].match(nickname)
@@ -216,36 +341,43 @@ class NicknameManager:
                     return {
                         'subdivision': subdivision,
                         'rank': middle_part,
+                        'position': None,
                         'name': name_part.strip(),
                         'format_type': 'standard',
-                        'is_special': False
+                        'is_special': False,
+                        'subgroup': None
                     }
                 elif self._is_position(middle_part):
                     return {
                         'subdivision': subdivision,
                         'rank': None,
-                        'position': middle_part,  # Добавляем поле должности
+                        'position': middle_part,  # Должность вместо звания
                         'name': name_part.strip(),
-                        'format_type': 'standard_position',
-                        'is_special': True  # Должностные никнеймы особые - не трогаем при повышении
+                        'format_type': 'positional',
+                        'is_special': True,  # Должностные никнеймы особые - не трогаем при повышении
+                        'subgroup': None
                     }
                 else:
                     # Неизвестный тип, считаем рангом
                     return {
                         'subdivision': subdivision,
                         'rank': middle_part,
+                        'position': None,
                         'name': name_part.strip(),
                         'format_type': 'standard',
-                        'is_special': False
+                        'is_special': False,
+                        'subgroup': None
                     }
             else:
                 # Если нет третьей группы, то middle_part - это имя (формат "ПОДР | Имя")
                 return {
                     'subdivision': subdivision,
                     'rank': None,
+                    'position': None,
                     'name': middle_part,
                     'format_type': 'standard',
-                    'is_special': False
+                    'is_special': False,
+                    'subgroup': None
                 }
         
         # Проверяем должностной формат
@@ -254,9 +386,11 @@ class NicknameManager:
             return {
                 'subdivision': None,
                 'rank': None,
+                'position': None,
                 'name': match.group(2).strip(),
                 'format_type': 'position',
-                'is_special': True  # Не трогаем должностные никнеймы
+                'is_special': True,  # Не трогаем должностные никнеймы
+                'subgroup': None
             }
         
         # Проверяем формат увольнения
@@ -265,9 +399,11 @@ class NicknameManager:
             return {
                 'subdivision': 'Уволен',
                 'rank': None,
+                'position': None,
                 'name': match.group(1).strip(),
                 'format_type': 'dismissed',
-                'is_special': False
+                'is_special': False,
+                'subgroup': None
             }
         
         # Проверяем простой формат
@@ -276,18 +412,22 @@ class NicknameManager:
             return {
                 'subdivision': None,
                 'rank': None,
+                'position': None,
                 'name': match.group(1).strip(),
                 'format_type': 'simple',
-                'is_special': False
+                'is_special': False,
+                'subgroup': None
             }
         
         # Неизвестный формат
         return {
             'subdivision': None,
             'rank': None,
+            'position': None,
             'name': nickname.strip(),
             'format_type': 'unknown',
-            'is_special': True  # Не трогаем неизвестные форматы
+            'is_special': True,  # Не трогаем неизвестные форматы
+            'subgroup': None
         }
     
     def extract_name_parts(self, full_name: str) -> Tuple[str, str]:
@@ -457,11 +597,22 @@ class NicknameManager:
     
     def build_dismissed_nickname(self, first_name: str, last_name: str) -> str:
         """
-        Строит никнейм для уволенного
+        Строит никнейм для уволенного с учетом кастомных настроек
         
-        Format: "Уволен | Имя Фамилия"
+        Format: "{status_text} {separator} Имя Фамилия"
         """
-        prefix = "Уволен | "
+        # Получаем настройки шаблона увольнения из конфига
+        custom_templates = self.config.get('nickname_auto_replacement', {}).get('custom_templates', {})
+        dismissed_settings = custom_templates.get('dismissed', {})
+        
+        # Используем кастомные настройки или дефолтные
+        status_text = dismissed_settings.get('status_text', 'Уволен')
+        separator = dismissed_settings.get('separator', '|')
+        
+        # Автоматически добавляем пробелы вокруг разделителя
+        separator_with_spaces = f" {separator.strip()} "
+        
+        prefix = f"{status_text}{separator_with_spaces}"
         available_length = self.MAX_NICKNAME_LENGTH - len(prefix)
         
         formatted_name = self.format_name_for_nickname(first_name, last_name, available_length)
@@ -750,6 +901,18 @@ class NicknameManager:
                     first_name, last_name = self.extract_name_parts(current_nickname)
             
             new_nickname = self.build_dismissed_nickname(first_name, last_name)
+            
+            # Проверяем разрешения перед изменением никнейма
+            if not member.guild.me.guild_permissions.manage_nicknames:
+                logger.error(f"❌ У бота нет разрешения 'Manage Nicknames' для изменения никнейма {member}")
+                logger.error(f"❌ Ожидаемый никнейм был: '{new_nickname}'")
+                return None
+            
+            # Проверяем иерархию ролей
+            if member.top_role >= member.guild.me.top_role and member != member.guild.owner:
+                logger.error(f"❌ Роль бота ниже роли пользователя {member}. Невозможно изменить никнейм.")
+                logger.error(f"❌ Ожидаемый никнейм был: '{new_nickname}'")
+                return None
             
             await member.edit(nick=new_nickname, reason="Увольнение")
             logger.info(f"✅ Никнейм при увольнении: {member} -> {new_nickname}")

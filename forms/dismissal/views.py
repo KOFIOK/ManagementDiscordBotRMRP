@@ -308,7 +308,7 @@ class SimplifiedDismissalApprovalView(ui.View):
             embed.color = discord.Color.red()
             
             # Формируем поле с отказом в едином стиле
-            moderator_text = "🤖 Система (автоматическая проверка)" if is_automatic else interaction.user.mention
+            moderator_text = "🤖 Система" if is_automatic else interaction.user.mention
             
             embed.add_field(
                 name="Отказано",
@@ -366,7 +366,7 @@ class SimplifiedDismissalApprovalView(ui.View):
         await self._finalize_rejection_universal(
             interaction, 
             target_user, 
-            "Пользователь ранее был уволен (не найден в базе данных сотрудников)", 
+            "Сотрудник ранее был уволен", 
             is_automatic=True
         )
     

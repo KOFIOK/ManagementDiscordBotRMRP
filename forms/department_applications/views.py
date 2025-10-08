@@ -5,13 +5,11 @@ import discord
 from discord import ui
 from typing import Dict, Any, List
 import logging
-import re
 from datetime import datetime, timezone, timedelta
 
 from utils.config_manager import load_config
 from utils.ping_manager import ping_manager
 from utils.nickname_manager import nickname_manager
-# Google Sheets удален - используется PostgreSQL
 # Импорты для работы с PostgreSQL будут добавлены по мере необходимости
 
 logger = logging.getLogger(__name__)
@@ -1035,40 +1033,34 @@ class DepartmentApplicationView(ui.View):
     async def _update_user_nickname(self, user: discord.Member, dept_code: str):
         """Update user nickname with department abbreviation using nickname_manager"""
         try:
+            # Проверяем настройки автозамены никнеймов
+            if not self._should_update_nickname_for_dept(dept_code):
+                print(f"🚫 DEPT NICKNAME: Автозамена отключена для {dept_code}")
+                return
+            
             # Определяем тип операции
             application_type = self.application_data.get('application_type', 'join')
             
-            if application_type == 'transfer':
-                # Перевод в подразделение
+            # Получаем данные о сотруднике из БД
+            try:
+                from utils.database_manager import PersonnelManager
+                pm = PersonnelManager()
+                personnel_data = await pm.get_personnel_summary(user.id)
+            except Exception as e:
+                print(f"⚠️ Не удалось получить данные из БД: {e}")
+                personnel_data = None
+            
+            if application_type == 'transfer' or personnel_data:
+                # Перевод в подразделение (есть данные в БД)
                 print(f"🎆 DEPT APPLICATION: Перевод {user.display_name} в {dept_code}")
                 
-                # Маппинг кодов подразделений
-                subdivision_mapping = {
-                    'УВП': 'УВП',
-                    'ССО': 'ССО',
-                    'РОиО': 'РОиО',
-                    'МР': 'МР',
-                    'ГШ': 'general_staff',
-                    'VA': 'military_academy',
-                    'ВА': 'military_academy'
-                }
+                current_rank = personnel_data.get('rank', 'Рядовой') if personnel_data else 'Рядовой'
                 
-                subdivision_key = subdivision_mapping.get(dept_code, dept_code)
-                
-                # Получаем звание из базы данных или используем значение по умолчанию
-                try:
-                    from utils.database_manager import PersonnelManager
-                    pm = PersonnelManager()
-                    personnel_data = await pm.get_personnel_summary(user.id)
-                    current_rank = personnel_data.get('rank', 'Рядовой') if personnel_data else 'Рядовой'
-                except Exception as e:
-                    print(f"⚠️ Не удалось получить звание из БД: {e}")
-                    current_rank = 'Рядовой'
-                
-                # Используем nickname_manager для перевода
+                # Используем dept_code напрямую как subdivision_key для nickname_manager
+                # nickname_manager сам разберется с маппингом через SubdivisionMapper
                 new_nickname = await nickname_manager.handle_transfer(
                     member=user,
-                    subdivision_key=subdivision_key,
+                    subdivision_key=dept_code,
                     rank_name=current_rank
                 )
                 
@@ -1076,28 +1068,117 @@ class DepartmentApplicationView(ui.View):
                     await user.edit(nick=new_nickname, reason=f"Department application approved - transfer to {dept_code}")
                     print(f"✅ DEPT NICKNAME: Никнейм обновлён: {new_nickname}")
                 else:
-                    # Fallback к старому методу
-                    await self._update_nickname_fallback(user, dept_code)
-                    print(f"⚠️ DEPT FALLBACK: Использовали fallback метод")
+                    # Fallback к улучшенному методу
+                    await self._update_nickname_smart_fallback(user, dept_code)
+                    print(f"⚠️ DEPT FALLBACK: Использовали smart fallback метод")
             
             else:
                 # Приём в подразделение (новобранец)
                 print(f"🎆 DEPT APPLICATION: Приём в {dept_code} {user.display_name}")
                 
-                # Для новобранцев используем старый метод с простым добавлением префикса
-                # Так как nickname_manager.handle_hiring требует полного комплекса данных
-                await self._update_nickname_fallback(user, dept_code)
-                print(f"✅ DEPT JOIN: Никнейм обновлён для новобранца")
+                # Для новобранцев попробуем handle_hiring, если не получится - smart fallback
+                try:
+                    # Извлекаем имя из текущего никнейма для handle_hiring
+                    parsed_nickname = nickname_manager.parse_nickname(user.display_name)
+                    name_from_nick = parsed_nickname.get('name', user.display_name)
+                    
+                    if name_from_nick and ' ' in name_from_nick:
+                        first_name, last_name = nickname_manager.extract_name_parts(name_from_nick)
+                        
+                        new_nickname = await nickname_manager.handle_hiring(
+                            member=user,
+                            rank_name='Рядовой',  # Новобранец получает базовое звание
+                            first_name=first_name,
+                            last_name=last_name
+                        )
+                        
+                        if new_nickname:
+                            await user.edit(nick=new_nickname, reason=f"Department application approved - hiring to {dept_code}")
+                            print(f"✅ DEPT HIRING: Никнейм обновлён через handle_hiring: {new_nickname}")
+                            return
+                    
+                except Exception as e:
+                    print(f"⚠️ handle_hiring не сработал: {e}")
+                
+                # Если handle_hiring не сработал, используем smart fallback
+                await self._update_nickname_smart_fallback(user, dept_code)
+                print(f"✅ DEPT JOIN: Никнейм обновлён для новобранца через smart fallback")
                 
         except discord.Forbidden:
             logger.warning(f"Could not update nickname for {user} - insufficient permissions")
         except Exception as e:
             logger.error(f"Error updating nickname for {user}: {e}")
-            # Fallback к старому методу при ошибках
+            # Fallback к улучшенному методу при ошибках
             try:
-                await self._update_nickname_fallback(user, dept_code)
+                await self._update_nickname_smart_fallback(user, dept_code)
             except Exception as fallback_error:
-                logger.error(f"Even fallback nickname update failed: {fallback_error}")
+                logger.error(f"Even smart fallback nickname update failed: {fallback_error}")
+
+    def _should_update_nickname_for_dept(self, dept_code: str) -> bool:
+        """Проверяет, включена ли автозамена никнеймов для подразделения"""
+        try:
+            from utils.config_manager import load_config
+            config = load_config()
+            nickname_settings = config.get('nickname_auto_replacement', {})
+            
+            # Проверяем глобальную настройку
+            if not nickname_settings.get('enabled', True):
+                return False
+            
+            # Проверяем настройку для подразделения
+            department_settings = nickname_settings.get('departments', {})
+            return department_settings.get(dept_code, True)  # По умолчанию включена
+            
+        except Exception as e:
+            logger.error(f"Ошибка при проверке настроек автозамены для {dept_code}: {e}")
+            return True  # При ошибке разрешаем
+    
+    async def _update_nickname_smart_fallback(self, user: discord.Member, dept_code: str):
+        """Улучшенный fallback метод для обновления никнейма с анализом текущего никнейма"""
+        try:
+            from utils.config_manager import load_config
+            config = load_config()
+            
+            # Получаем аббревиатуру подразделения из config
+            dept_config = config.get('departments', {}).get(dept_code, {})
+            abbreviation = dept_config.get('abbreviation', dept_code)
+            
+            # Анализируем текущий никнейм пользователя
+            current_nickname = user.display_name
+            parsed_nickname = nickname_manager.parse_nickname(current_nickname)
+            
+            # Извлекаем имя из текущего никнейма
+            name_to_use = None
+            
+            if parsed_nickname.get('name'):
+                # Используем имя из текущего никнейма
+                name_to_use = parsed_nickname['name']
+            else:
+                # Fallback к оригинальному имени пользователя
+                name_to_use = user.name
+            
+            # Формируем новый никнейм в формате "ABBREVIATION | Name"
+            new_nickname = f"{abbreviation} | {name_to_use}"
+            
+            # Обрезаем до лимита Discord (32 символа)
+            if len(new_nickname) > 32:
+                # Сначала пробуем сократить имя
+                available_for_name = 32 - len(f"{abbreviation} | ")
+                if available_for_name > 0:
+                    truncated_name = name_to_use[:available_for_name]
+                    new_nickname = f"{abbreviation} | {truncated_name}"
+                else:
+                    # В крайнем случае используем только аббревиатуру
+                    new_nickname = abbreviation[:32]
+            
+            await user.edit(nick=new_nickname, reason=f"Department application smart fallback - {dept_code}")
+            logger.info(f"Applied smart fallback nickname: {user} -> {new_nickname}")
+            
+        except discord.Forbidden:
+            logger.warning(f"No permission to change nickname for {user}")
+        except Exception as e:
+            logger.error(f"Smart fallback nickname update failed: {e}")
+            raise
     
     async def _update_nickname_fallback(self, user: discord.Member, dept_code: str):
         """Fallback method for updating nickname with simple department prefix"""

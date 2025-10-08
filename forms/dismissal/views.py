@@ -300,69 +300,26 @@ class SimplifiedDismissalApprovalView(ui.View):
             except:
                 pass
     
-    async def _auto_reject_already_dismissed(self, interaction, target_user):
-        """Automatically reject dismissal if user is already dismissed"""
-        try:
-            # Update embed to show automatic rejection
-            embed = interaction.message.embeds[0]
-            embed.color = discord.Color.red()
-            embed.add_field(
-                name="❌ Причина отклонения",
-                value="Пользователь ранее был уволен",
-                inline=False
-            )
-            embed.add_field(
-                name="👤 Модератор",
-                value=f"🤖 Система",
-                inline=False
-            )
-            embed.add_field(
-                name="⏰ Дата обработки",
-                value=f"<t:{int(datetime.now().timestamp())}:F>",
-                inline=False
-            )
-            
-            # Add dismissal footer with link to submit new applications
-            embed = add_dismissal_footer_to_embed(embed, interaction.guild.id)
-            
-            # Disable all buttons
-            view = SimplifiedDismissalApprovalView(user_id=target_user.id)
-            view.approve_dismissal.disabled = True
-            view.reject_dismissal.disabled = True
-            view.approve_dismissal.label = "✅ Автоматически отклонено"
-            view.reject_dismissal.label = "❌ Отказано"
-            
-            # Update message
-            await interaction.edit_original_response(
-                embed=embed,
-                view=view
-            )
-            
-            print(f"🤖 AUTO-REJECT: {target_user.display_name} ({target_user.id}) - already dismissed")
-            
-        except Exception as e:
-            print(f"❌ Error in auto-reject for already dismissed user: {e}")
-            await interaction.followup.send(
-                "❌ Ошибка при автоматическом отклонении заявки.",
-                ephemeral=True
-            )
-    
-    async def _handle_rejection_callback(self, interaction, reason, target_user, original_message):
-        """Handle rejection callback from RejectionReasonModal"""
+    async def _finalize_rejection_universal(self, interaction, target_user, reason: str, is_automatic: bool = False):
+        """Универсальная функция для финализации отклонения рапорта (автоматического или ручного)"""
         try:
             # Update embed to show rejection
-            embed = original_message.embeds[0]
+            embed = interaction.message.embeds[0]
             embed.color = discord.Color.red()
+            
+            # Формируем поле с отказом в едином стиле
+            moderator_text = "🤖 Система" if is_automatic else interaction.user.mention
+            
             embed.add_field(
                 name="Отказано",
-                value=f"Модератор: {interaction.user.mention}\nПричина: {reason}\nВремя: {discord.utils.format_dt(discord.utils.utcnow(), 'F')}",
+                value=f"Модератор: {moderator_text}\nПричина: {reason}\nВремя: {discord.utils.format_dt(discord.utils.utcnow(), 'F')}",
                 inline=False
             )
             
             # Add dismissal footer with link to submit new applications
             embed = add_dismissal_footer_to_embed(embed, interaction.guild.id)
             
-            # Create rejected view (disabled button)
+            # Create rejected view (ЕДИНАЯ КНОПКА "Отказано")
             rejected_view = ui.View(timeout=None)
             rejected_button = ui.Button(
                 label="❌ Отказано",
@@ -372,27 +329,59 @@ class SimplifiedDismissalApprovalView(ui.View):
             rejected_view.add_item(rejected_button)
             
             # Update message - очищаем content от пингов
-            await original_message.edit(
+            await interaction.edit_original_response(
                 content=None,  # Очищаем content
                 embed=embed, 
                 view=rejected_view
             )
             
-            # Notify user if still on server
-            if self.user_id:
-                target_user = interaction.guild.get_member(self.user_id)
-                if target_user:
+            # Notify user if still on server (только для ручных отказов)
+            if not is_automatic and hasattr(self, 'user_id') and self.user_id:
+                target_user_member = interaction.guild.get_member(self.user_id)
+                if target_user_member:
                     try:
-                        await target_user.send(
+                        await target_user_member.send(
                             f"❌ **Ваш рапорт на увольнение был отклонен**\n"
                             f"Модератор: {interaction.user.display_name}\n"
                             f"Причина: {reason}"
                         )
                     except:
                         pass
+            
+            # Логирование
+            if is_automatic:
+                print(f"🤖 AUTO-REJECT: {target_user.display_name} ({target_user.id}) - {reason}")
+            else:
+                print(f"❌ MANUAL REJECT: {target_user.display_name} ({target_user.id}) by {interaction.user.display_name} - {reason}")
                         
         except Exception as e:
-            print(f"❌ Error in rejection callback: {e}")
+            print(f"❌ Error in finalize_rejection_universal: {e}")
+            await interaction.followup.send(
+                "❌ Ошибка при обработке отклонения заявки.",
+                ephemeral=True
+            )
+
+    async def _auto_reject_already_dismissed(self, interaction, target_user):
+        """Automatically reject dismissal if user is already dismissed"""
+        await self._finalize_rejection_universal(
+            interaction, 
+            target_user, 
+            "Сотрудник ранее был уволен", 
+            is_automatic=True
+        )
+    
+    async def _handle_rejection_callback(self, interaction, reason, target_user, original_message):
+        """Handle rejection callback from RejectionReasonModal"""
+        # Временно меняем контекст interaction для работы с universal функцией
+        temp_interaction = interaction
+        temp_interaction.message = original_message
+        
+        await self._finalize_rejection_universal(
+            temp_interaction, 
+            target_user, 
+            reason, 
+            is_automatic=False
+        )
     
     @discord.ui.button(label="🗑️ Удалить", style=discord.ButtonStyle.grey, custom_id="delete_dismissal_simple")
     async def delete_dismissal(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -794,58 +783,13 @@ class AutomaticDismissalApprovalView(ui.View):
     
     async def _auto_reject_already_dismissed_automatic(self, interaction, target_user):
         """Automatically reject automatic dismissal if user is already dismissed"""
-        try:
-            # Update embed to show automatic rejection
-            embed = interaction.message.embeds[0]
-            embed.color = discord.Color.red()
-            embed.add_field(
-                name="📋 Статус заявки",
-                value="❌ **АВТОМАТИЧЕСКИ ОТКЛОНЕНО**",
-                inline=False
-            )
-            embed.add_field(
-                name="❌ Причина отклонения",
-                value="Пользователь ранее был уволен (не найден в базе данных сотрудников)",
-                inline=False
-            )
-            embed.add_field(
-                name="👤 Модератор",
-                value=f"🤖 Система (автоматическая проверка)",
-                inline=False
-            )
-            embed.add_field(
-                name="⏰ Дата обработки",
-                value=f"<t:{int(datetime.now().timestamp())}:F>",
-                inline=False
-            )
-            
-            # Add dismissal footer with link to submit new applications
-            embed = add_dismissal_footer_to_embed(embed, interaction.guild.id)
-            
-            # Disable all buttons
-            view = AutomaticDismissalApprovalView(user_id=target_user.id)
-            view.approve_dismissal.disabled = True
-            view.reject_dismissal.disabled = True
-            view.edit_dismissal.disabled = True
-            view.approve_dismissal.label = "✅ Автоматически отклонено"
-            view.reject_dismissal.label = "❌ Отказано"
-            view.edit_dismissal.label = "✏️ Изменить (недоступно)"
-            
-            # Update message
-            await interaction.edit_original_response(
-                embed=embed,
-                view=view
-            )
-            
-            print(f"🤖 AUTO-REJECT AUTOMATIC: {target_user.display_name} ({target_user.id}) - already dismissed")
-            
-        except Exception as e:
-            print(f"❌ Error in auto-reject for already dismissed user (automatic): {e}")
-            await interaction.followup.send(
-                "❌ Ошибка при автоматическом отклонении заявки.",
-                ephemeral=True
-            )
-    
+        await self._finalize_rejection_universal(
+            interaction, 
+            target_user, 
+            "Пользователь ранее был уволен (не найден в базе данных сотрудников)", 
+            is_automatic=True
+        )
+
     @discord.ui.button(label="✏️ Изменить", style=discord.ButtonStyle.secondary, custom_id="auto_edit_dismissal")
     async def edit_dismissal(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Handle editing of automatic dismissal report data"""

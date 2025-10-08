@@ -64,15 +64,13 @@ class NicknameSettingsSelect(ui.Select):
                 description="Настройка поддержки различных форматов никнеймов",
                 emoji="🎨",
                 value="format_settings"
-            ),
-            """
-            discord.SelectOption(
-                label="Редактор шаблонов",
-                description="Настройка шаблонов распознавания никнеймов",
-                emoji="🔧",
-                value="template_editor"
             )
-            """
+            #discord.SelectOption(
+            #    label="Редактор шаблонов",
+            #    description="Настройка шаблонов распознавания никнеймов",
+            #    emoji="🔧",
+            #    value="template_editor"
+            #)
         ]
         
         super().__init__(

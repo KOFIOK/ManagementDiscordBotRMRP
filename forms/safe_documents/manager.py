@@ -341,116 +341,20 @@ class SafeDocumentsManager:
 
     async def check_moderator_permissions(self, user: discord.Member, department: str = None, application_user_id: int = None) -> bool:
         """
-        Проверка прав модератора с учетом иерархии
+        Проверка прав модератора - упрощенная версия
         
         Args:
             user: Пользователь, который пытается модерировать
-            department: Департамент заявки (для проверки департаментных прав)
-            application_user_id: ID автора заявки (для проверки иерархии)
+            department: Департамент заявки (не используется)
+            application_user_id: ID автора заявки (не используется)
             
         Returns:
-            bool: True если пользователь может модерировать эту заявку
+            bool: True если пользователь является модератором или админом
         """
         try:
-            # Проверяем администраторов (высший приоритет - могут модерировать всё)
-            admin_users = self.config.get('administrators', {}).get('users', [])
-            admin_roles = self.config.get('administrators', {}).get('roles', [])
-            
-            if user.id in admin_users:
-                return True
-                
-            user_role_ids = [role.id for role in user.roles]
-            if any(role_id in admin_roles for role_id in user_role_ids):
-                return True
-            
-            # Проверяем модераторов
-            mod_users = self.config.get('moderators', {}).get('users', [])
-            mod_roles = self.config.get('moderators', {}).get('roles', [])
-            
-            # Проверяем, является ли пользователь модератором
-            is_moderator_by_user = user.id in mod_users
-            moderator_roles = [role for role in user.roles if role.id in mod_roles]
-            is_moderator_by_role = len(moderator_roles) > 0
-            
-            if not (is_moderator_by_user or is_moderator_by_role):
-                # Не модератор, проверяем департаментные права
-                if department:
-                    departments = self.config.get('departments', {})
-                    for dept_key, dept_data in departments.items():
-                        if dept_data.get('name') == department or dept_key.lower() == department.lower():
-                            # Проверяем ключевую роль департамента
-                            key_role_id = dept_data.get('key_role_id')
-                            if key_role_id and key_role_id in user_role_ids:
-                                return True
-                return False
-            
-            # Если автор заявки не указан, разрешаем модерацию
-            if not application_user_id:
-                return True
-            
-            # Проверяем, не модерирует ли пользователь сам себя
-            if user.id == application_user_id:
-                return False  # Нельзя модерировать собственные заявки
-            
-            # Получаем автора заявки для проверки иерархии
-            application_user = user.guild.get_member(application_user_id)
-            if not application_user:
-                return True  # Если автор не найден, разрешаем модерацию
-            
-            app_user_role_ids = [role.id for role in application_user.roles]
-            
-            # Проверяем, является ли автор заявки администратором
-            app_is_admin = (
-                application_user_id in admin_users or
-                any(role_id in app_user_role_ids for role_id in admin_roles)
-            )
-            
-            if app_is_admin:
-                return False  # Модераторы не могут модерировать администраторов
-            
-            # Проверяем, является ли автор заявки модератором
-            app_is_moderator_by_user = application_user_id in mod_users
-            app_moderator_roles = [role for role in application_user.roles if role.id in mod_roles]
-            app_is_moderator_by_role = len(app_moderator_roles) > 0
-            
-            if not (app_is_moderator_by_user or app_is_moderator_by_role):
-                return True  # Модератор может модерировать обычного пользователя
-            
-            # Оба являются модераторами - проверяем иерархию ролей
-            if is_moderator_by_role and app_is_moderator_by_role:
-                # Находим наивысшую модераторскую роль у текущего пользователя
-                user_highest_mod_role_position = max(role.position for role in moderator_roles)
-                
-                # Находим наивысшую модераторскую роль у автора заявки
-                app_highest_mod_role_position = max(role.position for role in app_moderator_roles)
-                
-                # Модератор с более высокой ролью может модерировать модератора с более низкой ролью
-                return user_highest_mod_role_position > app_highest_mod_role_position
-            
-            # Если один модератор по пользователю, а другой по роли - проверяем должности
-            if is_moderator_by_user and app_is_moderator_by_role:
-                # Модератор по пользователю не может модерировать модератора по роли
-                return False
-            
-            if is_moderator_by_role and app_is_moderator_by_user:
-                # Модератор по роли может модерировать модератора по пользователю
-                return True
-            
-            # Оба модераторы по пользователю - запрещаем модерацию друг друга
-            if is_moderator_by_user and app_is_moderator_by_user:
-                return False
-            
-            # Проверяем права на конкретный департамент
-            if department:
-                departments = self.config.get('departments', {})
-                for dept_key, dept_data in departments.items():
-                    if dept_data.get('name') == department or dept_key.lower() == department.lower():
-                        # Проверяем ключевую роль департамента
-                        key_role_id = dept_data.get('key_role_id')
-                        if key_role_id and key_role_id in user_role_ids:
-                            return True
-            
-            return True  # По умолчанию разрешаем, если дошли до этого места
+            # Используем стандартную функцию проверки прав
+            from utils.config_manager import is_moderator_or_admin
+            return is_moderator_or_admin(user, self.config)
             
         except Exception as e:
             print(f"Error checking moderator permissions: {e}")
@@ -458,115 +362,12 @@ class SafeDocumentsManager:
 
     async def get_permission_error_message(self, user: discord.Member, department: str = None, application_user_id: int = None) -> str:
         """
-        Получить детальное сообщение об ошибке доступа
+        Получить сообщение об ошибке доступа - упрощенная версия
         
-        Args:
-            user: Пользователь, который пытается модерировать
-            department: Департамент заявки
-            application_user_id: ID автора заявки
-            
         Returns:
-            str: Детальное сообщение об ошибке
+            str: Простое сообщение об отсутствии прав
         """
-        try:
-            config = self.config
-            admin_users = config.get('administrators', {}).get('users', [])
-            admin_roles = config.get('administrators', {}).get('roles', [])
-            mod_users = config.get('moderators', {}).get('users', [])
-            mod_roles = config.get('moderators', {}).get('roles', [])
-            
-            user_role_ids = [role.id for role in user.roles]
-            
-            # Проверяем, является ли пользователь администратором
-            is_admin = (
-                user.id in admin_users or
-                any(role_id in admin_roles for role_id in user_role_ids)
-            )
-            
-            if is_admin:
-                return "✅ У вас есть права администратора"
-            
-            # Проверяем, является ли пользователь модератором
-            is_moderator_by_user = user.id in mod_users
-            moderator_roles = [role for role in user.roles if role.id in mod_roles]
-            is_moderator_by_role = len(moderator_roles) > 0
-            
-            if not (is_moderator_by_user or is_moderator_by_role):
-                # Проверяем департаментные права
-                if department:
-                    departments = config.get('departments', {})
-                    for dept_key, dept_data in departments.items():
-                        if dept_data.get('name') == department or dept_key.lower() == department.lower():
-                            key_role_id = dept_data.get('key_role_id')
-                            if key_role_id and key_role_id in user_role_ids:
-                                return "✅ У вас есть права командира департамента"
-                
-                return "❌ **Недостаточно прав для модерации**\n\nУ вас нет прав модератора, администратора или командира департамента."
-            
-            # Пользователь - модератор, проверяем ограничения
-            if not application_user_id:
-                return "✅ У вас есть права модератора"
-            
-            # Проверяем самомодерацию
-            if user.id == application_user_id:
-                return "❌ **Недостаточно прав для модерации**\n\nВы не можете модерировать собственные заявки."
-            
-            # Получаем автора заявки для проверки иерархии
-            application_user = user.guild.get_member(application_user_id)
-            if not application_user:
-                return "✅ У вас есть права модератора"
-            
-            app_user_role_ids = [role.id for role in application_user.roles]
-            
-            # Проверяем, является ли автор заявки администратором
-            app_is_admin = (
-                application_user_id in admin_users or
-                any(role_id in app_user_role_ids for role_id in admin_roles)
-            )
-            
-            if app_is_admin:
-                return "❌ **Недостаточно прав для модерации**\n\nВы не можете модерировать заявки администраторов."
-            
-            # Проверяем иерархию модераторов
-            app_is_moderator_by_user = application_user_id in mod_users
-            app_moderator_roles = [role for role in application_user.roles if role.id in mod_roles]
-            app_is_moderator_by_role = len(app_moderator_roles) > 0
-            
-            if not (app_is_moderator_by_user or app_is_moderator_by_role):
-                return "✅ У вас есть права модератора"
-            
-            # Оба модераторы - проверяем иерархию
-            if is_moderator_by_role and app_is_moderator_by_role:
-                user_highest_position = max(role.position for role in moderator_roles)
-                app_highest_position = max(role.position for role in app_moderator_roles)
-                
-                if user_highest_position > app_highest_position:
-                    return "✅ У вас более высокая модераторская роль"
-                else:
-                    user_highest_role = max(moderator_roles, key=lambda r: r.position)
-                    app_highest_role = max(app_moderator_roles, key=lambda r: r.position)
-                    
-                    return (
-                        f"❌ **Недостаточно прав для модерации**\n\n"
-                        f"Ваша роль: **{user_highest_role.name}** (позиция {user_highest_position})\n"
-                        f"Роль автора заявки: **{app_highest_role.name}** (позиция {app_highest_position})\n\n"
-                        f"Вы можете модерировать только пользователей с более низкими ролями."
-                    )
-            
-            if is_moderator_by_user and app_is_moderator_by_role:
-                return "❌ **Недостаточно прав для модерации**\n\nВы не можете модерировать пользователей с модераторскими ролями."
-            
-            if is_moderator_by_role and app_is_moderator_by_user:
-                return "✅ У вас есть модераторская роль"
-            
-            if is_moderator_by_user and app_is_moderator_by_user:
-                return "❌ **Недостаточно прав для модерации**\n\nВы не можете модерировать других модераторов с персональными правами."
-            
-            return "✅ У вас есть права модератора"
-            
-        except Exception as e:
-            print(f"Error getting permission error message: {e}")
-            return "❌ Произошла ошибка при проверке прав доступа."
+        return "❌ У вас нет прав для модерации заявок на безопасные документы!\n\nТребуются права модератора или администратора."
 
     async def get_ping_content(self, channel: discord.TextChannel, context: str, department: str = None) -> str:
         """Получает содержимое пинга для определенного контекста и департамента"""

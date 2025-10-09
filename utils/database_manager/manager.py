@@ -792,6 +792,79 @@ class PersonnelManager:
             logger.error(error_msg)
             return False, error_msg
 
+    def update_personnel_profile(self, discord_id: int, first_name: str, 
+                               last_name: str, static: str = None) -> Tuple[bool, str]:
+        """
+        Обновить имя, фамилию и статик сотрудника (синхронный метод)
+        
+        Args:
+            discord_id (int): Discord ID пользователя
+            first_name (str): Новое имя
+            last_name (str): Новая фамилия
+            static (str): Новый статик (опционально)
+            
+        Returns:
+            Tuple[bool, str]: (успех, сообщение)
+        """
+        try:
+            with get_db_cursor() as cursor:
+                if static:
+                    # Форматируем статик
+                    formatted_static = self._format_static_for_db(static)
+                    
+                    cursor.execute("""
+                        UPDATE personnel 
+                        SET first_name = %s, 
+                            last_name = %s,
+                            static = %s,
+                            last_updated = CURRENT_TIMESTAMP
+                        WHERE discord_id = %s AND is_dismissal = false;
+                    """, (first_name, last_name, formatted_static, discord_id))
+                    
+                    message = f"Данные персонала обновлены: {first_name} {last_name}, статик: {formatted_static}"
+                else:
+                    cursor.execute("""
+                        UPDATE personnel 
+                        SET first_name = %s, 
+                            last_name = %s,
+                            last_updated = CURRENT_TIMESTAMP
+                        WHERE discord_id = %s AND is_dismissal = false;
+                    """, (first_name, last_name, discord_id))
+                    
+                    message = f"Данные персонала обновлены: {first_name} {last_name}"
+                
+                if cursor.rowcount > 0:
+                    logger.info(f"✅ {message} (ID: {discord_id})")
+                    return True, message
+                else:
+                    return False, f"Активный персонал с ID {discord_id} не найден"
+                
+        except Exception as e:
+            error_msg = f"Ошибка обновления профиля персонала: {e}"
+            logger.error(error_msg)
+            return False, error_msg
+
+    async def update_personnel_profile_with_history(self, discord_id: int, first_name: str, 
+                                                  last_name: str, static: str, 
+                                                  moderator_discord_id: int) -> Tuple[bool, str]:
+        """
+        Обновить имя, фамилию и статик сотрудника с записью в историю
+        
+        Args:
+            discord_id (int): Discord ID пользователя
+            first_name (str): Новое имя
+            last_name (str): Новая фамилия
+            static (str): Новый статик (опционально)
+            moderator_discord_id (int): Discord ID модератора
+            
+        Returns:
+            Tuple[bool, str]: (успех, сообщение)
+        """
+        from utils.audit_logger import audit_logger
+        return await audit_logger.update_personnel_profile_with_history(
+            discord_id, first_name, last_name, static, moderator_discord_id
+        )
+
     async def get_all_personnel(self) -> List[Dict[str, Any]]:
         """
         Получить всех активных сотрудников (для user_cache)

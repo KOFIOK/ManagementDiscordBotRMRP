@@ -15,7 +15,7 @@ Key features:
 
 import discord
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 from enum import Enum
 
 
@@ -946,6 +946,296 @@ class PersonnelAuditLogger:
             self._blacklist_cache.clear()
             self._blacklist_cache_timestamps.clear()
             print("🔄 Blacklist cache fully cleared")
+    
+    async def log_name_change_action(self, personnel_id: int, 
+                                    old_first_name: str, old_last_name: str, old_static: str,
+                                    new_first_name: str, new_last_name: str, new_static: str,
+                                    moderator_discord_id: int):
+        """
+        Логирование изменения ФИО в таблицу history.
+        
+        Args:
+            personnel_id: ID записи в таблице personnel
+            old_first_name: Старое имя
+            old_last_name: Старая фамилия  
+            old_static: Старый статик
+            new_first_name: Новое имя
+            new_last_name: Новая фамилия
+            new_static: Новый статик
+            moderator_discord_id: Discord ID модератора
+        """
+        try:
+            from utils.postgresql_pool import get_db_cursor
+            import json
+            
+            print(f"🔍 HISTORY: Начинаем log_name_change_action для personnel_id {personnel_id}")
+            
+            with get_db_cursor() as cursor:
+                print(f"🔍 HISTORY: Получили DB cursor")
+                # Находим модератора в таблице personnel
+                if moderator_discord_id == 0:
+                    performed_by_id = 0  # Fallback
+                    print(f"🔍 HISTORY: Используем performed_by_id = 0 (fallback)")
+                else:
+                    print(f"🔍 HISTORY: Ищем модератора {moderator_discord_id} в personnel...")
+                    cursor.execute("SELECT id FROM personnel WHERE discord_id = %s;", (moderator_discord_id,))
+                    moderator_personnel = cursor.fetchone()
+                    
+                    if not moderator_personnel:
+                        # Если модератор не найден в personnel, создаем запись с ID 0
+                        print(f"Warning: Модератор {moderator_discord_id} не найден в personnel, используем ID 0")
+                        performed_by_id = 0
+                    else:
+                        performed_by_id = moderator_personnel['id']
+                        print(f"🔍 HISTORY: Найден модератор с personnel_id {performed_by_id}")
+                
+                # Формируем детали изменения
+                details = f"Изменение ФИО: {old_first_name} {old_last_name} → {new_first_name} {new_last_name}"
+                if old_static != new_static:
+                    details += f", статик: {old_static or 'отсутствует'} → {new_static or 'отсутствует'}"
+                
+                print(f"🔍 HISTORY: Детали: {details}")
+                
+                # Формируем changes в формате JSON
+                changes = {
+                    "first_name": {
+                        "previous": old_first_name,
+                        "new": new_first_name
+                    },
+                    "last_name": {
+                        "previous": old_last_name,
+                        "new": new_last_name
+                    }
+                }
+                
+                if old_static != new_static:
+                    changes["static"] = {
+                        "previous": old_static,
+                        "new": new_static
+                    }
+                
+                print(f"🔍 HISTORY: Changes сформированы")
+                
+                # Ищем action_id для "Внесение изменений в Имя или Фамилию"
+                print(f"🔍 HISTORY: Ищем action_id...")
+                cursor.execute("SELECT id FROM actions WHERE name = %s;", ("Внесение изменений в Имя или Фамилию",))
+                action_result = cursor.fetchone()
+                
+                if action_result:
+                    action_id = action_result['id']
+                    print(f"🔍 HISTORY: Найден action_id {action_id}")
+                else:
+                    # Создаем новое действие если его нет
+                    print(f"🔍 HISTORY: Создаем новое действие...")
+                    cursor.execute("""
+                        INSERT INTO actions (name) VALUES (%s) RETURNING id;
+                    """, ("Внесение изменений в Имя или Фамилию",))
+                    action_id = cursor.fetchone()['id']
+                    print(f"Создано новое действие 'Внесение изменений в Имя или Фамилию' с ID {action_id}")
+                
+                # Записываем в историю
+                print(f"🔍 HISTORY: Записываем в history...")
+                action_date = datetime.now()
+                changes_json = json.dumps(changes)
+                print(f"🔍 HISTORY: Параметры INSERT:")
+                print(f"  - action_date: {action_date} (type: {type(action_date)})")
+                print(f"  - details: '{details}' (type: {type(details)})")
+                print(f"  - performed_by: {performed_by_id} (type: {type(performed_by_id)})")
+                print(f"  - action_id: {action_id} (type: {type(action_id)})")
+                print(f"  - personnel_id: {personnel_id} (type: {type(personnel_id)})")
+                print(f"  - changes: {changes_json} (type: {type(changes_json)}, length: {len(changes_json)})")
+                
+                try:
+                    # ВРЕМЕННО: Попробуем INSERT без changes для диагностики
+                    print(f"🔍 HISTORY: Пробуем INSERT без changes...")
+                    cursor.execute("""
+                        INSERT INTO history (
+                            action_date, details, performed_by, action_id, personnel_id
+                        ) VALUES (%s, %s, %s, %s, %s);
+                    """, (
+                        action_date,
+                        details,
+                        performed_by_id,
+                        action_id,
+                        personnel_id
+                    ))
+                    
+                    print(f"🔍 HISTORY: INSERT без changes выполнен успешно!")
+                    
+                    # Теперь попробуем UPDATE с changes
+                    print(f"🔍 HISTORY: Пробуем UPDATE с changes...")
+                    cursor.execute("""
+                        UPDATE history 
+                        SET changes = %s 
+                        WHERE personnel_id = %s AND action_id = %s AND action_date = %s;
+                    """, (
+                        changes_json,
+                        personnel_id,
+                        action_id,
+                        action_date
+                    ))
+                    
+                    print(f"🔍 HISTORY: UPDATE с changes выполнен успешно!")
+                    print(f"✅ Записано в историю: изменение ФИО для personnel_id {personnel_id}, действие выполнил: {performed_by_id}")
+                    
+                except Exception as insert_error:
+                    print(f"❌ HISTORY INSERT ERROR: {insert_error}")
+                    import traceback
+                    traceback.print_exc()
+                    
+                    # Попробуем простейший INSERT
+                    print(f"🔍 HISTORY: Пробуем минимальный INSERT...")
+                    try:
+                        cursor.execute("""
+                            INSERT INTO history (personnel_id, action_id, performed_by, action_date)
+                            VALUES (%s, %s, %s, %s);
+                        """, (personnel_id, action_id, performed_by_id, action_date))
+                        print(f"✅ HISTORY: Минимальный INSERT выполнен успешно!")
+                    except Exception as min_error:
+                        print(f"❌ HISTORY MINIMAL INSERT ERROR: {min_error}")
+                        import traceback
+                        traceback.print_exc()
+                        raise insert_error
+                
+                print(f"🔍 HISTORY: log_name_change_action ЗАВЕРШЕН")
+                
+        except Exception as e:
+            print(f"❌ Ошибка логирования изменения ФИО в историю: {e}")
+            import traceback
+            traceback.print_exc()
+            # Не прерываем выполнение, если история не записалась
+    
+    async def update_personnel_profile_with_history(self, discord_id: int, first_name: str, 
+                                                  last_name: str, static: str, 
+                                                  moderator_discord_id: int) -> Tuple[bool, str]:
+        """
+        Обновить имя, фамилию и статик сотрудника с записью в историю.
+        
+        Args:
+            discord_id (int): Discord ID пользователя
+            first_name (str): Новое имя
+            last_name (str): Новая фамилия
+            static (str): Новый статик (опционально)
+            moderator_discord_id (int): Discord ID модератора
+            
+        Returns:
+            Tuple[bool, str]: (успех, сообщение)
+        """
+        try:
+            from utils.postgresql_pool import get_db_cursor
+            print(f"🔍 AUDIT: Начинаем update_personnel_profile_with_history для {discord_id}")
+            
+            with get_db_cursor() as cursor:
+                print(f"🔍 AUDIT: Получили DB cursor")
+                # Получаем current data для истории
+                cursor.execute("""
+                    SELECT id, first_name, last_name, static 
+                    FROM personnel 
+                    WHERE discord_id = %s AND is_dismissal = false;
+                """, (discord_id,))
+                
+                current_data = cursor.fetchone()
+                print(f"🔍 AUDIT: current_data получен: {current_data is not None}")
+                if not current_data:
+                    return False, f"Активный персонал с ID {discord_id} не найден"
+                
+                personnel_id = current_data['id']
+                old_first_name = current_data['first_name']
+                old_last_name = current_data['last_name']
+                old_static = current_data['static']
+                
+                print(f"🔍 AUDIT: Старые данные: {old_first_name} {old_last_name} | {old_static}")
+                print(f"🔍 AUDIT: Новые данные: {first_name} {last_name} | {static}")
+                
+                # Форматируем статик
+                if static:
+                    print(f"🔍 AUDIT: Форматируем статик '{static}'...")
+                    formatted_static = self._format_static_for_db(static)
+                    print(f"🔍 AUDIT: Отформатированный статик: '{formatted_static}'")
+                else:
+                    formatted_static = old_static  # Оставляем старый статик
+                    print(f"🔍 AUDIT: Используем старый статик: '{formatted_static}'")
+                
+                # Обновляем данные
+                print(f"🔍 AUDIT: Начинаем UPDATE personnel...")
+                if static:
+                    cursor.execute("""
+                        UPDATE personnel 
+                        SET first_name = %s, 
+                            last_name = %s,
+                            static = %s,
+                            last_updated = CURRENT_TIMESTAMP
+                        WHERE discord_id = %s AND is_dismissal = false;
+                    """, (first_name, last_name, formatted_static, discord_id))
+                    
+                    message = f"Данные персонала обновлены: {first_name} {last_name}, статик: {formatted_static}"
+                else:
+                    cursor.execute("""
+                        UPDATE personnel 
+                        SET first_name = %s, 
+                            last_name = %s,
+                            last_updated = CURRENT_TIMESTAMP
+                        WHERE discord_id = %s AND is_dismissal = false;
+                    """, (first_name, last_name, discord_id))
+                    
+                    message = f"Данные персонала обновлены: {first_name} {last_name}"
+                
+                print(f"🔍 AUDIT: UPDATE personnel завершен")
+                
+                # Создаем запись в истории
+                print(f"🔍 AUDIT: Начинаем log_name_change_action...")
+                await self.log_name_change_action(
+                    personnel_id, 
+                    old_first_name, old_last_name, old_static,
+                    first_name, last_name, formatted_static,
+                    moderator_discord_id
+                )
+                print(f"🔍 AUDIT: log_name_change_action завершен")
+                
+                print(f"✅ {message} (ID: {discord_id}) с записью в историю")
+                return True, message
+                
+        except Exception as e:
+            error_msg = f"Ошибка обновления профиля персонала с историей: {e}"
+            print(error_msg)
+            return False, error_msg
+    
+    def _format_static_for_db(self, static: str) -> str:
+        """
+        Форматирует статик для базы данных.
+        
+        Args:
+            static: Сырой статик от пользователя
+            
+        Returns:
+            str: Отформатированный статик
+        """
+        print(f"🔍 FORMAT_STATIC: Входной статик: '{static}' (type: {type(static)})")
+        
+        if not static:
+            print(f"🔍 FORMAT_STATIC: Статик пустой, возвращаем пустую строку")
+            return ""
+        
+        # Убираем все нецифровые символы
+        digits_only = ''.join(filter(str.isdigit, static))
+        print(f"🔍 FORMAT_STATIC: Только цифры: '{digits_only}' (длина: {len(digits_only)})")
+        
+        # Проверяем длину
+        if len(digits_only) == 6:
+            # Форматируем как XXX-XXX
+            result = f"{digits_only[:3]}-{digits_only[3:]}"
+            print(f"🔍 FORMAT_STATIC: 6 цифр -> XXX-XXX: '{result}'")
+            return result
+        elif len(digits_only) == 5:
+            # Форматируем как XX-XXX
+            result = f"{digits_only[:2]}-{digits_only[2:]}"
+            print(f"🔍 FORMAT_STATIC: 5 цифр -> XX-XXX: '{result}'")
+            return result
+        else:
+            # Возвращаем как есть, если не подходит под стандарт
+            result = static.strip()
+            print(f"🔍 FORMAT_STATIC: Нестандартная длина, возвращаем как есть: '{result}'")
+            return result
     
     async def add_to_blacklist_manual(
         self,

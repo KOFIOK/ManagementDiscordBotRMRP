@@ -2201,10 +2201,18 @@ class RankChangeView(ui.View):
             try:
                 print(f"🎆 CONTEXT RANK CHANGE: {action_name} {self.target_user.display_name} -> {self.new_rank}")
                 
-                # Используем nickname_manager для автоматического обновления никнейма
-                new_nickname = await nickname_manager.handle_promotion(
+                # Используем универсальный метод для всех изменений звания
+                change_type_map = {
+                    "Повышение": "повышение",
+                    "Восстановление": "восстановление", 
+                    "Разжалование": "понижение"
+                }
+                change_type = change_type_map.get(action_name, "изменение")
+                
+                new_nickname = await nickname_manager.handle_rank_change(
                     member=self.target_user,
-                    new_rank_name=self.new_rank
+                    new_rank_name=self.new_rank,
+                    change_type=change_type
                 )
                 
                 if new_nickname:
@@ -2508,7 +2516,7 @@ class GeneralEditView(ui.View):
         )
 
 
-@app_commands.context_menu(name='Быстро повысить')
+@app_commands.context_menu(name='Быстро повысить (+1 ранг)')
 @handle_context_errors
 async def quick_promote(interaction: discord.Interaction, user: discord.Member):
     """Context menu command to quickly promote user by +1 rank"""
@@ -2608,7 +2616,7 @@ def setup_context_commands(bot):
     commands_to_add = [
         ('Принять на службу', recruit_user),
         ('Уволить', dismiss_user),
-        ('Быстро повысить', quick_promote),
+        ('Быстро повысить (+1 ранг)', quick_promote),
         ('Общее редактирование', general_edit)
     ]
     

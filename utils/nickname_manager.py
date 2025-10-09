@@ -236,8 +236,8 @@ class NicknameManager:
             
             return True  # Перевод всегда меняет никнейм
         
-        elif operation in ['promotion', 'hiring']:
-            # Для повышения/приёма проверяем текущее/целевое подразделение
+        elif operation in ['promotion', 'hiring', 'name_change']:
+            # Для повышения/приёма/изменения ФИО проверяем текущее/целевое подразделение
             department_to_check = target_department or current_department
             if department_to_check and not self._is_nickname_replacement_enabled_for_department(department_to_check):
                 logger.info(f"Автозамена никнеймов отключена для подразделения {department_to_check} при операции {operation}")
@@ -846,6 +846,98 @@ class NicknameManager:
             
         except Exception as e:
             logger.error(f"❌ Ошибка изменения никнейма при повышении {member}: {e}")
+            if new_nickname:
+                logger.error(f"❌ Ожидаемый никнейм был: '{new_nickname}'")
+            return None
+    
+    async def handle_name_change(self, member: Any, new_first_name: str, new_last_name: str, current_rank_name: str = None) -> Optional[str]:
+        """
+        Обрабатывает никнейм при изменении ФИО
+        
+        Args:
+            member: Участник Discord
+            new_first_name: Новое имя
+            new_last_name: Новая фамилия
+            current_rank_name: Текущее звание (если известно)
+            
+        Returns:
+            Новый никнейм или None если не удалось
+        """
+        new_nickname = None
+        try:
+            # Анализируем текущий никнейм для определения формата и подразделения
+            current_nickname = member.display_name
+            parsed = self.parse_nickname(current_nickname)
+            current_department = parsed.get('subdivision', 'unknown')
+            
+            # Проверяем настройки автозамены никнеймов
+            if not self._should_update_nickname('name_change', current_department):
+                logger.info(f"Автозамена никнеймов отключена для изменения ФИО в подразделении {current_department}, пропускаем обновление для {member}")
+                return None
+            
+            logger.info(f"🔍 NAME_CHANGE DEBUG: Текущий никнейм: '{current_nickname}'")
+            logger.info(f"🔍 NAME_CHANGE DEBUG: Parsed: {parsed}")
+            logger.info(f"🔍 NAME_CHANGE DEBUG: Новое ФИО: {new_first_name} {new_last_name}")
+            
+            # Если никнейм имеет особый формат или должностной, не трогаем его
+            if parsed['is_special']:
+                logger.info(f"Никнейм имеет особый/должностной формат, пропускаем: {current_nickname}")
+                return None
+            
+            # Определяем звание
+            rank_abbr = ""
+            if current_rank_name:
+                # Используем переданное звание
+                rank_data = rank_manager.get_rank_by_name(current_rank_name)
+                if rank_data and rank_data.get('abbreviation'):
+                    rank_abbr = rank_data['abbreviation']
+                    logger.info(f"🔍 NAME_CHANGE DEBUG: Звание из параметра: '{current_rank_name}' -> '{rank_abbr}'")
+            elif parsed['format_type'] == 'standard' and parsed['rank']:
+                # Используем звание из текущего никнейма
+                rank_abbr = parsed['rank']
+                logger.info(f"🔍 NAME_CHANGE DEBUG: Звание из никнейма: '{rank_abbr}'")
+            else:
+                # Пытаемся получить звание из БД
+                try:
+                    from utils.database_manager import PersonnelManager
+                    pm = PersonnelManager()
+                    personnel_data = await pm.get_personnel_summary(member.id)
+                    if personnel_data and personnel_data.get('current_rank'):
+                        rank_data = rank_manager.get_rank_by_name(personnel_data['current_rank'])
+                        if rank_data and rank_data.get('abbreviation'):
+                            rank_abbr = rank_data['abbreviation']
+                            logger.info(f"🔍 NAME_CHANGE DEBUG: Звание из БД: '{personnel_data['current_rank']}' -> '{rank_abbr}'")
+                except Exception as db_error:
+                    logger.warning(f"Ошибка получения звания из БД: {db_error}")
+            
+            # Определяем подразделение
+            subdivision_abbr = "ВА"  # По умолчанию
+            if parsed['format_type'] == 'standard' and parsed['subdivision'] and parsed['subdivision'] != "None":
+                subdivision_abbr = parsed['subdivision']
+                logger.info(f"🔍 NAME_CHANGE DEBUG: Подразделение из никнейма: '{subdivision_abbr}'")
+            else:
+                # Пытаемся получить из БД
+                try:
+                    from utils.database_manager import PersonnelManager
+                    pm = PersonnelManager()
+                    personnel_data = await pm.get_personnel_summary(member.id)
+                    if personnel_data and personnel_data.get('subdivision_abbreviation'):
+                        subdivision_abbr = personnel_data['subdivision_abbreviation']
+                        logger.info(f"🔍 NAME_CHANGE DEBUG: Подразделение из БД: '{subdivision_abbr}'")
+                except Exception as db_error:
+                    logger.warning(f"Ошибка получения подразделения из БД: {db_error}")
+            
+            # Строим новый никнейм с новым ФИО
+            new_nickname = self.build_service_nickname(subdivision_abbr, rank_abbr, new_first_name, new_last_name)
+            logger.info(f"🔍 NAME_CHANGE DEBUG: Построенный никнейм: '{new_nickname}'")
+            
+            await member.edit(nick=new_nickname, reason=f"Изменение ФИО: {new_first_name} {new_last_name}")
+            logger.info(f"✅ Никнейм при изменении ФИО: {member} -> {new_nickname}")
+            
+            return new_nickname
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка изменения никнейма при смене ФИО {member}: {e}")
             if new_nickname:
                 logger.error(f"❌ Ожидаемый никнейм был: '{new_nickname}'")
             return None

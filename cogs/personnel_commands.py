@@ -10,6 +10,195 @@ from datetime import datetime, timezone, timedelta
 from utils.config_manager import load_config, is_moderator_or_admin, is_administrator
 from utils.database_manager import PersonnelManager
 from utils.nickname_manager import nickname_manager
+from utils.audit_logger import audit_logger, AuditAction
+
+
+class PersonnelNameChangeModal(discord.ui.Modal, title="Изменение ФИО"):
+    """Модальное окно для изменения ФИО сотрудника"""
+    
+    def __init__(self, target_member: discord.Member, moderator: discord.Member, current_data: dict = None):
+        super().__init__()
+        self.target_member = target_member
+        self.moderator = moderator  # Сохраняем модератора для записи в историю
+        self.current_data = current_data or {}
+        
+        # Поле "Имя" - обязательное
+        self.first_name_input = discord.ui.TextInput(
+            label="Имя",
+            placeholder="Введите новое имя",
+            default=self.current_data.get('first_name', ''),
+            min_length=1,
+            max_length=50,
+            required=True
+        )
+        self.add_item(self.first_name_input)
+        
+        # Поле "Фамилия" - обязательное
+        self.last_name_input = discord.ui.TextInput(
+            label="Фамилия", 
+            placeholder="Введите новую фамилию",
+            default=self.current_data.get('last_name', ''),
+            min_length=1,
+            max_length=50,
+            required=True
+        )
+        self.add_item(self.last_name_input)
+        
+        # Поле "Статик" - необязательное
+        self.static_input = discord.ui.TextInput(
+            label="Статик (необязательно)",
+            placeholder="123-456 или оставьте пустым",
+            default=self.current_data.get('static', ''),
+            min_length=0,
+            max_length=10,
+            required=False
+        )
+        self.add_item(self.static_input)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        """Обработка отправки формы"""
+        try:
+            first_name = self.first_name_input.value.strip()
+            last_name = self.last_name_input.value.strip()
+            static = self.static_input.value.strip() or None
+            
+            print(f"🎆 MODAL SUBMIT: Изменение ФИО {self.target_member.display_name} -> {first_name} {last_name}")
+            
+            # Сначала откладываем ответ (defer), чтобы потом можно было редактировать
+            await interaction.response.defer(ephemeral=True)
+            
+            # Обновляем ФИО и статик в базе данных С ЗАПИСЬЮ В ИСТОРИЮ
+            print(f"🔍 Начинаем обновление ФИО в БД...")
+            success, message = await audit_logger.update_personnel_profile_with_history(
+                self.target_member.id, 
+                first_name, 
+                last_name, 
+                static,
+                self.moderator.id  # Передаем ID модератора для записи в историю
+            )
+            print(f"🔍 Обновление ФИО в БД завершено: success={success}, message={message}")
+            
+            if success:
+                # Автоматически обновляем никнейм с новым ФИО
+                print(f"🔍 Начинаем обновление никнейма...")
+                try:
+                    # Получаем текущее звание пользователя из никнейма или БД  
+                    current_rank = None
+                    if self.target_member.nick:
+                        # Пытаемся извлечь звание из текущего никнейма
+                        nick_parts = self.target_member.nick.split()
+                        if len(nick_parts) >= 3:  # Звание Имя Фамилия или Имя Фамилия | Звание
+                            # Проверяем разные форматы
+                            possible_rank = nick_parts[0]  # Первое слово
+                            if '|' in self.target_member.nick:
+                                # Формат "Имя Фамилия | Звание"
+                                possible_rank = self.target_member.nick.split('|')[-1].strip()
+                            current_rank = possible_rank
+                    
+                    print(f"🔍 Извлеченное звание: {current_rank}")
+                    
+                    if current_rank:
+                        from utils.nickname_manager import nickname_manager
+                        print(f"🔍 Вызываем nickname_manager.handle_name_change...")
+                        # Обновляем никнейм с новым ФИО, сохраняя звание
+                        new_nickname = await nickname_manager.handle_name_change(
+                            member=self.target_member,
+                            new_first_name=first_name,
+                            new_last_name=last_name,
+                            current_rank_name=current_rank
+                        )
+                        print(f"🔍 nickname_manager.handle_name_change завершен: {new_nickname}")
+                        
+                        if new_nickname:
+                            print(f"🔍 Обновляем никнейм Discord...")
+                            await self.target_member.edit(nick=new_nickname, reason="Изменение ФИО через модальное окно")
+                            print(f"✅ MODAL NICKNAME: Обновлен никнейм {new_nickname}")
+                    else:
+                        print(f"🔍 Звание не извлечено, пропускаем обновление никнейма")
+                            
+                except Exception as nickname_error:
+                    print(f"⚠️ MODAL NICKNAME ERROR: {nickname_error}")
+                    import traceback
+                    traceback.print_exc()
+                
+                print(f"🔍 Начинаем отправку аудит-уведомления...")
+                # Отправляем аудит-уведомление
+                try:
+                    from utils.database_manager.manager import PersonnelManager
+                    pm = PersonnelManager()
+                    print(f"🔍 Получаем personnel_data...")
+                    personnel_data = await pm.get_personnel_summary(self.target_member.id)
+                    print(f"🔍 personnel_data получен: {personnel_data is not None}")
+                    
+                    if personnel_data:
+                        # Подготавливаем данные для аудита
+                        audit_personnel_data = {
+                            'name': f"{first_name} {last_name}",
+                            'static': static or personnel_data.get('static', ''),
+                            'rank': personnel_data.get('rank_name', 'Неизвестно'),
+                            'department': personnel_data.get('subdivision_name', 'Неизвестно'),
+                            'position': personnel_data.get('position_name', 'Не назначено')
+                        }
+                        
+                        print(f"🔍 Отправляем аудит через audit_logger...")
+                        # Отправляем аудит через audit_logger
+                        audit_url = await audit_logger.send_personnel_audit(
+                            guild=interaction.guild,
+                            action=await AuditAction.NAME_CHANGE(),
+                            target_user=self.target_member,
+                            moderator=self.moderator,
+                            personnel_data=audit_personnel_data
+                        )
+                        print(f"🔍 Аудит завершен: {audit_url is not None}")
+                        
+                        if audit_url:
+                            print(f"✅ Отправлено аудит-уведомление для изменения ФИО: {audit_url}")
+                        else:
+                            print("⚠️ Не удалось отправить аудит-уведомление")
+                    else:
+                        print("⚠️ personnel_data is None, пропускаем аудит")
+                    
+                except Exception as audit_error:
+                    print(f"⚠️ AUDIT ERROR: {audit_error}")
+                    import traceback
+                    traceback.print_exc()
+                
+                print(f"🔍 Создаем embed с результатом...")
+                embed = discord.Embed(
+                    title="✅ ФИО обновлено",
+                    description=f"ФИО пользователя {self.target_member.mention} успешно обновлено.\n\n"
+                               f"**Новое ФИО:** {first_name} {last_name}\n"
+                               f"**Детали:** {message}",
+                    color=discord.Color.green()
+                )
+            else:
+                print(f"🔍 Создаем embed с ошибкой...")
+                embed = discord.Embed(
+                    title="❌ Ошибка обновления ФИО",
+                    description=f"Не удалось обновить ФИО пользователя {self.target_member.mention}.\n\n"
+                               f"**Ошибка:** {message}",
+                    color=discord.Color.red()
+                )
+            
+            # Отправляем окончательный результат через followup (так как модальное окно не имеет исходного сообщения)
+            print(f"🔍 Отправляем финальный ответ пользователю...")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            print(f"✅ MODAL: Финальный ответ отправлен!")
+            
+        except Exception as e:
+            print(f"❌ MODAL ERROR: {e}")
+            import traceback
+            traceback.print_exc()
+            embed = discord.Embed(
+                title="❌ Ошибка изменения ФИО",
+                description=f"Произошла ошибка при изменении ФИО: {e}",
+                color=discord.Color.red()
+            )
+            
+            # Отправляем сообщение об ошибке через followup
+            print(f"🔍 Отправляем сообщение об ошибке...")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            print(f"✅ MODAL ERROR: Сообщение об ошибке отправлено!")
 
 
 class PersonnelCommands(commands.Cog):
@@ -117,7 +306,8 @@ class PersonnelCommands(commands.Cog):
                 'Понижен в звании',
                 'Назначен на должность',
                 'Снят с должности',
-                'Уволен со службы'
+                'Уволен со службы',
+                'Внесение изменений в Имя или Фамилию'
             ],
             'departments': [
                 'Военная Академия', 'УВП', 'ССО', 'РОиО', 'МР'
@@ -141,7 +331,7 @@ class PersonnelCommands(commands.Cog):
         подразделение="Подразделение (необязательно)",
         должность="Должность (необязательно)", 
         звание="Звание (необязательно)",
-        причина="Причина (для увольнения/приема на службу)"
+        примечание="Примечание (для увольнения/приема на службу)"
     )
     async def audit_command(
         self,
@@ -151,7 +341,7 @@ class PersonnelCommands(commands.Cog):
         подразделение: str = None,
         должность: str = None,
         звание: str = None,
-        причина: str = None
+        примечание: str = None
     ):
         """Add personnel audit record using PersonnelManager"""
         
@@ -181,34 +371,48 @@ class PersonnelCommands(commands.Cog):
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         
-        # Defer response as this might take time
-        await interaction.response.defer(ephemeral=True)
+        # Для действия изменения ФИО НЕ делаем defer, так как нужно модальное окно
+        if действие != "Внесение изменений в Имя или Фамилию":
+            # Defer response as this might take time
+            await interaction.response.defer(ephemeral=True)
         
         try:
             # Validate required fields
-            if действие == "Уволен со службы" and not причина:
+            if действие == "Уволен со службы" and not примечание:
                 embed = discord.Embed(
                     title="❌ Требуется причина увольнения",
                     description="Для увольнения необходимо указать причину.",
                     color=discord.Color.red()
                 )
-                await interaction.followup.send(embed=embed, ephemeral=True)
+                # Проверяем, был ли defer или нет
+                if действие == "Внесение изменений в Имя или Фамилию":
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+                else:
+                    await interaction.followup.send(embed=embed, ephemeral=True)
                 return
-            elif действие == "Принят на службу" and not причина:
+            elif действие == "Принят на службу" and not примечание:
                 embed = discord.Embed(
                     title="❌ Требуется причина принятия",
                     description="Для принятия на службу необходимо указать причину.",
                     color=discord.Color.red()
                 )
-                await interaction.followup.send(embed=embed, ephemeral=True)
+                # Проверяем, был ли defer или нет
+                if действие == "Внесение изменений в Имя или Фамилию":
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+                else:
+                    await interaction.followup.send(embed=embed, ephemeral=True)
                 return
-            elif действие not in ["Уволен со службы", "Принят на службу"] and not any([подразделение, должность, звание]):
+            elif действие not in ["Уволен со службы", "Принят на службу", "Внесение изменений в Имя или Фамилию"] and not any([подразделение, должность, звание]):
                 embed = discord.Embed(
                     title="❌ Ошибка заполнения",
                     description="Необходимо заполнить хотя бы одно из полей: подразделение, должность или звание.",
                     color=discord.Color.red()
                 )
-                await interaction.followup.send(embed=embed, ephemeral=True)
+                # Проверяем, был ли defer или нет
+                if действие == "Внесение изменений в Имя или Фамилию":
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+                else:
+                    await interaction.followup.send(embed=embed, ephemeral=True)
                 return
             
             # Handle different actions with nickname integration
@@ -223,7 +427,7 @@ class PersonnelCommands(commands.Cog):
                     'rank': звание or 'Рядовой',
                     'subdivision': подразделение or 'Военная Академия',
                     'position': должность,
-                    'reason': причина
+                    'reason': примечание
                 }
                 
                 # Используем PersonnelManager для приёма
@@ -384,6 +588,49 @@ class PersonnelCommands(commands.Cog):
                     )
                     await interaction.followup.send(embed=embed, ephemeral=True)
                 
+            elif действие == "Внесение изменений в Имя или Фамилию":
+                # Проверяем существование пользователя в БД перед открытием модального окна
+                try:
+                    pm = PersonnelManager()
+                    personnel_data = await pm.get_personnel_summary(сотрудник.id)
+                    
+                    if not personnel_data:
+                        embed = discord.Embed(
+                            title="❌ Пользователь не найден в БД",
+                            description=f"Пользователь {сотрудник.mention} не найден в базе данных персонала.\n\n"
+                                       "Необходимо сначала принять пользователя на службу.",
+                            color=discord.Color.red()
+                        )
+                        await interaction.response.send_message(embed=embed, ephemeral=True)
+                        return
+                    
+                    # Пользователь найден в БД, открываем модальное окно с текущими данными
+                    modal = PersonnelNameChangeModal(
+                        target_member=сотрудник,
+                        moderator=interaction.user,  # Передаем модератора
+                        current_data={
+                            'first_name': personnel_data.get('first_name', ''),
+                            'last_name': personnel_data.get('last_name', ''),
+                            'static': personnel_data.get('static', '')
+                        }
+                    )
+                    
+                    # Отвечаем модальным окном (не defer, так как это блокирует модальное окно)
+                    await interaction.response.send_modal(modal)
+                    
+                except Exception as e:
+                    print(f"❌ AUDIT NAME CHANGE ERROR: {e}")
+                    embed = discord.Embed(
+                        title="❌ Ошибка открытия формы ФИО",
+                        description=f"Произошла ошибка при открытии формы изменения ФИО: {e}",
+                        color=discord.Color.red()
+                    )
+                    # Используем followup если response уже был defer
+                    if interaction.response.is_done():
+                        await interaction.followup.send(embed=embed, ephemeral=True)
+                    else:
+                        await interaction.response.send_message(embed=embed, ephemeral=True)
+                
             else:
                 # Other actions - for now show that they need manual implementation
                 embed = discord.Embed(
@@ -395,7 +642,7 @@ class PersonnelCommands(commands.Cog):
                                f"• Подразделение: {подразделение or 'Не указано'}\n"
                                f"• Должность: {должность or 'Не указано'}\n"
                                f"• Звание: {звание or 'Не указано'}\n"
-                               f"• Причина: {причина or 'Не указано'}",
+                               f"• Примечание: {примечание or 'Не указано'}",
                     color=discord.Color.orange()
                 )
                 await interaction.followup.send(embed=embed, ephemeral=True)
@@ -526,9 +773,6 @@ class PersonnelCommands(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         
         try:
-            # Import audit logger
-            from utils.audit_logger import audit_logger
-            
             # Add to blacklist
             success, message = await audit_logger.add_to_blacklist_manual(
                 guild=interaction.guild,
@@ -598,8 +842,6 @@ class PersonnelCommands(commands.Cog):
         
         try:
             # Import audit logger
-            from utils.audit_logger import audit_logger
-            
             # Remove from blacklist
             success, message = await audit_logger.remove_from_blacklist(
                 пользователь.id,

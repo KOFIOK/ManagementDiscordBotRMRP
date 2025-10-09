@@ -2508,7 +2508,7 @@ class GeneralEditView(ui.View):
         )
 
 
-@app_commands.context_menu(name='Быстро повысить')
+@app_commands.context_menu(name='Быстро повысить (+1 ранг)')
 @handle_context_errors
 async def quick_promote(interaction: discord.Interaction, user: discord.Member):
     """Context menu command to quickly promote user by +1 rank"""
@@ -2608,7 +2608,7 @@ def setup_context_commands(bot):
     commands_to_add = [
         ('Принять на службу', recruit_user),
         ('Уволить', dismiss_user),
-        ('Быстро повысить', quick_promote),
+        ('Быстро повысить (+1 ранг)', quick_promote),
         ('Общее редактирование', general_edit)
     ]
     

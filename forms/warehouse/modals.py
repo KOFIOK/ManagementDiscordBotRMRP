@@ -636,6 +636,40 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
         try:
             await interaction.response.defer(ephemeral=True)
             
+            # Проверяем, что корзина не пуста
+            if self.cart.is_empty():
+                error_embed = discord.Embed(
+                    title="❌ Корзина пуста",
+                    description="Корзина пуста! Добавьте предметы перед отправкой.",
+                    color=discord.Color.red()
+                )
+                await interaction.followup.send(embed=error_embed, ephemeral=True)
+                return
+            
+            # Проверка кулдауна перед отправкой
+            submission_channel_id = self.warehouse_manager.get_warehouse_submission_channel()
+            if submission_channel_id:
+                channel = interaction.guild.get_channel(submission_channel_id)
+                if channel:
+                    can_request, next_time = await self.warehouse_manager.check_user_cooldown(
+                        interaction.user.id, channel, interaction.user
+                    )
+                    if not can_request and next_time:
+                        from datetime import timezone, timedelta
+                        moscow_tz = timezone(timedelta(hours=3))
+                        current_time_moscow = datetime.now(moscow_tz).replace(tzinfo=None)
+                        time_left = next_time - current_time_moscow
+                        hours = int(time_left.total_seconds() // 3600)
+                        minutes = int((time_left.total_seconds() % 3600) // 60)
+                        
+                        error_embed = discord.Embed(
+                            title="⏰ Кулдаун активен",
+                            description=f"Вы можете подать следующий запрос через {hours}ч {minutes}мин",
+                            color=discord.Color.orange()
+                        )
+                        await interaction.followup.send(embed=error_embed, ephemeral=True)
+                        return
+            
             name = self.name_input.value.strip()
             static = self._format_static(self.static_input.value.strip())
             

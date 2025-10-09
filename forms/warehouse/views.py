@@ -363,38 +363,8 @@ class WarehouseCartView(discord.ui.View):
             return
         
         try:
-            # КРИТИЧЕСКИ ВАЖНО: откладываем ответ для длительных операций
-            await interaction.response.defer(ephemeral=True)
-            
-            if self.cart.is_empty():
-                await interaction.followup.send(
-                    "❌ Корзина пуста! Добавьте предметы перед отправкой.",
-                    ephemeral=True
-                )
-                return
-            
-            # Проверка кулдауна перед отправкой
-            submission_channel_id = self.warehouse_manager.get_warehouse_submission_channel()
-            if submission_channel_id:
-                channel = interaction.guild.get_channel(submission_channel_id)
-                if channel:
-                    can_request, next_time = await self.warehouse_manager.check_user_cooldown(
-                        interaction.user.id, channel, interaction.user
-                    )
-                    if not can_request and next_time:
-                        moscow_tz = timezone(timedelta(hours=3))
-                        current_time_moscow = datetime.now(moscow_tz).replace(tzinfo=None)
-                        time_left = next_time - current_time_moscow
-                        hours = int(time_left.total_seconds() // 3600)
-                        minutes = int((time_left.total_seconds() % 3600) // 60)
-                        await interaction.followup.send(
-                            f"⏰ Кулдаун! Вы можете подать следующий запрос через {hours}ч {minutes}мин",
-                            ephemeral=True
-                        )
-                        return
-            
-            # НЕ устанавливаем флаг отправки здесь - только после реальной отправки в канал!
-              # Показываем модальное окно
+            # МГНОВЕННО открываем модальное окно без проверок (все проверки в modal.on_submit)
+            # Сначала пробуем с предзагруженными данными
             try:
                 from utils.user_cache import prepare_modal_data
                 from .modals import WarehouseFinalDetailsModal
@@ -407,27 +377,37 @@ class WarehouseCartView(discord.ui.View):
                 )
                 print(f"🚀 FAST MODAL: Создано модальное окно с данными из {modal_data['source']} для {interaction.user.display_name}")
                 await interaction.response.send_modal(modal)
+                return
             except Exception as e:
                 print(f"❌ Ошибка предзагрузки данных пользователя: {e}")
-                try:
-                    from .modals import WarehouseFinalDetailsModal
-                    modal = WarehouseFinalDetailsModal(self.cart, self.warehouse_manager, interaction, parent_view=self)
-                    await interaction.response.send_modal(modal)
-                except Exception as modal_error:
-                    print(f"❌ Критическая ошибка с модальным окном: {modal_error}")
-                    if not interaction.response.is_done():
-                        await interaction.response.send_message(
-                            "❌ Произошла ошибка при открытии формы заявки. Попробуйте позже.",
-                            ephemeral=True
-                        )
-                    else:
-                        await interaction.followup.send(
-                            "❌ Произошла ошибка при открытии формы заявки. Попробуйте позже.",
-                            ephemeral=True
-                        )
-                    return
+                # Фоллбэк: создаем обычное модальное окно
+                pass
+            
+            # Фоллбэк: создаем обычное модальное окно без предзагрузки
+            try:
+                from .modals import WarehouseFinalDetailsModal
+                modal = WarehouseFinalDetailsModal(self.cart, self.warehouse_manager, interaction, parent_view=self)
+                await interaction.response.send_modal(modal)
+                print(f"🚀 FALLBACK MODAL: Создано модальное окно без предзагрузки для {interaction.user.display_name}")
+            except Exception as modal_error:
+                print(f"❌ Критическая ошибка с модальным окном: {modal_error}")
+                await interaction.response.send_message(
+                    "❌ Произошла ошибка при открытии формы заявки. Попробуйте позже.",
+                    ephemeral=True
+                )
+                return
+                
         except Exception as e:
             print(f"❌ Критическая ошибка в confirm_request: {e}")
+            # Последняя попытка отправить сообщение об ошибке
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        "❌ Произошла ошибка при открытии формы заявки. Попробуйте позже.",
+                        ephemeral=True
+                    )
+            except:
+                pass
 
     @discord.ui.button(label="Очистить корзину", style=discord.ButtonStyle.secondary, emoji="🗑️")
     async def clear_cart(self, interaction: discord.Interaction, button: discord.ui.Button):

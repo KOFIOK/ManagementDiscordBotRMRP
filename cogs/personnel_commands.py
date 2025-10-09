@@ -498,10 +498,11 @@ class PersonnelCommands(commands.Cog):
                     
                     print(f"🎆 AUDIT COMMAND: Повышение в звании {сотрудник.display_name} -> {звание}")
                     
-                    # Используем nickname_manager для повышения
-                    new_nickname = await nickname_manager.handle_promotion(
+                    # Используем универсальный метод для изменения звания
+                    new_nickname = await nickname_manager.handle_rank_change(
                         member=сотрудник,
-                        new_rank_name=звание
+                        new_rank_name=звание,
+                        change_type="повышение"
                     )
                     
                     if new_nickname:
@@ -526,6 +527,53 @@ class PersonnelCommands(commands.Cog):
                     embed = discord.Embed(
                         title="❌ Ошибка повышения",
                         description=f"Произошла ошибка при повышении {сотрудник.mention}: {e}",
+                        color=discord.Color.red()
+                    )
+                    await interaction.followup.send(embed=embed, ephemeral=True)
+            
+            elif действие == "Разжалован в звании":
+                # Понижение в звании с автоматическим обновлением никнейма
+                try:
+                    if not звание:
+                        embed = discord.Embed(
+                            title="❌ Ошибка валидации",
+                            description="Для разжалования в звании необходимо указать новое звание.",
+                            color=discord.Color.red()
+                        )
+                        await interaction.followup.send(embed=embed, ephemeral=True)
+                        return
+                    
+                    print(f"🎆 AUDIT COMMAND: Разжалование в звании {сотрудник.display_name} -> {звание}")
+                    
+                    # Используем универсальный метод для изменения звания
+                    new_nickname = await nickname_manager.handle_rank_change(
+                        member=сотрудник,
+                        new_rank_name=звание,
+                        change_type="понижение"
+                    )
+                    
+                    if new_nickname:
+                        await сотрудник.edit(nick=new_nickname, reason=f"Команда аудита: {действие}")
+                        embed = discord.Embed(
+                            title="🔻 Разжалован в звании",
+                            description=f"{сотрудник.mention} разжалован до звания **{звание}**.\n\nНикнейм автоматически обновлён: `{new_nickname}`",
+                            color=discord.Color.orange()
+                        )
+                        print(f"✅ AUDIT DEMOTION: Никнейм обновлён: {new_nickname}")
+                    else:
+                        embed = discord.Embed(
+                            title="⚠️ Разжалование с предупреждением",
+                            description=f"{сотрудник.mention} разжалован до звания **{звание}**, но никнейм не мог быть автоматически обновлён.\n\nПожалуйста, обновите никнейм вручную.",
+                            color=discord.Color.orange()
+                        )
+                    
+                    await interaction.followup.send(embed=embed, ephemeral=True)
+                    
+                except Exception as e:
+                    print(f"❌ AUDIT DEMOTION ERROR: {e}")
+                    embed = discord.Embed(
+                        title="❌ Ошибка разжалования",
+                        description=f"Произошла ошибка при разжаловании {сотрудник.mention}: {e}",
                         color=discord.Color.red()
                     )
                     await interaction.followup.send(embed=embed, ephemeral=True)

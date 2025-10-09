@@ -2201,10 +2201,18 @@ class RankChangeView(ui.View):
             try:
                 print(f"🎆 CONTEXT RANK CHANGE: {action_name} {self.target_user.display_name} -> {self.new_rank}")
                 
-                # Используем nickname_manager для автоматического обновления никнейма
-                new_nickname = await nickname_manager.handle_promotion(
+                # Используем универсальный метод для всех изменений звания
+                change_type_map = {
+                    "Повышение": "повышение",
+                    "Восстановление": "восстановление", 
+                    "Разжалование": "понижение"
+                }
+                change_type = change_type_map.get(action_name, "изменение")
+                
+                new_nickname = await nickname_manager.handle_rank_change(
                     member=self.target_user,
-                    new_rank_name=self.new_rank
+                    new_rank_name=self.new_rank,
+                    change_type=change_type
                 )
                 
                 if new_nickname:

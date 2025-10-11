@@ -266,7 +266,7 @@ class RoleApplicationApprovalView(ui.View):
         return is_moderator_or_admin(interaction.user, config)
     
     async def _process_approval(self, interaction):
-        """Process application approval with Google Sheets authorization"""
+        """Process application approval"""
         try:
             config = load_config()
             guild = interaction.guild

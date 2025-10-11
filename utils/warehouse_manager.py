@@ -9,7 +9,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional, Tuple, Any, List
 import re
 from .config_manager import load_config
-# Google Sheets удален - используется PostgreSQL
 
 class WarehouseManager:
     def __init__(self):

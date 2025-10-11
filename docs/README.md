@@ -74,7 +74,6 @@
 
 ### По проблемам
 - **Бот не запускается:** [Troubleshooting - Критические](troubleshooting_guide.md#бот-не-запускается)
-- **Google Sheets ошибки:** [Troubleshooting - Google Sheets](troubleshooting_guide.md#google-sheets-не-работает)
 - **Кнопки не работают:** [Troubleshooting - Производительность](troubleshooting_guide.md#кнопки-не-отвечают)
 - **Права доступа:** [Troubleshooting - Права](troubleshooting_guide.md#проблемы-с-правами-доступа)
 
@@ -85,7 +84,6 @@
 |-----------|-------------------|---------------|
 | Python | 3.8 | 3.11+ |
 | Discord.py | 2.0 | 2.3+ |
-| Google Sheets API | v4 | v4 |
 | Windows | 10 | 11 |
 
 ### Права доступа

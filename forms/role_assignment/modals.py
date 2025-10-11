@@ -6,7 +6,6 @@ import discord
 import re
 from discord import ui
 from utils.config_manager import load_config, has_pending_role_application
-# Google Sheets удален - используется PostgreSQL
 
 
 class MilitaryApplicationModal(ui.Modal):

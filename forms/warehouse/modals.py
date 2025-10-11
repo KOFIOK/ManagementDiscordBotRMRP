@@ -789,7 +789,7 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
         from utils.ping_adapter import ping_adapter
         ping_roles = ping_adapter.get_ping_roles_for_warehouse(interaction.user)
         
-        # Получение подразделения из Google Sheets (только для отображения в embed)
+        # Получение подразделения из PostgreSQL (только для отображения в embed)
         try:
             department = await get_user_department_fast(interaction.user.id)
             print(f"🏢 DEPT: Получено подразделение '{department}' для пользователя {interaction.user.id}")
@@ -855,7 +855,7 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
         from utils.ping_adapter import ping_adapter
         ping_roles = ping_adapter.get_ping_roles_for_warehouse(interaction.user)
         
-        # Получение подразделения из Google Sheets (только для отображения в embed)
+        # Получение подразделения из PostgreSQL (только для отображения в embed)
         try:
             department = await get_user_department_fast(interaction.user.id)
             print(f"🏢 DEPT: Получено подразделение '{department}' для пользователя {interaction.user.id}")

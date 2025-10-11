@@ -117,8 +117,24 @@ class LeaveRequestModal(ui.Modal):
               await interaction.response.send_message(embed=embed, ephemeral=True)
               return
           
-          # Detect department
-          department = LeaveRequestDepartmentDetector.detect_department(interaction.user.roles)
+          # Get user department from PostgreSQL (not from roles!)
+          try:
+              from utils.user_cache import get_cached_user_info
+              user_info = await get_cached_user_info(interaction.user.id)
+              
+              if user_info:
+                  department = user_info.get('department', 'Неизвестно')
+                  print(f"✅ LEAVE REQUEST: Получено подразделение из PostgreSQL: '{department}' для пользователя {interaction.user.id}")
+              else:
+                  print(f"⚠️ LEAVE REQUEST: Пользователь {interaction.user.id} не найден в PostgreSQL, используем fallback")
+                  # Fallback to DepartmentManager if user not in PostgreSQL
+                  from utils.department_manager import DepartmentManager
+                  dept_manager = DepartmentManager()
+                  department = dept_manager.get_user_department_name(interaction.user) or 'Неизвестно'
+                  print(f"🔄 LEAVE REQUEST: Fallback подразделение: '{department}'")
+          except Exception as e:
+              print(f"❌ LEAVE REQUEST: Ошибка получения подразделения: {e}")
+              department = 'Неизвестно'
           
           # Save request
           request_id = LeaveRequestStorage.add_request(
@@ -173,18 +189,8 @@ class LeaveRequestModal(ui.Modal):
         ping_roles = ping_adapter.get_ping_roles_for_leave_requests(interaction.user)
         ping_text = " ".join([role.mention for role in ping_roles]) if ping_roles else ""
         
-        # Department names
-        dept_names = {
-          'ва': 'ВА (Военная Академия)',
-          'вк': 'ВК (Военный Комиссариат)',
-          'увп': 'УВП (Управление Военной Полиции)',
-          'ссо': 'ССО (Силы Специальных Операций)',
-          'мр': 'МР (Медицинская Рота)',
-          'роио': 'РОиО (Рота Охраны и Обеспечения)',
-          'unknown': 'Неопределено'
-        }
-        
-        dept_display = dept_names.get(department, department.upper())
+        # Department display - используем название из БД как есть
+        dept_display = department
         
         embed = discord.Embed(
           title="🏖️ Заявка на отгул",

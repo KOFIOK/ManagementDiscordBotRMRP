@@ -22,6 +22,9 @@ class WarehouseRequestModal(discord.ui.Modal):
         self.item_name = item_name
         self.warehouse_manager = warehouse_manager
         
+        # Сохраняем ПОЛНЫЕ данные пользователя для использования в on_submit
+        self.user_data = user_data or {}
+        
         # Pre-fill name and static if user data is available
         name_value = ""
         static_value = ""
@@ -136,9 +139,27 @@ class WarehouseRequestModal(discord.ui.Modal):
 
             name = self.name_input.value.strip()
             
-            # Получение информации о пользователе
-            user_info = await self.warehouse_manager.get_user_info(interaction.user)
-            _, _, position, rank = user_info
+            # Используем сохраненные данные пользователя вместо повторного запроса
+            if self.user_data:
+                position = self.user_data.get('position', 'Не указано')
+                rank = self.user_data.get('rank', 'Не указано') 
+                department = self.user_data.get('department', 'Не определено')
+                print(f"🔄 WAREHOUSE MODAL: Используем сохраненные данные - должность='{position}', звание='{rank}', подразделение='{department}'")
+            else:
+                # Если данных нет, попробуем получить из кэша/БД
+                print(f"⚠️ WAREHOUSE MODAL: Нет сохраненных данных, запрашиваем из кэша/БД")
+                from utils.user_cache import get_cached_user_info
+                fresh_data = await get_cached_user_info(interaction.user.id)
+                if fresh_data:
+                    position = fresh_data.get('position', 'Не указано')
+                    rank = fresh_data.get('rank', 'Не указано')
+                    department = fresh_data.get('department', 'Не определено')
+                    print(f"✅ WAREHOUSE MODAL: Получены свежие данные - должность='{position}', звание='{rank}', подразделение='{department}'")
+                else:
+                    position = 'Не указано'
+                    rank = 'Не указано'
+                    department = 'Не определено'
+                    print(f"❌ WAREHOUSE MODAL: Не удалось получить данные пользователя, используем значения по умолчанию")
             
             # Получаем текущее состояние корзины для проверки лимитов
             cart = get_user_cart(interaction.user.id)
@@ -290,11 +311,14 @@ class WarehouseRequestModal(discord.ui.Modal):
 class WarehouseQuantityModal(discord.ui.Modal):
     """Упрощенное модальное окно только для ввода количества - СУПЕР БЫСТРАЯ ВЕРСИЯ"""
     
-    def __init__(self, category: str, item_name: str, warehouse_manager: WarehouseManager):
+    def __init__(self, category: str, item_name: str, warehouse_manager: WarehouseManager, user_data=None):
         super().__init__(title=f"Запрос: {item_name}")
         self.category = category
         self.item_name = item_name
         self.warehouse_manager = warehouse_manager
+        
+        # Сохраняем данные пользователя для использования в on_submit
+        self.user_data = user_data or {}
         
         # Только поле для количества
         self.quantity_input = discord.ui.TextInput(
@@ -346,7 +370,7 @@ class WarehouseQuantityModal(discord.ui.Modal):
             # Быстрое получение информации пользователя из предыдущих данных корзины
             # cart уже получена выше для проверки первого добавления
             
-            # Используем данные из предыдущих запросов или базовые
+            # Используем данные из предыдущих запросов или сохраненные данные
             if cart.items:
                 # Берем данные из последнего добавленного предмета
                 last_item = cart.items[-1]
@@ -354,10 +378,31 @@ class WarehouseQuantityModal(discord.ui.Modal):
                 user_static = last_item.user_static
                 position = last_item.position
                 rank = last_item.rank
+                print(f"🔄 WAREHOUSE MODAL: Используем данные из корзины - должность='{position}', звание='{rank}'")
+            elif self.user_data:
+                # Используем сохраненные данные из модального окна
+                user_name = self.user_data.get('full_name', '')
+                user_static = self.user_data.get('static', '')
+                position = self.user_data.get('position', 'Не указано')
+                rank = self.user_data.get('rank', 'Не указано')
+                print(f"🔄 WAREHOUSE MODAL: Используем сохраненные данные - должность='{position}', звание='{rank}'")
             else:
-                # Базовые данные, если корзина пуста
-                user_info = await self.warehouse_manager.get_user_info(interaction.user)
-                user_name, user_static, position, rank = user_info
+                # Последний вариант - запрос из кэша/БД
+                print(f"⚠️ WAREHOUSE MODAL: Корзина пуста и нет сохраненных данных, запрашиваем из кэша/БД")
+                from utils.user_cache import get_cached_user_info
+                fresh_data = await get_cached_user_info(interaction.user.id)
+                if fresh_data:
+                    user_name = fresh_data.get('full_name', '')
+                    user_static = fresh_data.get('static', '')
+                    position = fresh_data.get('position', 'Не указано')
+                    rank = fresh_data.get('rank', 'Не указано')
+                    print(f"✅ WAREHOUSE MODAL: Получены свежие данные - должность='{position}', звание='{rank}'")
+                else:
+                    user_name = ''
+                    user_static = ''
+                    position = 'Не указано'
+                    rank = 'Не указано'
+                    print(f"❌ WAREHOUSE MODAL: Не удалось получить данные пользователя, используем значения по умолчанию")
                   # Валидация количества с учетом ограничений пользователя
             category_key = self._get_category_key(self.category)
             is_valid, corrected_quantity, validation_msg = self.warehouse_manager.validate_item_request(
@@ -926,10 +971,13 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
 class WarehouseCustomItemModal(discord.ui.Modal):
     """Модальное окно для кастомного предмета 'Прочее' с полем описания"""
     
-    def __init__(self, category: str, warehouse_manager: WarehouseManager):
+    def __init__(self, category: str, warehouse_manager: WarehouseManager, user_data=None):
         super().__init__(title="Запрос кастомного предмета")
         self.category = category
         self.warehouse_manager = warehouse_manager
+        
+        # Сохраняем данные пользователя для использования в on_submit
+        self.user_data = user_data or {}
         
         # Поле для названия предмета
         self.item_name_input = discord.ui.TextInput(
@@ -990,7 +1038,7 @@ class WarehouseCustomItemModal(discord.ui.Modal):
 
             item_name = self.item_name_input.value.strip()
             
-            # Получаем данные пользователя из корзины или базы
+            # Получаем данные пользователя из корзины или сохраненных данных
             cart = get_user_cart(interaction.user.id)
             
             if cart.items:
@@ -1000,10 +1048,31 @@ class WarehouseCustomItemModal(discord.ui.Modal):
                 user_static = last_item.user_static
                 position = last_item.position
                 rank = last_item.rank
+                print(f"🔄 WAREHOUSE CUSTOM MODAL: Используем данные из корзины - должность='{position}', звание='{rank}'")
+            elif self.user_data:
+                # Используем сохраненные данные из модального окна
+                user_name = self.user_data.get('full_name', '')
+                user_static = self.user_data.get('static', '')
+                position = self.user_data.get('position', 'Не указано')
+                rank = self.user_data.get('rank', 'Не указано')
+                print(f"🔄 WAREHOUSE CUSTOM MODAL: Используем сохраненные данные - должность='{position}', звание='{rank}'")
             else:
-                # Получаем из базы
-                user_info = await self.warehouse_manager.get_user_info(interaction.user)
-                user_name, user_static, position, rank = user_info
+                # Последний вариант - запрос из кэша/БД
+                print(f"⚠️ WAREHOUSE CUSTOM MODAL: Корзина пуста и нет сохраненных данных, запрашиваем из кэша/БД")
+                from utils.user_cache import get_cached_user_info
+                fresh_data = await get_cached_user_info(interaction.user.id)
+                if fresh_data:
+                    user_name = fresh_data.get('full_name', '')
+                    user_static = fresh_data.get('static', '')
+                    position = fresh_data.get('position', 'Не указано')
+                    rank = fresh_data.get('rank', 'Не указано')
+                    print(f"✅ WAREHOUSE CUSTOM MODAL: Получены свежие данные - должность='{position}', звание='{rank}'")
+                else:
+                    user_name = ''
+                    user_static = ''
+                    position = 'Не указано'
+                    rank = 'Не указано'
+                    print(f"❌ WAREHOUSE CUSTOM MODAL: Не удалось получить данные пользователя, используем значения по умолчанию")
             
             # Валидация с учетом корзины
             category_key = self._get_category_key(self.category)

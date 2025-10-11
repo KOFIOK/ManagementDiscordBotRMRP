@@ -285,11 +285,25 @@ class WarehouseItemSelectView(discord.ui.View):
             # Специальная обработка для кастомного предмета "Прочее"
             if item_name == "Прочее":
                 from .modals import WarehouseCustomItemModal
-                modal = WarehouseCustomItemModal(category, warehouse_manager)
+                # Получаем данные пользователя для модального окна
+                from utils.user_cache import get_cached_user_info
+                try:
+                    user_data = await get_cached_user_info(interaction.user.id)
+                    modal = WarehouseCustomItemModal(category, warehouse_manager, user_data)
+                except Exception as e:
+                    print(f"❌ Ошибка получения данных пользователя для custom modal: {e}")
+                    modal = WarehouseCustomItemModal(category, warehouse_manager)
             else:
                 # Создание упрощенного модального окна только для количества
                 from .modals import WarehouseQuantityModal
-                modal = WarehouseQuantityModal(category, item_name, warehouse_manager)
+                # Получаем данные пользователя для модального окна
+                from utils.user_cache import get_cached_user_info
+                try:
+                    user_data = await get_cached_user_info(interaction.user.id)
+                    modal = WarehouseQuantityModal(category, item_name, warehouse_manager, user_data)
+                except Exception as e:
+                    print(f"❌ Ошибка получения данных пользователя для quantity modal: {e}")
+                    modal = WarehouseQuantityModal(category, item_name, warehouse_manager)
             
             # Защита от истёкших интеракций при отправке модального окна
             success = await safe_modal_response(interaction, modal)

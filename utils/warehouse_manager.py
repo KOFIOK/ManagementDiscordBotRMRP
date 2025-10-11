@@ -9,7 +9,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional, Tuple, Any, List
 import re
 from .config_manager import load_config
-# Google Sheets удален - используется PostgreSQL
 
 class WarehouseManager:
     def __init__(self):
@@ -195,8 +194,10 @@ class WarehouseManager:
 
     async def get_user_info(self, user: discord.Member) -> Tuple[str, str, str, str]:
         """
-        Получить информацию о пользователе (имя, статик, должность, звание)
-        Сначала ищет в PostgreSQL (таблица personnel), потом в ролях Discord
+        Получить информацию о пользователе ТОЛЬКО из PostgreSQL или кэша
+        
+        Returns:
+            Tuple[имя, статик, должность, звание]
         """
         try:
             # Используем UserDatabase для поиска в PostgreSQL
@@ -226,102 +227,29 @@ class WarehouseManager:
                         break
             
             if user_data:
-                # Структура UserDatabase: first_name, last_name, static, rank, department, position, discord_id
                 full_name = user_data.get('full_name', '')
                 static = user_data.get('static', '')
                 rank = user_data.get('rank', '').strip()
                 department = user_data.get('department', '')
                 position = user_data.get('position', '')
                 
-                # Если звание пустое, пробуем извлечь из ролей Discord
-                if not rank:
-                    rank = self._extract_rank_from_roles(user)
-                    print(f"🔄 Звание из ролей Discord для {user.display_name}: '{rank}'")
-                
-                print(f"✅ USER ROLE DATA: {user.id} -> должность='{position}', звание='{rank}'")
+                print(f"✅ WAREHOUSE USER INFO: {user.id} -> '{full_name}' | '{static}' | должность='{position}' | звание='{rank}' | подразделение='{department}'")
                 
                 if full_name and static:
-                    print(f"✅ UserDatabase: Найдены данные для {user.display_name}: {full_name} | {static} | {position} | {rank}")
                     return full_name, static, position, rank
                 else:
-                    print(f"⚠️ UserDatabase: Данные неполные для {user.display_name}: имя='{full_name}', статик='{static}'")
+                    print(f"⚠️ WAREHOUSE USER INFO: Неполные данные - имя='{full_name}', статик='{static}'")
+                    # Возвращаем что есть, но предупреждаем
+                    return full_name or 'Неизвестно', static or 'Не указан', position, rank
+            else:
+                print(f"❌ WAREHOUSE USER INFO: Данные пользователя {user.id} не найдены в БД")
+                return 'Неизвестно', 'Не указан', 'Не указано', 'Не указано'
+                
         except Exception as e:
-            print(f"❌ Ошибка при поиске в UserDatabase: {e}")
+            print(f"❌ WAREHOUSE USER INFO ERROR: {e}")
             import traceback
             traceback.print_exc()
-
-        # Fallback: извлечение из никнейма и ролей Discord
-        print(f"📋 Данные не найдены в UserDatabase для {user.display_name}, используем роли Discord")
-        name = self._extract_name_from_nickname(user)
-        static = self._extract_static_from_nickname(user)
-        position = self._extract_position_from_roles(user)
-        rank = self._extract_rank_from_roles(user)
-        
-        print(f"📋 Fallback данные для {user.display_name}: имя='{name}', статик='{static}', должность='{position}', звание='{rank}'")
-        return name, static, position, rank
-
-    def _extract_name_from_nickname(self, user: discord.Member) -> str:
-        """Извлечь имя из никнейма Discord"""
-        display_name = user.display_name
-        
-        # Паттерны для извлечения имени
-        patterns = [
-            r'^\[.*?\]\s*(.+)',  # [Должность] Имя Фамилия
-            r'^!!\[.*?\]\s*(.+)',  # !![Звание] Имя Фамилия  
-            r'^.*?\|\s*(.+)',  # Статик | Имя Фамилия
-            r'^(.+)'  # Просто имя
-        ]
-        
-        for pattern in patterns:
-            match = re.search(pattern, display_name.strip())
-            if match:
-                return match.group(1).strip()
-        
-        return user.display_name
-
-    def _extract_static_from_nickname(self, user: discord.Member) -> str:
-        """Извлечь статик из никнейма Discord"""
-        display_name = user.display_name
-        
-        # Поиск статика в формате XXX-XXX или XXXXXX
-        static_pattern = r'(\d{2,3}[-\s]?\d{3})'
-        match = re.search(static_pattern, display_name)
-        if match:
-            static = match.group(1).replace(' ', '-').replace('--', '-')
-            return static
-        
-        return ""
-
-    def _extract_position_from_roles(self, user: discord.Member) -> str:
-        """Извлечь должность из ролей Discord"""
-        position_keywords = [
-            "Оперативник ССО", "Старший сотрудник охраны", "Сотрудник охраны", 
-            "Младший сотрудник охраны", "Военный врач", "Помощник врача",
-            "Старший инспектор ВП", "Дознаватель ВП", "Инспектор ВП",
-            "Старший инструктор"
-        ]
-        
-        for role in user.roles:
-            for keyword in position_keywords:
-                if keyword.lower() in role.name.lower():
-                    return keyword
-        
-        return ""
-
-    def _extract_rank_from_roles(self, user: discord.Member) -> str:
-        """Извлечь звание из ролей Discord"""
-        rank_keywords = [
-            "Рядовой", "Ефрейтор", "Младший сержант", "Сержант", "Старший сержант",
-            "Старшина", "Прапорщик", "Старший прапорщик", "Младший лейтенант",
-            "Лейтенант", "Старший лейтенант", "Капитан", "Майор", "Подполковник", "Полковник"
-        ]
-        
-        for role in user.roles:
-            for keyword in rank_keywords:
-                if keyword.lower() in role.name.lower():
-                    return keyword
-        
-        return ""
+            return 'Неизвестно', 'Не указан', 'Не указано', 'Не указано'
 
     def get_user_limits(self, position: str, rank: str) -> Dict[str, Any]:
         """

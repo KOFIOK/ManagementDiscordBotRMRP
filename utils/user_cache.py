@@ -98,29 +98,22 @@ class UserDataCache:
         self._loading[user_id] = True
         
         try:            
-            # Если предзагрузка прошла, но пользователь не найден - используем PostgreSQL
+            # Если предзагрузка прошла, но пользователь не найден - это может быть новый пользователь
+            # Поэтому загружаем из PostgreSQL, а не возвращаем None
             if self._bulk_preloaded and user_id not in self._cache:
-                print(f"🚫 BULK MISS: Пользователь {user_id} не найден в предзагруженных данных")
-                # Сохраняем отрицательный результат
-                self._store_in_cache(user_id, None)
-                return None
+                print(f"� BULK MISS: Пользователь {user_id} не найден в предзагруженных данных, загружаем из PostgreSQL")
             
             # Пытаемся использовать оптимизированный запрос только если он не будет вызывать рекурсию
             user_data = None
             
             # Используем database_manager для получения данных
             try:
-                user_data = personnel_manager.get_personnel_by_discord_id(user_id)
+                user_data = await personnel_manager.get_personnel_summary(user_id)
                 if user_data:
-                    # Преобразуем в ожидаемый формат
-                    user_data = {
-                        'full_name': f"{user_data.get('first_name', '')} {user_data.get('last_name', '')}".strip(),
-                        'static': user_data.get('static', ''),
-                        'position': user_data.get('position', 'Не указано'),
-                        'rank': user_data.get('rank', 'Не указано'),
-                        'department': user_data.get('subdivision', 'Не определено')
-                    }
-                print(f"🔍 DATABASE_MANAGER: Получены данные для {user_id}")
+                    # Данные уже в правильном формате, не нужно переопределять с fallback значениями
+                    print(f"🔍 DATABASE_MANAGER: Получены ПОЛНЫЕ данные для {user_id} - {user_data.get('rank', 'N/A')} {user_data.get('full_name', 'N/A')} ({user_data.get('department', 'N/A')})")
+                else:
+                    print(f"⚠️ DATABASE_MANAGER: Данные для {user_id} не найдены")
             except Exception as e:
                 print(f"⚠️ DATABASE_MANAGER FALLBACK: {e}")
                 user_data = None
@@ -194,19 +187,7 @@ class UserDataCache:
             user_data = await personnel_manager.get_personnel_summary(user_id)
             
             if user_data:
-                # Преобразуем в ожидаемый формат для leave_requests
-                formatted_data = {
-                    'full_name': user_data.get('full_name', '').strip() or f"{user_data.get('first_name', '')} {user_data.get('last_name', '')}".strip(),
-                    'static': user_data.get('static', ''),
-                    'position': user_data.get('position', 'Не указано'),
-                    'rank': user_data.get('rank', 'Не указано'),
-                    'department': user_data.get('department', 'Не определено'),
-                    # Добавляем дополнительные поля для совместимости
-                    'first_name': user_data.get('first_name', ''),
-                    'last_name': user_data.get('last_name', ''),
-                    'employee_status': user_data.get('employee_status', None)
-                }
-                user_data = formatted_data
+                # Данные уже в правильном формате от PersonnelManager, не переопределяем
                 print(f"🔍 INTERNAL DATABASE_MANAGER: Получены ПОЛНЫЕ данные для {user_id} - {user_data.get('rank', 'N/A')} {user_data.get('full_name', 'N/A')} ({user_data.get('department', 'N/A')})")
             else:
                 print(f"⚠️ INTERNAL DATABASE_MANAGER: Данные для {user_id} не найдены")
@@ -291,7 +272,10 @@ class UserDataCache:
         self._cache.clear()
         self._expiry.clear()
         self._stats['cache_size'] = 0
-        print("🗑️ CACHE CLEAR: Кэш полностью очищен")
+        # ВАЖНО: Сбрасываем флаг bulk preload при очистке кэша
+        self._bulk_preloaded = False
+        self._bulk_preload_time = None
+        print("🗑️ CACHE CLEAR: Кэш полностью очищен, bulk preload сброшен")
     
     def get_cache_stats(self) -> Dict[str, Any]:
         """Получить статистику кэша"""

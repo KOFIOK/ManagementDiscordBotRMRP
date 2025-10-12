@@ -61,8 +61,8 @@ async def create_automatic_dismissal_report(guild, member, target_role_name="В�
             
             # Get department and rank from roles BEFORE member left
             # First, try to determine department from ping roles (which roles will be pinged)
-            from utils.ping_adapter import ping_adapter
-            ping_roles_list = ping_adapter.get_ping_roles_for_dismissals(member)
+            from utils.ping_manager import ping_manager
+            ping_roles_list = ping_manager.get_ping_roles_for_user(member, 'dismissals')
             
             # Extract department name from ping roles if available
             user_department = "Неизвестно"
@@ -114,16 +114,16 @@ async def create_automatic_dismissal_report(guild, member, target_role_name="В�
         
         # Create special approval view for automatic dismissals with three buttons
         approval_view = AutomaticDismissalApprovalView(member.id)
-        
-        # Create ping content using new adapter
+
+        # Create ping content using ping_manager
         ping_content = ""
-        from utils.ping_adapter import ping_adapter
-        ping_roles_list = ping_adapter.get_ping_roles_for_dismissals(member)
-        
+        from utils.ping_manager import ping_manager
+        ping_roles_list = ping_manager.get_ping_roles_for_user(member, 'dismissals')
+
         if ping_roles_list:
             ping_roles = [role.mention for role in ping_roles_list]
             ping_content = f"-# {' '.join(ping_roles)}\n\n"
-        
+
         # Send the automatic report with department pings
         message = await channel.send(content=ping_content, embed=embed, view=approval_view)
         

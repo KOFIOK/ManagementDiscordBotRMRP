@@ -784,10 +784,10 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
         from utils.user_cache import get_user_department_fast
         
         item = self.cart.items[0]
-        
-        # Получаем роли для пинга через новый адаптер
-        from utils.ping_adapter import ping_adapter
-        ping_roles = ping_adapter.get_ping_roles_for_warehouse(interaction.user)
+
+        # Получаем роли для пинга через ping_manager
+        from utils.ping_manager import ping_manager
+        ping_roles = ping_manager.get_ping_roles_for_user(interaction.user, 'warehouse')
         
         # Получение подразделения из PostgreSQL (только для отображения в embed)
         try:
@@ -850,10 +850,10 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
         from utils.user_cache import get_user_department_fast
         
         first_item = self.cart.items[0]
-        
-        # Получаем роли для пинга через новый адаптер
-        from utils.ping_adapter import ping_adapter
-        ping_roles = ping_adapter.get_ping_roles_for_warehouse(interaction.user)
+
+        # Получаем роли для пинга через ping_manager
+        from utils.ping_manager import ping_manager
+        ping_roles = ping_manager.get_ping_roles_for_user(interaction.user, 'warehouse')
         
         # Получение подразделения из PostgreSQL (только для отображения в embed)
         try:

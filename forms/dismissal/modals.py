@@ -147,11 +147,10 @@ class SimplifiedDismissalModal(ui.Modal):
                     # Initialize ping_content
                     ping_content = ""
                     
-                    # Get ping roles using adapter
+                    # Get ping roles using ping_manager
                     try:
-                        from utils.ping_adapter import ping_adapter
-                        ping_roles_list = ping_adapter.get_ping_roles_for_dismissals(interaction.user)
-                        
+                        from utils.ping_manager import ping_manager
+                        ping_roles_list = ping_manager.get_ping_roles_for_user(interaction.user, 'dismissals')
                         if ping_roles_list:
                             ping_roles = [role.mention for role in ping_roles_list]
                             ping_content = f"-# {' '.join(ping_roles)}"

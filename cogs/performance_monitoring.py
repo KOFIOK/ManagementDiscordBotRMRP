@@ -97,24 +97,24 @@ class PerformanceMonitoringCog(commands.Cog):
         embed.add_field(
             name="📊 Результаты теста",
             value=f"""
-**Тестировано пользователей:** {len(test_users)}
-            
-**🔗 Прямые запросы PostgreSQL:**
-• Время: {direct_time:.3f}s
-• Успешных: {direct_successes}/{len(test_users)}
-• Среднее время: {(direct_time/len(test_users)*1000):.1f}ms
+                **Тестировано пользователей:** {len(test_users)}
+                            
+                **🔗 Прямые запросы PostgreSQL:**
+                • Время: {direct_time:.3f}s
+                • Успешных: {direct_successes}/{len(test_users)}
+                • Среднее время: {(direct_time/len(test_users)*1000):.1f}ms
 
-**🔄 Первые кэшированные запросы:**
-• Время: {cache_time:.3f}s  
-• Успешных: {cache_successes}/{len(test_users)}
-• Среднее время: {(cache_time/len(test_users)*1000):.1f}ms
-• Ускорение: {speedup_first:.1f}x
+                **🔄 Первые кэшированные запросы:**
+                • Время: {cache_time:.3f}s  
+                • Успешных: {cache_successes}/{len(test_users)}
+                • Среднее время: {(cache_time/len(test_users)*1000):.1f}ms
+                • Ускорение: {speedup_first:.1f}x
 
-**⚡ Повторные кэшированные запросы:**
-• Время: {cache_hit_time:.3f}s
-• Успешных: {cache_hit_successes}/{len(test_users)}  
-• Среднее время: {(cache_hit_time/len(test_users)*1000):.1f}ms
-• Ускорение: {speedup_cached:.0f}x
+                **⚡ Повторные кэшированные запросы:**
+                • Время: {cache_hit_time:.3f}s
+                • Успешных: {cache_hit_successes}/{len(test_users)}  
+                • Среднее время: {(cache_hit_time/len(test_users)*1000):.1f}ms
+                • Ускорение: {speedup_cached:.0f}x
             """.strip(),
             inline=False
         )

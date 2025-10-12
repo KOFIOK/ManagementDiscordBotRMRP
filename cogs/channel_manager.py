@@ -13,8 +13,7 @@ from utils.config_manager import (
 # Импорт централизованных функций уведомлений
 from utils.moderator_notifications import (
     send_moderator_welcome_dm, send_administrator_welcome_dm,
-    send_notification_to_channel, check_if_user_is_moderator,
-    check_if_user_is_administrator
+    check_if_user_is_moderator, check_if_user_is_administrator
 )
 
 
@@ -39,7 +38,6 @@ async def handle_moderator_assignment(guild: discord.Guild, target: discord.Memb
     # Отправляем уведомления
     for user in users_to_notify:
         dm_sent = await send_moderator_welcome_dm(user)
-        channel_sent = await send_notification_to_channel(guild, user, 'moderator')
         
         status = "✅" if dm_sent else "❌"
         print(f"{status} Уведомление модератору {user.display_name}: DM {status}")
@@ -64,7 +62,6 @@ async def handle_administrator_assignment(guild: discord.Guild, target: discord.
     # Отправляем уведомления
     for user in users_to_notify:
         dm_sent = await send_administrator_welcome_dm(user)
-        channel_sent = await send_notification_to_channel(guild, user, 'administrator')
         
         status = "✅" if dm_sent else "❌"
         print(f"{status} Уведомление администратору {user.display_name}: DM {status}")
@@ -611,7 +608,7 @@ class ChannelManagementCog(commands.Cog):
             from utils.config_manager import is_administrator
             config = load_config()
             
-            if not (interaction.user.guild_permissions.administrator or is_administrator(interaction.user, config)):
+            if not (is_administrator(interaction.user, config)):
                 await interaction.response.send_message(
                     "❌ У вас нет прав для выполнения этой команды. Требуются права администратора.", 
                     ephemeral=True
@@ -632,6 +629,59 @@ class ChannelManagementCog(commands.Cog):
             else:
                 await interaction.response.send_message(
                     f"⚠️ Не удалось отправить приветственное сообщение пользователю {user.mention}. "
+                    f"Возможно, у пользователя закрыты личные сообщения.",
+                    ephemeral=True
+                )
+        
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Ошибка при отправке приветственного сообщения: {e}",
+                ephemeral=True
+            )
+            print(f"Send welcome message error: {e}")
+
+    @app_commands.command(name="send_moderator_welcome_message", description="📨 Отправить приветственное сообщение новому модератору/администратору")
+    @app_commands.describe(user="Пользователь, которому отправить приветственное сообщение", role_type='Тип: "Модератор" / "Администратор"')
+    @app_commands.choices(role_type=[
+        app_commands.Choice(name="Модератор", value="moderator"),
+        app_commands.Choice(name="Администратор", value="administrator")
+    ])
+    async def send_moderator_welcome_message(self, interaction: discord.Interaction, user: discord.Member, role_type: str):
+        """Send moderator/administrator welcome message to a specific user (admin only)"""
+        try:
+            # Check if user has administrator permissions
+            config = load_config()
+            from utils.config_manager import is_administrator
+            
+            if not (is_administrator(interaction.user, config)):
+                await interaction.response.send_message(
+                    "❌ У вас нет прав для выполнения этой команды. Требуются права администратора.", 
+                    ephemeral=True
+                )
+                return
+            
+            # Send the appropriate welcome message based on selected type
+            if role_type == "moderator":
+                success = await send_moderator_welcome_dm(user)
+                role_label = "модератору"
+            elif role_type == "administrator":
+                success = await send_administrator_welcome_dm(user)
+                role_label = "администратору"
+            else:
+                await interaction.response.send_message(
+                    "❌ Неверный тип. Выберите 'Модератор' или 'Администратор'.",
+                    ephemeral=True
+                )
+                return
+            
+            if success:
+                await interaction.response.send_message(
+                    f"✅ Приветственное сообщение успешно отправлено {role_label} {user.mention}",
+                    ephemeral=True
+                )
+            else:
+                await interaction.response.send_message(
+                    f"⚠️ Не удалось отправить приветственное сообщение {role_label} {user.mention}. "
                     f"Возможно, у пользователя закрыты личные сообщения.",
                     ephemeral=True
                 )

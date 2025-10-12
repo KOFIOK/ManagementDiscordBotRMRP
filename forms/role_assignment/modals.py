@@ -175,6 +175,11 @@ class MilitaryApplicationModal(ui.Modal):
                         ping_mentions.append(ping_role.mention)
                 if ping_mentions:
                     ping_content = f"-# {' '.join(ping_mentions)}"
+                else:
+                    # Ни одна роль не найдена — логируем для отладки
+                    print(f"[WARN] Ни одна роль для пинга не найдена по military_role_assignment_ping_roles: {ping_role_ids}")
+            else:
+                print("[WARN] military_role_assignment_ping_roles пуст или не задан в config")
             
             # Send to moderation channel
             await moderation_channel.send(content=ping_content, embed=embed, view=approval_view)

@@ -179,14 +179,14 @@ class LeaveRequestModal(ui.Modal):
         channel_id = config.get('leave_requests_channel')
         
         if not channel_id:
-          return
-        
+            return
+
         channel = interaction.guild.get_channel(channel_id)
         if not channel:
-          return
-          # Get ping roles using new adapter
-        from utils.ping_adapter import ping_adapter
-        ping_roles = ping_adapter.get_ping_roles_for_leave_requests(interaction.user)
+            return
+        # Get ping roles using ping_manager
+        from utils.ping_manager import ping_manager
+        ping_roles = ping_manager.get_ping_roles_for_user(interaction.user, 'leave_requests')
         ping_text = " ".join([role.mention for role in ping_roles]) if ping_roles else ""
         
         # Department display - используем название из БД как есть

@@ -448,8 +448,7 @@ async def on_member_update(before, after):
                   # Проверяем, была ли добавлена модераторская/администраторская роль
                 from utils.moderator_notifications import (
                     check_if_user_is_moderator, check_if_user_is_administrator,
-                    send_moderator_welcome_dm, send_administrator_welcome_dm,
-                    send_notification_to_channel
+                    send_moderator_welcome_dm, send_administrator_welcome_dm
                 )
                 
                 # Проверяем статус ДО изменения ролей
@@ -468,12 +467,10 @@ async def on_member_update(before, after):
                   # Отправляем уведомления
                 if became_administrator:
                     dm_sent = await send_administrator_welcome_dm(after)
-                    channel_sent = await send_notification_to_channel(after.guild, after, 'administrator')
                     print(f"📢 Авто-уведомление администратору {after.display_name} (роль выдана): DM {'✅' if dm_sent else '❌'}")
                     
                 elif became_moderator:
                     dm_sent = await send_moderator_welcome_dm(after)
-                    channel_sent = await send_notification_to_channel(after.guild, after, 'moderator')
                     print(f"📢 Авто-уведомление модератору {after.display_name} (роль выдана): DM {'✅' if dm_sent else '❌'}")
             
     except Exception as e:

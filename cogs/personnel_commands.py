@@ -423,7 +423,6 @@ class PersonnelCommands(commands.Cog):
                     'username': сотрудник.display_name,
                     'name': сотрудник.display_name,  # Will be overridden if user provides specific name
                     'type': 'military',
-                    'recruitment_type': 'призыв',
                     'rank': звание or 'Рядовой',
                     'subdivision': подразделение or 'Военная Академия',
                     'position': должность,

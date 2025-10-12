@@ -33,15 +33,6 @@ class MilitaryApplicationModal(ui.Modal):
         self.add_item(self.static_input)
         
         # Rank is always "Рядовой" for new military recruits, no need for input field
-        
-        self.recruitment_type_input = ui.TextInput(
-            label="Порядок набора",
-            placeholder="Экскурсия или Призыв",
-            min_length=1,
-            max_length=20,
-            required=True
-        )
-        self.add_item(self.recruitment_type_input)
     
     async def on_submit(self, interaction: discord.Interaction):
         """Process military application submission"""
@@ -70,14 +61,6 @@ class MilitaryApplicationModal(ui.Modal):
                 ephemeral=True
             )
             return
-          # Validate recruitment type
-        recruitment_type = self.recruitment_type_input.value.strip().lower()
-        if recruitment_type not in ["экскурсия", "призыв"]:
-            await interaction.response.send_message(
-                "❌ Порядок набора должен быть: 'Экскурсия' или 'Призыв'.",
-                ephemeral=True
-            )
-            return
         
         # Check blacklist status for military applications
         blacklist_check = await self._check_blacklist_status(formatted_static)
@@ -97,7 +80,6 @@ class MilitaryApplicationModal(ui.Modal):
             "name": self.name_input.value.strip(),
             "static": formatted_static,
             "rank": "Рядовой",  # Always set rank as "Рядовой" for new military recruits
-            "recruitment_type": recruitment_type,
             "user_id": interaction.user.id,
             "user_mention": interaction.user.mention
         }
@@ -158,7 +140,6 @@ class MilitaryApplicationModal(ui.Modal):
             embed.add_field(name="📝 Имя Фамилия", value=application_data["name"], inline=True)
             embed.add_field(name="🔢 Статик", value=application_data["static"], inline=True)
             embed.add_field(name="🎖️ Звание", value=application_data["rank"], inline=True)
-            embed.add_field(name="📋 Порядок набора", value=application_data["recruitment_type"].title(), inline=True)
             
             # Create approval view
             from .base import create_approval_view
@@ -588,16 +569,6 @@ class MilitaryEditModal(ui.Modal):
         self.add_item(self.static_input)
         
         # Rank is always "Рядовой" for military personnel, no need for input field
-        
-        self.recruitment_type_input = ui.TextInput(
-            label="Порядок набора",
-            placeholder="Экскурсия или Призыв",
-            min_length=1,
-            max_length=20,
-            required=True,
-            default=application_data.get('recruitment_type', '')
-        )
-        self.add_item(self.recruitment_type_input)
     
     async def on_submit(self, interaction: discord.Interaction):
         """Обработка редактирования военной заявки"""
@@ -613,21 +584,11 @@ class MilitaryEditModal(ui.Modal):
                 )
                 return
             
-            # Валидация типа набора
-            recruitment_type = self.recruitment_type_input.value.strip().lower()
-            if recruitment_type not in ["экскурсия", "призыв"]:
-                await interaction.response.send_message(
-                    "❌ Порядок набора должен быть: 'Экскурсия' или 'Призыв'.",
-                    ephemeral=True
-                )
-                return
-            
             # Собираем новые данные
             updated_data = {
                 'name': self.name_input.value.strip(),
                 'static': formatted_static,
                 'rank': "Рядовой",  # Always set rank as "Рядовой" for military personnel
-                'recruitment_type': recruitment_type.title(),
                 # Сохраняем оригинальные данные
                 'type': self.application_data['type'],
                 'user_id': self.application_data['user_id'],
@@ -670,8 +631,6 @@ class MilitaryEditModal(ui.Modal):
                     embed.set_field_at(i, name="🔢 Статик", value=updated_data['static'], inline=True)
                 elif field.name == "🎖️ Звание":
                     embed.set_field_at(i, name="🎖️ Звание", value=updated_data['rank'], inline=True)
-                elif field.name == "📋 Порядок набора":
-                    embed.set_field_at(i, name="📋 Порядок набора", value=updated_data['recruitment_type'], inline=True)
                 elif field.name == "✏️ Отредактировано":
                     fields_to_remove.append(i)
             

@@ -51,7 +51,7 @@ class RoleAssignmentView(ui.View):
             # On error, allow application to proceed
             return {"has_roles": False, "role_list": ""}
 
-    @discord.ui.button(label="📜 Призыв / Экскурсия", style=discord.ButtonStyle.green, custom_id="role_military")
+    @discord.ui.button(label="📜 Эта фракция", style=discord.ButtonStyle.green, custom_id="role_military")
     async def military_application(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Open military service application form"""
         # Check if user has active blacklist entry
@@ -96,7 +96,7 @@ class RoleAssignmentView(ui.View):
         modal = SupplierApplicationModal()
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="👨‍⚕️ Я госслужащий", style=discord.ButtonStyle.secondary, custom_id="role_civilian")
+    @discord.ui.button(label="👨‍⚕️ Другая фракция", style=discord.ButtonStyle.secondary, custom_id="role_civilian")
     async def civilian_application(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Open civilian application form"""
         modal = CivilianApplicationModal()

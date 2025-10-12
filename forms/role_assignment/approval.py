@@ -44,8 +44,6 @@ class RoleApplicationApprovalView(ui.View):
                     application_data['static'] = field.value
                 elif field.name == "🎖️ Звание":
                     application_data['rank'] = field.value
-                elif field.name == "📋 Порядок набора":
-                    application_data['recruitment_type'] = field.value
                 elif field.name == "🏛️ Фракция, звание, должность":
                     application_data['faction'] = field.value
                 elif field.name == "🎯 Цель получения роли":
@@ -585,10 +583,6 @@ class RoleApplicationApprovalView(ui.View):
             audit_embed.add_field(name="Кадровую отписал", value=signed_by_name, inline=False)
             audit_embed.add_field(name="Имя Фамилия | 6 цифр статика", value=name_with_static, inline=False)
             audit_embed.add_field(name="Действие", value="Принят на службу", inline=False)
-            
-            recruitment_type = self.application_data.get("recruitment_type", "")
-            if recruitment_type:
-                audit_embed.add_field(name="Причина принятия", value=recruitment_type.capitalize(), inline=False)
             
             audit_embed.add_field(name="Дата Действия", value=action_date, inline=False)
             audit_embed.add_field(name="Подразделение", value="Военная Академия - ВА", inline=False)

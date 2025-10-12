@@ -593,15 +593,6 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
             default="Рядовой"
         )
         self.add_item(self.rank_input)
-        
-        self.recruitment_type_input = ui.TextInput(
-            label="Порядок набора",
-            placeholder="Экскурсия или Призыв",
-            min_length=1,
-            max_length=20,
-            required=True
-        )
-        self.add_item(self.recruitment_type_input)
     
     async def on_submit(self, interaction: discord.Interaction):
         """Process recruitment submission - adapted from MilitaryApplicationModal"""
@@ -626,15 +617,6 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                 )
                 return
             
-            # Validate recruitment type
-            recruitment_type = self.recruitment_type_input.value.strip().lower()
-            if recruitment_type not in ["экскурсия", "призыв"]:
-                await interaction.response.send_message(
-                    "❌ Порядок набора должен быть: 'Экскурсия' или 'Призыв'.",
-                    ephemeral=True
-                )
-                return
-            
             # All validation passed, defer for processing
             await interaction.response.defer(ephemeral=True)
             
@@ -643,8 +625,7 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                 interaction,
                 self.name_input.value.strip(),
                 formatted_static,
-                self.rank_input.value.strip(),
-                recruitment_type
+                self.rank_input.value.strip()
             )
             
             if success:
@@ -658,8 +639,7 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                     value=(
                         f"**ФИО:** {self.name_input.value.strip()}\n"
                         f"**Статик:** {formatted_static}\n"
-                        f"**Звание:** {self.rank_input.value.strip()}\n"
-                        f"**Порядок набора:** {recruitment_type}"
+                        f"**Звание:** {self.rank_input.value.strip()}"
                     ),
                     inline=False
                 )
@@ -700,11 +680,11 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
         else:
             return ""
     
-    async def _process_recruitment_direct(self, interaction: discord.Interaction, full_name: str, static: str, rank: str, recruitment_type: str) -> bool:
+    async def _process_recruitment_direct(self, interaction: discord.Interaction, full_name: str, static: str, rank: str) -> bool:
         """Process recruitment using PersonnelManager"""
         try:
             print(f"🔄 RECRUITMENT: Starting recruitment via PersonnelManager for {self.target_user.id}")
-            print(f"🔄 RECRUITMENT: Data - Name: '{full_name}', Static: '{static}', Rank: '{rank}', Type: '{recruitment_type}'")
+            print(f"🔄 RECRUITMENT: Data - Name: '{full_name}', Static: '{static}', Rank: '{rank}'")
             
             # Prepare application data for PersonnelManager
             application_data = {
@@ -713,11 +693,9 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                 'name': full_name,
                 'static': static,
                 'type': 'military',
-                'recruitment_type': recruitment_type.lower(),
                 'rank': rank,
                 'subdivision': 'Военная Академия',
                 'position': None,
-                'reason': f"Набор: {recruitment_type}"
             }
             
             # Use PersonnelManager for recruitment

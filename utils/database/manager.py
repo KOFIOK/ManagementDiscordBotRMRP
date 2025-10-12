@@ -325,7 +325,6 @@ class DatabaseManager:
             name_from_form = application_data.get('name', '')
             static_from_form = application_data.get('static', '')
             rank = application_data.get('rank', 'Рядовой')
-            recruitment_type = application_data.get('recruitment_type', '')
             
             # Only create record for "Рядовой" rank
             if rank.lower() != 'рядовой':
@@ -340,7 +339,6 @@ class DatabaseManager:
                     'name': name_from_form,
                     'static': static_from_form,
                     'rank': rank,
-                    'recruitment_type': recruitment_type,
                     'approved_by': approved_by_info
                 }, ensure_ascii=False),
                 approved_by_info

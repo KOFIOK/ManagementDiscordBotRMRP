@@ -40,12 +40,9 @@ class PersonnelManager:
         """
         try:
             application_type = application_data.get('type', '').lower()
-            recruitment_type = application_data.get('recruitment_type', '').lower()
             
-            print(f"Обработка заявки: {application_type}, призыв: {recruitment_type}")
-            
-            # Only military recruits (Призыв/Экскурсия) go to database
-            if application_type == "military" and recruitment_type in ["призыв", "экскурсия"]:
+            # Only military recruits go to database
+            if application_type == "military":
                 # Step 1: Ensure personnel record exists
                 personnel_id, personnel_created = await self._ensure_personnel_record(application_data, user_discord_id)
                 if not personnel_id:
@@ -77,7 +74,7 @@ class PersonnelManager:
                 
             elif application_type == "military":
                 # Military but NOT recruit (e.g. transfer, promotion) - NO database actions
-                return True, f"Военная заявка одобрена (тип: {recruitment_type}, только роли Discord, БД не затрагивается)"
+                return True, f"Военная заявка одобрена (только роли Discord, БД не затрагивается)"
                 
             else:
                 # Other cases - NO database actions
@@ -408,9 +405,8 @@ class PersonnelManager:
                     
                     performed_by_id = moderator_personnel['id']
                 
-                # УПРОЩЕННЫЕ details - простой текст вместо JSON
-                recruitment_type = application_data.get('recruitment_type', '')
-                details = recruitment_type.capitalize() if recruitment_type else 'Призыв'
+                # УПРОЩЕННЫЕ details - пустое значение вместо текста
+                details = None
                 
                 # ГРОМОЗДКИЙ JSON для changes (как требуется)
                 rank_name = application_data.get('rank', 'Рядовой')

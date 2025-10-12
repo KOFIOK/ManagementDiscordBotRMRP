@@ -443,7 +443,6 @@ class PersonnelAuditLogger:
         Conditional fields:
         - Должность (if not "Не назначено", empty, or "None")
         - Причина увольнения (for dismissals)
-        - Причина принятия (for hirings)
         """
         # Position field - only if meaningful value exists
         position = personnel_data.get('position', '')
@@ -461,12 +460,6 @@ class PersonnelAuditLogger:
             if "Уволен" in action:
                 embed.add_field(
                     name="Причина увольнения",
-                    value=reason,
-                    inline=False
-                )
-            elif "Принят на службу" in action:
-                embed.add_field(
-                    name="Причина принятия",
                     value=reason,
                     inline=False
                 )
@@ -490,7 +483,6 @@ class PersonnelAuditLogger:
         Conditional fields:
         - Должность (if not "Не назначено", empty, or "None")
         - Причина увольнения (for dismissals)
-        - Причина принятия (for hirings)
         """
         # Position field - only if meaningful value exists
         position = personnel_data.get('position', '')
@@ -508,12 +500,6 @@ class PersonnelAuditLogger:
             if "Уволен" in action:
                 embed.add_field(
                     name="Причина увольнения",
-                    value=reason,
-                    inline=False
-                )
-            elif "Принят на службу" in action:
-                embed.add_field(
-                    name="Причина принятия",
                     value=reason,
                     inline=False
                 )

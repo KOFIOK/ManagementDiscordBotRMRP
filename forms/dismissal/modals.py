@@ -102,6 +102,7 @@ class SimplifiedDismissalModal(ui.Modal):
             # Create dismissal report embed
             embed = discord.Embed(
                 title="📋 Рапорт на увольнение",
+                description=f"## **Отправитель:** {interaction.user.mention}",
                 color=discord.Color.orange(),
                 timestamp=discord.utils.utcnow()
             )

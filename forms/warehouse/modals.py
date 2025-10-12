@@ -141,8 +141,8 @@ class WarehouseRequestModal(discord.ui.Modal):
             
             # Используем сохраненные данные пользователя вместо повторного запроса
             if self.user_data:
-                position = self.user_data.get('position', 'Не указано')
-                rank = self.user_data.get('rank', 'Не указано') 
+                position = self.user_data.get('position', 'Не назначено')
+                rank = self.user_data.get('rank', 'Не назначено') 
                 department = self.user_data.get('department', 'Не определено')
                 print(f"🔄 WAREHOUSE MODAL: Используем сохраненные данные - должность='{position}', звание='{rank}', подразделение='{department}'")
             else:
@@ -151,13 +151,13 @@ class WarehouseRequestModal(discord.ui.Modal):
                 from utils.user_cache import get_cached_user_info
                 fresh_data = await get_cached_user_info(interaction.user.id)
                 if fresh_data:
-                    position = fresh_data.get('position', 'Не указано')
-                    rank = fresh_data.get('rank', 'Не указано')
+                    position = fresh_data.get('position', 'Не назначено')
+                    rank = fresh_data.get('rank', 'Не назначено')
                     department = fresh_data.get('department', 'Не определено')
                     print(f"✅ WAREHOUSE MODAL: Получены свежие данные - должность='{position}', звание='{rank}', подразделение='{department}'")
                 else:
-                    position = 'Не указано'
-                    rank = 'Не указано'
+                    position = 'Не назначено'
+                    rank = 'Не назначено'
                     department = 'Не определено'
                     print(f"❌ WAREHOUSE MODAL: Не удалось получить данные пользователя, используем значения по умолчанию")
             
@@ -383,8 +383,8 @@ class WarehouseQuantityModal(discord.ui.Modal):
                 # Используем сохраненные данные из модального окна
                 user_name = self.user_data.get('full_name', '')
                 user_static = self.user_data.get('static', '')
-                position = self.user_data.get('position', 'Не указано')
-                rank = self.user_data.get('rank', 'Не указано')
+                position = self.user_data.get('position', 'Не назначено')
+                rank = self.user_data.get('rank', 'Не назначено')
                 print(f"🔄 WAREHOUSE MODAL: Используем сохраненные данные - должность='{position}', звание='{rank}'")
             else:
                 # Последний вариант - запрос из кэша/БД
@@ -394,14 +394,14 @@ class WarehouseQuantityModal(discord.ui.Modal):
                 if fresh_data:
                     user_name = fresh_data.get('full_name', '')
                     user_static = fresh_data.get('static', '')
-                    position = fresh_data.get('position', 'Не указано')
-                    rank = fresh_data.get('rank', 'Не указано')
+                    position = fresh_data.get('position', 'Не назначено')
+                    rank = fresh_data.get('rank', 'Не назначено')
                     print(f"✅ WAREHOUSE MODAL: Получены свежие данные - должность='{position}', звание='{rank}'")
                 else:
                     user_name = ''
                     user_static = ''
-                    position = 'Не указано'
-                    rank = 'Не указано'
+                    position = 'Не назначено'
+                    rank = 'Не назначено'
                     print(f"❌ WAREHOUSE MODAL: Не удалось получить данные пользователя, используем значения по умолчанию")
                   # Валидация количества с учетом ограничений пользователя
             category_key = self._get_category_key(self.category)
@@ -809,7 +809,7 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
         embed.add_field(name="🏢 Подразделение", value=department, inline=True)
         
         # Добавляем должность только если она указана
-        if item.position and item.position.strip() and item.position != "Не указано":
+        if item.position and item.position.strip() and item.position != "Не назначено":
             embed.add_field(name="📍 Должность", value=item.position, inline=True)
         
         embed.add_field(name="🎖️ Звание", value=item.rank, inline=True)
@@ -875,7 +875,7 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
         embed.add_field(name="🏢 Подразделение", value=department, inline=True)
         
         # Добавляем должность только если она указана
-        if first_item.position and first_item.position.strip() and first_item.position != "Не указано":
+        if first_item.position and first_item.position.strip() and first_item.position != "Не назначено":
             embed.add_field(name="📍 Должность", value=first_item.position, inline=True)
         
         embed.add_field(name="🎖️ Звание", value=first_item.rank, inline=True)
@@ -1053,8 +1053,8 @@ class WarehouseCustomItemModal(discord.ui.Modal):
                 # Используем сохраненные данные из модального окна
                 user_name = self.user_data.get('full_name', '')
                 user_static = self.user_data.get('static', '')
-                position = self.user_data.get('position', 'Не указано')
-                rank = self.user_data.get('rank', 'Не указано')
+                position = self.user_data.get('position', 'Не назначено')
+                rank = self.user_data.get('rank', 'Не назначено')
                 print(f"🔄 WAREHOUSE CUSTOM MODAL: Используем сохраненные данные - должность='{position}', звание='{rank}'")
             else:
                 # Последний вариант - запрос из кэша/БД
@@ -1064,14 +1064,14 @@ class WarehouseCustomItemModal(discord.ui.Modal):
                 if fresh_data:
                     user_name = fresh_data.get('full_name', '')
                     user_static = fresh_data.get('static', '')
-                    position = fresh_data.get('position', 'Не указано')
-                    rank = fresh_data.get('rank', 'Не указано')
+                    position = fresh_data.get('position', 'Не назначено')
+                    rank = fresh_data.get('rank', 'Не назначено')
                     print(f"✅ WAREHOUSE CUSTOM MODAL: Получены свежие данные - должность='{position}', звание='{rank}'")
                 else:
                     user_name = ''
                     user_static = ''
-                    position = 'Не указано'
-                    rank = 'Не указано'
+                    position = 'Не назначено'
+                    rank = 'Не назначено'
                     print(f"❌ WAREHOUSE CUSTOM MODAL: Не удалось получить данные пользователя, используем значения по умолчанию")
             
             # Валидация с учетом корзины

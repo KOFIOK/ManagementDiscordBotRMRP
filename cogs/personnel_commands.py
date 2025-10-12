@@ -7,6 +7,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from datetime import datetime, timezone, timedelta
+from typing import Dict
 from utils.config_manager import load_config, is_moderator_or_admin, is_administrator
 from utils.database_manager import PersonnelManager
 from utils.nickname_manager import nickname_manager
@@ -46,12 +47,12 @@ class PersonnelNameChangeModal(discord.ui.Modal, title="Изменение ФИ�
         
         # Поле "Статик" - необязательное
         self.static_input = discord.ui.TextInput(
-            label="Статик (необязательно)",
-            placeholder="123-456 или оставьте пустым",
+            label="Статик",
+            placeholder="123-456 (5 или 6 символов)",
             default=self.current_data.get('static', ''),
-            min_length=0,
-            max_length=10,
-            required=False
+            min_length=6,
+            max_length=7,
+            required=True
         )
         self.add_item(self.static_input)
     
@@ -124,10 +125,9 @@ class PersonnelNameChangeModal(discord.ui.Modal, title="Изменение ФИ�
                 print(f"🔍 Начинаем отправку аудит-уведомления...")
                 # Отправляем аудит-уведомление
                 try:
-                    from utils.database_manager.manager import PersonnelManager
-                    pm = PersonnelManager()
-                    print(f"🔍 Получаем personnel_data...")
-                    personnel_data = await pm.get_personnel_summary(self.target_member.id)
+                    from utils.user_cache import get_cached_user_info
+                    print(f"🔍 Получаем personnel_data из кэша...")
+                    personnel_data = await get_cached_user_info(self.target_member.id)
                     print(f"🔍 personnel_data получен: {personnel_data is not None}")
                     
                     if personnel_data:
@@ -135,8 +135,8 @@ class PersonnelNameChangeModal(discord.ui.Modal, title="Изменение ФИ�
                         audit_personnel_data = {
                             'name': f"{first_name} {last_name}",
                             'static': static or personnel_data.get('static', ''),
-                            'rank': personnel_data.get('rank_name', 'Неизвестно'),
-                            'department': personnel_data.get('subdivision_name', 'Неизвестно'),
+                            'rank': personnel_data.get('rank', 'Неизвестно'),
+                            'department': personnel_data.get('department', 'Неизвестно'),
                             'position': personnel_data.get('position_name', 'Не назначено')
                         }
                         
@@ -324,6 +324,44 @@ class PersonnelCommands(commands.Cog):
             ]
         }
     
+    async def _get_default_values_from_db(self) -> Dict[str, str]:
+        """Получить дефолтные значения из базы данных"""
+        try:
+            from utils.postgresql_pool import get_db_cursor
+            
+            defaults = {
+                'rank': 'Рядовой',  # fallback
+                'subdivision': 'Военная Академия'  # fallback
+            }
+            
+            with get_db_cursor() as cursor:
+                # Get first rank (lowest rank_level)
+                try:
+                    cursor.execute("SELECT name FROM ranks ORDER BY rank_level ASC LIMIT 1")
+                    rank_result = cursor.fetchone()
+                    if rank_result:
+                        defaults['rank'] = rank_result['name']
+                except Exception as e:
+                    print(f"⚠️ Could not get default rank: {e}")
+                
+                # Get first subdivision (alphabetically)
+                try:
+                    cursor.execute("SELECT name FROM subdivisions ORDER BY name ASC LIMIT 1")
+                    subdivision_result = cursor.fetchone()
+                    if subdivision_result:
+                        defaults['subdivision'] = subdivision_result['name']
+                except Exception as e:
+                    print(f"⚠️ Could not get default subdivision: {e}")
+            
+            return defaults
+            
+        except Exception as e:
+            print(f"❌ Error getting default values from DB: {e}")
+            return {
+                'rank': 'Рядовой',
+                'subdivision': 'Военная Академия'
+            }
+    
     @app_commands.command(name="аудит", description="Добавить запись в кадровый аудит")
     @app_commands.describe(
         сотрудник="Выберите сотрудника",
@@ -390,18 +428,6 @@ class PersonnelCommands(commands.Cog):
                 else:
                     await interaction.followup.send(embed=embed, ephemeral=True)
                 return
-            elif действие == "Принят на службу" and not примечание:
-                embed = discord.Embed(
-                    title="❌ Требуется причина принятия",
-                    description="Для принятия на службу необходимо указать причину.",
-                    color=discord.Color.red()
-                )
-                # Проверяем, был ли defer или нет
-                if действие == "Внесение изменений в Имя или Фамилию":
-                    await interaction.response.send_message(embed=embed, ephemeral=True)
-                else:
-                    await interaction.followup.send(embed=embed, ephemeral=True)
-                return
             elif действие not in ["Уволен со службы", "Принят на службу", "Внесение изменений в Имя или Фамилию"] and not any([подразделение, должность, звание]):
                 embed = discord.Embed(
                     title="❌ Ошибка заполнения",
@@ -417,16 +443,18 @@ class PersonnelCommands(commands.Cog):
             
             # Handle different actions with nickname integration
             if действие == "Принят на службу":
+                # Получить дефолтные значения из базы данных
+                defaults = await self._get_default_values_from_db()
+                
                 # Это приём на службу - используем PersonnelManager + nickname_manager
                 application_data = {
                     'user_id': сотрудник.id,
                     'username': сотрудник.display_name,
                     'name': сотрудник.display_name,  # Will be overridden if user provides specific name
                     'type': 'military',
-                    'rank': звание or 'Рядовой',
-                    'subdivision': подразделение or 'Военная Академия',
-                    'position': должность,
-                    'reason': примечание
+                    'rank': звание or defaults['rank'],
+                    'subdivision': подразделение or defaults['subdivision'],
+                    'position': должность
                 }
                 
                 # Используем PersonnelManager для приёма
@@ -456,7 +484,7 @@ class PersonnelCommands(commands.Cog):
                     # Используем nickname_manager
                     new_nickname = await nickname_manager.handle_hiring(
                         member=сотрудник,
-                        rank_name=звание or 'Рядовой',
+                        rank_name=звание or defaults['rank'],
                         first_name=first_name,
                         last_name=last_name
                     )
@@ -484,7 +512,7 @@ class PersonnelCommands(commands.Cog):
                 await interaction.followup.send(embed=embed, ephemeral=True)
             
             elif действие == "Повышен в звании":
-                # Повышение в звании с автоматическим обновлением никнейма
+                # Повышение в звании с полным обновлением базы данных, ролей и никнейма
                 try:
                     if not звание:
                         embed = discord.Embed(
@@ -494,31 +522,123 @@ class PersonnelCommands(commands.Cog):
                         )
                         await interaction.followup.send(embed=embed, ephemeral=True)
                         return
-                    
+
                     print(f"🎆 AUDIT COMMAND: Повышение в звании {сотрудник.display_name} -> {звание}")
+
+                    # Get current rank BEFORE changing it in database
+                    from utils.postgresql_pool import get_db_cursor
+                    with get_db_cursor() as cursor:
+                        cursor.execute("""
+                            SELECT r.name as current_rank
+                            FROM personnel p
+                            JOIN employees e ON p.id = e.personnel_id
+                            JOIN ranks r ON e.rank_id = r.id
+                            WHERE p.discord_id = %s AND p.is_dismissal = false;
+                        """, (сотрудник.id,))
+                        rank_result = cursor.fetchone()
+                        old_rank = rank_result['current_rank'] if rank_result else None
+
+                    if not old_rank:
+                        embed = discord.Embed(
+                            title="❌ Ошибка получения данных",
+                            description=f"Не удалось получить текущее звание пользователя {сотрудник.mention}.",
+                            color=discord.Color.red()
+                        )
+                        await interaction.followup.send(embed=embed, ephemeral=True)
+                        return
+
+                    # Execute rank change using existing logic from personnel_context
+                    from forms.personnel_context.commands_clean import RankChangeView
                     
-                    # Используем универсальный метод для изменения звания
+                    # Create a temporary RankChangeView instance just to use its methods
+                    rank_view = RankChangeView(сотрудник, звание, is_promotion=False)
+                    
+                    # Execute rank change in database (reuse existing _change_rank_in_db method)
+                    db_success = await rank_view._change_rank_in_db(
+                        сотрудник.id,
+                        звание,
+                        interaction.user.id,
+                        action_id=1  # Promotion action
+                    )
+                    
+                    if not db_success:
+                        embed = discord.Embed(
+                            title="❌ Ошибка базы данных",
+                            description=f"Не удалось обновить звание в базе данных для {сотрудник.mention}.",
+                            color=discord.Color.red()
+                        )
+                        await interaction.followup.send(embed=embed, ephemeral=True)
+                        return
+
+                    # Send audit notification using existing logic from RankChangeView
+                    try:
+                        # Get personnel data for audit
+                        personnel_data = await pm.get_personnel_data_for_audit(сотрудник.id)
+                        if not personnel_data:
+                            personnel_data = {
+                                'name': сотрудник.display_name,
+                                'static': 'Неизвестно',
+                                'rank': звание,
+                                'department': 'Неизвестно',
+                                'position': 'Неизвестно'
+                            }
+                        else:
+                            personnel_data['rank'] = звание
+
+                        await audit_logger.send_personnel_audit(
+                            guild=interaction.guild,
+                            action=await AuditAction.PROMOTION(),
+                            target_user=сотрудник,
+                            moderator=interaction.user,
+                            personnel_data=personnel_data,
+                            config=config
+                        )
+                        print(f"✅ AUDIT PROMOTION: Аудит-уведомление отправлено")
+
+                    except Exception as audit_error:
+                        print(f"Warning: Failed to send audit notification: {audit_error}")
+
+                    # Update Discord roles using rank_manager (same as in RankChangeView)
+                    try:
+                        from utils.database_manager import rank_manager
+                        role_success, role_message = await rank_manager.update_user_rank_roles(
+                            interaction.guild, сотрудник, old_rank, звание
+                        )
+                        if not role_success:
+                            print(f"Warning: Failed to update Discord roles: {role_message}")
+                        else:
+                            print(f"✅ Discord roles updated: {old_rank} -> {звание}")
+                    except Exception as role_error:
+                        print(f"Warning: Failed to update Discord roles: {role_error}")
+
+                    # Update nickname using nickname_manager
                     new_nickname = await nickname_manager.handle_rank_change(
                         member=сотрудник,
                         new_rank_name=звание,
                         change_type="повышение"
                     )
-                    
+
                     if new_nickname:
                         await сотрудник.edit(nick=new_nickname, reason=f"Команда аудита: {действие}")
                         embed = discord.Embed(
                             title="✅ Повышен в звании",
-                            description=f"{сотрудник.mention} успешно повышен до звания **{звание}**.\n\nНикнейм автоматически обновлён: `{new_nickname}`",
+                            description=f"{сотрудник.mention} успешно повышен до звания **{звание}**.\n\n"
+                                       f"Старое звание: **{old_rank}**\n"
+                                       f"Новое звание: **{звание}**\n"
+                                       f"Никнейм автоматически обновлён: `{new_nickname}`",
                             color=discord.Color.green()
                         )
                         print(f"✅ AUDIT PROMOTION: Никнейм обновлён: {new_nickname}")
                     else:
                         embed = discord.Embed(
                             title="⚠️ Повышение с предупреждением",
-                            description=f"{сотрудник.mention} повышен до звания **{звание}**, но никнейм не мог быть автоматически обновлён.\n\nПожалуйста, обновите никнейм вручную.",
+                            description=f"{сотрудник.mention} повышен до звания **{звание}**, но никнейм не мог быть автоматически обновлён.\n\n"
+                                       f"Старое звание: **{old_rank}**\n"
+                                       f"Новое звание: **{звание}**\n\n"
+                                       f"Пожалуйста, обновите никнейм вручную.",
                             color=discord.Color.orange()
                         )
-                    
+
                     await interaction.followup.send(embed=embed, ephemeral=True)
                     
                 except Exception as e:
@@ -531,7 +651,7 @@ class PersonnelCommands(commands.Cog):
                     await interaction.followup.send(embed=embed, ephemeral=True)
             
             elif действие == "Разжалован в звании":
-                # Понижение в звании с автоматическим обновлением никнейма
+                # Разжалование в звании с полным обновлением базы данных, ролей и никнейма
                 try:
                     if not звание:
                         embed = discord.Embed(
@@ -541,31 +661,123 @@ class PersonnelCommands(commands.Cog):
                         )
                         await interaction.followup.send(embed=embed, ephemeral=True)
                         return
-                    
+
                     print(f"🎆 AUDIT COMMAND: Разжалование в звании {сотрудник.display_name} -> {звание}")
+
+                    # Get current rank BEFORE changing it in database
+                    from utils.postgresql_pool import get_db_cursor
+                    with get_db_cursor() as cursor:
+                        cursor.execute("""
+                            SELECT r.name as current_rank
+                            FROM personnel p
+                            JOIN employees e ON p.id = e.personnel_id
+                            JOIN ranks r ON e.rank_id = r.id
+                            WHERE p.discord_id = %s AND p.is_dismissal = false;
+                        """, (сотрудник.id,))
+                        rank_result = cursor.fetchone()
+                        old_rank = rank_result['current_rank'] if rank_result else None
+
+                    if not old_rank:
+                        embed = discord.Embed(
+                            title="❌ Ошибка получения данных",
+                            description=f"Не удалось получить текущее звание пользователя {сотрудник.mention}.",
+                            color=discord.Color.red()
+                        )
+                        await interaction.followup.send(embed=embed, ephemeral=True)
+                        return
+
+                    # Execute rank change using existing logic from personnel_context
+                    from forms.personnel_context.commands_clean import RankChangeView
                     
-                    # Используем универсальный метод для изменения звания
+                    # Create a temporary RankChangeView instance just to use its methods
+                    rank_view = RankChangeView(сотрудник, звание, is_promotion=False)
+                    
+                    # Execute rank change in database (reuse existing _change_rank_in_db method)
+                    db_success = await rank_view._change_rank_in_db(
+                        сотрудник.id,
+                        звание,
+                        interaction.user.id,
+                        action_id=2  # Demotion action
+                    )
+                    
+                    if not db_success:
+                        embed = discord.Embed(
+                            title="❌ Ошибка базы данных",
+                            description=f"Не удалось обновить звание в базе данных для {сотрудник.mention}.",
+                            color=discord.Color.red()
+                        )
+                        await interaction.followup.send(embed=embed, ephemeral=True)
+                        return
+
+                    # Send audit notification using existing logic from RankChangeView
+                    try:
+                        # Get personnel data for audit
+                        personnel_data = await pm.get_personnel_data_for_audit(сотрудник.id)
+                        if not personnel_data:
+                            personnel_data = {
+                                'name': сотрудник.display_name,
+                                'static': 'Неизвестно',
+                                'rank': звание,
+                                'department': 'Неизвестно',
+                                'position': 'Неизвестно'
+                            }
+                        else:
+                            personnel_data['rank'] = звание
+
+                        await audit_logger.send_personnel_audit(
+                            guild=interaction.guild,
+                            action=await AuditAction.DEMOTION(),
+                            target_user=сотрудник,
+                            moderator=interaction.user,
+                            personnel_data=personnel_data,
+                            config=config
+                        )
+                        print(f"✅ AUDIT DEMOTION: Аудит-уведомление отправлено")
+
+                    except Exception as audit_error:
+                        print(f"Warning: Failed to send audit notification: {audit_error}")
+
+                    # Update Discord roles using rank_manager (same as in RankChangeView)
+                    try:
+                        from utils.database_manager import rank_manager
+                        role_success, role_message = await rank_manager.update_user_rank_roles(
+                            interaction.guild, сотрудник, old_rank, звание
+                        )
+                        if not role_success:
+                            print(f"Warning: Failed to update Discord roles: {role_message}")
+                        else:
+                            print(f"✅ Discord roles updated: {old_rank} -> {звание}")
+                    except Exception as role_error:
+                        print(f"Warning: Failed to update Discord roles: {role_error}")
+
+                    # Update nickname using nickname_manager
                     new_nickname = await nickname_manager.handle_rank_change(
                         member=сотрудник,
                         new_rank_name=звание,
                         change_type="понижение"
                     )
-                    
+
                     if new_nickname:
                         await сотрудник.edit(nick=new_nickname, reason=f"Команда аудита: {действие}")
                         embed = discord.Embed(
                             title="🔻 Разжалован в звании",
-                            description=f"{сотрудник.mention} разжалован до звания **{звание}**.\n\nНикнейм автоматически обновлён: `{new_nickname}`",
+                            description=f"{сотрудник.mention} разжалован до звания **{звание}**.\n\n"
+                                       f"Старое звание: **{old_rank}**\n"
+                                       f"Новое звание: **{звание}**\n"
+                                       f"Никнейм автоматически обновлён: `{new_nickname}`",
                             color=discord.Color.orange()
                         )
                         print(f"✅ AUDIT DEMOTION: Никнейм обновлён: {new_nickname}")
                     else:
                         embed = discord.Embed(
                             title="⚠️ Разжалование с предупреждением",
-                            description=f"{сотрудник.mention} разжалован до звания **{звание}**, но никнейм не мог быть автоматически обновлён.\n\nПожалуйста, обновите никнейм вручную.",
+                            description=f"{сотрудник.mention} разжалован до звания **{звание}**, но никнейм не мог быть автоматически обновлён.\n\n"
+                                       f"Старое звание: **{old_rank}**\n"
+                                       f"Новое звание: **{звание}**\n\n"
+                                       f"Пожалуйста, обновите никнейм вручную.",
                             color=discord.Color.orange()
                         )
-                    
+
                     await interaction.followup.send(embed=embed, ephemeral=True)
                     
                 except Exception as e:
@@ -589,24 +801,19 @@ class PersonnelCommands(commands.Cog):
                         await interaction.followup.send(embed=embed, ephemeral=True)
                         return
                     
+                    # Получить дефолтные значения из базы данных
+                    defaults = await self._get_default_values_from_db()
+                    
                     print(f"🎆 AUDIT COMMAND: Перевод {сотрудник.display_name} -> {подразделение}")
                     
-                    # Маппинг названий подразделений на ключи
-                    subdivision_mapping = {
-                        'Военная Академия': 'military_academy',
-                        'УВП': 'УВП',
-                        'ССО': 'ССО',
-                        'РОиО': 'РОиО',
-                        'МР': 'МР'
-                    }
-                    
-                    subdivision_key = subdivision_mapping.get(подразделение, подразделение)
+                    # Используем название подразделения напрямую как ключ
+                    subdivision_key = подразделение
                     
                     # Используем nickname_manager для перевода
                     new_nickname = await nickname_manager.handle_transfer(
                         member=сотрудник,
                         subdivision_key=subdivision_key,
-                        rank_name=звание or 'Рядовой'
+                        rank_name=звание or defaults['rank']
                     )
                     
                     if new_nickname:
@@ -638,8 +845,8 @@ class PersonnelCommands(commands.Cog):
             elif действие == "Внесение изменений в Имя или Фамилию":
                 # Проверяем существование пользователя в БД перед открытием модального окна
                 try:
-                    pm = PersonnelManager()
-                    personnel_data = await pm.get_personnel_summary(сотрудник.id)
+                    from utils.user_cache import get_cached_user_info
+                    personnel_data = await get_cached_user_info(сотрудник.id)
                     
                     if not personnel_data:
                         embed = discord.Embed(

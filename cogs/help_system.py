@@ -396,7 +396,7 @@ class AboutSystemButton(discord.ui.Button):
         embed.add_field(
             name="👶 Хочу узнать больше!",
             value=(
-                "> Весь код *(и подробная документация)* системы открыт и доступен на [GitHub](https://github.com/KOFIOK/armyDiscordBot)"
+                "> Весь код *(и подробная документация)* системы открыт и доступен на [GitHub](https://github.com/KOFIOK/ManagementDiscordBotRMRP)"
             ),
             inline=False
         )

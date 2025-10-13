@@ -99,6 +99,114 @@
 
 _Примечание:_ это краткий справочник по основным сущностям. Полная схема и дополнительные справочники (например таблицы настроек, audit logs, supplies и т.д.) описаны в `utils/database/models.py`.
 
+---
+
+## 🛡️ Дополнительные меры защиты
+
+### 📃 Авто backup каждые сутки
+
+Инструкция для настройки ежедневных бэкапов базы данных с помощью `pg_dump` и `cron` на сервере Ubuntu. Бэкапы сохраняются в `/opt/PostgreSQL/backups/ManagementDiscordBotRMRP` в 00:00 MSK.
+> Перед настройкой убедитесь, что PostgreSQL установлен на ваш сервер.
+
+#### 1. Настройка timezone
+Убедитесь, что сервер использует московское время:
+```bash
+sudo timedatectl set-timezone Europe/Moscow
+```
+Проверьте: `timedatectl` (должно показать `Europe/Moscow (MSK, +0300)`).
+
+#### 2. Создание директории для бэкапов
+Создайте папку и задайте права:
+```bash
+sudo mkdir -p /opt/PostgreSQL/backups/ManagementDiscordBotRMRP
+sudo chown postgres:postgres /opt/PostgreSQL/backups/ManagementDiscordBotRMRP
+sudo chmod 750 /opt/PostgreSQL/backups/ManagementDiscordBotRMRP
+```
+
+#### 3. Настройка `.pgpass` для аутентификации
+Создайте или обновите файл `/var/lib/postgresql/.pgpass` для пользователя PostgreSQL `postgres`:
+```bash
+echo "127.0.0.1:5432:*:postgres:your_secure_password" | sudo -u postgres tee /var/lib/postgresql/.pgpass
+sudo -u postgres chmod 600 /var/lib/postgresql/.pgpass
+```
+Замените `your_secure_password` на пароль пользователя `postgres`. Если пароль неизвестен, сбросьте:
+```bash
+sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD 'your_secure_password';"
+```
+
+#### 4. Создание скрипта бэкапа
+Создайте файл `/opt/PostgreSQL/backups/pg_backup.sh`:
+```bash
+sudo nano /opt/PostgreSQL/backups/pg_backup.sh
+```
+Вставьте код:
+```bash
+#!/bin/bash
+
+DB_PORT="5432"
+DB_NAME="army_bot_db"
+DB_USER="postgres"
+BACKUP_DIR="/opt/PostgreSQL/backups/ManagementDiscordBotRMRP"
+BACKUP_FILE="$BACKUP_DIR/backup_$(date +%Y-%m-%d_%H-%M-%S).dump"
+LOG_FILE="$BACKUP_DIR/pg_backup.log"
+
+cd "$BACKUP_DIR" || exit 1
+
+export PGPASSFILE=/var/lib/postgresql/.pgpass
+
+pg_dump -p $DB_PORT -U $DB_USER -d $DB_NAME -F c -f $BACKUP_FILE
+
+gzip $BACKUP_FILE
+BACKUP_FILE="$BACKUP_FILE.gz"
+
+find "$BACKUP_DIR" -type f -name "*.dump.gz" -mtime +7 -exec rm {} \;
+
+echo "Backup completed: $BACKUP_FILE" >> "$LOG_FILE"
+```
+Сделайте исполняемым:
+```bash
+sudo chmod +x /opt/PostgreSQL/backups/pg_backup.sh
+```
+
+#### 5. Настройка прав для лога
+Создайте лог-файл:
+```bash
+sudo touch /opt/PostgreSQL/backups/ManagementDiscordBotRMRP/pg_backup.log
+sudo chown postgres:postgres /opt/PostgreSQL/backups/ManagementDiscordBotRMRP/pg_backup.log
+sudo chmod 664 /opt/PostgreSQL/backups/ManagementDiscordBotRMRP/pg_backup.log
+```
+
+#### 6. Тестирование скрипта
+Запустите вручную:
+```bash
+sudo -u postgres /opt/PostgreSQL/backups/pg_backup.sh
+```
+Проверьте:
+- Бэкап в `/opt/PostgreSQL/backups/ManagementDiscordBotRMRP/backup_*.dump.gz`.
+- Лог в `/opt/PostgreSQL/backups/ManagementDiscordBotRMRP/pg_backup.log`.
+
+## 7. Настройка cron
+Настройте запуск в 00:00 MSK:
+```bash
+sudo -u postgres crontab -e
+```
+Добавьте:
+```
+0 0 * * * /opt/PostgreSQL/backups/pg_backup.sh
+```
+Проверьте: `sudo -u postgres crontab -l`.
+
+## Примечания
+- Если pg_dump выдаёт ошибку аутентификации, проверьте `.pgpass` или `pg_hba.conf`:
+  ```bash:disable-run
+  sudo cat /etc/postgresql/*/main/pg_hba.conf
+  ```
+  Убедитесь, что для `host all postgres 127.0.0.1/32` стоит `md5` или `trust`.
+- Для восстановления: `pg_restore -U postgres -d army_bot_db backup_file.dump`.
+```
+
+---
+
 ## 🔧 Ключевые Компоненты
 
 ### 📊 **PersonnelManager** - Основной менеджер персонала

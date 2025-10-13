@@ -198,12 +198,11 @@ sudo -u postgres crontab -e
 
 ### Примечания
 - Если pg_dump выдаёт ошибку аутентификации, проверьте `.pgpass` или `pg_hba.conf`:
-```bash:disable-run
+  ```bash:disable-run
   sudo cat /etc/postgresql/*/main/pg_hba.conf
   ```
   Убедитесь, что для `host all postgres 127.0.0.1/32` стоит `md5` или `trust`.
 - Для восстановления: `pg_restore -U postgres -d army_bot_db backup_file.dump`.
-```
 
 ---
 

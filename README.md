@@ -21,8 +21,8 @@
 
 ### Установка
 ```bash
-git clone https://github.com/KOFIOK/armyDiscordBot.git
-cd armyDiscordBot
+git clone https://github.com/KOFIOK/ManagementDiscordBotRMRP.git
+cd ManagementDiscordBotRMRP
 pip install -r requirements.txt
 ```
 

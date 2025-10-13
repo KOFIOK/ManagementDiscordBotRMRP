@@ -40,7 +40,7 @@ async def send_moderator_welcome_dm(user: discord.Member) -> bool:
             name="❓ Узнайте больше",
             value=(
                 "Введите команду `/help` на дискорд-сервере для получения полной справки по системе\n"
-                "> - Подробнее о системе можно узнать в документации [GitHub](https://github.com/KOFIOK/armyDiscordBot)"
+                "> - Подробнее о системе можно узнать в документации [GitHub](https://github.com/KOFIOK/ManagementDiscordBotRMRP)"
             ),
             inline=False
         )
@@ -99,7 +99,7 @@ async def send_administrator_welcome_dm(user: discord.Member) -> bool:
             name="❓ Узнайте больше",
             value=(
                 "Введите команду `/help` на дискорд-сервере для получения полной справки по системе\n"
-                "> - Подробнее о системе можно узнать в документации [GitHub](https://github.com/KOFIOK/armyDiscordBot)"
+                "> - Подробнее о системе можно узнать в документации [GitHub](https://github.com/KOFIOK/ManagementDiscordBotRMRP)"
             ),
             inline=False
         )

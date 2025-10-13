@@ -15,8 +15,8 @@
 ### 1. Клонирование репозитория
 
 ```bash
-git clone https://github.com/KOFIOK/armyDiscordBot.git
-cd armyDiscordBot
+git clone https://github.com/KOFIOK/ManagementDiscordBotRMRP.git
+cd ManagementDiscordBotRMRP
 ```
 
 ### 2. Установка зависимостей

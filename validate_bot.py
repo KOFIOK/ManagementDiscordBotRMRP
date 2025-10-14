@@ -39,21 +39,27 @@ def test_complete_setup():
     
     # Test 3: Channel manager
     print("\n3. Testing channel manager...")
-    try:
-        from cogs.channel_manager import ChannelManagementCog
-        print("   ✓ Channel manager imported successfully")
-    except ImportError as e:
-        print(f"   ✗ Channel manager import failed: {e}")
-        return False
+    if IS_CI:
+        print("   ⏭️ Skipping channel manager test in CI (database-dependent)")
+    else:
+        try:
+            from cogs.channel_manager import ChannelManagementCog
+            print("   ✓ Channel manager imported successfully")
+        except ImportError as e:
+            print(f"   ✗ Channel manager import failed: {e}")
+            return False
     
     # Test 4: Bot app module
     print("\n4. Testing main bot application...")
-    try:
-        import app
-        print("   ✓ Main bot application imported successfully")
-    except ImportError as e:
-        print(f"   ✗ Bot app import failed: {e}")
-        return False
+    if IS_CI:
+        print("   ⏭️ Skipping main bot application test in CI (database-dependent)")
+    else:
+        try:
+            import app
+            print("   ✓ Main bot application imported successfully")
+        except ImportError as e:
+            print(f"   ✗ Bot app import failed: {e}")
+            return False
     
     # Test 5: Configuration system
     print("\n5. Testing configuration system...")

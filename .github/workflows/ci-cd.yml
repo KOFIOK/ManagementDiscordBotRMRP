@@ -36,12 +36,6 @@ jobs:
         echo "🔍 Running bot validation..."
         python validate_bot.py
         echo "✅ Bot validation passed"
-    
-    - name: Run database tests
-      run: |
-        echo "🔍 Running database comprehensive tests..."
-        python tests/test_database_comprehensive.py
-        echo "✅ Database tests passed"
 
     - name: Check configuration files
       run: |

@@ -1,4 +1,4 @@
-name: Deploy Bot
+name: CI/CD Pipeline
 
 on:
   push:
@@ -8,8 +8,62 @@ permissions:
   contents: read
 
 jobs:
-  deploy:
+  test:
+    name: Run Tests
     runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Check Python syntax
+      run: |
+        echo "🔍 Checking Python syntax..."
+        find . -name "*.py" -not -path "./__pycache__/*" -not -path "./venv/*" -exec python -m py_compile {} \;
+        echo "✅ All Python files compiled successfully"
+    
+    - name: Validate bot configuration
+      run: |
+        echo "🔍 Running bot validation..."
+        python validate_bot.py
+        echo "✅ Bot validation passed"
+    
+    - name: Run database tests
+      run: |
+        echo "🔍 Running database comprehensive tests..."
+        python tests/test_database_comprehensive.py
+        echo "✅ Database tests passed"
+
+    - name: Check configuration files
+      run: |
+        echo "🔍 Checking configuration files..."
+        if [ ! -f "data/config.json" ]; then
+          echo "❌ data/config.json not found"
+          exit 1
+        fi
+        if [ ! -f "requirements.txt" ]; then
+          echo "❌ requirements.txt not found"
+          exit 1
+        fi
+        if [ ! -f "app.py" ]; then
+          echo "❌ app.py not found"
+          exit 1
+        fi
+        echo "✅ All required files present"
+
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:

@@ -54,6 +54,7 @@
 | id | integer (PK) | Идентификатор подразделения |
 | name | varchar | Полное название подразделения (для UI и embed) |
 | abbreviation | varchar | Короткое обозначение подразделения |
+| role_id | integer | Discord role id, обязательно для связи с конфигом |
 
 #### `positions`
 | Атрибут | Тип | Описание |

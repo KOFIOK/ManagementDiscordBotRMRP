@@ -2453,10 +2453,78 @@ async def general_edit(interaction: discord.Interaction, user: discord.Member):
         await interaction.response.send_message("❌ Нельзя редактировать данные бота.", ephemeral=True)
         return
     
-    # Send general editing view
+    # Get current user information from cache and database
+    try:
+        # Get data from cache first
+        from utils.user_cache import get_cached_user_info_sync
+        user_data = get_cached_user_info_sync(user.id)
+        
+        # Get rank from database
+        current_rank = await get_user_rank_from_db(user.id) or "Не указано"
+        
+        # Get department and position from database
+        department_name = "Не указано"
+        position_name = "Не назначено"
+        full_name = user.display_name  # Fallback to display name
+        
+        try:
+            from utils.postgresql_pool import get_db_cursor
+            with get_db_cursor() as cursor:
+                # Get department name and full name
+                cursor.execute("""
+                    SELECT s.name as dept_name, p.first_name, p.last_name
+                    FROM employees e
+                    JOIN personnel p ON e.personnel_id = p.id
+                    JOIN subdivisions s ON e.subdivision_id = s.id
+                    WHERE p.discord_id = %s AND p.is_dismissal = false;
+                """, (user.id,))
+                
+                dept_result = cursor.fetchone()
+                if dept_result:
+                    department_name = dept_result['dept_name']
+                    # Format full name from database
+                    if dept_result['first_name'] and dept_result['last_name']:
+                        full_name = f"{dept_result['first_name']} {dept_result['last_name']}"
+                
+                # Get position name
+                cursor.execute("""
+                    SELECT pos.name 
+                    FROM employees e
+                    JOIN personnel p ON e.personnel_id = p.id
+                    JOIN position_subdivision ps ON e.position_subdivision_id = ps.id
+                    JOIN positions pos ON ps.position_id = pos.id
+                    WHERE p.discord_id = %s AND p.is_dismissal = false;
+                """, (user.id,))
+                
+                pos_result = cursor.fetchone()
+                if pos_result:
+                    position_name = pos_result['name']
+                    
+        except Exception as db_error:
+            print(f"Warning: Could not get department/position data for {user.id}: {db_error}")
+    
+    except Exception as e:
+        print(f"Warning: Could not get user data for {user.id}: {e}")
+        # Fallback values
+        user_data = {}
+        current_rank = "Не указано"
+        department_name = "Не указано"
+        position_name = "Не назначено"
+        full_name = user.display_name
+    
+    # Format user information
+    static = user_data.get('static', 'Не указано') if user_data else 'Не указано'
+    
+    # Send general editing view with current information
     view = GeneralEditView(user)
     await interaction.response.send_message(
-        f"⚙️ **Общее редактирование для {user.display_name}**\n"
+        f"⚙️ **Общее редактирование для {user.mention}**\n\n"
+        f"📊 **Текущая информация:**\n"
+        f"> • **Имя, Фамилия:** `{full_name}`\n"
+        f"> • **Статик:** `{static}`\n"
+        f"> • **Звание:** `{current_rank}`\n"
+        f"> • **Подразделение:** `{department_name}`\n"
+        f"> • **Должность:** `{position_name}`\n\n"
         f"Выберите что хотите изменить:",
         view=view,
         ephemeral=True

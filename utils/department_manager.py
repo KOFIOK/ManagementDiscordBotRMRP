@@ -85,8 +85,7 @@ class DepartmentManager:
                 full_dept_data.update({
                     'application_channel_id': None,
                     'persistent_message_id': None,
-                    'ping_contexts': {},
-                    'key_role_id': None
+                    'ping_contexts': {}
                 })
                 departments[dept_code] = full_dept_data
                 updated = True
@@ -102,8 +101,7 @@ class DepartmentManager:
                 missing_fields = {
                     'application_channel_id': None,
                     'persistent_message_id': None,
-                    'ping_contexts': {},
-                    'key_role_id': None
+                    'ping_contexts': {}
                 }
                 for field, default_value in missing_fields.items():
                     if field not in existing_dept:
@@ -141,7 +139,7 @@ class DepartmentManager:
     @classmethod
     def add_department(cls, dept_id: str, name: str, description: Optional[str] = None,
                       emoji: Optional[str] = None, color: Optional[str] = None,
-                      key_role_id: Optional[int] = None) -> bool:
+                      role_id: Optional[int] = None) -> bool:
         """
         Добавить новое подразделение
 
@@ -151,7 +149,7 @@ class DepartmentManager:
             description: Описание подразделения (добавлено)
             emoji: Эмодзи подразделения
             color: Цвет подразделения (название из списка)
-            key_role_id: ID ключевой роли
+            role_id: ID основной роли подразделения (для связи с PostgreSQL БД)
 
         Returns:
             bool: Успешность операции
@@ -178,7 +176,7 @@ class DepartmentManager:
                 'description': description or 'Описание отсутствует', # Устанавливаем описание
                 'emoji': emoji or '🏛️',
                 'color': final_color_hex, # СОХРАНЯЕМ ЧИСЛОВОЙ HEX-КОД
-                'key_role_id': key_role_id,
+                'role_id': role_id,  # Связь с PostgreSQL БД
                 'is_system': False,
                 'ping_contexts': {},
                 'application_channel_id': None
@@ -192,6 +190,64 @@ class DepartmentManager:
 
         except Exception as e:
             logger.error(f"Error adding department {dept_id}: {e}")
+            return False
+
+    @classmethod
+    def edit_department(cls, dept_id: str, name: str, description: Optional[str] = None,
+                       emoji: Optional[str] = None, color: Optional[str] = None,
+                       role_id: Optional[int] = None) -> bool:
+        """
+        Редактировать существующее подразделение
+
+        Args:
+            dept_id: ID подразделения
+            name: Название подразделения
+            description: Описание подразделения
+            emoji: Эмодзи подразделения
+            color: Цвет подразделения (название из списка)
+            role_id: ID основной роли подразделения
+
+        Returns:
+            bool: Успешность операции
+        """
+        try:
+            config = load_config()
+            departments = config.get('departments', {})
+
+            if dept_id not in departments:
+                logger.error(f"Department '{dept_id}' not found")
+                return False
+
+            department = departments[dept_id]
+
+            # Обновляем поля
+            if name is not None:
+                department['name'] = name
+            if description is not None:
+                department['description'] = description
+            if emoji is not None:
+                department['emoji'] = emoji
+            if color is not None:
+                if isinstance(color, str):
+                    if color.startswith('#'):
+                        # HEX строка, конвертируем в число
+                        is_valid, hex_value = cls.validate_hex_color(color)
+                        department['color'] = hex_value if is_valid else cls.PRESET_COLORS['Синий']
+                    else:
+                        # Название цвета
+                        department['color'] = cls.get_color_hex_by_name(color)
+                elif isinstance(color, int):
+                    # Числовой HEX код
+                    department['color'] = color
+            if role_id is not None:
+                department['role_id'] = role_id
+
+            save_config(config)
+            logger.info(f"Edited department: {dept_id} - {name}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error editing department {dept_id}: {e}")
             return False
 
     # ИСПРАВЛЕННЫЙ МЕТОД: update_department
@@ -209,7 +265,7 @@ class DepartmentManager:
 
         Args:
             dept_code: Код подразделения
-            **kwargs: Поля для обновления (name, description, key_role_id, color (str or int), emoji)
+            **kwargs: Поля для обновления (name, description, role_id, color (str or int), emoji)
         """
         try:
             departments = cls.get_all_departments()
@@ -224,7 +280,7 @@ class DepartmentManager:
                 if field == 'color' and isinstance(value, str):
                     # Если передано строковое название цвета, преобразуем в HEX
                     department[field] = cls.get_color_hex_by_name(value)
-                elif field in ['name', 'description', 'key_role_id', 'emoji']:
+                elif field in ['name', 'description', 'role_id', 'emoji']:
                     department[field] = value
 
             # Сохранение
@@ -267,7 +323,7 @@ class DepartmentManager:
 
             # Очистка legacy ping_settings (если есть)
             ping_settings = config.get('ping_settings', {})
-            role_id = department.get('key_role_id')
+            role_id = department.get('role_id')
             if role_id and str(role_id) in ping_settings:
                 del ping_settings[str(role_id)]
                 config['ping_settings'] = ping_settings
@@ -307,7 +363,7 @@ class DepartmentManager:
         matching_departments = []
 
         for dept_code, dept_data in departments.items():
-            if dept_data.get('key_role_id') == role_id:
+            if dept_data.get('role_id') == role_id:
                 matching_departments.append(dept_code)
 
         return matching_departments
@@ -325,6 +381,42 @@ class DepartmentManager:
             ))
 
         return options
+
+    @classmethod
+    def get_available_colors(cls) -> List[str]:
+        """Получить список доступных цветов для валидации"""
+        return list(cls.PRESET_COLORS.keys())
+
+    @classmethod
+    def validate_hex_color(cls, color_input: str) -> Tuple[bool, int]:
+        """
+        Валидировать HEX код цвета и вернуть числовое значение
+        
+        Args:
+            color_input: Строка с HEX кодом (с # или без)
+            
+        Returns:
+            Tuple[bool, int]: (is_valid, hex_value)
+        """
+        import re
+        
+        # Убираем # если есть
+        color_input = color_input.strip().lstrip('#')
+        
+        # Проверяем формат: 3 или 6 символов, только hex символы
+        if not re.match(r'^[0-9a-fA-F]{3,6}$', color_input):
+            return False, 0
+        
+        # Если 3 символа, расширяем до 6
+        if len(color_input) == 3:
+            color_input = ''.join(c * 2 for c in color_input)
+        
+        # Конвертируем в int
+        try:
+            hex_value = int(color_input, 16)
+            return True, hex_value
+        except ValueError:
+            return False, 0
 
     @classmethod
     def get_department_statistics(cls) -> Dict[str, int]:
@@ -363,7 +455,7 @@ class DepartmentManager:
     @classmethod
     def edit_department(cls, dept_id: str, name: Optional[str] = None,
                        emoji: Optional[str] = None, color: Optional[str] = None, # color теперь Optional[str]
-                       key_role_id: Optional[int] = None, description: Optional[str] = None) -> bool: # Добавлен description
+                       role_id: Optional[int] = None, description: Optional[str] = None) -> bool: # Добавлен description
         """
         Редактировать существующее подразделение
 
@@ -372,7 +464,7 @@ class DepartmentManager:
             name: Новое название
             emoji: Новое эмодзи
             color: Новый цвет (название)
-            key_role_id: Новый ID ключевой роли
+            role_id: Новый ID основной роли подразделения (для связи с PostgreSQL БД)
             description: Новое описание
 
         Returns:
@@ -398,8 +490,8 @@ class DepartmentManager:
             if color is not None:
                 # Преобразуем строковое название цвета в числовой HEX-код перед сохранением
                 department['color'] = cls.get_color_hex_by_name(color)
-            if key_role_id is not None:
-                department['key_role_id'] = key_role_id
+            if role_id is not None:
+                department['role_id'] = role_id
 
             config['departments'][dept_id] = department
             save_config(config)
@@ -454,7 +546,7 @@ class DepartmentManager:
     @classmethod
     def get_user_department(cls, user: discord.Member) -> Optional[str]:
         """
-        Определить подразделение пользователя по его ролям
+        Определить подразделение пользователя по его ролям (PostgreSQL-based)
 
         Args:
             user: Пользователь Discord
@@ -464,20 +556,18 @@ class DepartmentManager:
         """
         departments = cls.get_all_departments()
 
-        user_department = None
-        highest_position = -1
+        # Get user's role IDs for faster lookup
+        user_role_ids = {role.id for role in user.roles}
 
+        # Check each department's role_id (PostgreSQL-based)
         for dept_id, dept_data in departments.items():
-            key_role_id = dept_data.get('key_role_id')
-            if key_role_id:
-                role = user.guild.get_role(key_role_id)
-                if role and role in user.roles:
-                    # Выбираем роль с наивысшей позицией в иерархии
-                    if role.position > highest_position:
-                        highest_position = role.position
-                        user_department = dept_id
+            role_id = dept_data.get('role_id')
 
-        return user_department
+            # Check if user has this department's role_id
+            if role_id and role_id in user_role_ids:
+                return dept_id
+
+        return None
 
     @classmethod
     def get_user_department_name(cls, user: discord.Member) -> str:
@@ -520,7 +610,7 @@ class DepartmentManager:
             'description': dept_data.get('description', 'Описание отсутствует'),
             'emoji': dept_data.get('emoji', '🏛️'),
             'is_system': dept_data.get('is_system', False),
-            'key_role_id': dept_data.get('key_role_id'),
+            'role_id': dept_data.get('role_id'),
             'ping_contexts': dept_data.get('ping_contexts', {}),
             'application_channel_id': dept_data.get('application_channel_id')
         }

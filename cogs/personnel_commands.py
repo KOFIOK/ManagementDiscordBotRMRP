@@ -12,6 +12,7 @@ from utils.config_manager import load_config, is_moderator_or_admin, is_administ
 from utils.database_manager import PersonnelManager
 from utils.nickname_manager import nickname_manager
 from utils.audit_logger import audit_logger, AuditAction
+from utils import get_safe_personnel_name
 
 
 class PersonnelNameChangeModal(discord.ui.Modal, title="Изменение ФИО"):
@@ -573,8 +574,8 @@ class PersonnelCommands(commands.Cog):
                     # Send audit notification using existing logic from RankChangeView
                     try:
                         # Get personnel data for audit
-                        personnel_data = await pm.get_personnel_data_for_audit(сотрудник.id)
-                        if not personnel_data:
+                        personnel_data_summary = await pm.get_personnel_summary(сотрудник.id)
+                        if not personnel_data_summary:
                             personnel_data = {
                                 'name': сотрудник.display_name,
                                 'static': 'Неизвестно',
@@ -583,7 +584,13 @@ class PersonnelCommands(commands.Cog):
                                 'position': 'Неизвестно'
                             }
                         else:
-                            personnel_data['rank'] = звание
+                            personnel_data = {
+                                'name': get_safe_personnel_name(personnel_data_summary, сотрудник.display_name),
+                                'static': personnel_data_summary.get('static', ''),
+                                'rank': звание,
+                                'department': personnel_data_summary.get('department', 'Неизвестно'),
+                                'position': personnel_data_summary.get('position', 'Неизвестно')
+                            }
 
                         await audit_logger.send_personnel_audit(
                             guild=interaction.guild,
@@ -712,8 +719,8 @@ class PersonnelCommands(commands.Cog):
                     # Send audit notification using existing logic from RankChangeView
                     try:
                         # Get personnel data for audit
-                        personnel_data = await pm.get_personnel_data_for_audit(сотрудник.id)
-                        if not personnel_data:
+                        personnel_data_summary = await pm.get_personnel_summary(сотрудник.id)
+                        if not personnel_data_summary:
                             personnel_data = {
                                 'name': сотрудник.display_name,
                                 'static': 'Неизвестно',
@@ -722,7 +729,13 @@ class PersonnelCommands(commands.Cog):
                                 'position': 'Неизвестно'
                             }
                         else:
-                            personnel_data['rank'] = звание
+                            personnel_data = {
+                                'name': get_safe_personnel_name(personnel_data_summary, сотрудник.display_name),
+                                'static': personnel_data_summary.get('static', ''),
+                                'rank': звание,
+                                'department': personnel_data_summary.get('department', 'Неизвестно'),
+                                'position': personnel_data_summary.get('position', 'Неизвестно')
+                            }
 
                         await audit_logger.send_personnel_audit(
                             guild=interaction.guild,

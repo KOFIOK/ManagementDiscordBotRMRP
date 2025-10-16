@@ -31,7 +31,7 @@ def test_complete_setup():
         print("   ⏭️ Skipping form modules test in CI (database-dependent)")
     else:
         try:
-            from forms.dismissal_form import send_dismissal_button_message
+            from forms.dismissal.utils import send_dismissal_button_message
             print("   ✓ All form modules imported successfully")
         except ImportError as e:
             print(f"   ✗ Form import failed: {e}")

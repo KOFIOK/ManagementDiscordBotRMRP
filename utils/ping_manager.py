@@ -49,8 +49,7 @@ class PingManager:
         departments = self.get_departments_config()
         dept_config = departments.get(department_code)
         if dept_config:
-            # Try 'role_id' first, then fallback to 'key_role_id' for backward compatibility
-            return dept_config.get('role_id') or dept_config.get('key_role_id')
+            return dept_config.get('role_id')
         return None
     
     def get_department_channel_id(self, department_code: str) -> Optional[int]:
@@ -67,8 +66,7 @@ class PingManager:
         role_ids = []
         
         for dept_config in departments.values():
-            # Try 'role_id' first, then fallback to 'key_role_id' for backward compatibility
-            role_id = dept_config.get('role_id') or dept_config.get('key_role_id')
+            role_id = dept_config.get('role_id')
             if role_id:
                 role_ids.append(role_id)
         
@@ -176,23 +174,14 @@ class PingManager:
         """Get department code for a user based on their roles"""
         departments = self.get_departments_config()
         
-        # Check new structure first
-        for dept_code, dept_config in departments.items():
-            key_role_id = dept_config.get('key_role_id')
-            if key_role_id:
-                role = user.guild.get_role(key_role_id)
-                if role and role in user.roles:
-                    return dept_code
+        # Get user's role IDs for faster lookup
+        user_role_ids = {role.id for role in user.roles}
         
-        # Fallback to legacy detection
-        return self._get_user_department_legacy(user)
-    
-    def _get_user_department_legacy(self, user: discord.Member) -> Optional[str]:
-        """Fallback to legacy department detection"""
-        for role in user.roles:
-            for dept_code, patterns in self.DEPARTMENT_PATTERNS.items():
-                if self._role_matches_department(role.name, dept_code):
-                    return dept_code
+        # Check each department's role_id (PostgreSQL-based)
+        for dept_code, dept_config in departments.items():
+            role_id = dept_config.get('role_id')
+            if role_id and role_id in user_role_ids:
+                return dept_code
         
         return None
     

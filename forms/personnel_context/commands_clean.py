@@ -15,6 +15,8 @@ from utils.nickname_manager import nickname_manager
 from discord import ui
 import re
 
+from utils.postgresql_pool import get_db_cursor
+
 
 async def get_user_rank_from_db(user_discord_id: int) -> str:
     """Get user's current rank from database instead of Discord roles"""
@@ -362,9 +364,9 @@ async def recruit_user(interaction: discord.Interaction, user: discord.Member):
         return
     
     # Check if user has active blacklist entry
-    from utils.audit_logger import audit_logger
+    from utils.database_manager import personnel_manager
     
-    blacklist_info = await audit_logger.check_active_blacklist(user.id)
+    blacklist_info = await personnel_manager.check_active_blacklist(user.id)
     
     if blacklist_info:
         # User is blacklisted, deny recruitment
@@ -1009,9 +1011,32 @@ class PositionSelect(ui.Select):
                 position_name = "Ошибка получения должности"
         
         # Execute department change with optional position
-        await self._execute_department_change(interaction, position_name, selected_position_id)
+        success, message = await self._execute_department_change(interaction, position_name, selected_position_id)
+        
+        # Send result message
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    f"{'✅' if success else '❌'} {message}",
+                    ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    f"{'✅' if success else '❌'} {message}",
+                    ephemeral=True
+                )
+        except Exception as e:
+            print(f"⚠️ Error sending result message: {e}")
+            # Try followup as last resort
+            try:
+                await interaction.followup.send(
+                    f"{'✅' if success else '❌'} {message}",
+                    ephemeral=True
+                )
+            except:
+                pass
     
-    async def _assign_position_in_db(self, user_discord_id: int, position_id: str, position_name: str, moderator_discord_id: int) -> bool:
+    async def _assign_position_in_db(self, user_discord_id: int, position_id: str, position_name: str, moderator_discord_id: int, old_position_name: str = None) -> bool:
         """Assign position to user in database and create history record"""
         try:
             from utils.postgresql_pool import get_db_cursor
@@ -1019,7 +1044,6 @@ class PositionSelect(ui.Select):
             
             # Get old position ID and name for role updates and history
             old_position_id = None
-            old_position_name = None
             user_member = None
             try:
                 # Get user as member for role updates
@@ -1031,20 +1055,18 @@ class PositionSelect(ui.Select):
                 if not user_member and hasattr(self, 'target_user'):
                     user_member = self.target_user
                 
-                # Get old position
+                # Get old position ID (for role updates only, not for history)
                 with get_db_cursor() as cursor:
                     cursor.execute("""
-                        SELECT ps.position_id, pos.name as position_name
+                        SELECT ps.position_id
                         FROM personnel p
                         JOIN employees e ON p.id = e.personnel_id
                         LEFT JOIN position_subdivision ps ON e.position_subdivision_id = ps.id
-                        LEFT JOIN positions pos ON ps.position_id = pos.id
                         WHERE p.discord_id = %s AND p.is_dismissal = false
                     """, (user_discord_id,))
                     old_pos_result = cursor.fetchone()
                     if old_pos_result and old_pos_result['position_id']:
                         old_position_id = old_pos_result['position_id']
-                        old_position_name = old_pos_result['position_name']
             except Exception as e:
                 print(f"Warning: Could not get old position for role update: {e}")
             
@@ -1141,400 +1163,245 @@ class PositionSelect(ui.Select):
             print(f"Error in _assign_position_in_db: {e}")
             return False
     
-    async def _execute_department_change(self, interaction: discord.Interaction, position_name: str, position_id: str):
-        """Execute the department change (same as approving department application)"""
+    async def _execute_department_change(self, interaction: discord.Interaction, position_name: str, selected_position_id: str) -> tuple[bool, str]:
+        """Execute department change with optional position assignment
+        
+        Returns:
+            tuple[bool, str]: (success, message)
+        """
         try:
-            await interaction.response.defer(ephemeral=True)
+            print(f"🔄 EXECUTE DEPARTMENT CHANGE: Starting for user {self.target_user.id}, action_type={self.action_type}, dept_key={self.dept_key}, position={position_name}")
             
-            # Import necessary modules
-            from utils.database_manager import PersonnelManager, personnel_manager
+            # Import required modules
+            from utils.database_manager import PersonnelManager
+            from utils.database_manager.subdivision_mapper import SubdivisionMapper
+            from utils.database_manager.position_manager import position_manager
             from utils.audit_logger import audit_logger, AuditAction
-            from utils.config_manager import load_config
-            from utils.ping_manager import ping_manager
-            
-            # Initialize managers
-            pm = PersonnelManager()
-            config = load_config()
-            
-            # Step 1: Process department change in database
-            application_data = {
-                'target_department': self.dept_name,
-                'reason': None,  # details = NULL
-                'application_type': self.action_type
-            }
-            
-            moderator_info = f"{interaction.user.display_name} ({interaction.user.id})"
-            
-            if self.action_type == "transfer":
-                success, db_message = await pm.process_department_transfer(
-                    application_data=application_data,
-                    user_discord_id=self.target_user.id,
-                    moderator_discord_id=interaction.user.id,
-                    moderator_info=moderator_info
-                )
-            else:
-                success, db_message = await pm.process_department_join(
-                    application_data=application_data,
-                    user_discord_id=self.target_user.id,
-                    moderator_discord_id=interaction.user.id,
-                    moderator_info=moderator_info
-                )
-            
-            if not success:
-                await interaction.followup.send(f"❌ **Ошибка БД (подразделение):** {db_message}", ephemeral=True)
-                return
-            
-            # Step 2: Process position assignment in database (only if position selected)
-            position_had_no_position_before = False  # Track if user had no position before
-            
-            if position_name is not None and position_id != "no_position":
-                position_success = await self._assign_position_in_db(
-                    self.target_user.id, 
-                    position_id, 
-                    position_name, 
-                    interaction.user.id
-                )
-                
-                if not position_success:
-                    await interaction.followup.send(f"❌ **Ошибка БД (должность):** Не удалось назначить должность", ephemeral=True)
-                    return
-            elif position_id == "no_position":
-                # User selected "Без должности" - check if they had a position before and remove it
-                try:
-                    # Get current position before removal
-                    current_position = await self._get_current_user_position(self.target_user.id)
-                    
-                    if current_position and current_position.strip():
-                        # User had a position, remove it from database
-                        position_removal_success = await self._remove_position_from_db(
-                            self.target_user.id,
-                            current_position,
-                            interaction.user.id
-                        )
-                        
-                        if not position_removal_success:
-                            await interaction.followup.send(f"❌ **Ошибка БД (снятие должности):** Не удалось снять должность", ephemeral=True)
-                            return
-                        
-                        # Set position_name to None to trigger demotion audit
-                        position_name = None
-                        print(f"✅ Position removed from database: {current_position} for user {self.target_user.id}")
-                    else:
-                        # User had no position to remove, skip position audit
-                        position_name = "skip_audit"
-                        position_had_no_position_before = True
-                        print(f"ℹ️ User {self.target_user.id} had no position to remove - skipping position audit")
-                        
-                except Exception as e:
-                    print(f"❌ Error checking/removing current position: {e}")
-                    await interaction.followup.send(f"❌ **Ошибка:** Не удалось обработать снятие должности", ephemeral=True)
-                    return
-            else:
-                # Handle "no position" case - check if user had a position before
-                current_position = await self._get_current_user_position(self.target_user.id)
-                if current_position:
-                    # User had a position, so we're demoting them
-                    position_success = await self._remove_position_from_db(
-                        self.target_user.id,
-                        current_position,
-                        interaction.user.id
-                    )
-                    if not position_success:
-                        await interaction.followup.send(f"❌ **Ошибка БД (разжалование):** Не удалось разжаловать с должности", ephemeral=True)
-                        return
-                    position_name = None  # Will trigger position demotion audit
-                else:
-                    # User had no position before, so no position audit needed
-                    position_name = "skip_audit"  # Special marker to skip position audit
-            
-            # Step 3: Update Discord roles
-            dept_role_id = ping_manager.get_department_role_id(self.dept_key)
-            if dept_role_id:
-                dept_role = interaction.guild.get_role(dept_role_id)
-                if dept_role:
-                    # Remove all department roles
-                    all_dept_role_ids = ping_manager.get_all_department_role_ids()
-                    for role_id in all_dept_role_ids:
-                        role = interaction.guild.get_role(role_id)
-                        if role and role in self.target_user.roles:
-                            try:
-                                await self.target_user.remove_roles(role, reason="Department change via context menu")
-                            except:
-                                pass
-                    
-                    # Add new department role
-                    await self.target_user.add_roles(dept_role, reason=f"Department change by {interaction.user}")
-            
-            # Step 3.5: Update position roles after department change
-            # Since department transfer clears all positions, we need to remove old position roles
-            try:
-                from utils.database_manager.position_manager import position_manager
-                await position_manager.smart_update_user_position_roles(
-                    self.target_user.guild,
-                    self.target_user,
-                    None  # No position after department transfer
-                )
-                print(f"✅ Position roles cleared after department transfer for {self.target_user.display_name}")
-            except Exception as position_role_error:
-                print(f"⚠️ Warning: Failed to clear position roles after department transfer: {position_role_error}")
-            
-            # Step 4: Update nickname using nickname_manager
-            try:
-                # Получаем полную информацию пользователя из БД (включая звание из employees)
-                personnel_data_for_nick = await pm.get_personnel_summary(self.target_user.id)
-                current_rank = personnel_data_for_nick.get('rank', 'Рядовой') if personnel_data_for_nick else 'Рядовой'
-                
-                # Используем nickname_manager для перевода (он сам получит аббревиатуру из БД)
-                new_nickname = await nickname_manager.handle_transfer(
-                    member=self.target_user,
-                    subdivision_key=self.dept_key,  # Прямо используем ключ подразделения
-                    rank_name=current_rank
-                )
-                
-                if new_nickname:
-                    print(f"✅ DEPT TRANSFER: Никнейм обновлён через nickname_manager: {self.target_user.display_name} -> {new_nickname}")
-                else:
-                    # Вычисляем предполагаемый никнейм для логирования ошибки
-                    expected_nickname = nickname_manager.preview_nickname_change(
-                        current_nickname=self.target_user.display_name,
-                        operation='transfer',
-                        subdivision_abbr=config.get('departments', {}).get(self.dept_key, {}).get('abbreviation', self.dept_key),
-                        rank_abbr=current_rank,
-                        first_name=personnel_data_for_nick.get('first_name', 'Неизвестно') if personnel_data_for_nick else 'Неизвестно',
-                        last_name=personnel_data_for_nick.get('last_name', 'Неизвестно') if personnel_data_for_nick else 'Неизвестно'
-                    )
-                    print(f"❌ DEPT TRANSFER ERROR: Не удалось обновить никнейм через nickname_manager. Ожидаемый никнейм: {expected_nickname}")
-                    
-                    # Fallback к старому методу
-                    dept_config = config.get('departments', {}).get(self.dept_key, {})
-                    abbreviation = dept_config.get('abbreviation', '')
-                    if abbreviation:
-                        fallback_nick = f"{abbreviation} | {self.target_user.name}"
-                        await self.target_user.edit(nick=fallback_nick[:32], reason="Department transfer fallback")
-                        print(f"⚠️ DEPT TRANSFER FALLBACK: Использован fallback никнейм: {fallback_nick[:32]}")
-                    
-            except Exception as e:
-                # Вычисляем предполагаемый никнейм для логирования ошибки
-                try:
-                    personnel_data_for_error = await pm.get_personnel_summary(self.target_user.id)
-                    expected_nickname = nickname_manager.preview_nickname_change(
-                        current_nickname=self.target_user.display_name,
-                        operation='transfer',
-                        subdivision_abbr=config.get('departments', {}).get(self.dept_key, {}).get('abbreviation', self.dept_key),
-                        rank_abbr=personnel_data_for_error.get('rank', 'Рядовой') if personnel_data_for_error else 'Рядовой',
-                        first_name=personnel_data_for_error.get('first_name', 'Неизвестно') if personnel_data_for_error else 'Неизвестно',
-                        last_name=personnel_data_for_error.get('last_name', 'Неизвестно') if personnel_data_for_error else 'Неизвестно'
-                    )
-                    print(f"❌ DEPT TRANSFER EXCEPTION: Ошибка изменения никнейма: {e}. Ожидаемый никнейм: {expected_nickname}")
-                except Exception as preview_error:
-                    print(f"❌ DEPT TRANSFER EXCEPTION: Ошибка изменения никнейма на \"{expected_nickname}\": {e}. Ошибка предпросмотра: {preview_error}")
-                
-                # Fallback к старому методу даже при исключении
-                try:
-                    dept_config = config.get('departments', {}).get(self.dept_key, {})
-                    abbreviation = dept_config.get('abbreviation', '')
-                    if abbreviation:
-                        fallback_nick = f"{abbreviation} | {self.target_user.name}"
-                        await self.target_user.edit(nick=fallback_nick[:32], reason="Department transfer fallback after error")
-                        print(f"⚠️ DEPT TRANSFER EXCEPTION FALLBACK: Использован fallback никнейм: {fallback_nick[:32]}")
-                except Exception as fallback_error:
-                    print(f"❌ DEPT TRANSFER COMPLETE FAILURE: Даже fallback не сработал: {fallback_error}")
-            
-            # Step 5: Send FIRST audit notification - Department Change
-            personnel_data = await pm.get_personnel_data_for_audit(self.target_user.id)
-            if not personnel_data:
-                personnel_data = {
-                    'name': self.target_user.display_name,
-                    'static': 'Неизвестно',
-                    'rank': 'Неизвестно',
-                    'department': self.dept_name,
-                    'position': 'Не назначено'  # Don't include position in first audit
-                }
-            else:
-                personnel_data['department'] = self.dept_name
-                personnel_data['position'] = 'Не назначено'  # Don't include position in first audit
-            
-            if self.action_type == "transfer":
-                action1 = await AuditAction.DEPARTMENT_TRANSFER()
-            else:
-                action1 = await AuditAction.DEPARTMENT_JOIN()
-            
-            await audit_logger.send_personnel_audit(
-                guild=interaction.guild,
-                action=action1,
-                target_user=self.target_user,
-                moderator=interaction.user,
-                personnel_data=personnel_data,
-                config=config
-            )
-            
-            # Step 6: Send SECOND audit notification - Position Assignment/Demotion (only if needed)
-            if position_name != "skip_audit":
-                if position_name is None:
-                    # Position demotion
-                    personnel_data['position'] = None
-                    action2 = await AuditAction.POSITION_DEMOTION()
-                else:
-                    # Position assignment
-                    personnel_data['position'] = position_name
-                    action2 = await AuditAction.POSITION_ASSIGNMENT()
-                
-                await audit_logger.send_personnel_audit(
-                    guild=interaction.guild,
-                    action=action2,
-                    target_user=self.target_user,
-                    moderator=interaction.user,
-                    personnel_data=personnel_data,
-                    config=config
-                )
-                
-                position_info = f", должность: **{position_name or 'разжалован с должности'}**"
-                audit_count = "2 кадровых аудита: подразделение + должность"
-            else:
-                # No position audit needed (user had no position before)
-                if position_had_no_position_before:
-                    position_info = ", должность: **без должности (как и ранее)**"
-                else:
-                    position_info = ", должность: **без изменений**"
-                audit_count = "1 кадровый аудит: подразделение"
-            
-            # Step 7: Success message
-            action_text = "переведен в" if self.action_type == "transfer" else "принят в"
-            
-            await interaction.followup.send(
-                f"✅ **{self.target_user.display_name}** успешно {action_text} **{self.dept_name}**{position_info}\n"
-                f"📊 Отправлено {audit_count}",
-                ephemeral=True
-            )
-            
-        except Exception as e:
-            print(f"Error in department change: {e}")
-            await interaction.followup.send(f"❌ **Ошибка:** {str(e)}", ephemeral=True)
-    
-    async def _get_current_user_position(self, user_discord_id: int) -> str:
-        """Get user's current position name or None if no position"""
-        try:
-            from utils.postgresql_pool import get_db_cursor
-            
-            with get_db_cursor() as cursor:
-                cursor.execute("""
-                    SELECT pos.name 
-                    FROM employees e
-                    JOIN personnel p ON e.personnel_id = p.id
-                    JOIN position_subdivision ps ON e.position_subdivision_id = ps.id
-                    JOIN positions pos ON ps.position_id = pos.id
-                    WHERE p.discord_id = %s AND p.is_dismissal = false;
-                """, (user_discord_id,))
-                
-                result = cursor.fetchone()
-                return result['name'] if result else None
-                
-        except Exception as e:
-            print(f"Error getting current position: {e}")
-            return None
-    
-    async def _remove_position_from_db(self, user_discord_id: int, position_name: str, moderator_discord_id: int) -> bool:
-        """Remove position from user in database and create history record"""
-        try:
-            from utils.postgresql_pool import get_db_cursor
             from datetime import datetime, timezone, timedelta
             import json
             
-            # Get old position ID for role updates
-            old_position_id = None
-            user_member = None
+            # Initialize managers
+            manager = PersonnelManager()
+            mapper = SubdivisionMapper()
+            
+            # Get subdivision ID for new department
+            new_subdivision_id = await mapper.get_subdivision_id(self.dept_key)
+            if not new_subdivision_id:
+                return False, f"Подразделение '{self.dept_name}' не найдено в базе данных."
+            
+            # Get personnel ID
+            personnel_id = await manager._get_personnel_id(self.target_user.id)
+            if not personnel_id:
+                return False, "Пользователь не найден в базе данных."
+            
+            # Get current subdivision for history
+            current_subdivision = await manager._get_current_subdivision(personnel_id)
+            
+            # Get current position before any changes for history tracking
+            old_position_name = None
             try:
-                # Get user as member for role updates
-                if hasattr(self, 'target_user'):
-                    user_member = self.target_user
-                
-                # Get old position
                 with get_db_cursor() as cursor:
                     cursor.execute("""
-                        SELECT ps.position_id 
+                        SELECT pos.name as position_name
                         FROM personnel p
                         JOIN employees e ON p.id = e.personnel_id
                         LEFT JOIN position_subdivision ps ON e.position_subdivision_id = ps.id
+                        LEFT JOIN positions pos ON ps.position_id = pos.id
                         WHERE p.discord_id = %s AND p.is_dismissal = false
-                    """, (user_discord_id,))
+                    """, (self.target_user.id,))
                     old_pos_result = cursor.fetchone()
-                    if old_pos_result and old_pos_result['position_id']:
-                        old_position_id = old_pos_result['position_id']
+                    if old_pos_result and old_pos_result['position_name']:
+                        old_position_name = old_pos_result['position_name']
             except Exception as e:
-                print(f"Warning: Could not get old position for role update: {e}")
+                print(f"⚠️ Could not get old position for history: {e}")
             
-            with get_db_cursor() as cursor:
-                # Get personnel ID
-                cursor.execute("SELECT id FROM personnel WHERE discord_id = %s AND is_dismissal = false;", (user_discord_id,))
-                personnel_result = cursor.fetchone()
-                if not personnel_result:
-                    return False
-                personnel_id = personnel_result['id']
-                
-                # Clear position_subdivision_id in employees
-                cursor.execute("""
-                    UPDATE employees 
-                    SET position_subdivision_id = NULL
-                    WHERE personnel_id = %s;
-                """, (personnel_id,))
-                
-                # Get moderator personnel ID for history
-                cursor.execute("SELECT id FROM personnel WHERE discord_id = %s;", (moderator_discord_id,))
-                moderator_result = cursor.fetchone()
-                if not moderator_result:
-                    return False
-                moderator_personnel_id = moderator_result['id']
-                
-                # Create history record for position demotion (action_id = 6)
+            # Get user's current rank
+            rank_id = await manager._get_user_rank_id(personnel_id)
+            if not rank_id:
+                return False, "Не удалось определить звание пользователя."
+            
+            # Update employee record with new subdivision (clears position)
+            success = await manager._update_employee_subdivision(personnel_id, new_subdivision_id, rank_id)
+            if not success:
+                return False, "Не удалось обновить подразделение пользователя."
+            
+            # Log department transfer to history first
+            action_id = 7 if self.action_type == "join" else 8  # 7=join, 8=transfer
+            
+            # Get moderator personnel ID
+            moderator_personnel_id = await manager._get_personnel_id(interaction.user.id)
+            
+            if moderator_personnel_id:
+                # Create history record for department transfer
                 changes = {
                     "rank": {
                         "new": None,
                         "previous": None
                     },
                     "position": {
-                        "new": None,  # Removed position
-                        "previous": position_name
+                        "new": None,  # No position change in department transfer
+                        "previous": None
                     },
                     "subdivision": {
-                        "new": None,
-                        "previous": None
+                        "new": self.dept_name,
+                        "previous": await manager._get_subdivision_name(current_subdivision) if current_subdivision else None
                     }
                 }
                 
-                cursor.execute("""
-                    INSERT INTO history (personnel_id, action_id, performed_by, details, changes, action_date)
-                    VALUES (%s, %s, %s, %s, %s, %s);
-                """, (
-                    personnel_id,
-                    6,  # Position demotion action_id
-                    moderator_personnel_id,
-                    None,  # details = NULL
-                    json.dumps(changes, ensure_ascii=False),
-                    datetime.now(timezone(timedelta(hours=3)))  # Moscow time
-                ))
-                
-                # Update Discord roles after position removal
-                if user_member:
+                with get_db_cursor() as cursor:
+                    cursor.execute("""
+                        INSERT INTO history (personnel_id, action_id, performed_by, details, changes, action_date)
+                        VALUES (%s, %s, %s, %s, %s, %s);
+                    """, (
+                        personnel_id,
+                        action_id,
+                        moderator_personnel_id,
+                        f"{'Принят' if self.action_type == 'join' else 'Переведен'} в {self.dept_name}",
+                        json.dumps(changes, ensure_ascii=False),
+                        datetime.now(timezone(timedelta(hours=3)))  # Moscow time
+                    ))
+            
+            # Update Discord roles for department change
+            try:
+                # Get old department key for role removal
+                old_dept_key = None
+                if current_subdivision:
                     try:
-                        # Remove all position roles using smart update
-                        await position_manager.smart_update_user_position_roles(
-                            user_member.guild,
-                            user_member,
-                            None  # No new position
-                        )
-                        print(f"✅ Position role removed for {user_member.display_name}")
-                    except Exception as role_error:
-                        print(f"Warning: Failed to remove position role: {role_error}")
+                        # Get subdivision name/abbreviation from database
+                        subdivision_name = await manager._get_subdivision_name(current_subdivision)
+                        if subdivision_name:
+                            # Map subdivision name to config key
+                            from utils.database_manager.subdivision_mapper import SubdivisionMapper
+                            mapper = SubdivisionMapper()
+                            
+                            # First try direct mapping of full names
+                            name_to_config_mapping = {
+                                "Управление Военной Полиции": "УВП",
+                                "Силы Специальных Операций": "ССО", 
+                                "Рота Охраны и Обеспечения": "РОиО",
+                                "Военный Комиссариат": "ВК",
+                                "Медицинская Рота": "МР",
+                                "Военная Академия": "ВА",
+                                "Временно Без Подразделения": "ВБП",
+                                "Генеральный Штаб": "genshtab"
+                            }
+                            
+                            old_dept_key = name_to_config_mapping.get(subdivision_name)
+                            
+                            # If not found, try abbreviation mapping
+                            if not old_dept_key:
+                                for config_key, db_abbrev in mapper.config_to_db_mapping.items():
+                                    if db_abbrev == subdivision_name:
+                                        old_dept_key = config_key
+                                        break
+                            
+                            print(f"ℹ️ Determined old department: '{subdivision_name}' → '{old_dept_key}'")
+                    except Exception as e:
+                        print(f"⚠️ Could not determine old department key: {e}")
                 
-                return True
+                await position_manager.smart_update_user_department_roles(
+                    self.target_user.guild,
+                    self.target_user,
+                    self.dept_key,
+                    old_dept_key
+                )
+                print("✅ DEPARTMENT CHANGE: Updated department roles")
+            except Exception as e:
+                print(f"⚠️ Error updating department roles: {e}")
+            
+            # Send audit notification for department transfer FIRST
+            try:
+                # Get personnel data for audit
+                personnel_data_raw = await manager.get_personnel_data_for_audit(self.target_user.id)
+                if personnel_data_raw:
+                    # Format data for audit logger
+                    full_name = f"{personnel_data_raw.get('first_name', '')} {personnel_data_raw.get('last_name', '')}".strip()
+                    if not full_name:
+                        full_name = "Неизвестно"
+                    
+                    personnel_data = {
+                        'name': full_name,
+                        'static': personnel_data_raw.get('static', ''),
+                        'rank': personnel_data_raw.get('rank_name', 'Неизвестно'),
+                        'department': self.dept_name,  # Use the new department name
+                        'position': None,  # No position for department transfer
+                        'reason': None
+                    }
+                    
+                    await audit_logger.send_personnel_audit(
+                        guild=interaction.guild,
+                        action=await (AuditAction.DEPARTMENT_TRANSFER() if self.action_type == "transfer" else AuditAction.DEPARTMENT_JOIN()),
+                        target_user=self.target_user,
+                        moderator=interaction.user,
+                        personnel_data=personnel_data
+                    )
+                    print(f"✅ Sent department transfer audit notification for {full_name}")
+                else:
+                    print(f"⚠️ Could not get personnel data for department transfer audit notification")
+            except Exception as e:
+                print(f"⚠️ Error sending department transfer audit notification: {e}")
+            
+            # Assign position if selected (this will log its own history record)
+            position_assigned = False
+            if selected_position_id not in ["no_position", "default"] and position_name:
+                position_assigned = await self._assign_position_in_db(
+                    self.target_user.id, 
+                    selected_position_id, 
+                    position_name, 
+                    interaction.user.id,
+                    old_position_name  # Pass the old position for history tracking
+                )
+                print(f"🔄 DEPARTMENT CHANGE: Position assignment result: {position_assigned}")
                 
+                # Send separate audit notification for position assignment SECOND
+                if position_assigned:
+                    try:
+                        # Get updated personnel data for position assignment audit
+                        updated_personnel_data = await manager.get_personnel_data_for_audit(self.target_user.id)
+                        if updated_personnel_data:
+                            # Format data for position assignment audit
+                            full_name = f"{updated_personnel_data.get('first_name', '')} {updated_personnel_data.get('last_name', '')}".strip()
+                            if not full_name:
+                                full_name = "Неизвестно"
+                            
+                            position_audit_data = {
+                                'name': full_name,
+                                'static': updated_personnel_data.get('static', ''),
+                                'rank': updated_personnel_data.get('rank_name', 'Неизвестно'),
+                                'department': updated_personnel_data.get('subdivision_name', self.dept_name),  # Use current department from DB
+                                'position': position_name,
+                                'reason': None
+                            }
+                            
+                            await audit_logger.send_personnel_audit(
+                                guild=interaction.guild,
+                                action=await AuditAction.POSITION_ASSIGNMENT(),
+                                target_user=self.target_user,
+                                moderator=interaction.user,
+                                personnel_data=position_audit_data
+                            )
+                            print(f"✅ Sent position assignment audit notification for {full_name}")
+                        else:
+                            print(f"⚠️ Could not get updated personnel data for position assignment audit")
+                    except Exception as e:
+                        print(f"⚠️ Error sending position assignment audit notification: {e}")
+            
+            # Remove the old department transfer history logging code that's later in the method
+            # (it was moved up here)
+            
+            # Return success message
+            action_text = "принят" if self.action_type == "join" else "переведен"
+            position_text = f" на должность **{position_name}**" if position_assigned else ""
+            success_message = f"Пользователь **{self.target_user.display_name}** успешно {action_text} в **{self.dept_name}**{position_text}!"
+            
+            print(f"✅ DEPARTMENT CHANGE: Successfully completed for user {self.target_user.id}")
+            return True, success_message
+            
         except Exception as e:
-            print(f"Error in _remove_position_from_db: {e}")
-            return False
-
-
-
-
+            print(f"❌ Error in _execute_department_change: {e}")
+            import traceback
+            traceback.print_exc()
+            return False, f"Произошла ошибка при выполнении операции: {str(e)}"
 
 class PositionOnlySelectView(ui.View):
     """View for selecting position only (for position assignment)"""
@@ -2042,10 +1909,6 @@ class PositionOnlySelect(ui.Select):
             print(f"Error in _assign_position_in_db: {e}")
             return False
 
-
-
-
-
 class RankChangeView(ui.View):
     """View for rank change with confirmation for promotion type"""
     
@@ -2125,7 +1988,7 @@ class RankChangeView(ui.View):
                     personnel_data = {
                         'name': self.target_user.display_name,
                         'static': 'Неизвестно',
-                        'rank': self.new_rank,
+                        'rank': 'Неизвестно',
                         'department': 'Неизвестно',
                         'position': 'Неизвестно'
                     }
@@ -2387,7 +2250,7 @@ class GeneralEditView(ui.View):
         super().__init__(timeout=300)
         self.target_user = target_user
     
-    @ui.button(label="Изменить ранг", style=discord.ButtonStyle.primary, emoji="🎖️")
+    @ui.button(label="Изменить ранг", style=discord.ButtonStyle.success, emoji="🎖️")
     async def edit_rank(self, interaction: discord.Interaction, button: ui.Button):
         """Handle rank editing"""
         try:
@@ -2467,7 +2330,7 @@ class GeneralEditView(ui.View):
             print(f"Error in rank editing: {e}")
             await interaction.response.send_message(f"❌ **Ошибка:** {str(e)}", ephemeral=True)
     
-    @ui.button(label="Изменить подразделение", style=discord.ButtonStyle.secondary, emoji="🏢")
+    @ui.button(label="Изменить подразделение", style=discord.ButtonStyle.primary, emoji="🏢")
     async def edit_department(self, interaction: discord.Interaction, button: ui.Button):
         """Handle department editing"""
         # Send action selection view (same as before)
@@ -2479,7 +2342,7 @@ class GeneralEditView(ui.View):
             ephemeral=True
         )
     
-    @ui.button(label="Изменить должность", style=discord.ButtonStyle.secondary, emoji="📋")
+    @ui.button(label="Изменить должность", style=discord.ButtonStyle.red, emoji="📋")
     async def edit_position(self, interaction: discord.Interaction, button: ui.Button):
         """Handle position editing"""
         # Send position selection view (same as before)
@@ -2491,6 +2354,21 @@ class GeneralEditView(ui.View):
             view=view,
             ephemeral=True
         )
+    
+    @ui.button(label="Изменить личные данные", style=discord.ButtonStyle.secondary, emoji="👤")
+    async def edit_personal_data(self, interaction: discord.Interaction, button: ui.Button):
+        """Handle personal data editing"""
+        try:
+            # Import the modal
+            from .modals import PersonalDataModal
+            
+            # Create and show the modal
+            modal = PersonalDataModal(self.target_user)
+            await interaction.response.send_modal(modal)
+            
+        except Exception as e:
+            print(f"Error in personal data editing: {e}")
+            await interaction.response.send_message(f"❌ **Ошибка:** {str(e)}", ephemeral=True)
 
 
 @app_commands.context_menu(name='Быстро повысить (+1 ранг)')

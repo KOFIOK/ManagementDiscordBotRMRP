@@ -220,11 +220,6 @@ class PersonnelAuditLogger:
     AUDIT_COLOR = 0x055000  # Green color from original template
     AUDIT_THUMBNAIL = "https://i.imgur.com/07MRSyl.png"
     
-    # Blacklist check cache - prevents repeated DB queries for same user
-    _blacklist_cache: Dict[int, Optional[Dict[str, Any]]] = {}
-    _blacklist_cache_timestamps: Dict[int, datetime] = {}
-    _blacklist_cache_ttl = 60  # 60 seconds TTL
-    
     def __init__(self):
         """Initialize audit logger"""
         pass
@@ -511,67 +506,6 @@ class PersonnelAuditLogger:
                     inline=False
                 )
     
-    async def calculate_total_service_time(self, personnel_id: int) -> int:
-        """
-        Calculate total service time in days for a personnel member.
-        
-        Handles multiple hiring/dismissal cycles by pairing them chronologically.
-        
-        Args:
-            personnel_id: Internal personnel.id from database
-            
-        Returns:
-            int: Total days of service (sum of all service periods)
-        """
-        try:
-            from utils.postgresql_pool import get_db_cursor
-            
-            # Get all hiring and dismissal events for this person
-            with get_db_cursor() as cursor:
-                # Get hiring events (action_id = 10)
-                cursor.execute("""
-                    SELECT action_date 
-                    FROM history 
-                    WHERE personnel_id = %s AND action_id = 10
-                    ORDER BY action_date ASC
-                """, (personnel_id,))
-                hiring_dates = [row['action_date'] for row in cursor.fetchall()]
-                
-                # Get dismissal events (action_id = 3)
-                cursor.execute("""
-                    SELECT action_date 
-                    FROM history 
-                    WHERE personnel_id = %s AND action_id = 3
-                    ORDER BY action_date ASC
-                """, (personnel_id,))
-                dismissal_dates = [row['action_date'] for row in cursor.fetchall()]
-            
-            # Calculate total service time by pairing hirings with dismissals
-            total_days = 0
-            
-            for i, hire_date in enumerate(hiring_dates):
-                # Find corresponding dismissal (or use current time if still serving)
-                if i < len(dismissal_dates):
-                    dismiss_date = dismissal_dates[i]
-                else:
-                    # Currently serving, use current time
-                    dismiss_date = datetime.now()
-                
-                # Calculate days for this service period
-                service_period = (dismiss_date - hire_date).days
-                total_days += service_period
-            
-            print(f"📊 Calculated service time for personnel {personnel_id}: {total_days} days")
-            print(f"   Hirings: {len(hiring_dates)}, Dismissals: {len(dismissal_dates)}")
-            
-            return total_days
-            
-        except Exception as e:
-            print(f"❌ Error calculating service time: {e}")
-            import traceback
-            traceback.print_exc()
-            return 0
-    
     async def send_blacklist_notification(
         self,
         guild: discord.Guild,
@@ -791,7 +725,7 @@ class PersonnelAuditLogger:
         """
         try:
             # Calculate total service time
-            total_days = await self.calculate_total_service_time(personnel_id)
+            total_days = await personnel_manager.calculate_total_service_time(personnel_id)
             
             # Check if served less than 5 days
             if total_days < 5:
@@ -816,7 +750,8 @@ class PersonnelAuditLogger:
                 if blacklist_url:
                     print(f"✅ Auto-blacklist successful for {personnel_data.get('name')}")
                     # Invalidate cache for this user
-                    self.invalidate_blacklist_cache(target_user.id)
+                    from utils.database_manager import personnel_manager
+                    personnel_manager.invalidate_blacklist_cache(target_user.id)
                     return True
                 else:
                     print(f"❌ Auto-blacklist failed for {personnel_data.get('name')}")
@@ -830,266 +765,6 @@ class PersonnelAuditLogger:
             import traceback
             traceback.print_exc()
             return False
-    
-    async def check_active_blacklist(self, discord_id: int) -> Optional[Dict[str, Any]]:
-        """
-        Check if user has an active blacklist entry (with caching).
-        
-        Cache TTL: 60 seconds - reduces DB load for frequent checks.
-        Cache is automatically invalidated when blacklist is added/removed.
-        
-        Args:
-            discord_id: Discord ID of user to check
-            
-        Returns:
-            Dict with blacklist info if active blacklist exists, None otherwise.
-            Dict contains: id, reason, start_date, end_date, full_name, static
-        """
-        try:
-            # Check cache first
-            now = datetime.now()
-            if discord_id in self._blacklist_cache:
-                cache_age = (now - self._blacklist_cache_timestamps.get(discord_id, now)).total_seconds()
-                if cache_age < self._blacklist_cache_ttl:
-                    cached_result = self._blacklist_cache[discord_id]
-                    print(f"✅ Blacklist check (CACHED): discord_id={discord_id}, active={cached_result is not None}")
-                    return cached_result
-            
-            # Optimized query - fetch individual columns instead of string concatenation
-            from utils.postgresql_pool import get_db_cursor
-            
-            with get_db_cursor() as cursor:
-                cursor.execute("""
-                    SELECT 
-                        bl.id,
-                        bl.reason,
-                        bl.start_date,
-                        bl.end_date,
-                        p.first_name,
-                        p.last_name,
-                        p.static
-                    FROM blacklist bl
-                    INNER JOIN personnel p ON bl.personnel_id = p.id
-                    WHERE p.discord_id = %s 
-                      AND bl.is_active = true
-                    ORDER BY bl.start_date DESC
-                    LIMIT 1;
-                """, (discord_id,))
-                
-                result = cursor.fetchone()
-                
-                if result:
-                    # Construct full_name in Python (faster than SQL concatenation)
-                    full_name = f"{result['first_name']} {result['last_name']}".strip()
-                    
-                    blacklist_info = {
-                        'id': result['id'],
-                        'reason': result['reason'],
-                        'start_date': result['start_date'],
-                        'end_date': result['end_date'],
-                        'full_name': full_name,
-                        'static': result['static']
-                    }
-                    
-                    # Cache the positive result
-                    self._blacklist_cache[discord_id] = blacklist_info
-                    self._blacklist_cache_timestamps[discord_id] = now
-                    
-                    print(f"✅ Blacklist check (DB): discord_id={discord_id}, active=True")
-                    return blacklist_info
-                else:
-                    # Cache negative result too (prevents repeated queries for clean users)
-                    self._blacklist_cache[discord_id] = None
-                    self._blacklist_cache_timestamps[discord_id] = now
-                    
-                    print(f"✅ Blacklist check (DB): discord_id={discord_id}, active=False")
-                    return None
-                    
-        except Exception as e:
-            print(f"❌ Error checking active blacklist: {e}")
-            import traceback
-            traceback.print_exc()
-            # Don't cache errors - allow retry on next call
-            return None
-    
-    def invalidate_blacklist_cache(self, discord_id: int = None):
-        """
-        Invalidate blacklist cache for a specific user or all users.
-        
-        Call this after:
-        - Adding someone to blacklist (/чс)
-        - Removing someone from blacklist (/чс-удалить)
-        - Automatic blacklist addition (dismissal < 5 days)
-        
-        Args:
-            discord_id: Specific user to invalidate, or None for full cache clear
-        """
-        if discord_id is not None:
-            self._blacklist_cache.pop(discord_id, None)
-            self._blacklist_cache_timestamps.pop(discord_id, None)
-            print(f"🔄 Blacklist cache invalidated for discord_id={discord_id}")
-        else:
-            self._blacklist_cache.clear()
-            self._blacklist_cache_timestamps.clear()
-            print("🔄 Blacklist cache fully cleared")
-    
-    async def log_name_change_action(self, personnel_id: int, 
-                                    old_first_name: str, old_last_name: str, old_static: str,
-                                    new_first_name: str, new_last_name: str, new_static: str,
-                                    moderator_discord_id: int):
-        """
-        Логирование изменения ФИО в таблицу history.
-        
-        Args:
-            personnel_id: ID записи в таблице personnel
-            old_first_name: Старое имя
-            old_last_name: Старая фамилия  
-            old_static: Старый статик
-            new_first_name: Новое имя
-            new_last_name: Новая фамилия
-            new_static: Новый статик
-            moderator_discord_id: Discord ID модератора
-        """
-        try:
-            from utils.postgresql_pool import get_db_cursor
-            import json
-            
-            print(f"🔍 HISTORY: Начинаем log_name_change_action для personnel_id {personnel_id}")
-            
-            with get_db_cursor() as cursor:
-                print(f"🔍 HISTORY: Получили DB cursor")
-                # Находим модератора в таблице personnel
-                if moderator_discord_id == 0:
-                    performed_by_id = 0  # Fallback
-                    print(f"🔍 HISTORY: Используем performed_by_id = 0 (fallback)")
-                else:
-                    print(f"🔍 HISTORY: Ищем модератора {moderator_discord_id} в personnel...")
-                    cursor.execute("SELECT id FROM personnel WHERE discord_id = %s;", (moderator_discord_id,))
-                    moderator_personnel = cursor.fetchone()
-                    
-                    if not moderator_personnel:
-                        # Если модератор не найден в personnel, создаем запись с ID 0
-                        print(f"Warning: Модератор {moderator_discord_id} не найден в personnel, используем ID 0")
-                        performed_by_id = 0
-                    else:
-                        performed_by_id = moderator_personnel['id']
-                        print(f"🔍 HISTORY: Найден модератор с personnel_id {performed_by_id}")
-                
-                # Формируем детали изменения
-                details = f"Изменение ФИО: {old_first_name} {old_last_name} → {new_first_name} {new_last_name}"
-                if old_static != new_static:
-                    details += f", статик: {old_static or 'отсутствует'} → {new_static or 'отсутствует'}"
-                
-                print(f"🔍 HISTORY: Детали: {details}")
-                
-                # Формируем changes в формате JSON
-                changes = {
-                    "first_name": {
-                        "previous": old_first_name,
-                        "new": new_first_name
-                    },
-                    "last_name": {
-                        "previous": old_last_name,
-                        "new": new_last_name
-                    }
-                }
-                
-                if old_static != new_static:
-                    changes["static"] = {
-                        "previous": old_static,
-                        "new": new_static
-                    }
-                
-                print(f"🔍 HISTORY: Changes сформированы")
-                
-                # Ищем action_id для "Внесение изменений в Имя или Фамилию"
-                print(f"🔍 HISTORY: Ищем action_id...")
-                cursor.execute("SELECT id FROM actions WHERE name = %s;", ("Внесение изменений в Имя или Фамилию",))
-                action_result = cursor.fetchone()
-                
-                if action_result:
-                    action_id = action_result['id']
-                    print(f"🔍 HISTORY: Найден action_id {action_id}")
-                else:
-                    # Создаем новое действие если его нет
-                    print(f"🔍 HISTORY: Создаем новое действие...")
-                    cursor.execute("""
-                        INSERT INTO actions (name) VALUES (%s) RETURNING id;
-                    """, ("Внесение изменений в Имя или Фамилию",))
-                    action_id = cursor.fetchone()['id']
-                    print(f"Создано новое действие 'Внесение изменений в Имя или Фамилию' с ID {action_id}")
-                
-                # Записываем в историю
-                print(f"🔍 HISTORY: Записываем в history...")
-                action_date = datetime.now()
-                changes_json = json.dumps(changes)
-                print(f"🔍 HISTORY: Параметры INSERT:")
-                print(f"  - action_date: {action_date} (type: {type(action_date)})")
-                print(f"  - details: '{details}' (type: {type(details)})")
-                print(f"  - performed_by: {performed_by_id} (type: {type(performed_by_id)})")
-                print(f"  - action_id: {action_id} (type: {type(action_id)})")
-                print(f"  - personnel_id: {personnel_id} (type: {type(personnel_id)})")
-                print(f"  - changes: {changes_json} (type: {type(changes_json)}, length: {len(changes_json)})")
-                
-                try:
-                    # ВРЕМЕННО: Попробуем INSERT без changes для диагностики
-                    print(f"🔍 HISTORY: Пробуем INSERT без changes...")
-                    cursor.execute("""
-                        INSERT INTO history (
-                            action_date, details, performed_by, action_id, personnel_id
-                        ) VALUES (%s, %s, %s, %s, %s);
-                    """, (
-                        action_date,
-                        details,
-                        performed_by_id,
-                        action_id,
-                        personnel_id
-                    ))
-                    
-                    print(f"🔍 HISTORY: INSERT без changes выполнен успешно!")
-                    
-                    # Теперь попробуем UPDATE с changes
-                    print(f"🔍 HISTORY: Пробуем UPDATE с changes...")
-                    cursor.execute("""
-                        UPDATE history 
-                        SET changes = %s 
-                        WHERE personnel_id = %s AND action_id = %s AND action_date = %s;
-                    """, (
-                        changes_json,
-                        personnel_id,
-                        action_id,
-                        action_date
-                    ))
-                    
-                    print(f"🔍 HISTORY: UPDATE с changes выполнен успешно!")
-                    print(f"✅ Записано в историю: изменение ФИО для personnel_id {personnel_id}, действие выполнил: {performed_by_id}")
-                    
-                except Exception as insert_error:
-                    print(f"❌ HISTORY INSERT ERROR: {insert_error}")
-                    import traceback
-                    traceback.print_exc()
-                    
-                    # Попробуем простейший INSERT
-                    print(f"🔍 HISTORY: Пробуем минимальный INSERT...")
-                    try:
-                        cursor.execute("""
-                            INSERT INTO history (personnel_id, action_id, performed_by, action_date)
-                            VALUES (%s, %s, %s, %s);
-                        """, (personnel_id, action_id, performed_by_id, action_date))
-                        print(f"✅ HISTORY: Минимальный INSERT выполнен успешно!")
-                    except Exception as min_error:
-                        print(f"❌ HISTORY MINIMAL INSERT ERROR: {min_error}")
-                        import traceback
-                        traceback.print_exc()
-                        raise insert_error
-                
-                print(f"🔍 HISTORY: log_name_change_action ЗАВЕРШЕН")
-                
-        except Exception as e:
-            print(f"❌ Ошибка логирования изменения ФИО в историю: {e}")
-            import traceback
-            traceback.print_exc()
-            # Не прерываем выполнение, если история не записалась
     
     async def update_personnel_profile_with_history(self, discord_id: int, first_name: str, 
                                                   last_name: str, static: str, 
@@ -1170,7 +845,8 @@ class PersonnelAuditLogger:
                 
                 # Создаем запись в истории
                 print(f"🔍 AUDIT: Начинаем log_name_change_action...")
-                await self.log_name_change_action(
+                from utils.database_manager import personnel_manager
+                await personnel_manager.log_name_change_action(
                     personnel_id, 
                     old_first_name, old_last_name, old_static,
                     first_name, last_name, formatted_static,
@@ -1235,6 +911,7 @@ class PersonnelAuditLogger:
     ) -> tuple[bool, str]:
         """
         Manually add user to blacklist (via /чс command).
+        Handles Discord notifications only - database operations done by personnel_manager.
         
         Args:
             guild: Discord guild
@@ -1249,104 +926,19 @@ class PersonnelAuditLogger:
             Tuple of (success: bool, message: str)
         """
         try:
-            from utils.postgresql_pool import get_db_cursor
-            from datetime import timedelta
-            
             # Load config if not provided
             if not config:
                 from utils.config_manager import load_config
                 config = load_config()
             
-            # Check if user already has active blacklist
-            existing_blacklist = await self.check_active_blacklist(target_user.id)
-            if existing_blacklist:
-                return False, (
-                    f"❌ Пользователь **{existing_blacklist['full_name']}** "
-                    f"уже находится в чёрном списке.\n\n"
-                    f"**Текущая запись:**\n"
-                    f"• Причина: {existing_blacklist['reason']}\n"
-                    f"• Период: {existing_blacklist['start_date'].strftime('%d.%m.%Y')} - "
-                    f"{existing_blacklist['end_date'].strftime('%d.%m.%Y')}\n\n"
-                    f"Используйте `/чс-удалить` для удаления существующей записи."
-                )
+            # Add to blacklist via database manager
+            from utils.database_manager import personnel_manager
+            success, db_message, blacklist_data = await personnel_manager.add_to_blacklist(
+                target_user.id, moderator.id, reason, duration_days
+            )
             
-            # Get target user's personnel_id and data
-            personnel_id = None
-            personnel_data = {}
-            
-            try:
-                with get_db_cursor() as cursor:
-                    cursor.execute("""
-                        SELECT id, first_name, last_name, static
-                        FROM personnel
-                        WHERE discord_id = %s;
-                    """, (target_user.id,))
-                    
-                    result = cursor.fetchone()
-                    if result:
-                        personnel_id = result['id']
-                        personnel_data = {
-                            'name': f"{result['first_name']} {result['last_name']}",
-                            'static': result['static'] or ''
-                        }
-                    else:
-                        # User not in personnel database - create basic entry
-                        return False, (
-                            f"❌ Пользователь **{target_user.display_name}** "
-                            f"не найден в базе данных личного состава.\n\n"
-                            f"Добавление в чёрный список возможно только для пользователей, "
-                            f"имеющих запись в базе данных."
-                        )
-            except Exception as e:
-                print(f"❌ Error getting personnel data: {e}")
-                return False, f"❌ Ошибка при получении данных пользователя: {e}"
-            
-            # Get moderator's personnel_id for "added_by"
-            moderator_personnel_id = None
-            try:
-                with get_db_cursor() as cursor:
-                    cursor.execute(
-                        "SELECT id FROM personnel WHERE discord_id = %s;",
-                        (moderator.id,)
-                    )
-                    result = cursor.fetchone()
-                    if result:
-                        moderator_personnel_id = result['id']
-            except Exception as e:
-                print(f"⚠️ Error getting moderator personnel_id: {e}")
-            
-            # Prepare dates (Moscow timezone UTC+3)
-            moscow_tz = timezone(timedelta(hours=3))
-            start_date = datetime.now(moscow_tz)
-            end_date = start_date + timedelta(days=duration_days)
-            
-            # Insert into blacklist table
-            try:
-                with get_db_cursor() as cursor:
-                    cursor.execute("""
-                        INSERT INTO blacklist (
-                            reason, start_date, end_date, last_updated, 
-                            is_active, personnel_id, added_by
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                        RETURNING id;
-                    """, (
-                        reason,  # reason from parameter
-                        start_date,  # start_date
-                        end_date,  # end_date
-                        start_date,  # last_updated
-                        True,  # is_active
-                        personnel_id,  # personnel_id (target user)
-                        moderator_personnel_id  # added_by (moderator)
-                    ))
-                    
-                    blacklist_id = cursor.fetchone()['id']
-                    print(f"✅ Added manual blacklist record #{blacklist_id} for personnel {personnel_id}")
-                    
-            except Exception as e:
-                print(f"❌ Error adding blacklist record: {e}")
-                import traceback
-                traceback.print_exc()
-                return False, f"❌ Ошибка при добавлении в базу данных: {e}"
+            if not success:
+                return False, db_message
             
             # Get blacklist channel
             blacklist_channel_id = config.get('blacklist_channel')
@@ -1363,9 +955,12 @@ class PersonnelAuditLogger:
                 moderator_display = moderator.display_name
             
             # Prepare target display
+            personnel_data = blacklist_data['personnel_data']
             target_display = f"{personnel_data['name']} | {personnel_data['static']}" if personnel_data['static'] else personnel_data['name']
             
             # Format dates
+            start_date = blacklist_data['start_date']
+            end_date = blacklist_data['end_date']
             start_date_str = start_date.strftime('%d.%m.%Y')
             end_date_str = end_date.strftime('%d.%m.%Y')
             timestamp_str = start_date.strftime('%d.%m.%Y %H:%M')
@@ -1397,20 +992,16 @@ class PersonnelAuditLogger:
                 embed=embed
             )
             
-            # Invalidate cache
-            self.invalidate_blacklist_cache(target_user.id)
-            
             success_message = (
                 f"✅ Пользователь **{personnel_data['name']}** успешно добавлен в чёрный список.\n\n"
                 f"**Детали:**\n"
-                f"• Статик: {personnel_data['static']}\n"
                 f"• Причина: {reason}\n"
                 f"• Период: {start_date_str} - {end_date_str}\n"
-                f"• Модератор: {moderator_display}\n\n"
-                f"[Перейти к сообщению в чёрном списке]({blacklist_message.jump_url})"
+                f"• Добавил: {moderator.display_name}\n\n"
+                f"[Посмотреть запись в канале чёрного списка]({blacklist_message.jump_url})"
             )
             
-            print(f"✅ Manual blacklist added for {personnel_data['name']} by {moderator.display_name}")
+            print(f"✅ Manual blacklist successful for {personnel_data['name']}")
             return True, success_message
             
         except Exception as e:
@@ -1419,10 +1010,11 @@ class PersonnelAuditLogger:
             import traceback
             traceback.print_exc()
             return False, error_msg
-    
+
     async def remove_from_blacklist(self, discord_id: int, moderator: discord.Member) -> tuple[bool, str]:
         """
         Remove user from blacklist (DELETE record).
+        Handles Discord notifications only - database operations done by personnel_manager.
         
         Args:
             discord_id: Discord ID of user to remove from blacklist
@@ -1432,40 +1024,132 @@ class PersonnelAuditLogger:
             Tuple of (success: bool, message: str)
         """
         try:
-            from utils.postgresql_pool import get_db_cursor
+            # Remove from blacklist via database manager
+            from utils.database_manager import personnel_manager
+            success, db_message, removed_data = await personnel_manager.remove_from_blacklist(discord_id)
             
-            # Check if user has active blacklist
-            blacklist_info = await self.check_active_blacklist(discord_id)
-            
-            if not blacklist_info:
-                return False, "Пользователь не найден в активном чёрном списке."
-            
-            # Delete blacklist entry completely
-            with get_db_cursor() as cursor:
-                cursor.execute("""
-                    DELETE FROM blacklist
-                    WHERE id = %s;
-                """, (blacklist_info['id'],))
-            
-            # Invalidate cache for this user
-            self.invalidate_blacklist_cache(discord_id)
+            if not success:
+                return False, db_message
             
             success_message = (
-                f"✅ Пользователь **{blacklist_info['full_name']}** ({blacklist_info['static']}) "
+                f"✅ Пользователь **{removed_data['full_name']}** ({removed_data['static']}) "
                 f"успешно удалён из чёрного списка.\n\n"
                 f"**Детали удалённой записи:**\n"
-                f"• Причина: {blacklist_info['reason']}\n"
-                f"• Дата начала: {blacklist_info['start_date'].strftime('%d.%m.%Y')}\n"
-                f"• Дата окончания: {blacklist_info['end_date'].strftime('%d.%m.%Y')}\n"
+                f"• Причина: {removed_data['reason']}\n"
+                f"• Дата начала: {removed_data['start_date'].strftime('%d.%m.%Y')}\n"
+                f"• Дата окончания: {removed_data['end_date'].strftime('%d.%m.%Y')}\n"
                 f"• Снял с чёрного списка: {moderator.display_name}"
             )
             
-            print(f"✅ Blacklist DELETED for discord_id={discord_id} by {moderator.display_name}")
+            print(f"✅ Blacklist removal successful for discord_id={discord_id} by {moderator.display_name}")
             return True, success_message
             
         except Exception as e:
             error_msg = f"❌ Ошибка при удалении из чёрного списка: {e}"
             print(error_msg)
+            import traceback
+            traceback.print_exc()
+            return False, error_msg
+
+    async def update_personnel_profile_with_history(self, discord_id: int, first_name: str,
+                                                  last_name: str, static: str,
+                                                  moderator_discord_id: int) -> Tuple[bool, str]:
+        """
+        Update personnel profile (name/static) with history logging and audit notification.
+
+        This is the main entry point for personnel profile updates that need to be audited.
+
+        Args:
+            discord_id: Discord ID of the user being updated
+            first_name: New first name
+            last_name: New last name
+            static: New static number
+            moderator_discord_id: Discord ID of the moderator making the change
+
+        Returns:
+            Tuple[bool, str]: (success, message)
+        """
+        try:
+            print(f"🔍 AUDIT: Начинаем update_personnel_profile_with_history для {discord_id}")
+
+            # Get current data for comparison
+            from utils.postgresql_pool import get_db_cursor
+            with get_db_cursor() as cursor:
+                cursor.execute("""
+                    SELECT first_name, last_name, static
+                    FROM personnel
+                    WHERE discord_id = %s AND is_dismissal = false;
+                """, (discord_id,))
+                current_data = cursor.fetchone()
+
+            if not current_data:
+                return False, f"Пользователь с Discord ID {discord_id} не найден в базе данных"
+
+            print(f"🔍 AUDIT: current_data получен: {current_data is not None}")
+            print(f"🔍 AUDIT: Старые данные: {current_data['first_name']} {current_data['last_name']} | {current_data['static']}")
+            print(f"🔍 AUDIT: Новые данные: {first_name} {last_name} | {static}")
+
+            # Format static
+            from utils.database_manager.manager import PersonnelManager
+            pm = PersonnelManager()
+            formatted_static = pm._format_static_for_db(static)
+            print(f"🔍 AUDIT: Форматируем статик '{static}'...")
+            print(f"🔍 FORMAT_STATIC: Входной статик: '{static}' (type: {type(static)})")
+            print(f"🔍 FORMAT_STATIC: Только цифры: '{''.join(filter(str.isdigit, static))}' (длина: {len(''.join(filter(str.isdigit, static)))})")
+            print(f"🔍 FORMAT_STATIC: {len(''.join(filter(str.isdigit, static)))} цифр -> XXX-XXX: '{formatted_static}'")
+            print(f"🔍 AUDIT: Отформатированный статик: '{formatted_static}'")
+
+            # Update personnel profile
+            print(f"🔍 AUDIT: Начинаем UPDATE personnel...")
+            success, message = pm.update_personnel_profile(discord_id, first_name, last_name, formatted_static)
+            if not success:
+                return False, message
+            print(f"🔍 AUDIT: UPDATE personnel завершен")
+
+            # Get personnel_id for the user being updated
+            with get_db_cursor() as cursor:
+                cursor.execute("""
+                    SELECT id FROM personnel WHERE discord_id = %s AND is_dismissal = false;
+                """, (discord_id,))
+                personnel_result = cursor.fetchone()
+                
+            if not personnel_result:
+                return False, f"Не удалось найти personnel_id для пользователя {discord_id}"
+                
+            personnel_id = personnel_result['id']
+            print(f"🔍 AUDIT: personnel_id получен: {personnel_id}")
+
+            # Log to history
+            print(f"🔍 AUDIT: Начинаем log_name_change_action...")
+            history_success = await pm.log_name_change_action(
+                personnel_id=personnel_id,
+                old_first_name=current_data['first_name'],
+                old_last_name=current_data['last_name'],
+                old_static=current_data['static'] or '',
+                new_first_name=first_name,
+                new_last_name=last_name,
+                new_static=formatted_static,
+                moderator_discord_id=moderator_discord_id
+            )
+
+            if not history_success:
+                print(f"⚠️ AUDIT: History logging failed, but profile update succeeded")
+            else:
+                print(f"✅ AUDIT: History logging successful")
+
+            # Get personnel data for audit notification
+            personnel_data = await pm.get_personnel_data_for_audit(discord_id)
+            if not personnel_data:
+                return True, f"Профиль обновлен, но не удалось получить данные для аудита"
+
+            # Note: Audit notification is sent from the modal/form handler, not here
+            print(f"✅ AUDIT: Profile update completed successfully")
+
+            return True, f"Профиль успешно обновлен: {first_name} {last_name} | {formatted_static}"
+
+        except Exception as e:
+            error_msg = f"Ошибка при обновлении профиля с историей: {e}"
+            print(f"❌ AUDIT: {error_msg}")
             import traceback
             traceback.print_exc()
             return False, error_msg

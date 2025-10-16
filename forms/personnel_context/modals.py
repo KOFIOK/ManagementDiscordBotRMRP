@@ -721,3 +721,338 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
             import traceback
             traceback.print_exc()
             return False
+
+
+class PersonalDataModal(ui.Modal, title="Изменить личные данные"):
+    """Modal for editing personal data (Discord ID, Name, Surname, Static)"""
+
+    def __init__(self, target_user: discord.Member):
+        super().__init__()
+        self.target_user = target_user
+
+        # Add input fields
+        # self.discord_id = ui.TextInput(
+        #    label="Discord ID",
+        #    placeholder="ID пользователя в Discord",
+        #    default=str(target_user.id),
+        #    min_length=15,
+        #    max_length=20,
+        #    required=True
+        #)
+        #self.add_item(self.discord_id)
+
+        self.first_name = ui.TextInput(
+            label="Имя",
+            placeholder="Введите имя",
+            min_length=2,
+            max_length=50,
+            required=True
+        )
+        self.add_item(self.first_name)
+
+        self.last_name = ui.TextInput(
+            label="Фамилия",
+            placeholder="Введите фамилию",
+            min_length=2,
+            max_length=50,
+            required=True
+        )
+        self.add_item(self.last_name)
+
+        self.static = ui.TextInput(
+            label="Статик",
+            placeholder="123-456 (5-7 цифр)",
+            min_length=5,
+            max_length=7,
+            required=True
+        )
+        self.add_item(self.static)
+
+        # Auto-fill data from cache
+        self._auto_fill_data()
+
+    def _auto_fill_data(self):
+        """Auto-fill data from cache, fallback to database"""
+        try:
+            # Import here to avoid circular imports
+            from utils.user_cache import get_cached_user_info_sync, _global_cache
+            from utils.database_manager import personnel_manager
+            
+            # Get user data synchronously from cache first
+            user_data = get_cached_user_info_sync(self.target_user.id)
+            
+            if user_data:
+                # Fill first name and last name from full_name
+                full_name = user_data.get('full_name', '')
+                if full_name:
+                    name_parts = full_name.split()
+                    if len(name_parts) >= 2:
+                        self.first_name.default = name_parts[0]
+                        self.last_name.default = ' '.join(name_parts[1:])
+                    elif len(name_parts) == 1:
+                        self.first_name.default = name_parts[0]
+                
+                # Fill static
+                static = user_data.get('static', '')
+                if static:
+                    self.static.default = static
+                    
+                print(f"✅ AUTO-FILL: Данные для {self.target_user.id} успешно загружены из кэша")
+            else:
+                print(f"⚠️ AUTO-FILL: Данные для {self.target_user.id} не найдены в кэше")
+                
+                # Fallback to database query
+                try:
+                    # Get data from personnel table synchronously
+                    db_data = personnel_manager.get_personnel_by_discord_id(self.target_user.id)
+                    
+                    if db_data:
+                        # Transform data to cache format
+                        full_name = f"{db_data['first_name']} {db_data['last_name']}".strip()
+                        cache_data = {
+                            'full_name': full_name,
+                            'static': db_data['static'] or '',
+                            'discord_id': db_data['discord_id']
+                        }
+                        
+                        # Store in cache for future use
+                        _global_cache._store_in_cache(self.target_user.id, cache_data)
+                        
+                        # Fill form fields
+                        if full_name:
+                            name_parts = full_name.split()
+                            if len(name_parts) >= 2:
+                                self.first_name.default = name_parts[0]
+                                self.last_name.default = ' '.join(name_parts[1:])
+                            elif len(name_parts) == 1:
+                                self.first_name.default = name_parts[0]
+                        
+                        # Fill static
+                        static = db_data['static'] or ''
+                        if static:
+                            self.static.default = static
+                            
+                        print(f"✅ AUTO-FILL: Данные для {self.target_user.id} загружены из БД и закэшированы")
+                    else:
+                        print(f"⚠️ AUTO-FILL: Пользователь {self.target_user.id} не найден в БД или уволен")
+                        
+                except Exception as db_error:
+                    print(f"❌ AUTO-FILL: Ошибка запроса к БД для {self.target_user.id}: {db_error}")
+                
+        except Exception as e:
+            print(f"Warning: Could not auto-fill personal data: {e}")
+            # Continue with empty defaults
+
+    def _format_static(self, static_input: str) -> str:
+        """Auto-format static number to standard format"""
+        import re
+        digits_only = re.sub(r'\D', '', static_input.strip())
+
+        if len(digits_only) == 5:
+            return f"{digits_only[:2]}-{digits_only[2:]}"
+        elif len(digits_only) == 6:
+            return f"{digits_only[:3]}-{digits_only[3:]}"
+        else:
+            return ""
+
+    async def on_submit(self, interaction: discord.Interaction):
+        """Handle form submission with database update and history logging"""
+        try:
+            # Check permissions
+            config = load_config()
+            if not is_moderator_or_admin(interaction.user, config):
+                await interaction.response.send_message(
+                    "❌ У вас нет прав для выполнения этой команды.",
+                    ephemeral=True
+                )
+                return
+
+            # Get form data
+            # TEMPORARILY DISABLED: Discord ID field (lines 734-742) - using target user ID directly
+            discord_id = self.target_user.id  # Temporarily use target user ID since field is disabled
+            first_name = self.first_name.value.strip()
+            last_name = self.last_name.value.strip()
+            static = self.static.value.strip()
+
+            # TEMPORARILY DISABLED: Discord ID validation - field is disabled, so no ID changes possible
+            # Validate Discord ID - check if user exists on server and prevent conflicts
+            # if discord_id != self.target_user.id:
+            #     # Discord ID was changed, verify the new user exists
+            #     new_user = interaction.guild.get_member(discord_id)
+            #     if not new_user:
+            #         await interaction.response.send_message(
+            #             f"❌ Пользователь с Discord ID {discord_id} не найден на сервере.\n"
+            #             "Изменение Discord ID возможно только на существующих участников сервера.",
+            #             ephemeral=True
+            #         )
+            #         return
+            #
+            #     # Check if the new Discord ID already belongs to another active user in database
+            #     try:
+            #         from utils.postgresql_pool import get_db_cursor
+            #         with get_db_cursor() as cursor:
+            #             cursor.execute("""
+            #                 SELECT id, first_name, last_name FROM personnel
+            #                 WHERE discord_id = %s AND is_dismissal = false
+            #             """, (discord_id,))
+            #             existing_user = cursor.fetchone()
+            #
+            #             if existing_user:
+            #                 await interaction.response.send_message(
+            #                     f"❌ **Конфликт данных!**\n\n"
+            #                     f"Discord ID `{discord_id}` уже принадлежит активному пользователю:\n"
+            #                     f"**{existing_user['first_name']} {existing_user['last_name']}**\n\n"
+            #                     f"Изменение Discord ID невозможно, так как это приведет к конфликту данных.\n"
+            #                     f"Если нужно исправить ошибку в данных, обратитесь к администратору.",
+            #                     ephemeral=True
+            #                 )
+            #                 return
+            #
+            #     except Exception as db_error:
+            #         print(f"❌ Database error checking Discord ID conflict: {db_error}")
+            #         await interaction.response.send_message(
+            #             "❌ Ошибка проверки данных в базе данных.",
+            #             ephemeral=True
+            #         )
+            #         return
+
+            # Validate required fields
+            if not first_name or not last_name or not static:
+                await interaction.response.send_message(
+                    "❌ Все поля обязательны для заполнения: имя, фамилия и статик.",
+                    ephemeral=True
+                )
+                return
+
+            # Validate and format static (required field)
+            formatted_static = self._format_static(static)
+            if not formatted_static:
+                await interaction.response.send_message(
+                    "❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.\n"
+                    "Примеры: 123456, 123-456, 12345, 12-345, 123 456",
+                    ephemeral=True
+                )
+                return
+
+            # Defer response for processing
+            await interaction.response.defer(ephemeral=True)
+
+            # Get old data for audit notification
+            old_data = None
+            try:
+                from utils.database_manager import personnel_manager
+                old_data = personnel_manager.get_personnel_by_discord_id(discord_id)
+            except Exception as e:
+                print(f"⚠️ Could not get old data for audit: {e}")
+
+            try:
+                # Update personnel data with history logging
+                from utils.database_manager import personnel_manager
+
+                success, message = await personnel_manager.update_personnel_profile_with_history(
+                    discord_id=discord_id,
+                    first_name=first_name,
+                    last_name=last_name,
+                    static=formatted_static,
+                    moderator_discord_id=interaction.user.id
+                )
+
+                if success:
+                    # Invalidate user cache to force refresh
+                    from utils.user_cache import invalidate_user_cache
+                    invalidate_user_cache(discord_id)
+
+                    # Send audit notification to audit channel
+                    try:
+                        from utils.audit_logger import audit_logger, AuditAction
+                        
+                        # Get current personnel data for audit
+                        from utils.database_manager import personnel_manager
+                        personnel_data = await personnel_manager.get_personnel_data_for_audit(discord_id)
+                        
+                        if personnel_data:
+                            audit_action = await AuditAction.NAME_CHANGE()
+                            
+                            # Format old and new names with static for reason
+                            old_name_with_static = ""
+                            if old_data:
+                                old_name_with_static = f"{old_data['first_name']} {old_data['last_name']} | {old_data['static']}".strip()
+                            
+                            new_name_with_static = f"{first_name} {last_name} | {formatted_static}".strip()
+                            name_change_reason = f"{old_name_with_static} → {new_name_with_static}" if old_name_with_static else f"→ {new_name_with_static}"
+                            
+                            audit_data = {
+                                'name': f"{personnel_data['first_name']} {personnel_data['last_name']}",
+                                'static': personnel_data['static'],
+                                'rank': personnel_data.get('rank_name', 'Не указано'),
+                                'department': personnel_data.get('subdivision_name', 'Не указано'),
+                                'position': personnel_data.get('position_name', 'Не назначено'),
+                                'reason': name_change_reason
+                            }
+                            
+                            await audit_logger.send_personnel_audit(
+                                guild=interaction.guild,
+                                action=audit_action,
+                                target_user=self.target_user,
+                                moderator=interaction.user,
+                                personnel_data=audit_data
+                            )
+                            
+                            print(f"✅ Audit notification sent for name change: {first_name} {last_name}")
+                        else:
+                            print(f"⚠️ Could not get personnel data for audit notification")
+                            
+                    except Exception as audit_error:
+                        print(f"⚠️ Error sending audit notification: {audit_error}")
+                        import traceback
+                        traceback.print_exc()
+
+                    # Send success message
+                    embed = discord.Embed(
+                        title="✅ Личные данные обновлены",
+                        description=f"Личные данные пользователя {self.target_user.mention} успешно изменены.",
+                        color=discord.Color.green()
+                    )
+
+                    embed.add_field(
+                        name="📋 Новые данные:",
+                        value=(
+                            f"**Discord ID:** {discord_id}\n"
+                            f"**Имя:** {first_name}\n"
+                            f"**Фамилия:** {last_name}\n"
+                            f"**Статик:** {formatted_static}"
+                        ),
+                        inline=False
+                    )
+
+                    embed.add_field(
+                        name="👤 Изменено модератором:",
+                        value=interaction.user.mention,
+                        inline=True
+                    )
+
+                    await interaction.followup.send(embed=embed, ephemeral=True)
+
+                    # Log to console
+                    print(f"✅ PERSONAL DATA UPDATE: {self.target_user.id} updated by {interaction.user.id}")
+                    print(f"   New data: {first_name} {last_name}, static: {formatted_static}")
+
+                else:
+                    await interaction.followup.send(
+                        f"❌ Ошибка при обновлении личных данных: {message}",
+                        ephemeral=True
+                    )
+
+            except Exception as db_error:
+                print(f"❌ DATABASE ERROR in personal data update: {db_error}")
+                await interaction.followup.send(
+                    "❌ Произошла ошибка при сохранении данных в базу данных.",
+                    ephemeral=True
+                )
+
+        except Exception as e:
+            print(f"Error in personal data modal: {e}")
+            await interaction.response.send_message(
+                "❌ Произошла ошибка при обработке запроса.",
+                ephemeral=True
+            )

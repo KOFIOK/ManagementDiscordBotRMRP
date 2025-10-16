@@ -10,6 +10,7 @@ from datetime import datetime, timezone, timedelta
 from utils.config_manager import load_config
 from utils.ping_manager import ping_manager
 from utils.nickname_manager import nickname_manager
+from utils import get_safe_personnel_name
 # Импорты для работы с PostgreSQL будут добавлены по мере необходимости
 
 logger = logging.getLogger(__name__)
@@ -1251,8 +1252,8 @@ class DepartmentApplicationView(ui.View):
                 )
             
             # Get personnel data for audit
-            personnel_data = await pm.get_personnel_data_for_audit(target_user.id)
-            if not personnel_data:
+            personnel_data_summary = await pm.get_personnel_summary(target_user.id)
+            if not personnel_data_summary:
                 # Fallback personnel data if not found in DB
                 personnel_data = {
                     'name': target_user.display_name,
@@ -1262,8 +1263,14 @@ class DepartmentApplicationView(ui.View):
                     'position': 'Неизвестно'
                 }
             else:
-                # Update department to new one
-                personnel_data['department'] = dept_name
+                # Format personnel data correctly for audit
+                personnel_data = {
+                    'name': get_safe_personnel_name(personnel_data_summary, target_user.display_name),
+                    'static': personnel_data_summary.get('static', ''),
+                    'rank': personnel_data_summary.get('rank', 'Неизвестно'),
+                    'department': dept_name,
+                    'position': personnel_data_summary.get('position', 'Неизвестно')
+                }
             
             # Send audit notification (without custom_fields to maintain standard audit format)
             if self.application_data.get('application_type') == 'transfer':
@@ -1283,12 +1290,17 @@ class DepartmentApplicationView(ui.View):
             # Additional audit for position assignment if assignable positions were granted
             assignable_role_ids = ping_manager.get_department_assignable_position_roles(dept_code)
             if assignable_role_ids:
-                # Get the names of assigned position roles
+                # Get the names of assigned position roles and update database
                 assigned_position_names = []
                 for role_id in assignable_role_ids:
                     role = interaction.guild.get_role(role_id)
                     if role:
                         assigned_position_names.append(role.name)
+                        # Update position_subdivision_id in database
+                        from utils.database_manager.position_manager import position_manager
+                        await position_manager.update_position_subdivision_by_role_name(
+                            target_user.id, role.name, dept_code, interaction.user.id
+                        )
                 
                 if assigned_position_names:
                     # Create updated personnel data for position assignment audit

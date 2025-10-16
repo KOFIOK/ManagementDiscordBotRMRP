@@ -308,6 +308,244 @@ class PositionManager:
         except Exception as e:
             print(f"❌ Error getting user position: {e}")
             return None
+    
+    async def update_position_subdivision_by_role_name(self, user_discord_id: int, position_role_name: str, 
+                                                     dept_code: str, moderator_discord_id: int) -> bool:
+        """
+        Update position_subdivision_id in employees table based on Discord role name.
+        Used for department applications where positions are assigned automatically.
+        
+        Args:
+            user_discord_id: Discord user ID
+            position_role_name: Name of the Discord role assigned
+            dept_code: Department code (УВП, ССО, etc.)
+            moderator_discord_id: Discord ID of the moderator who approved
+            
+        Returns:
+            bool: Success status
+        """
+        try:
+            from utils.database_manager import SubdivisionMapper
+            from datetime import datetime, timezone, timedelta
+            import json
+            
+            # Initialize subdivision mapper to get subdivision_id
+            subdivision_mapper = SubdivisionMapper()
+            subdivision_id = subdivision_mapper.get_subdivision_id(dept_code)
+            
+            if not subdivision_id:
+                print(f"⚠️ Could not find subdivision_id for department {dept_code}")
+                return False
+            
+            with get_db_cursor() as cursor:
+                # Get personnel_id
+                cursor.execute("SELECT id FROM personnel WHERE discord_id = %s AND is_dismissal = false;", (user_discord_id,))
+                personnel_result = cursor.fetchone()
+                if not personnel_result:
+                    print(f"⚠️ Could not find personnel record for user {user_discord_id}")
+                    return False
+                personnel_id = personnel_result['id']
+                
+                # Find position_subdivision_id by matching role name with position name
+                # Try exact match first, then partial match
+                cursor.execute("""
+                    SELECT ps.id, p.name as position_name
+                    FROM position_subdivision ps
+                    JOIN positions p ON ps.position_id = p.id
+                    WHERE ps.subdivision_id = %s AND (
+                        p.name = %s OR 
+                        p.name LIKE %s OR
+                        %s LIKE CONCAT('%%', p.name, '%%')
+                    )
+                    LIMIT 1;
+                """, (subdivision_id, position_role_name, f"%{position_role_name}%", position_role_name))
+                
+                ps_result = cursor.fetchone()
+                if not ps_result:
+                    print(f"⚠️ Could not find position_subdivision for role '{position_role_name}' in department {dept_code}")
+                    return False
+                
+                position_subdivision_id = ps_result['id']
+                position_name = ps_result['position_name']
+                
+                # Update employee with new position
+                cursor.execute("""
+                    UPDATE employees 
+                    SET position_subdivision_id = %s
+                    WHERE personnel_id = %s;
+                """, (position_subdivision_id, personnel_id))
+                
+                # Get moderator personnel ID for history
+                cursor.execute("SELECT id FROM personnel WHERE discord_id = %s;", (moderator_discord_id,))
+                moderator_result = cursor.fetchone()
+                if not moderator_result:
+                    print(f"⚠️ Could not find moderator personnel record for {moderator_discord_id}")
+                    return False
+                moderator_personnel_id = moderator_result['id']
+                
+                # Create history record for position assignment (action_id = 5)
+                changes = {
+                    "rank": {"new": None, "previous": None},
+                    "position": {"new": position_name, "previous": None},
+                    "subdivision": {"new": None, "previous": None}
+                }
+                
+                cursor.execute("""
+                    INSERT INTO history (personnel_id, action_id, performed_by, details, changes, action_date)
+                    VALUES (%s, %s, %s, %s, %s, %s);
+                """, (
+                    personnel_id,
+                    5,  # Position assignment action_id
+                    moderator_personnel_id,
+                    f"Automatic assignment via department application",
+                    json.dumps(changes, ensure_ascii=False),
+                    datetime.now(timezone(timedelta(hours=3)))  # Moscow time
+                ))
+                
+                print(f"✅ Updated position_subdivision_id to {position_subdivision_id} ({position_name}) for user {user_discord_id} in department {dept_code}")
+                return True
+                
+        except Exception as e:
+            print(f"❌ Error updating position in database for user {user_discord_id}: {e}")
+            return False
+
+    async def smart_update_user_department_roles(self, guild: discord.Guild, user: discord.Member, dept_key: str, old_dept_key: str = None):
+        """
+        Update user roles based on department change
+        
+        Args:
+            guild: Discord guild
+            user: Discord user member
+            dept_key: Department config key (e.g., 'genshtab', 'УВП')
+            old_dept_key: Previous department config key (optional, will be auto-detected if not provided)
+        """
+        try:
+            print(f"🔄 Updating department roles for {user.display_name}: {old_dept_key} → {dept_key}")
+            
+            # Import config manager to get department roles
+            from ..config_manager import load_config
+            config = load_config()
+            
+            # Get department configs
+            departments = config.get('departments', {})
+            new_dept_config = departments.get(dept_key, {})
+            
+            role_changes = []
+            
+            # If old_dept_key not provided, try to detect it from user's Discord roles
+            if old_dept_key is None:
+                try:
+                    # Detect old department by checking user's Discord roles against config
+                    old_dept_key = self._detect_department_by_user_roles(user, departments)
+                    if old_dept_key:
+                        print(f"✅ Auto-detected old department for {user.display_name}: {old_dept_key}")
+                    else:
+                        print(f"ℹ️ Could not auto-detect old department for {user.display_name} (no matching roles found)")
+                except Exception as e:
+                    print(f"⚠️ Could not auto-detect old department: {e}")
+            
+            # Remove old department roles if old_dept_key is known
+            if old_dept_key and old_dept_key != dept_key:
+                old_dept_config = departments.get(old_dept_key, {})
+                
+                # Get roles from old department config
+                old_roles_to_remove = old_dept_config.get('roles', {}).get('remove', [])
+                old_role_id = old_dept_config.get('role_id')
+                
+                # Collect all roles to remove from old department
+                roles_to_remove_from_old = old_roles_to_remove.copy()
+                if old_role_id:
+                    old_role = guild.get_role(old_role_id)
+                    if old_role and old_role.name not in roles_to_remove_from_old:
+                        roles_to_remove_from_old.append(old_role.name)
+                
+                # Remove old department roles
+                for role_name in roles_to_remove_from_old:
+                    role = discord.utils.get(guild.roles, name=role_name)
+                    if role and role in user.roles:
+                        try:
+                            await user.remove_roles(role)
+                            role_changes.append(f"Removed {role_name} (old dept)")
+                            print(f"✅ Removed old department role {role_name} from {user.display_name}")
+                        except Exception as e:
+                            print(f"⚠️ Failed to remove old role {role_name}: {e}")
+            
+            # Get roles to add/remove for new department
+            roles_to_add = new_dept_config.get('roles', {}).get('add', [])
+            roles_to_remove = new_dept_config.get('roles', {}).get('remove', [])
+            
+            # If no roles structure, use role_id from PostgreSQL
+            if not roles_to_add and not roles_to_remove:
+                role_id = new_dept_config.get('role_id')
+                if role_id:
+                    # Get role name from guild roles
+                    role = guild.get_role(role_id)
+                    if role:
+                        roles_to_add = [role.name]
+                        print(f"ℹ️ Using role_id for department {dept_key}: {role.name}")
+            
+            # Remove roles specified in new department config (cleanup roles)
+            for role_name in roles_to_remove:
+                role = discord.utils.get(guild.roles, name=role_name)
+                if role and role in user.roles:
+                    try:
+                        await user.remove_roles(role)
+                        role_changes.append(f"Removed {role_name}")
+                        print(f"✅ Removed cleanup role {role_name} from {user.display_name}")
+                    except Exception as e:
+                        print(f"⚠️ Failed to remove role {role_name}: {e}")
+            
+            # Add new department roles
+            for role_name in roles_to_add:
+                role = discord.utils.get(guild.roles, name=role_name)
+                if role and role not in user.roles:
+                    try:
+                        await user.add_roles(role)
+                        role_changes.append(f"Added {role_name}")
+                        print(f"✅ Added role {role_name} to {user.display_name}")
+                    except Exception as e:
+                        print(f"⚠️ Failed to add role {role_name}: {e}")
+                elif not role:
+                    print(f"⚠️ Role '{role_name}' not found in guild")
+            
+            if role_changes:
+                print(f"📋 Department role changes for {user.display_name}: {', '.join(role_changes)}")
+            else:
+                print(f"ℹ️ No department role changes needed for {user.display_name}")
+                
+        except Exception as e:
+            print(f"❌ Error updating department roles for {user.display_name}: {e}")
+
+
+    def _detect_department_by_user_roles(self, user: discord.Member, departments: Dict) -> Optional[str]:
+        """
+        Detect user's current department by checking their Discord roles against config.
+
+        Args:
+            user: Discord user member
+            departments: Departments config from config.json
+
+        Returns:
+            Department key (e.g., 'УВП', 'ССО') or None if not found
+        """
+        try:
+            # Get user's role IDs for faster lookup
+            user_role_ids = {role.id for role in user.roles}
+
+            # Check each department's role_id (PostgreSQL-based)
+            for dept_key, dept_config in departments.items():
+                role_id = dept_config.get('role_id')
+
+                # Check if user has this department's role_id
+                if role_id and role_id in user_role_ids:
+                    return dept_key
+
+            return None
+
+        except Exception as e:
+            print(f"Error detecting department by user roles: {e}")
+            return None
+
 
 # Global instance
 position_manager = PositionManager()

@@ -787,7 +787,7 @@ class PersonnelManager:
             error_msg = f"Ошибка обновления данных персонала: {e}"
             logger.error(error_msg)
             return False, error_msg
-
+    
     def update_personnel_profile(self, discord_id: int, first_name: str, 
                                last_name: str, static: str = None) -> Tuple[bool, str]:
         """
@@ -861,54 +861,675 @@ class PersonnelManager:
             discord_id, first_name, last_name, static, moderator_discord_id
         )
 
-    async def get_all_personnel(self) -> List[Dict[str, Any]]:
+    async def log_name_change_action(self, personnel_id: int, old_first_name: str, old_last_name: str, 
+                                   old_static: str, new_first_name: str, new_last_name: str, 
+                                   new_static: str, moderator_discord_id: int) -> bool:
         """
-        Получить всех активных сотрудников (для user_cache)
+        Log name/static change action to history table with action_id = 9
         
+        Args:
+            personnel_id: Internal personnel.id of the user
+            old_first_name, old_last_name, old_static: Previous data
+            new_first_name, new_last_name, new_static: New data
+            moderator_discord_id: Discord ID of the moderator who made the change
+            
         Returns:
-            List[Dict[str, Any]]: Список всех активных сотрудников
+            bool: Success status
+        """
+        try:
+            # Find moderator's personnel_id
+            moderator_personnel_id = None
+            with get_db_cursor() as cursor:
+                cursor.execute("SELECT id FROM personnel WHERE discord_id = %s;", (moderator_discord_id,))
+                result = cursor.fetchone()
+                if result:
+                    moderator_personnel_id = result['id']
+                else:
+                    print(f"⚠️ Moderator {moderator_discord_id} not found in personnel table, using 0")
+                    moderator_personnel_id = 0
+            
+            # Prepare changes as JSON - only include fields that actually changed
+            changes = {}
+            
+            # Check each field for changes
+            if old_first_name != new_first_name:
+                changes["first_name"] = {
+                    "old": old_first_name,
+                    "new": new_first_name
+                }
+            else:
+                changes["first_name"] = {
+                    "old": None,
+                    "new": None
+                }
+            
+            if old_last_name != new_last_name:
+                changes["last_name"] = {
+                    "old": old_last_name,
+                    "new": new_last_name
+                }
+            else:
+                changes["last_name"] = {
+                    "old": None,
+                    "new": None
+                }
+            
+            if old_static != new_static:
+                changes["static"] = {
+                    "old": old_static,
+                    "new": new_static
+                }
+            else:
+                changes["static"] = {
+                    "old": None,
+                    "new": None
+                }
+            
+            # Prepare details text
+            old_full_name = f"{old_first_name} {old_last_name}".strip()
+            new_full_name = f"{new_first_name} {new_last_name}".strip()
+            details = None
+            
+            with get_db_cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO history (
+                        action_date, 
+                        details, 
+                        performed_by, 
+                        action_id, 
+                        personnel_id, 
+                        changes
+                    ) VALUES (
+                        CURRENT_TIMESTAMP,
+                        %s,
+                        %s,
+                        9,
+                        %s,
+                        %s
+                    );
+                """, (
+                    details,
+                    moderator_personnel_id,
+                    personnel_id,
+                    psycopg2.extras.Json(changes)
+                ))
+            
+            print(f"✅ History logged: Name change for personnel_id={personnel_id}, action_id=9")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Ошибка логирования изменения ФИО в историю: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    # Blacklist cache - prevents repeated DB queries for same user
+    _blacklist_cache: Dict[int, Optional[Dict[str, Any]]] = {}
+    _blacklist_cache_timestamps: Dict[int, datetime] = {}
+    _blacklist_cache_ttl = 60  # 60 seconds TTL
+
+    async def check_active_blacklist(self, discord_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Check if user has an active blacklist entry (with caching).
+        
+        Cache TTL: 60 seconds - reduces DB load for frequent checks.
+        Cache is automatically invalidated when blacklist is added/removed.
+        
+        Args:
+            discord_id: Discord ID of user to check
+            
+        Returns:
+            Dict with blacklist info if active blacklist exists, None otherwise.
+            Dict contains: id, reason, start_date, end_date, full_name, static
+        """
+        try:
+            # Check cache first
+            now = datetime.now()
+            if discord_id in self._blacklist_cache:
+                cache_age = (now - self._blacklist_cache_timestamps.get(discord_id, now)).total_seconds()
+                if cache_age < self._blacklist_cache_ttl:
+                    cached_result = self._blacklist_cache[discord_id]
+                    print(f"✅ Blacklist check (CACHED): discord_id={discord_id}, active={cached_result is not None}")
+                    return cached_result
+            
+            # Optimized query - fetch individual columns instead of string concatenation
+            with get_db_cursor() as cursor:
+                cursor.execute("""
+                    SELECT 
+                        bl.id,
+                        bl.reason,
+                        bl.start_date,
+                        bl.end_date,
+                        p.first_name,
+                        p.last_name,
+                        p.static
+                    FROM blacklist bl
+                    INNER JOIN personnel p ON bl.personnel_id = p.id
+                    WHERE p.discord_id = %s 
+                      AND bl.is_active = true
+                    ORDER BY bl.start_date DESC
+                    LIMIT 1;
+                """, (discord_id,))
+                
+                result = cursor.fetchone()
+                
+                if result:
+                    # Construct full_name in Python (faster than SQL concatenation)
+                    full_name = f"{result['first_name']} {result['last_name']}".strip()
+                    
+                    blacklist_info = {
+                        'id': result['id'],
+                        'reason': result['reason'],
+                        'start_date': result['start_date'],
+                        'end_date': result['end_date'],
+                        'full_name': full_name,
+                        'static': result['static']
+                    }
+                    
+                    # Cache the positive result
+                    self._blacklist_cache[discord_id] = blacklist_info
+                    self._blacklist_cache_timestamps[discord_id] = now
+                    
+                    print(f"✅ Blacklist check (DB): discord_id={discord_id}, active=True")
+                    return blacklist_info
+                else:
+                    # Cache negative result too (prevents repeated queries for clean users)
+                    self._blacklist_cache[discord_id] = None
+                    self._blacklist_cache_timestamps[discord_id] = now
+                    
+                    print(f"✅ Blacklist check (DB): discord_id={discord_id}, active=False")
+                    return None
+                    
+        except Exception as e:
+            print(f"❌ Error checking active blacklist: {e}")
+            import traceback
+            traceback.print_exc()
+            # Don't cache errors - allow retry on next call
+            return None
+
+    def invalidate_blacklist_cache(self, discord_id: int = None):
+        """
+        Invalidate blacklist cache for a specific user or all users.
+        
+        Call this after:
+        - Adding someone to blacklist (/чс)
+        - Removing someone from blacklist (/чс-удалить)
+        
+        Args:
+            discord_id: Specific user to invalidate, or None for full cache clear
+        """
+        if discord_id is not None:
+            self._blacklist_cache.pop(discord_id, None)
+            self._blacklist_cache_timestamps.pop(discord_id, None)
+            print(f"🔄 Blacklist cache invalidated for discord_id={discord_id}")
+        else:
+            self._blacklist_cache.clear()
+            self._blacklist_cache_timestamps.clear()
+            print("🔄 Blacklist cache fully cleared")
+
+    async def calculate_total_service_time(self, personnel_id: int) -> int:
+        """
+        Calculate total service time in days for a personnel member.
+        
+        Handles multiple hiring/dismissal cycles by pairing them chronologically.
+        
+        Args:
+            personnel_id: Internal personnel.id from database
+            
+        Returns:
+            int: Total days of service (sum of all service periods)
+        """
+        try:
+            # Get all hiring and dismissal events for this person
+            with get_db_cursor() as cursor:
+                # Get hiring events (action_id = 10)
+                cursor.execute("""
+                    SELECT action_date 
+                    FROM history 
+                    WHERE personnel_id = %s AND action_id = 10
+                    ORDER BY action_date ASC
+                """, (personnel_id,))
+                hiring_dates = [row['action_date'] for row in cursor.fetchall()]
+                
+                # Get dismissal events (action_id = 3)
+                cursor.execute("""
+                    SELECT action_date 
+                    FROM history 
+                    WHERE personnel_id = %s AND action_id = 3
+                    ORDER BY action_date ASC
+                """, (personnel_id,))
+                dismissal_dates = [row['action_date'] for row in cursor.fetchall()]
+            
+            # Calculate total service time by pairing hirings with dismissals
+            total_days = 0
+            
+            for i, hire_date in enumerate(hiring_dates):
+                # Find corresponding dismissal (or use current time if still serving)
+                if i < len(dismissal_dates):
+                    dismiss_date = dismissal_dates[i]
+                else:
+                    # Currently serving, use current time
+                    dismiss_date = datetime.now()
+                
+                # Calculate days for this service period
+                service_period = (dismiss_date - hire_date).days
+                total_days += service_period
+            
+            print(f"📊 Calculated service time for personnel {personnel_id}: {total_days} days")
+            print(f"   Hirings: {len(hiring_dates)}, Dismissals: {len(dismissal_dates)}")
+            
+            return total_days
+            
+        except Exception as e:
+            print(f"❌ Error calculating service time: {e}")
+            import traceback
+            traceback.print_exc()
+            return 0
+
+    async def add_to_blacklist(self, discord_id: int, moderator_discord_id: int, reason: str, duration_days: int = 14) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
+        """
+        Add user to blacklist (database operations only).
+        
+        Args:
+            discord_id: Discord ID of user to blacklist
+            moderator_discord_id: Discord ID of moderator adding to blacklist
+            reason: Reason for blacklist
+            duration_days: Duration in days (default 14)
+            
+        Returns:
+            Tuple of (success: bool, message: str, blacklist_data: dict or None)
+        """
+        try:
+            from datetime import timedelta
+            
+            # Check if user already has active blacklist
+            existing_blacklist = await self.check_active_blacklist(discord_id)
+            if existing_blacklist:
+                return False, (
+                    f"❌ Пользователь **{existing_blacklist['full_name']}** "
+                    f"уже находится в чёрном списке.\n\n"
+                    f"**Текущая запись:**\n"
+                    f"• Причина: {existing_blacklist['reason']}\n"
+                    f"• Период: {existing_blacklist['start_date'].strftime('%d.%m.%Y')} - "
+                    f"{existing_blacklist['end_date'].strftime('%d.%m.%Y')}\n\n"
+                    f"Используйте функцию удаления для снятия существующей записи."
+                ), None
+            
+            # Get target user's personnel_id and data
+            personnel_id = None
+            personnel_data = {}
+            
+            with get_db_cursor() as cursor:
+                cursor.execute("""
+                    SELECT id, first_name, last_name, static
+                    FROM personnel
+                    WHERE discord_id = %s;
+                """, (discord_id,))
+                
+                result = cursor.fetchone()
+                if result:
+                    personnel_id = result['id']
+                    personnel_data = {
+                        'name': f"{result['first_name']} {result['last_name']}",
+                        'static': result['static'] or ''
+                    }
+                else:
+                    return False, (
+                        f"❌ Пользователь с ID {discord_id} "
+                        f"не найден в базе данных личного состава.\n\n"
+                        f"Добавление в чёрный список возможно только для пользователей, "
+                        f"имеющих запись в базе данных."
+                    ), None
+            
+            # Get moderator's personnel_id for "added_by"
+            moderator_personnel_id = None
+            with get_db_cursor() as cursor:
+                cursor.execute(
+                    "SELECT id FROM personnel WHERE discord_id = %s;",
+                    (moderator_discord_id,)
+                )
+                result = cursor.fetchone()
+                if result:
+                    moderator_personnel_id = result['id']
+            
+            # Prepare dates (Moscow timezone UTC+3)
+            moscow_tz = timezone(timedelta(hours=3))
+            start_date = datetime.now(moscow_tz)
+            end_date = start_date + timedelta(days=duration_days)
+            
+            # Insert into blacklist table
+            with get_db_cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO blacklist (
+                        reason, start_date, end_date, last_updated, 
+                        is_active, personnel_id, added_by
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id;
+                """, (
+                    reason,  # reason from parameter
+                    start_date,  # start_date
+                    end_date,  # end_date
+                    start_date,  # last_updated
+                    True,  # is_active
+                    personnel_id,  # personnel_id (target user)
+                    moderator_personnel_id  # added_by (moderator)
+                ))
+                
+                blacklist_id = cursor.fetchone()['id']
+                
+                # Invalidate cache for this user
+                self.invalidate_blacklist_cache(discord_id)
+                
+                blacklist_data = {
+                    'id': blacklist_id,
+                    'personnel_id': personnel_id,
+                    'personnel_data': personnel_data,
+                    'reason': reason,
+                    'start_date': start_date,
+                    'end_date': end_date,
+                    'moderator_personnel_id': moderator_personnel_id
+                }
+                
+                print(f"✅ Added blacklist record #{blacklist_id} for personnel {personnel_id}")
+                return True, f"Пользователь успешно добавлен в чёрный список", blacklist_data
+            
+        except Exception as e:
+            print(f"❌ Error adding to blacklist: {e}")
+            import traceback
+            traceback.print_exc()
+            return False, f"❌ Ошибка при добавлении в чёрный список: {e}", None
+
+    async def remove_from_blacklist(self, discord_id: int) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
+        """
+        Remove user from blacklist (database operations only).
+        
+        Args:
+            discord_id: Discord ID of user to remove from blacklist
+            
+        Returns:
+            Tuple of (success: bool, message: str, removed_data: dict or None)
+        """
+        try:
+            # Check if user has active blacklist
+            blacklist_info = await self.check_active_blacklist(discord_id)
+            
+            if not blacklist_info:
+                return False, "Пользователь не найден в активном чёрном списке.", None
+            
+            # Delete blacklist entry completely
+            with get_db_cursor() as cursor:
+                cursor.execute("""
+                    DELETE FROM blacklist
+                    WHERE id = %s;
+                """, (blacklist_info['id'],))
+            
+            # Invalidate cache for this user
+            self.invalidate_blacklist_cache(discord_id)
+            
+            removed_data = blacklist_info.copy()
+            
+            print(f"✅ Blacklist DELETED for discord_id={discord_id}")
+            return True, f"Пользователь успешно удалён из чёрного списка.", removed_data
+            
+        except Exception as e:
+            error_msg = f"❌ Ошибка при удалении из чёрного списка: {e}"
+            print(error_msg)
+            import traceback
+            traceback.print_exc()
+            return False, error_msg, None
+    
+    async def get_personnel_data_for_audit(self, discord_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Get complete personnel data by Discord ID
+        
+        Args:
+            discord_id: Discord user ID
+            
+        Returns:
+            Dict with personnel data or None if not found
         """
         try:
             with get_db_cursor() as cursor:
                 cursor.execute("""
-                    SELECT p.discord_id, p.first_name, p.last_name, p.static, 
-                           p.join_date, p.dismissal_date, p.is_dismissal,
-                           r.name as rank_name, s.name as subdivision_name,
-                           pos.name as position_name
+                    SELECT 
+                        p.id,
+                        p.first_name,
+                        p.last_name,
+                        p.static,
+                        p.discord_id,
+                        r.name as rank_name,
+                        s.name as subdivision_name,
+                        pos.name as position_name
                     FROM personnel p
                     LEFT JOIN employees e ON p.id = e.personnel_id
                     LEFT JOIN ranks r ON e.rank_id = r.id
                     LEFT JOIN subdivisions s ON e.subdivision_id = s.id
                     LEFT JOIN position_subdivision ps ON e.position_subdivision_id = ps.id
                     LEFT JOIN positions pos ON ps.position_id = pos.id
+                    WHERE p.discord_id = %s AND p.is_dismissal = false
+                    ORDER BY p.id DESC
+                    LIMIT 1;
+                """, (discord_id,))
+                
+                result = cursor.fetchone()
+                
+                if result:
+                    return {
+                        'id': result['id'],
+                        'first_name': result['first_name'],
+                        'last_name': result['last_name'],
+                        'static': result['static'],
+                        'discord_id': result['discord_id'],
+                        'rank_name': result['rank_name'],
+                        'subdivision_name': result['subdivision_name'],
+                        'position_name': result['position_name']
+                    }
+                
+            return None
+            
+        except Exception as e:
+            print(f"❌ Error getting personnel by Discord ID: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    @staticmethod
+    def _get_safe_personnel_name(personnel_data_summary: Optional[Dict], discord_user_display_name: str) -> str:
+        """
+        Get safe personnel name for audit, avoiding Discord display names that look like personnel data.
+        
+        Args:
+            personnel_data_summary: Personnel summary from database
+            discord_user_display_name: Discord display name as fallback
+            
+        Returns:
+            str: Safe name to use in audit
+        """
+        # Try to get full_name from database first
+        if personnel_data_summary:
+            full_name = personnel_data_summary.get('full_name', '').strip()
+            if full_name:
+                return full_name
+        
+        # Check if Discord display name looks like personnel data (contains | or numbers)
+        # If it does, use a generic fallback instead
+        if '|' in discord_user_display_name or any(char.isdigit() for char in discord_user_display_name):
+            return "Неизвестно"
+        
+        # Otherwise, use Discord display name as fallback
+        return discord_user_display_name
+
+    async def get_all_personnel(self) -> List[Dict[str, Any]]:
+        """
+        Получить все активные записи персонала с полными данными
+
+        Returns:
+            List[Dict[str, Any]]: Список всех активных пользователей с их данными
+        """
+        try:
+            with get_db_cursor() as cursor:
+                cursor.execute("""
+                    SELECT
+                        p.id as personnel_id,
+                        p.discord_id,
+                        p.first_name,
+                        p.last_name,
+                        p.static,
+                        p.is_dismissal,
+                        p.join_date,
+                        p.dismissal_date,
+                        r.name as rank,
+                        pos.name as position,
+                        sub.name as subdivision,
+                        sub.abbreviation as subdivision_abbr
+                    FROM personnel p
+                    LEFT JOIN employees e ON p.id = e.personnel_id
+                    LEFT JOIN ranks r ON e.rank_id = r.id
+                    LEFT JOIN position_subdivision ps ON e.position_subdivision_id = ps.id
+                    LEFT JOIN positions pos ON ps.position_id = pos.id
+                    LEFT JOIN subdivisions sub ON e.subdivision_id = sub.id
                     WHERE p.is_dismissal = false
-                    ORDER BY p.last_updated DESC;
+                    ORDER BY p.id
                 """)
-                
+
                 results = cursor.fetchall()
-                
-                personnel_list = []
+
+                # Преобразуем результаты в список словарей
+                all_personnel = []
                 for row in results:
                     personnel_data = {
+                        'personnel_id': row['personnel_id'],
                         'discord_id': row['discord_id'],
-                        'first_name': row['first_name'],
-                        'last_name': row['last_name'],
-                        'static': row['static'],
-                        'join_date': row['join_date'],
-                        'dismissal_date': row['dismissal_date'],
+                        'first_name': row['first_name'] or '',
+                        'last_name': row['last_name'] or '',
+                        'static': row['static'] or '',
+                        'rank': row['rank'] or '',
+                        'position': row['position'] or '',
+                        'subdivision': row['subdivision'] or '',
+                        'subdivision_abbr': row['subdivision_abbr'] or '',
                         'is_dismissal': row['is_dismissal'],
-                        'rank': row['rank_name'],
-                        'subdivision': row['subdivision_name'],
-                        'position': row['position_name'] or 'Не указано'
+                        'join_date': row['join_date'],
+                        'dismissal_date': row['dismissal_date']
                     }
-                    personnel_list.append(personnel_data)
-                
-                logger.info(f"✅ Получено {len(personnel_list)} записей персонала")
-                return personnel_list
-                
+                    all_personnel.append(personnel_data)
+
+                return all_personnel
+
         except Exception as e:
-            logger.error(f"Ошибка получения всех записей персонала: {e}")
+            logger.error(f"get_all_personnel failed: {e}")
             return []
+
+    async def _get_personnel_id(self, user_discord_id: int) -> Optional[int]:
+        """
+        Get personnel ID by Discord ID
+        
+        Args:
+            user_discord_id (int): Discord user ID
+            
+        Returns:
+            Optional[int]: Personnel ID or None if not found
+        """
+        try:
+            with get_db_cursor() as cursor:
+                cursor.execute("""
+                    SELECT id FROM personnel 
+                    WHERE discord_id = %s AND is_dismissal = false;
+                """, (user_discord_id,))
+                result = cursor.fetchone()
+                return result['id'] if result else None
+        except Exception as e:
+            logger.error(f"_get_personnel_id failed: {e}")
+            return None
+
+    async def _get_current_subdivision(self, personnel_id: int) -> Optional[int]:
+        """
+        Get current subdivision ID for a personnel member
+        
+        Args:
+            personnel_id (int): Personnel ID
+            
+        Returns:
+            Optional[int]: Current subdivision ID or None if not found
+        """
+        try:
+            with get_db_cursor() as cursor:
+                cursor.execute("""
+                    SELECT subdivision_id FROM employees 
+                    WHERE personnel_id = %s;
+                """, (personnel_id,))
+                result = cursor.fetchone()
+                return result['subdivision_id'] if result else None
+        except Exception as e:
+            logger.error(f"_get_current_subdivision failed: {e}")
+            return None
+
+    async def _get_user_rank_id(self, personnel_id: int) -> Optional[int]:
+        """
+        Get current rank ID for a personnel member
+        
+        Args:
+            personnel_id (int): Personnel ID
+            
+        Returns:
+            Optional[int]: Current rank ID or None if not found
+        """
+        try:
+            with get_db_cursor() as cursor:
+                cursor.execute("""
+                    SELECT rank_id FROM employees 
+                    WHERE personnel_id = %s;
+                """, (personnel_id,))
+                result = cursor.fetchone()
+                return result['rank_id'] if result else None
+        except Exception as e:
+            logger.error(f"_get_user_rank_id failed: {e}")
+            return None
+
+    async def _update_employee_subdivision(self, personnel_id: int, subdivision_id: int, rank_id: int) -> bool:
+        """
+        Update employee subdivision and clear position
+        
+        Args:
+            personnel_id (int): Personnel ID
+            subdivision_id (int): New subdivision ID
+            rank_id (int): Current rank ID
+            
+        Returns:
+            bool: Success status
+        """
+        try:
+            with get_db_cursor() as cursor:
+                cursor.execute("""
+                    UPDATE employees 
+                    SET subdivision_id = %s, position_subdivision_id = NULL
+                    WHERE personnel_id = %s;
+                """, (subdivision_id, personnel_id))
+                return True
+        except Exception as e:
+            logger.error(f"_update_employee_subdivision failed: {e}")
+            return False
+
+    async def _get_subdivision_name(self, subdivision_id: int) -> Optional[str]:
+        """
+        Get subdivision name by ID
+        
+        Args:
+            subdivision_id (int): Subdivision ID
+            
+        Returns:
+            Optional[str]: Subdivision name or None if not found
+        """
+        try:
+            with get_db_cursor() as cursor:
+                cursor.execute("""
+                    SELECT name FROM subdivisions 
+                    WHERE id = %s;
+                """, (subdivision_id,))
+                result = cursor.fetchone()
+                return result['name'] if result else None
+        except Exception as e:
+            logger.error(f"_get_subdivision_name failed: {e}")
+            return None
 
 
 # Global instance

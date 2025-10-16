@@ -218,8 +218,8 @@ class KeyRoleModal(BaseSettingsModal):
         super().__init__(title="Настройка ключевой роли")
         
         config = load_config()
-        current_key_role_id = config.get('rank_sync_key_role')
-        current_key_role_display = str(current_key_role_id) if current_key_role_id else ""
+        current_sync_key_role_id = config.get('rank_sync_key_role')
+        current_key_role_display = str(current_sync_key_role_id) if current_sync_key_role_id else ""
         
         self.role_input = ui.TextInput(
             label="ID роли или упоминание",
@@ -574,7 +574,7 @@ async def show_rank_roles_config(interaction: discord.Interaction):
     try:
         config = load_config()
         rank_roles = config.get('rank_roles', {})
-        key_role_id = config.get('rank_sync_key_role')
+        sync_key_role_id = config.get('rank_sync_key_role')
         
         embed = discord.Embed(
             title="🎖️ Настройка ролей званий",
@@ -584,8 +584,8 @@ async def show_rank_roles_config(interaction: discord.Interaction):
         )
         
         # Show key role
-        if key_role_id:
-            key_role = interaction.guild.get_role(key_role_id)
+        if sync_key_role_id:
+            key_role = interaction.guild.get_role(sync_key_role_id)
             if key_role:
                 embed.add_field(
                     name="🔑 Ключевая роль:",
@@ -595,7 +595,7 @@ async def show_rank_roles_config(interaction: discord.Interaction):
             else:
                 embed.add_field(
                     name="🔑 Ключевая роль:",
-                    value=f"❌ Роль не найдена (ID: {key_role_id})",
+                    value=f"❌ Роль не найдена (ID: {sync_key_role_id})",
                     inline=False
                 )
         else:

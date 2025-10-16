@@ -12,6 +12,7 @@ from utils.config_manager import load_config, is_moderator_or_admin
 # PostgreSQL integration with enhanced personnel management
 from utils.database_manager import personnel_manager
 from utils.nickname_manager import nickname_manager
+from utils.audit_logger import audit_logger
 from .base import get_channel_with_fallback
 from .views import ApprovedApplicationView, RejectedApplicationView, ProcessingApplicationView
 
@@ -111,9 +112,9 @@ class RoleApplicationApprovalView(ui.View):
             return
         
         # Check if APPLICANT has active blacklist entry
-        from utils.audit_logger import audit_logger
+        from utils.database_manager import personnel_manager
         
-        blacklist_info = await audit_logger.check_active_blacklist(applicant_user_id)
+        blacklist_info = await personnel_manager.check_active_blacklist(applicant_user_id)
         
         if blacklist_info:
             # Applicant is blacklisted, deny application
@@ -568,34 +569,6 @@ class RoleApplicationApprovalView(ui.View):
         
         return embed
     
-    async def _send_audit_notification(self, audit_channel, user, signed_by_name):
-        """Send notification to audit channel"""
-        try:
-            audit_embed = discord.Embed(
-                title="Кадровый аудит ВС РФ",
-                color=0x055000,
-                timestamp=discord.utils.utcnow()
-            )
-            
-            action_date = discord.utils.utcnow().strftime('%d-%m-%Y')
-            name_with_static = f"{self.application_data.get('name', 'Неизвестно')} | {self.application_data.get('static', '')}"
-            
-            audit_embed.add_field(name="Кадровую отписал", value=signed_by_name, inline=False)
-            audit_embed.add_field(name="Имя Фамилия | 6 цифр статика", value=name_with_static, inline=False)
-            audit_embed.add_field(name="Действие", value="Принят на службу", inline=False)
-            
-            audit_embed.add_field(name="Дата Действия", value=action_date, inline=False)
-            audit_embed.add_field(name="Подразделение", value="Военная Академия - ВА", inline=False)
-            audit_embed.add_field(name="Воинское звание", value=self.application_data.get("rank", "Рядовой"), inline=False)
-            
-            audit_embed.set_thumbnail(url="https://i.imgur.com/07MRSyl.png")
-            
-            await audit_channel.send(content=f"<@{user.id}>", embed=audit_embed)
-            print(f"Sent audit notification for hiring of {user.display_name}")
-            
-        except Exception as e:
-            print(f"Error sending audit notification: {e}")
-    
     async def _send_approval_dm(self, user):
         """Send approval DM to user"""
         try:
@@ -737,7 +710,30 @@ class RoleApplicationApprovalView(ui.View):
             if audit_channel_id:
                 audit_channel = await get_channel_with_fallback(guild, audit_channel_id, "audit channel")
                 if audit_channel:
-                    await self._send_audit_notification(audit_channel, user, signed_by_name)
+                    # Get moderator user object
+                    moderator_user = guild.get_member(moderator_discord_id)
+                    if not moderator_user:
+                        print(f"Warning: Could not find moderator user {moderator_discord_id}")
+                        return
+                    
+                    # Prepare personnel data for audit
+                    personnel_data = {
+                        'name': self.application_data.get('name', 'Неизвестно'),
+                        'static': self.application_data.get('static', ''),
+                        'rank': self.application_data.get('rank', 'Рядовой'),
+                        'department': 'Военная Академия',
+                        'position': 'Не назначено'
+                    }
+                    
+                    # Send audit notification using centralized audit logger
+                    await audit_logger.send_personnel_audit(
+                        guild=guild,
+                        action="Принят на службу",
+                        target_user=user,
+                        moderator=moderator_user,
+                        personnel_data=personnel_data,
+                        config=config
+                    )
         except Exception as e:
             print(f"Warning: Error in auto processing with auth: {e}")
             # Don't raise exception to prevent approval process from failing

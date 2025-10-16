@@ -362,9 +362,9 @@ async def recruit_user(interaction: discord.Interaction, user: discord.Member):
         return
     
     # Check if user has active blacklist entry
-    from utils.audit_logger import audit_logger
+    from utils.database_manager import personnel_manager
     
-    blacklist_info = await audit_logger.check_active_blacklist(user.id)
+    blacklist_info = await personnel_manager.check_active_blacklist(user.id)
     
     if blacklist_info:
         # User is blacklisted, deny recruitment
@@ -2387,7 +2387,7 @@ class GeneralEditView(ui.View):
         super().__init__(timeout=300)
         self.target_user = target_user
     
-    @ui.button(label="Изменить ранг", style=discord.ButtonStyle.primary, emoji="🎖️")
+    @ui.button(label="Изменить ранг", style=discord.ButtonStyle.success, emoji="🎖️")
     async def edit_rank(self, interaction: discord.Interaction, button: ui.Button):
         """Handle rank editing"""
         try:
@@ -2467,7 +2467,7 @@ class GeneralEditView(ui.View):
             print(f"Error in rank editing: {e}")
             await interaction.response.send_message(f"❌ **Ошибка:** {str(e)}", ephemeral=True)
     
-    @ui.button(label="Изменить подразделение", style=discord.ButtonStyle.secondary, emoji="🏢")
+    @ui.button(label="Изменить подразделение", style=discord.ButtonStyle.primary, emoji="🏢")
     async def edit_department(self, interaction: discord.Interaction, button: ui.Button):
         """Handle department editing"""
         # Send action selection view (same as before)
@@ -2479,7 +2479,7 @@ class GeneralEditView(ui.View):
             ephemeral=True
         )
     
-    @ui.button(label="Изменить должность", style=discord.ButtonStyle.secondary, emoji="📋")
+    @ui.button(label="Изменить должность", style=discord.ButtonStyle.red, emoji="📋")
     async def edit_position(self, interaction: discord.Interaction, button: ui.Button):
         """Handle position editing"""
         # Send position selection view (same as before)
@@ -2491,6 +2491,21 @@ class GeneralEditView(ui.View):
             view=view,
             ephemeral=True
         )
+    
+    @ui.button(label="Изменить личные данные", style=discord.ButtonStyle.secondary, emoji="👤")
+    async def edit_personal_data(self, interaction: discord.Interaction, button: ui.Button):
+        """Handle personal data editing"""
+        try:
+            # Import the modal
+            from .modals import PersonalDataModal
+            
+            # Create and show the modal
+            modal = PersonalDataModal(self.target_user)
+            await interaction.response.send_modal(modal)
+            
+        except Exception as e:
+            print(f"Error in personal data editing: {e}")
+            await interaction.response.send_message(f"❌ **Ошибка:** {str(e)}", ephemeral=True)
 
 
 @app_commands.context_menu(name='Быстро повысить (+1 ранг)')

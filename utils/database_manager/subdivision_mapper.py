@@ -305,7 +305,6 @@ class SubdivisionMapper:
                 "application_channel_id": config_data.get("application_channel_id"),
                 "persistent_message_id": config_data.get("persistent_message_id"),
                 "ping_contexts": config_data.get("ping_contexts", {}),
-                "key_role_id": config_data.get("key_role_id"),
                 "role_id": config_data.get("role_id")
             }
             
@@ -452,3 +451,17 @@ class SubdivisionMapper:
         except Exception as e:
             logger.error(f"Ошибка обновления config.json для {identifier}: {e}")
             return False
+
+    async def get_subdivision_id(self, identifier: str) -> Optional[int]:
+        """Get subdivision ID by name, abbreviation, or config key"""
+        try:
+            # First try to convert config key to database abbreviation
+            db_identifier = identifier
+            if identifier in self.config_to_db_mapping:
+                db_identifier = self.config_to_db_mapping[identifier]
+            
+            subdivision = await self._get_db_subdivision(db_identifier)
+            return subdivision['id'] if subdivision else None
+        except Exception as e:
+            logger.error(f"get_subdivision_id failed for identifier '{identifier}': {e}")
+            return None

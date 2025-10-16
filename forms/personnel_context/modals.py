@@ -731,15 +731,15 @@ class PersonalDataModal(ui.Modal, title="Изменить личные данн�
         self.target_user = target_user
 
         # Add input fields
-        self.discord_id = ui.TextInput(
-            label="Discord ID",
-            placeholder="ID пользователя в Discord",
-            default=str(target_user.id),
-            min_length=15,
-            max_length=20,
-            required=True
-        )
-        self.add_item(self.discord_id)
+        # self.discord_id = ui.TextInput(
+        #    label="Discord ID",
+        #    placeholder="ID пользователя в Discord",
+        #    default=str(target_user.id),
+        #    min_length=15,
+        #    max_length=20,
+        #    required=True
+        #)
+        #self.add_item(self.discord_id)
 
         self.first_name = ui.TextInput(
             label="Имя",
@@ -868,56 +868,58 @@ class PersonalDataModal(ui.Modal, title="Изменить личные данн�
                 return
 
             # Get form data
-            discord_id = int(self.discord_id.value.strip())
+            # TEMPORARILY DISABLED: Discord ID field (lines 734-742) - using target user ID directly
+            discord_id = self.target_user.id  # Temporarily use target user ID since field is disabled
             first_name = self.first_name.value.strip()
             last_name = self.last_name.value.strip()
             static = self.static.value.strip()
 
+            # TEMPORARILY DISABLED: Discord ID validation - field is disabled, so no ID changes possible
             # Validate Discord ID - check if user exists on server and prevent conflicts
-            if discord_id != self.target_user.id:
-                # Discord ID was changed, verify the new user exists
-                new_user = interaction.guild.get_member(discord_id)
-                if not new_user:
-                    await interaction.response.send_message(
-                        f"❌ Пользователь с Discord ID {discord_id} не найден на сервере.\n"
-                        "Изменение Discord ID возможно только на существующих участников сервера.",
-                        ephemeral=True
-                    )
-                    return
-
-                # Check if the new Discord ID already belongs to another active user in database
-                try:
-                    from utils.postgresql_pool import get_db_cursor
-                    with get_db_cursor() as cursor:
-                        cursor.execute("""
-                            SELECT id, first_name, last_name FROM personnel
-                            WHERE discord_id = %s AND is_dismissal = false
-                        """, (discord_id,))
-                        existing_user = cursor.fetchone()
-
-                        if existing_user:
-                            await interaction.response.send_message(
-                                f"❌ **Конфликт данных!**\n\n"
-                                f"Discord ID `{discord_id}` уже принадлежит активному пользователю:\n"
-                                f"**{existing_user['first_name']} {existing_user['last_name']}**\n\n"
-                                f"Изменение Discord ID невозможно, так как это приведет к конфликту данных.\n"
-                                f"Если нужно исправить ошибку в данных, обратитесь к администратору.",
-                                ephemeral=True
-                            )
-                            return
-
-                except Exception as db_error:
-                    print(f"❌ Database error checking Discord ID conflict: {db_error}")
-                    await interaction.response.send_message(
-                        "❌ Ошибка проверки данных в базе данных.",
-                        ephemeral=True
-                    )
-                    return
+            # if discord_id != self.target_user.id:
+            #     # Discord ID was changed, verify the new user exists
+            #     new_user = interaction.guild.get_member(discord_id)
+            #     if not new_user:
+            #         await interaction.response.send_message(
+            #             f"❌ Пользователь с Discord ID {discord_id} не найден на сервере.\n"
+            #             "Изменение Discord ID возможно только на существующих участников сервера.",
+            #             ephemeral=True
+            #         )
+            #         return
+            #
+            #     # Check if the new Discord ID already belongs to another active user in database
+            #     try:
+            #         from utils.postgresql_pool import get_db_cursor
+            #         with get_db_cursor() as cursor:
+            #             cursor.execute("""
+            #                 SELECT id, first_name, last_name FROM personnel
+            #                 WHERE discord_id = %s AND is_dismissal = false
+            #             """, (discord_id,))
+            #             existing_user = cursor.fetchone()
+            #
+            #             if existing_user:
+            #                 await interaction.response.send_message(
+            #                     f"❌ **Конфликт данных!**\n\n"
+            #                     f"Discord ID `{discord_id}` уже принадлежит активному пользователю:\n"
+            #                     f"**{existing_user['first_name']} {existing_user['last_name']}**\n\n"
+            #                     f"Изменение Discord ID невозможно, так как это приведет к конфликту данных.\n"
+            #                     f"Если нужно исправить ошибку в данных, обратитесь к администратору.",
+            #                     ephemeral=True
+            #                 )
+            #                 return
+            #
+            #     except Exception as db_error:
+            #         print(f"❌ Database error checking Discord ID conflict: {db_error}")
+            #         await interaction.response.send_message(
+            #             "❌ Ошибка проверки данных в базе данных.",
+            #             ephemeral=True
+            #         )
+            #         return
 
             # Validate required fields
             if not first_name or not last_name or not static:
                 await interaction.response.send_message(
-                    "❌ Все поля обязательны для заполнения: Discord ID, имя, фамилия и статик.",
+                    "❌ Все поля обязательны для заполнения: имя, фамилия и статик.",
                     ephemeral=True
                 )
                 return

@@ -86,27 +86,24 @@ class DepartmentsManagementView(ui.View):
                 emoji = dept_data.get('emoji', '🏛️')
                 name = dept_data.get('name', dept_id)
 
-                # --- ИСПРАВЛЕНИЕ ЗДЕСЬ: Получаем строковое название цвета для отображения ---
-                # dept_data['color'] теперь хранит HEX-код. Нам нужно получить его название.
-                color_hex_value = dept_data.get('color', 0x3498db) # Получаем HEX-код
-                color_name_for_display = "Неизвестный цвет"
-                for name_key, hex_val in DepartmentManager.PRESET_COLORS.items():
-                    if hex_val == color_hex_value:
-                        color_name_for_display = name_key
-                        break
-                # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
-
-                key_role_id = dept_data.get('key_role_id')
-
-                key_role_info = ""
-                if key_role_id:
-                    role = interaction.guild.get_role(key_role_id)
-                    if role:
-                        key_role_info = f" (Ключевая роль: {role.mention})"
+                # Получаем отображаемое название цвета
+                color_value = dept_data.get('color', 0x3498db)
+                if isinstance(color_value, str):
+                    # Цвет хранится как название
+                    color_display = color_value
+                elif isinstance(color_value, int):
+                    # Цвет хранится как HEX значение
+                    # Сначала проверяем, является ли это предустановленным цветом
+                    color_display = "Неизвестный цвет"
+                    for name_key, hex_val in DepartmentManager.PRESET_COLORS.items():
+                        if hex_val == color_value:
+                            color_display = name_key
+                            break
                     else:
-                        key_role_info = f" (Ключевая роль: ID {key_role_id} - не найдена)"
+                        # Если не предустановленный, показываем HEX код
+                        color_display = f"#{color_value:06x}"
 
-                department_list.append(f"{emoji} **{name}** - {color_name_for_display}{key_role_info}")
+                department_list.append(f"{emoji} **{name}** - {color_display}")
 
             embed.description = "\n".join(department_list)
 
@@ -121,21 +118,6 @@ class DepartmentsManagementView(ui.View):
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @ui.button(label="🔙 Назад", style=discord.ButtonStyle.secondary, row=1)
-    async def back_to_main(self, interaction: discord.Interaction, button: ui.Button):
-        """Вернуться в главное меню настроек"""
-        from .main import MainSettingsView # Убедитесь, что это правильный импорт
-
-        embed = discord.Embed(
-            title="⚙️ Настройки бота",
-            description="Выберите категорию настроек для управления:",
-            color=discord.Color.blue(),
-            timestamp=discord.utils.utcnow()
-        )
-
-        view = MainSettingsView()
-        await interaction.response.edit_message(embed=embed, view=view)
-
 # --------------------------------------------------------------------------------------
 # Модальные окна и Селект-меню
 # --------------------------------------------------------------------------------------
@@ -148,100 +130,104 @@ class AddDepartmentModal(ui.Modal):
 
     department_id = ui.TextInput(
         label="ID подразделения",
-        placeholder="Например: custom_dept",
-        required=True,
-        max_length=50
+        placeholder="Например: genshtab"
     )
 
     department_name = ui.TextInput(
         label="Название подразделения",
-        placeholder="Например: Пользовательское подразделение",
-        required=True,
-        max_length=100
+        placeholder="Полное название подразделения"
     )
 
     department_emoji = ui.TextInput(
         label="Эмодзи подразделения",
-        placeholder="Например: 🏛️",
-        required=False,
-        max_length=10
+        placeholder="Например: 🏛️"
     )
 
     department_color = ui.TextInput(
         label="Цвет подразделения",
-        placeholder="Выберите из списка: Синий, Зелёный, Красный...",
-        required=False,
-        max_length=20
+        placeholder="#3498db"
     )
 
-    key_role_id = ui.TextInput(
-        label="ID ключевой роли (необязательно)",
-        placeholder="Например: 123456789012345678",
-        required=False,
-        max_length=20
+    role_id = ui.TextInput(
+        label="ID основной роли подразделения",
+        placeholder="Например: 123456789012345678"
     )
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
-            # Валидация ID подразделения
-            dept_id = self.department_id.value.strip().lower()
-            if not dept_id.replace('_', '').replace('-', '').isalnum():
+            # Получаем введенные данные
+            dept_id = self.department_id.value.strip().lower() if self.department_id.value else ""
+            dept_name = self.department_name.value.strip() if self.department_name.value else ""
+            dept_emoji = self.department_emoji.value.strip() if self.department_emoji.value else ""
+            dept_color = self.department_color.value.strip() if self.department_color.value else ""
+            role_id_str = self.role_id.value.strip() if self.role_id.value else ""
+
+            # Простая валидация
+            if not dept_id or not dept_name:
                 embed = discord.Embed(
                     title="❌ Ошибка",
-                    description="ID подразделения может содержать только латинские буквы, цифры, дефисы и подчеркивания.",
+                    description="ID и название подразделения обязательны!",
                     color=discord.Color.red()
                 )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
 
-            # Проверка уникальности ID
-            if DepartmentManager.department_exists(dept_id):
+            # Проверяем, существует ли уже подразделение с таким ID
+            existing_departments = DepartmentManager.get_all_departments()
+            if dept_id in existing_departments:
                 embed = discord.Embed(
                     title="❌ Ошибка",
-                    description=f"Подразделение с ID `{dept_id}` уже существует.",
+                    description=f"Подразделение с ID `{dept_id}` уже существует!",
                     color=discord.Color.red()
                 )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
 
-            # --- ИСПРАВЛЕНИЕ ВАЛИДАЦИИ ЦВЕТА ---
-            color_input_value = self.department_color.value.strip() # Оригинальный ввод пользователя
+            # --- ВАЛИДАЦИЯ ЦВЕТА (HEX коды + названия для совместимости) ---
             color_to_pass_to_manager = None # Цвет, который будет передан в DepartmentManager
-            display_color_name = 'Синий (по умолчанию)' # Цвет для отображения в embed
+            display_color_name = '#3498db (по умолчанию)' # Цвет для отображения в embed
 
-            if color_input_value:
-                # Находим соответствующее имя цвета в PRESET_COLORS (регистронезависимо)
+            if dept_color:
+                # Сначала проверяем, является ли ввод названием цвета (обратная совместимость)
                 found_color_name = None
                 for preset_name in DepartmentManager.PRESET_COLORS.keys():
-                    if preset_name.lower() == color_input_value.lower():
+                    if preset_name.lower() == dept_color.lower():
                         found_color_name = preset_name
+                        color_to_pass_to_manager = preset_name
+                        display_color_name = preset_name
                         break
 
+                # Если не нашли среди названий, пробуем как HEX код
                 if not found_color_name:
-                    # Если введенный цвет не найден среди доступных
-                    available_colors_display = ", ".join(DepartmentManager.get_available_colors())
-                    embed = discord.Embed(
-                        title="❌ Ошибка",
-                        description=f"Недопустимый цвет. Доступные цвета: {available_colors_display}",
-                        color=discord.Color.red()
-                    )
-                    await interaction.response.send_message(embed=embed, ephemeral=True)
-                    return
-                else:
-                    color_to_pass_to_manager = found_color_name
-                    display_color_name = found_color_name
-            # --- КОНЕЦ ИСПРАВЛЕНИЯ ВАЛИДАЦИИ ЦВЕТА ---
+                    is_valid_hex, hex_value = DepartmentManager.validate_hex_color(dept_color)
+                    if is_valid_hex:
+                        color_to_pass_to_manager = f'#{dept_color.lstrip("#").upper()}'  # Передаем строку HEX
+                        display_color_name = f'#{dept_color.lstrip("#").upper()}'
+                    else:
+                        # Недопустимый цвет
+                        embed = discord.Embed(
+                            title="❌ Ошибка",
+                            description=(
+                                "Недопустимый цвет. Укажите:\n"
+                                "• Название цвета: Синий, Зелёный, Красный...\n"
+                                "• HEX код: #ffffff или ffffff"
+                            ),
+                            color=discord.Color.red()
+                        )
+                        await interaction.response.send_message(embed=embed, ephemeral=True)
+                        return
+            # --- КОНЕЦ ВАЛИДАЦИИ ЦВЕТА ---
 
-            # Валидация ключевой роли
-            key_role_id = None
-            if self.key_role_id.value:
+            # Валидация основной роли подразделения
+            role_id_value = None
+            if role_id_str:
                 try:
-                    key_role_id = int(self.key_role_id.value.strip())
-                    role = interaction.guild.get_role(key_role_id)
+                    role_id_value = int(role_id_str.strip())
+                    role = interaction.guild.get_role(role_id_value)
                     if not role:
                         embed = discord.Embed(
                             title="❌ Ошибка",
-                            description=f"Роль с ID `{key_role_id}` не найдена на сервере.",
+                            description=f"Роль с ID `{role_id_value}` не найдена на сервере.",
                             color=discord.Color.red()
                         )
                         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -249,7 +235,7 @@ class AddDepartmentModal(ui.Modal):
                 except ValueError:
                     embed = discord.Embed(
                         title="❌ Ошибка",
-                        description="ID роли должен быть числом.",
+                        description="ID основной роли должен быть числом.",
                         color=discord.Color.red()
                     )
                     await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -258,43 +244,43 @@ class AddDepartmentModal(ui.Modal):
             # Создание подразделения
             success = DepartmentManager.add_department(
                 dept_id=dept_id,
-                name=self.department_name.value.strip(),
-                emoji=self.department_emoji.value.strip() if self.department_emoji.value else None,
-                color=color_to_pass_to_manager, # Передаем название цвета
-                key_role_id=key_role_id
+                name=dept_name,
+                emoji=dept_emoji if dept_emoji else None,
+                color=color_to_pass_to_manager,
+                role_id=role_id_value,
+                description="Описание отсутствует"
             )
 
             if success:
                 embed = discord.Embed(
                     title="✅ Успешно",
-                    description=f"Подразделение `{dept_id}` успешно добавлено!",
+                    description=f"Подразделение `{dept_id}` успешно создано!",
                     color=discord.Color.green()
                 )
                 embed.add_field(
-                    name="📋 Детали:",
+                    name="📋 Данные подразделения:",
                     value=(
                         f"**ID:** {dept_id}\n"
-                        f"**Название:** {self.department_name.value.strip()}\n"
-                        f"**Эмодзи:** {self.department_emoji.value.strip() or '🏛️'}\n"
-                        f"**Цвет:** {display_color_name}\n" # Отображаем найденное название
-                        f"**Ключевая роль:** {f'<@&{key_role_id}>' if key_role_id else 'Не указана'}"
+                        f"**Название:** {dept_name}\n"
+                        f"**Эмодзи:** {dept_emoji or '🏛️'}\n"
+                        f"**Цвет:** {display_color_name}\n"
+                        f"**Основная роль:** {f'<@&{role_id_value}>' if role_id_value else 'Не указана'}"
                     ),
                     inline=False
                 )
             else:
                 embed = discord.Embed(
                     title="❌ Ошибка",
-                    description="Не удалось добавить подразделение. Проверьте логи для подробной информации.",
+                    description="Не удалось создать подразделение. Проверьте логи для подробной информации.",
                     color=discord.Color.red()
                 )
 
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
         except Exception as e:
-            logger.error(f"Error adding department: {e}")
             embed = discord.Embed(
                 title="❌ Ошибка",
-                description=f"Произошла ошибка при добавлении подразделения: {str(e)}",
+                description=f"Произошла ошибка: {str(e)}",
                 color=discord.Color.red()
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -346,93 +332,110 @@ class EditDepartmentModal(ui.Modal):
     """Модальное окно для редактирования подразделения"""
 
     def __init__(self, dept_id: str, dept_data: Dict[str, Any]):
+        # Определяем placeholder значения (показываем текущие значения)
+        name_placeholder = dept_data.get('name', '')
+        
+        # Определяем placeholder для цвета
+        color_value = dept_data.get('color', 0x3498db)
+        if isinstance(color_value, str):
+            # Если цвет хранится как строка, конвертируем в HEX
+            if color_value in DepartmentManager.PRESET_COLORS:
+                color_placeholder = f"#{DepartmentManager.PRESET_COLORS[color_value]:06x}"
+            else:
+                color_placeholder = color_value
+        elif isinstance(color_value, int):
+            # Показываем HEX код
+            color_placeholder = f"#{color_value:06x}"
+
+        emoji_placeholder = dept_data.get('emoji', '')
+        
+        role_id = dept_data.get('role_id')
+        role_placeholder = str(role_id) if role_id else ""
+
+        # Создаем поля с placeholder и default значениями
+        self.department_name = ui.TextInput(
+            label="Название подразделения",
+            placeholder=name_placeholder,
+            default=name_placeholder
+        )
+
+        self.department_emoji = ui.TextInput(
+            label="Эмодзи подразделения",
+            placeholder=emoji_placeholder,
+            default=emoji_placeholder
+        )
+
+        self.department_color = ui.TextInput(
+            label="Цвет подразделения",
+            placeholder=color_placeholder,
+            default=color_placeholder
+        )
+
+        self.role_id = ui.TextInput(
+            label="ID основной роли подразделения",
+            placeholder=role_placeholder,
+            default=role_placeholder
+        )
+
         super().__init__(title=f"✏️ Редактировать {dept_data.get('name', dept_id)}")
+        
+        # Добавляем поля в модальное окно
+        self.add_item(self.department_name)
+        self.add_item(self.department_emoji)
+        self.add_item(self.department_color)
+        self.add_item(self.role_id)
+        
         self.dept_id = dept_id
         self.original_data = dept_data.copy()
 
-        # Заполняем поля текущими значениями
-        self.department_name.default = dept_data.get('name', '')
-        self.department_emoji.default = dept_data.get('emoji', '')
-
-        # --- ИСПРАВЛЕНИЕ ЗДЕСЬ: Преобразуем HEX-код цвета в его название для отображения в поле ---
-        color_hex_value = dept_data.get('color', 0x3498db)
-        color_name_for_default = ""
-        for name_key, hex_val in DepartmentManager.PRESET_COLORS.items():
-            if hex_val == color_hex_value:
-                color_name_for_default = name_key
-                break
-        self.department_color.default = color_name_for_default
-        # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
-
-        key_role_id = dept_data.get('key_role_id')
-        self.key_role_id.default = str(key_role_id) if key_role_id else ''
-
-    department_name = ui.TextInput(
-        label="Название подразделения",
-        placeholder="Например: Пользовательское подразделение",
-        required=True,
-        max_length=100
-    )
-
-    department_emoji = ui.TextInput(
-        label="Эмодзи подразделения",
-        placeholder="Например: 🏛️",
-        required=False,
-        max_length=10
-    )
-
-    department_color = ui.TextInput(
-        label="Цвет подразделения",
-        placeholder="Выберите из списка: Синий, Зелёный, Красный...",
-        required=False,
-        max_length=20
-    )
-
-    key_role_id = ui.TextInput(
-        label="ID ключевой роли (необязательно)",
-        placeholder="Например: 123456789012345678",
-        required=False,
-        max_length=20
-    )
-
     async def on_submit(self, interaction: discord.Interaction):
         try:
-            # --- ИСПРАВЛЕНИЕ ВАЛИДАЦИИ ЦВЕТА (аналогично AddDepartmentModal) ---
+            # --- ВАЛИДАЦИЯ ЦВЕТА (HEX коды + названия для совместимости) ---
             color_input_value = self.department_color.value.strip() # Оригинальный ввод пользователя
             color_to_pass_to_manager = None # Цвет, который будет передан в DepartmentManager
-            display_color_name = 'Синий (по умолчанию)' # Цвет для отображения в embed
+            display_color_name = '#3498db (по умолчанию)' # Цвет для отображения в embed
 
             if color_input_value:
+                # Сначала проверяем, является ли ввод названием цвета (обратная совместимость)
                 found_color_name = None
                 for preset_name in DepartmentManager.PRESET_COLORS.keys():
                     if preset_name.lower() == color_input_value.lower():
                         found_color_name = preset_name
+                        color_to_pass_to_manager = preset_name
+                        display_color_name = preset_name
                         break
 
+                # Если не нашли среди названий, пробуем как HEX код
                 if not found_color_name:
-                    available_colors_display = ", ".join(DepartmentManager.get_available_colors())
-                    embed = discord.Embed(
-                        title="❌ Ошибка",
-                        description=f"Недопустимый цвет. Доступные цвета: {available_colors_display}",
-                        color=discord.Color.red()
-                    )
-                    await interaction.response.send_message(embed=embed, ephemeral=True)
-                    return
-                else:
-                    color_to_pass_to_manager = found_color_name
-                    display_color_name = found_color_name
-            # --- КОНЕЦ ИСПРАВЛЕНИЯ ВАЛИДАЦИИ ЦВЕТА ---
+                    is_valid_hex, hex_value = DepartmentManager.validate_hex_color(color_input_value)
+                    if is_valid_hex:
+                        color_to_pass_to_manager = f'#{color_input_value.lstrip("#").upper()}'  # Передаем строку HEX
+                        display_color_name = f'#{color_input_value.lstrip("#").upper()}'
+                    else:
+                        # Недопустимый цвет
+                        embed = discord.Embed(
+                            title="❌ Ошибка",
+                            description=(
+                                "Недопустимый цвет. Укажите:\n"
+                                "• Название цвета: Синий, Зелёный, Красный...\n"
+                                "• HEX код: #ffffff или ffffff"
+                            ),
+                            color=discord.Color.red()
+                        )
+                        await interaction.response.send_message(embed=embed, ephemeral=True)
+                        return
+            # --- КОНЕЦ ВАЛИДАЦИИ ЦВЕТА ---
 
-            # Валидация ключевой роли
-            key_role_id = None
-            if self.key_role_id.value:
+            # Валидация основной роли подразделения
+            role_id_value = None
+            if self.role_id.value:
                 try:
-                    key_role_id = int(self.key_role_id.value.strip())
-                    role = interaction.guild.get_role(key_role_id)
+                    role_id_value = int(self.role_id.value.strip())
+                    role = interaction.guild.get_role(role_id_value)
                     if not role:
                         embed = discord.Embed(
                             title="❌ Ошибка",
-                            description=f"Роль с ID `{key_role_id}` не найдена на сервере.",
+                            description=f"Роль с ID `{role_id_value}` не найдена на сервере.",
                             color=discord.Color.red()
                         )
                         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -440,7 +443,7 @@ class EditDepartmentModal(ui.Modal):
                 except ValueError:
                     embed = discord.Embed(
                         title="❌ Ошибка",
-                        description="ID роли должен быть числом.",
+                        description="ID основной роли должен быть числом.",
                         color=discord.Color.red()
                     )
                     await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -452,7 +455,7 @@ class EditDepartmentModal(ui.Modal):
                 name=self.department_name.value.strip(),
                 emoji=self.department_emoji.value.strip() if self.department_emoji.value else None,
                 color=color_to_pass_to_manager, # Передаем название цвета
-                key_role_id=key_role_id
+                role_id=role_id_value
             )
 
             if success:
@@ -468,7 +471,7 @@ class EditDepartmentModal(ui.Modal):
                         f"**Название:** {self.department_name.value.strip()}\n"
                         f"**Эмодзи:** {self.department_emoji.value.strip() or '🏛️'}\n"
                         f"**Цвет:** {display_color_name}\n" # Отображаем найденное название
-                        f"**Ключевая роль:** {f'<@&{key_role_id}>' if key_role_id else 'Не указана'}"
+                        f"**Основная роль:** {f'<@&{role_id_value}>' if role_id_value else 'Не указана'}"
                     ),
                     inline=False
                 )
@@ -548,14 +551,18 @@ class DeleteDepartmentSelect(ui.Select):
             inline=False
         )
 
-        # --- ИСПРАВЛЕНИЕ ЗДЕСЬ: Получаем строковое название цвета для отображения ---
-        color_hex_value = dept_data.get('color', 0x3498db)
-        color_name_for_display = "Неизвестный цвет"
-        for name_key, hex_val in DepartmentManager.PRESET_COLORS.items():
-            if hex_val == color_hex_value:
-                color_name_for_display = name_key
-                break
-        # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
+        # Получаем отображаемое название цвета
+        color_value = dept_data.get('color', 0x3498db)
+        if isinstance(color_value, str):
+            color_display = color_value
+        elif isinstance(color_value, int):
+            color_display = "Неизвестный цвет"
+            for name_key, hex_val in DepartmentManager.PRESET_COLORS.items():
+                if hex_val == color_value:
+                    color_display = name_key
+                    break
+            else:
+                color_display = f"#{color_value:06x}"
 
         embed.add_field(
             name="📋 Информация о подразделении:",
@@ -563,7 +570,7 @@ class DeleteDepartmentSelect(ui.Select):
                 f"**ID:** {dept_id}\n"
                 f"**Название:** {dept_data.get('name', dept_id)}\n"
                 f"**Эмодзи:** {dept_data.get('emoji', '🏛️')}\n"
-                f"**Цвет:** {color_name_for_display}" # Используем название цвета
+                f"**Цвет:** {color_display}"
             ),
             inline=False
         )

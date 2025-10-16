@@ -229,15 +229,14 @@ class LeaveRequestDepartmentDetector:
         from utils.department_manager import DepartmentManager
         
         # Определяем подразделение пользователя по его ролям
-        dept_manager = DepartmentManager()
-        departments = dept_manager.get_all_departments()
+        departments = DepartmentManager.get_all_departments()
         user_department = None
         
         user_role_ids = [role.id for role in user_roles]
         
         for dept_id, dept_data in departments.items():
-            key_role_id = dept_data.get('key_role_id')
-            if key_role_id and key_role_id in user_role_ids:
+            role_id = dept_data.get('role_id')
+            if role_id and role_id in user_role_ids:
                 user_department = dept_id
                 break
         

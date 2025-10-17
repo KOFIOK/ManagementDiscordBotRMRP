@@ -1017,3 +1017,28 @@ def ensure_warehouse_config():
         print("✅ Конфигурация склада обновлена")
     
     return config
+
+# Messages system integration
+def get_messages_status() -> Dict[str, Any]:
+    """Get status of messages system (wrapper for message_manager)"""
+    try:
+        from utils.message_manager import get_messages_status
+        return get_messages_status()
+    except ImportError:
+        return {
+            'messages_dir_exists': False,
+            'default_messages_exists': False,
+            'guild_specific_files': 0,
+            'backup_count': 0,
+            'cache_size': 0,
+            'error': 'message_manager not available'
+        }
+    except Exception as e:
+        return {
+            'messages_dir_exists': False,
+            'default_messages_exists': False,
+            'guild_specific_files': 0,
+            'backup_count': 0,
+            'cache_size': 0,
+            'error': str(e)
+        }

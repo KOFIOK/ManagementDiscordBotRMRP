@@ -14,61 +14,16 @@ import re
 import traceback
 from datetime import datetime
 from utils.config_manager import load_config, is_moderator_or_admin, can_moderate_user, get_dismissal_message_link
+from utils.message_manager import get_message
 from utils.user_cache import get_cached_user_info
 from utils.nickname_manager import nickname_manager
 
 
 # Constants for UI elements and messages
-class DismissalConstants:
-    # UI Labels
-    PROCESSING_LABEL = "⏳ Обрабатывается..."
-    APPROVED_LABEL = "✅ Одобрено"
-    REJECTED_LABEL = "❌ Отказано"
-    
-    # Error Messages
-    NO_PERMISSION_APPROVAL = "❌ У вас нет прав для одобрения рапортов на увольнение. Только модераторы могут выполнять это действие."
-    NO_PERMISSION_REJECTION = "❌ У вас нет прав для отказа рапортов на увольнение. Только модераторы могут выполнять это действие."
-    AUTHORIZATION_ERROR = "❌ Ошибка проверки авторизации модератора."
-    GENERAL_ERROR = "❌ Произошла ошибка при обработке рапорта. Пожалуйста, обратитесь к администратору."
-    PROCESSING_ERROR_APPROVAL = "❌ Произошла ошибка при обработке одобрения заявки."
-    PROCESSING_ERROR_REJECTION = "❌ Произошла ошибка при обработке отказа"
-    AUTH_DATA_ERROR = "❌ Произошла ошибка при обработке данных авторизации."
-    DISMISSAL_PROCESSING_ERROR = "❌ Произошла ошибка при обработке увольнения."
-    
-    # Success Messages
-    STATIC_RECEIVED = "✅ Статик получен, продолжаем обработку..."
-    
-    # Form Field Names
-    FIELD_NAME = "Имя Фамилия"
-    FIELD_STATIC = "Статик"
-    FIELD_DEPARTMENT = "Подразделение"
-    FIELD_RANK = "Воинское звание"
-    FIELD_REASON = "Причина увольнения"
-    
-    # Automatic Report Indicators
-    AUTO_REPORT_INDICATOR = "🚨 Автоматический рапорт на увольнение"
-    STATIC_INPUT_REQUIRED = "Требуется ввод"
-    
-    # Nickname Prefixes
-    DISMISSED_PREFIX = "Уволен | "
-    
-    # Self-moderation errors
-    SELF_APPROVAL_ERROR = "Вы не можете одобрить свой собственный рапорт на увольнение."
-    SELF_REJECTION_ERROR = "Вы не можете отклонить свой собственный рапорт на увольнение."
-    MODERATOR_HIERARCHY_APPROVAL = "Вы не можете одобрить рапорт модератора того же или более высокого уровня."
-    MODERATOR_HIERARCHY_REJECTION = "Вы не можете отклонить рапорт модератора того же или более высокого уровня."
-    INSUFFICIENT_PERMISSIONS_APPROVAL = "У вас недостаточно прав для одобрения этого рапорта."
-    INSUFFICIENT_PERMISSIONS_REJECTION = "У вас недостаточно прав для отклонения этого рапорта."
-    
-    # Footer and audit text patterns
-    REPORT_SENDER_PREFIX = "Отправлено:"
-    AUDIT_NAME_STATIC_FIELD = "Имя Фамилия | 6 цифр статика"
-    
-    # Default values
-    UNKNOWN_VALUE = "Неизвестно"
-    
-    # Rejection button label
-    REJECT_BUTTON_LABEL = "❌ Отказать"
+# Messages helper function
+def get_dismissal_message(guild_id: int, key: str) -> str:
+    """Get dismissal message for specific guild"""
+    return get_message(guild_id, f"dismissal.{key}")
 
 
 class ProcessingApplicationView(discord.ui.View):
@@ -1040,8 +995,8 @@ class AutomaticDismissalApprovalView(ui.View):
             
             # Get user info for audit - use the same logic as regular dismissals
             # First try to get from embed fields, then from PersonnelManager if user is still on server
-            user_rank_for_audit = form_data.get('rank', DismissalConstants.UNKNOWN_VALUE)
-            user_unit_for_audit = form_data.get('department', DismissalConstants.UNKNOWN_VALUE)
+            user_rank_for_audit = form_data.get('rank', get_dismissal_message(interaction.guild.id, 'defaults.unknown_value'))
+            user_unit_for_audit = form_data.get('department', get_dismissal_message(interaction.guild.id, 'defaults.unknown_value'))
             user_has_left_server = getattr(target_user, '_is_mock', False)            # Get user position for audit (from PersonnelManager or empty)
             user_position_for_audit = ""
             
@@ -1064,9 +1019,9 @@ class AutomaticDismissalApprovalView(ui.View):
                     
                     # Also check if we need to update other missing data (only for users still on server)
                     if not user_has_left_server:
-                        if user_rank_for_audit == DismissalConstants.UNKNOWN_VALUE and user_info.get('rank'):
+                        if user_rank_for_audit == get_dismissal_message(interaction.guild.id, 'defaults.unknown_value') and user_info.get('rank'):
                             user_rank_for_audit = user_info.get('rank')
-                        if user_unit_for_audit == DismissalConstants.UNKNOWN_VALUE and user_info.get('department'):
+                        if user_unit_for_audit == get_dismissal_message(interaction.guild.id, 'defaults.unknown_value') and user_info.get('department'):
                             user_unit_for_audit = user_info.get('department')
                     
                     print(f"Got user info from PersonnelManager: rank={user_rank_for_audit}, department={user_unit_for_audit}, position={user_position_for_audit}")
@@ -1091,20 +1046,20 @@ class AutomaticDismissalApprovalView(ui.View):
                     ephemeral=True
                 )
             # If data is still missing and user is still on server, try fallback to roles
-            if not user_has_left_server and (user_rank_for_audit == DismissalConstants.UNKNOWN_VALUE or user_unit_for_audit == DismissalConstants.UNKNOWN_VALUE):
+            if not user_has_left_server and (user_rank_for_audit == get_dismissal_message(interaction.guild.id, 'defaults.unknown_value') or user_unit_for_audit == get_dismissal_message(interaction.guild.id, 'defaults.unknown_value')):
                 try:
-                    if user_rank_for_audit == DismissalConstants.UNKNOWN_VALUE:
+                    if user_rank_for_audit == get_dismissal_message(interaction.guild.id, 'defaults.unknown_value'):
                         # Get rank from database cache
                         user_data = await get_cached_user_info(target_user.id)
-                        role_rank = user_data.get('rank', DismissalConstants.UNKNOWN_VALUE) if user_data else DismissalConstants.UNKNOWN_VALUE
-                        if role_rank != DismissalConstants.UNKNOWN_VALUE:
+                        role_rank = user_data.get('rank', get_dismissal_message(interaction.guild.id, 'defaults.unknown_value')) if user_data else get_dismissal_message(interaction.guild.id, 'defaults.unknown_value')
+                        if role_rank != get_dismissal_message(interaction.guild.id, 'defaults.unknown_value'):
                             user_rank_for_audit = role_rank
                     
-                    if user_unit_for_audit == DismissalConstants.UNKNOWN_VALUE:
+                    if user_unit_for_audit == get_dismissal_message(interaction.guild.id, 'defaults.unknown_value'):
                         from utils.department_manager import DepartmentManager
                         dept_manager = DepartmentManager()
                         role_unit = dept_manager.get_user_department_name(target_user)
-                        if role_unit != DismissalConstants.UNKNOWN_VALUE:
+                        if role_unit != get_dismissal_message(interaction.guild.id, 'defaults.unknown_value'):
                             user_unit_for_audit = role_unit
                     print(f"Fallback to roles: rank={user_rank_for_audit}, department={user_unit_for_audit}")
                 except Exception as e:
@@ -1209,7 +1164,7 @@ class AutomaticDismissalApprovalView(ui.View):
                 
                 # Prepare personnel data for audit logger
                 personnel_data = {
-                    'name': form_data.get('name', DismissalConstants.UNKNOWN_VALUE),
+                    'name': form_data.get('name', get_dismissal_message(interaction.guild.id, 'defaults.unknown_value')),
                     'static': form_data.get('static', ''),
                     'rank': user_rank_for_audit,
                     'department': user_unit_for_audit,
@@ -1311,7 +1266,7 @@ class AutomaticDismissalApprovalView(ui.View):
             
             # Create new view with only "Approved" button (disabled)
             approved_view = ui.View(timeout=None)
-            approved_button = ui.Button(label=DismissalConstants.APPROVED_LABEL, style=discord.ButtonStyle.green, disabled=True)
+            approved_button = ui.Button(label=get_dismissal_message(interaction.guild.id, 'ui_labels.approved'), style=discord.ButtonStyle.green, disabled=True)
             approved_view.add_item(approved_button)
             
             # Update message with approved state
@@ -1335,7 +1290,7 @@ class AutomaticDismissalApprovalView(ui.View):
         try:
             # Show processing state first
             processing_view = ui.View(timeout=None)
-            processing_button = ui.Button(label=DismissalConstants.PROCESSING_LABEL, style=discord.ButtonStyle.gray, disabled=True)
+            processing_button = ui.Button(label=get_dismissal_message(interaction.guild.id, 'ui_labels.processing'), style=discord.ButtonStyle.gray, disabled=True)
             processing_view.add_item(processing_button)
             await original_message.edit(view=processing_view)
             
@@ -1358,7 +1313,7 @@ class AutomaticDismissalApprovalView(ui.View):
             
             # Create new view with only "Rejected" button (disabled)
             rejected_view = ui.View(timeout=None)
-            rejected_button = ui.Button(label=DismissalConstants.REJECTED_LABEL, style=discord.ButtonStyle.red, disabled=True)
+            rejected_button = ui.Button(label=get_dismissal_message(interaction.guild.id, 'ui_labels.rejected'), style=discord.ButtonStyle.red, disabled=True)
             rejected_view.add_item(rejected_button)
             
             # Update message with rejected state

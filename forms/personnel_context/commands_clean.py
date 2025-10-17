@@ -2695,9 +2695,9 @@ async def general_edit(interaction: discord.Interaction, user: discord.Member):
     
     # Get current user information from cache and database
     try:
-        # Get data from cache first
-        from utils.user_cache import get_cached_user_info_sync
-        user_data = get_cached_user_info_sync(user.id)
+        # Get data from cache first (async version that can load from DB)
+        from utils.user_cache import get_cached_user_info
+        user_data = await get_cached_user_info(user.id)
         
         # Get rank from database
         current_rank = await get_user_rank_from_db(user.id) or "Не указано"
@@ -2752,8 +2752,20 @@ async def general_edit(interaction: discord.Interaction, user: discord.Member):
         position_name = "Не назначено"
         full_name = user.display_name
     
-    # Format user information
+    # Format user information - get static from user_data or fallback to DB query
     static = user_data.get('static', 'Не указано') if user_data else 'Не указано'
+    
+    # If static is still not found, try to get it directly from database
+    if static == 'Не указано':
+        try:
+            from utils.postgresql_pool import get_db_cursor
+            with get_db_cursor() as cursor:
+                cursor.execute("SELECT static FROM personnel WHERE discord_id = %s AND is_dismissal = false;", (user.id,))
+                static_result = cursor.fetchone()
+                if static_result and static_result['static']:
+                    static = static_result['static']
+        except Exception as static_error:
+            print(f"Warning: Could not get static for {user.id}: {static_error}")
     
     # Send general editing view with current information
     view = GeneralEditView(user)

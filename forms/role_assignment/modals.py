@@ -62,18 +62,6 @@ class MilitaryApplicationModal(ui.Modal):
             )
             return
         
-        # Check blacklist status for military applications
-        blacklist_check = await self._check_blacklist_status(formatted_static)
-        if blacklist_check["is_blocked"]:
-            await interaction.response.send_message(
-                f"### ❌ **Доступ к подаче заявки временно ограничен — Вы в Чёрном Списке!**\n\n"
-                f"> **Причина:** {blacklist_check['reason']}\n"
-                f"> **Чёрный Список выдал:** {blacklist_check['officer']}\n"
-                f"> **Ограничение по (включительно):** {blacklist_check['end_date']}",
-                ephemeral=True
-            )
-            return
-        
         # Create application data
         application_data = {
             "type": "military",

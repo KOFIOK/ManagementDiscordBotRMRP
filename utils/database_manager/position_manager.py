@@ -423,8 +423,8 @@ class PositionManager:
 
             role_changes = []
 
-            # Get new department data from database
-            new_subdivision = await mapper._get_db_subdivision(dept_key)
+            # Get new department data from database using role_id from config
+            new_subdivision = await mapper.get_subdivision_by_config_key(dept_key)
             if not new_subdivision:
                 print(f"❌ Could not find subdivision for dept_key '{dept_key}' in database")
                 return
@@ -445,7 +445,7 @@ class PositionManager:
 
             # Remove old department roles if old_dept_key is known
             if old_dept_key and old_dept_key != dept_key:
-                old_subdivision = await mapper._get_db_subdivision(old_dept_key)
+                old_subdivision = await mapper.get_subdivision_by_config_key(old_dept_key)
                 if old_subdivision and old_subdivision.get('role_id'):
                     old_role = guild.get_role(old_subdivision['role_id'])
                     if old_role and old_role in user.roles:

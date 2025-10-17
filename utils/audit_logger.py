@@ -371,10 +371,14 @@ class PersonnelAuditLogger:
         - Подразделение
         - Воинское звание
         """
+        # Use Moscow timezone (UTC+3)
+        moscow_tz = timezone(timedelta(hours=3))
+        moscow_time = datetime.now(moscow_tz)
+        
         embed = discord.Embed(
             title=self.AUDIT_TITLE,
             color=self.AUDIT_COLOR,
-            timestamp=datetime.utcnow()
+            timestamp=moscow_time
         )
         
         # Set thumbnail
@@ -404,8 +408,8 @@ class PersonnelAuditLogger:
             inline=False
         )
         
-        # Format date as dd-MM-yyyy
-        action_date = datetime.utcnow().strftime('%d-%m-%Y')
+        # Format date as dd-MM-yyyy using Moscow time
+        action_date = moscow_time.strftime('%d-%m-%Y')
         embed.add_field(
             name="Дата Действия",
             value=action_date,

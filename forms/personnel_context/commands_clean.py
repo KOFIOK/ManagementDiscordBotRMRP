@@ -1571,22 +1571,97 @@ class PositionOnlySelect(ui.Select):
                 from utils.audit_logger import audit_logger, AuditAction
                 from utils.config_manager import load_config
                 from utils.database_manager import PersonnelManager
+                from utils.postgresql_pool import get_db_cursor
+                from utils.user_cache import get_cached_user_info, invalidate_user_cache
                 
                 pm = PersonnelManager()
                 config = load_config()
                 
-                # Get personnel data for audit
-                personnel_data = await pm.get_personnel_data_for_audit(self.target_user.id)
-                if not personnel_data:
+                # СТРАТЕГИЯ: Кэш → БД → Обновление кэша
+                personnel_data = None
+                
+                # ПОПЫТКА 1: Получить из кэша
+                print(f"🔍 AUDIT (demotion): Checking cache for user {self.target_user.id}...")
+                cached_data = await get_cached_user_info(self.target_user.id)
+                
+                if cached_data and cached_data.get('full_name') and cached_data.get('rank'):
+                    print(f"✅ AUDIT (demotion): Got data from cache")
                     personnel_data = {
-                        'name': self.target_user.display_name,
-                        'static': 'Неизвестно',
-                        'rank': 'Неизвестно',
-                        'department': 'Неизвестно',
+                        'name': cached_data.get('full_name', self.target_user.display_name),
+                        'static': cached_data.get('static', 'Не указано'),
+                        'rank': cached_data.get('rank', 'Не назначено'),
+                        'department': cached_data.get('department', 'Не назначено'),
                         'position': None
                     }
                 else:
-                    personnel_data['position'] = None
+                    # ПОПЫТКА 2: Кэш пуст → идём в БД
+                    print(f"⚠️ AUDIT (demotion): Cache miss, querying database...")
+                    invalidate_user_cache(self.target_user.id)
+                    
+                    db_data = await pm.get_personnel_data_for_audit(self.target_user.id)
+                    
+                    if db_data and db_data.get('name') and db_data.get('rank'):
+                        print(f"✅ AUDIT (demotion): Got data from PersonnelManager")
+                        personnel_data = {
+                            'name': db_data.get('name', self.target_user.display_name),
+                            'static': db_data.get('static', 'Не указано'),
+                            'rank': db_data.get('rank', 'Не назначено'),
+                            'department': db_data.get('department', 'Не назначено'),
+                            'position': None
+                        }
+                        await get_cached_user_info(self.target_user.id, force_refresh=True)
+                    else:
+                        # ПОПЫТКА 3: Прямой SQL
+                        print(f"⚠️ AUDIT (demotion): Trying direct SQL...")
+                        try:
+                            with get_db_cursor() as cursor:
+                                cursor.execute("""
+                                    SELECT 
+                                        p.first_name,
+                                        p.last_name,
+                                        p.static,
+                                        r.name as rank_name,
+                                        s.name as subdivision_name
+                                    FROM personnel p
+                                    LEFT JOIN employees e ON p.id = e.personnel_id
+                                    LEFT JOIN ranks r ON e.rank_id = r.id
+                                    LEFT JOIN subdivisions s ON e.subdivision_id = s.id
+                                    WHERE p.discord_id = %s
+                                    ORDER BY p.id DESC
+                                    LIMIT 1;
+                                """, (self.target_user.id,))
+                                
+                                db_result = cursor.fetchone()
+                                if db_result:
+                                    print(f"✅ AUDIT (demotion): Got data from SQL")
+                                    personnel_data = {
+                                        'name': f"{db_result['first_name'] or ''} {db_result['last_name'] or ''}".strip() or self.target_user.display_name,
+                                        'static': db_result['static'] or 'Не указано',
+                                        'rank': db_result['rank_name'] or 'Не назначено',
+                                        'department': db_result['subdivision_name'] or 'Не назначено',
+                                        'position': None
+                                    }
+                                    await get_cached_user_info(self.target_user.id, force_refresh=True)
+                                else:
+                                    print(f"❌ AUDIT (demotion): Ultimate fallback")
+                                    personnel_data = {
+                                        'name': self.target_user.display_name,
+                                        'static': 'Не указано',
+                                        'rank': 'Не назначено',
+                                        'department': 'Не назначено',
+                                        'position': None
+                                    }
+                        except Exception as db_fallback_error:
+                            print(f"❌ AUDIT (demotion): SQL failed: {db_fallback_error}")
+                            personnel_data = {
+                                'name': self.target_user.display_name,
+                                'static': 'Не указано',
+                                'rank': 'Не назначено',
+                                'department': 'Не назначено',
+                                'position': None
+                            }
+                
+                print(f"📊 AUDIT (demotion): Final data = {personnel_data}")
                 
                 await audit_logger.send_personnel_audit(
                     guild=interaction.guild,
@@ -1757,22 +1832,111 @@ class PositionOnlySelect(ui.Select):
                 from utils.audit_logger import audit_logger, AuditAction
                 from utils.config_manager import load_config
                 from utils.database_manager import PersonnelManager
+                from utils.postgresql_pool import get_db_cursor
+                from utils.user_cache import get_cached_user_info, invalidate_user_cache
                 
                 pm = PersonnelManager()
                 config = load_config()
                 
-                # Get personnel data for audit
-                personnel_data = await pm.get_personnel_data_for_audit(self.target_user.id)
-                if not personnel_data:
+                # СТРАТЕГИЯ: Кэш → БД → Обновление кэша
+                personnel_data = None
+                
+                # ПОПЫТКА 1: Получить из кэша (БЫСТРО)
+                print(f"🔍 AUDIT (PositionOnly): Checking cache for user {self.target_user.id}...")
+                cached_data = await get_cached_user_info(self.target_user.id)
+                
+                if cached_data and cached_data.get('full_name') and cached_data.get('rank'):
+                    # Кэш содержит полные данные
+                    print(f"✅ AUDIT (PositionOnly): Got FULL data from cache")
                     personnel_data = {
-                        'name': self.target_user.display_name,
-                        'static': 'Неизвестно',
-                        'rank': 'Неизвестно',
-                        'department': self.subdivision_name or 'Неизвестно',
+                        'name': cached_data.get('full_name', self.target_user.display_name),
+                        'static': cached_data.get('static', 'Не указано'),
+                        'rank': cached_data.get('rank', 'Не назначено'),
+                        'department': cached_data.get('department', self.subdivision_name or 'Не назначено'),
                         'position': position_name
                     }
                 else:
-                    personnel_data['position'] = position_name
+                    # ПОПЫТКА 2: Кэш пуст или неполный → идём в БД
+                    print(f"⚠️ AUDIT (PositionOnly): Cache miss or incomplete, querying database...")
+                    
+                    # Инвалидируем старый кэш
+                    invalidate_user_cache(self.target_user.id)
+                    
+                    # Получаем из БД через PersonnelManager
+                    db_data = await pm.get_personnel_data_for_audit(self.target_user.id)
+                    
+                    if db_data and db_data.get('name') and db_data.get('rank'):
+                        print(f"✅ AUDIT (PositionOnly): Got data from PersonnelManager")
+                        personnel_data = {
+                            'name': db_data.get('name', self.target_user.display_name),
+                            'static': db_data.get('static', 'Не указано'),
+                            'rank': db_data.get('rank', 'Не назначено'),
+                            'department': db_data.get('department', self.subdivision_name or 'Не назначено'),
+                            'position': position_name
+                        }
+                        
+                        # ОБНОВЛЯЕМ КЭШ свежими данными
+                        print(f"🔄 AUDIT (PositionOnly): Updating cache with fresh data...")
+                        await get_cached_user_info(self.target_user.id, force_refresh=True)
+                    else:
+                        # ПОПЫТКА 3: Прямой SQL запрос (последняя надежда)
+                        print(f"⚠️ AUDIT (PositionOnly): PersonnelManager returned incomplete data, trying direct SQL...")
+                        try:
+                            with get_db_cursor() as cursor:
+                                cursor.execute("""
+                                    SELECT 
+                                        p.first_name,
+                                        p.last_name,
+                                        p.static,
+                                        r.name as rank_name,
+                                        s.name as subdivision_name,
+                                        pos.name as position_name
+                                    FROM personnel p
+                                    LEFT JOIN employees e ON p.id = e.personnel_id
+                                    LEFT JOIN ranks r ON e.rank_id = r.id
+                                    LEFT JOIN subdivisions s ON e.subdivision_id = s.id
+                                    LEFT JOIN position_subdivision ps ON e.position_subdivision_id = ps.id
+                                    LEFT JOIN positions pos ON ps.position_id = pos.id
+                                    WHERE p.discord_id = %s
+                                    ORDER BY p.id DESC
+                                    LIMIT 1;
+                                """, (self.target_user.id,))
+                                
+                                db_result = cursor.fetchone()
+                                if db_result:
+                                    print(f"✅ AUDIT (PositionOnly): Got data from direct SQL")
+                                    personnel_data = {
+                                        'name': f"{db_result['first_name'] or ''} {db_result['last_name'] or ''}".strip() or self.target_user.display_name,
+                                        'static': db_result['static'] or 'Не указано',
+                                        'rank': db_result['rank_name'] or 'Не назначено',
+                                        'department': db_result['subdivision_name'] or self.subdivision_name or 'Не назначено',
+                                        'position': position_name
+                                    }
+                                    
+                                    # ОБНОВЛЯЕМ КЭШ
+                                    print(f"🔄 AUDIT (PositionOnly): Updating cache with SQL data...")
+                                    await get_cached_user_info(self.target_user.id, force_refresh=True)
+                                else:
+                                    # Ultimate fallback
+                                    print(f"❌ AUDIT (PositionOnly): No data found anywhere, using ultimate fallback")
+                                    personnel_data = {
+                                        'name': self.target_user.display_name,
+                                        'static': 'Не указано',
+                                        'rank': 'Не назначено',
+                                        'department': self.subdivision_name or 'Не назначено',
+                                        'position': position_name
+                                    }
+                        except Exception as db_fallback_error:
+                            print(f"❌ AUDIT (PositionOnly): Direct SQL failed: {db_fallback_error}")
+                            personnel_data = {
+                                'name': self.target_user.display_name,
+                                'static': 'Не указано',
+                                'rank': 'Не назначено',
+                                'department': self.subdivision_name or 'Не назначено',
+                                'position': position_name
+                            }
+                
+                print(f"📊 AUDIT (PositionOnly): Final personnel_data = {personnel_data}")
                 
                 await audit_logger.send_personnel_audit(
                     guild=interaction.guild,
@@ -1978,22 +2142,98 @@ class RankChangeView(ui.View):
                 from utils.audit_logger import audit_logger, AuditAction
                 from utils.config_manager import load_config
                 from utils.database_manager import PersonnelManager
+                from utils.postgresql_pool import get_db_cursor
+                from utils.user_cache import get_cached_user_info, invalidate_user_cache
                 
                 pm = PersonnelManager()
                 config = load_config()
                 
-                # Get personnel data for audit
-                personnel_data = await pm.get_personnel_data_for_audit(self.target_user.id)
-                if not personnel_data:
+                # СТРАТЕГИЯ: Кэш → БД → Обновление кэша
+                personnel_data = None
+                
+                # ПОПЫТКА 1: Получить из кэша
+                print(f"🔍 AUDIT (rank): Checking cache for user {self.target_user.id}...")
+                cached_data = await get_cached_user_info(self.target_user.id)
+                
+                if cached_data and cached_data.get('full_name'):
+                    print(f"✅ AUDIT (rank): Got data from cache")
                     personnel_data = {
-                        'name': self.target_user.display_name,
-                        'static': 'Неизвестно',
-                        'rank': 'Неизвестно',
-                        'department': 'Неизвестно',
-                        'position': 'Неизвестно'
+                        'name': cached_data.get('full_name', self.target_user.display_name),
+                        'static': cached_data.get('static', 'Не указано'),
+                        'rank': self.new_rank,  # Используем новый ранг
+                        'department': cached_data.get('department', 'Не назначено'),
+                        'position': cached_data.get('position', 'Не назначено')
                     }
                 else:
-                    personnel_data['rank'] = self.new_rank
+                    # ПОПЫТКА 2: Кэш пуст → идём в БД
+                    print(f"⚠️ AUDIT (rank): Cache miss, querying database...")
+                    invalidate_user_cache(self.target_user.id)
+                    
+                    db_data = await pm.get_personnel_data_for_audit(self.target_user.id)
+                    
+                    if db_data and db_data.get('name'):
+                        print(f"✅ AUDIT (rank): Got data from PersonnelManager")
+                        personnel_data = {
+                            'name': db_data.get('name', self.target_user.display_name),
+                            'static': db_data.get('static', 'Не указано'),
+                            'rank': self.new_rank,
+                            'department': db_data.get('department', 'Не назначено'),
+                            'position': db_data.get('position', 'Не назначено')
+                        }
+                        await get_cached_user_info(self.target_user.id, force_refresh=True)
+                    else:
+                        # ПОПЫТКА 3: Прямой SQL
+                        print(f"⚠️ AUDIT (rank): Trying direct SQL...")
+                        try:
+                            with get_db_cursor() as cursor:
+                                cursor.execute("""
+                                    SELECT 
+                                        p.first_name,
+                                        p.last_name,
+                                        p.static,
+                                        s.name as subdivision_name,
+                                        pos.name as position_name
+                                    FROM personnel p
+                                    LEFT JOIN employees e ON p.id = e.personnel_id
+                                    LEFT JOIN subdivisions s ON e.subdivision_id = s.id
+                                    LEFT JOIN position_subdivision ps ON e.position_subdivision_id = ps.id
+                                    LEFT JOIN positions pos ON ps.position_id = pos.id
+                                    WHERE p.discord_id = %s
+                                    ORDER BY p.id DESC
+                                    LIMIT 1;
+                                """, (self.target_user.id,))
+                                
+                                db_result = cursor.fetchone()
+                                if db_result:
+                                    print(f"✅ AUDIT (rank): Got data from SQL")
+                                    personnel_data = {
+                                        'name': f"{db_result['first_name'] or ''} {db_result['last_name'] or ''}".strip() or self.target_user.display_name,
+                                        'static': db_result['static'] or 'Не указано',
+                                        'rank': self.new_rank,
+                                        'department': db_result['subdivision_name'] or 'Не назначено',
+                                        'position': db_result['position_name'] or 'Не назначено'
+                                    }
+                                    await get_cached_user_info(self.target_user.id, force_refresh=True)
+                                else:
+                                    print(f"❌ AUDIT (rank): Ultimate fallback")
+                                    personnel_data = {
+                                        'name': self.target_user.display_name,
+                                        'static': 'Не указано',
+                                        'rank': self.new_rank,
+                                        'department': 'Не назначено',
+                                        'position': 'Не назначено'
+                                    }
+                        except Exception as db_fallback_error:
+                            print(f"❌ AUDIT (rank): SQL failed: {db_fallback_error}")
+                            personnel_data = {
+                                'name': self.target_user.display_name,
+                                'static': 'Не указано',
+                                'rank': self.new_rank,
+                                'department': 'Не назначено',
+                                'position': 'Не назначено'
+                            }
+                
+                print(f"📊 AUDIT (rank): Final data = {personnel_data}")
                 
                 # Choose audit action based on action_id
                 if action_id == 1:

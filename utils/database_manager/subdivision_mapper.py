@@ -40,6 +40,11 @@ class SubdivisionMapper:
         # Обратное отображение для поиска
         self.config_to_db_mapping = {v: k for k, v in self.abbreviation_mapping.items()}
     
+    def _get_config(self) -> Dict:
+        """Get bot configuration"""
+        from .. import config_manager
+        return config_manager.load_config()
+    
     async def get_subdivision_with_config(self, subdivision_identifier: str, config: Dict) -> Optional[Dict[str, Any]]:
         """
         Get subdivision data combined with Discord config
@@ -52,8 +57,21 @@ class SubdivisionMapper:
             Dict containing both DB and config data, or None if not found
         """
         try:
-            # Get DB subdivision data
-            db_subdivision = await self._get_db_subdivision(subdivision_identifier)
+            # Get DB subdivision data - try new method first for config keys
+            db_subdivision = None
+            
+            # Check if identifier looks like a config key (not numeric)
+            try:
+                int(subdivision_identifier)
+                # It's a role_id, use _get_db_subdivision
+                db_subdivision = await self._get_db_subdivision(subdivision_identifier)
+            except ValueError:
+                # It's a config key or name, try get_subdivision_by_config_key first
+                db_subdivision = await self.get_subdivision_by_config_key(subdivision_identifier)
+                if not db_subdivision:
+                    # Fallback to old method
+                    db_subdivision = await self._get_db_subdivision(subdivision_identifier)
+            
             if not db_subdivision:
                 return None
             
@@ -65,6 +83,7 @@ class SubdivisionMapper:
                 'id': db_subdivision['id'],
                 'name': db_subdivision['name'],
                 'abbreviation': db_subdivision['abbreviation'],
+                'role_id': db_subdivision.get('role_id'),
                 'discord_config': config_data
             }
             
@@ -97,13 +116,74 @@ class SubdivisionMapper:
             logger.error(f"get_all_subdivisions_with_config failed: {e}")
             return []
     
-    async def _get_db_subdivision(self, identifier: str) -> Optional[Dict[str, Any]]:
-        """Get subdivision from database by name, abbreviation, or partial match"""
+    async def get_subdivision_by_config_key(self, config_key: str) -> Optional[Dict[str, Any]]:
+        """Get subdivision by config key, using role_id from config.json for direct lookup"""
         try:
+            # Get role_id from config.json
+            config = self._get_config()
+            departments = config.get('departments', {})
+            dept_config = departments.get(config_key)
+            
+            if not dept_config or not dept_config.get('role_id'):
+                logger.warning(f"No role_id found in config for department '{config_key}'")
+                return None
+            
+            role_id = dept_config['role_id']
+            
+            # Search in database by role_id directly
             with get_db_cursor() as cursor:
-                # Try exact match first
                 cursor.execute("""
-                    SELECT id, name, abbreviation 
+                    SELECT id, name, abbreviation, role_id
+                    FROM subdivisions
+                    WHERE role_id = %s;
+                """, (role_id,))
+                result = cursor.fetchone()
+                
+                if result:
+                    return dict(result)
+                else:
+                    logger.error(f"Subdivision with role_id {role_id} not found in database")
+                    return None
+                
+        except Exception as e:
+            logger.error(f"get_subdivision_by_config_key failed for '{config_key}': {e}")
+            return None
+        """Get subdivision from database by config key, role_id, name, or abbreviation"""
+        try:
+            # First, check if identifier is already a role_id (numeric string)
+            try:
+                role_id = int(identifier)
+                # If it's a valid role_id, search by role_id directly
+                with get_db_cursor() as cursor:
+                    cursor.execute("""
+                        SELECT id, name, abbreviation, role_id
+                        FROM subdivisions
+                        WHERE role_id = %s;
+                    """, (role_id,))
+                    result = cursor.fetchone()
+                    if result:
+                        return dict(result)
+            except ValueError:
+                pass  # Not a numeric role_id, continue with other methods
+            
+            # Try to map config key to database abbreviation
+            db_identifier = self.config_to_db_mapping.get(identifier, identifier)
+            
+            with get_db_cursor() as cursor:
+                # Try exact match first with mapped identifier
+                cursor.execute("""
+                    SELECT id, name, abbreviation, role_id
+                    FROM subdivisions 
+                    WHERE name = %s OR abbreviation = %s;
+                """, (db_identifier, db_identifier))
+                result = cursor.fetchone()
+                
+                if result:
+                    return dict(result)
+                
+                # Try exact match with original identifier
+                cursor.execute("""
+                    SELECT id, name, abbreviation, role_id
                     FROM subdivisions 
                     WHERE name = %s OR abbreviation = %s;
                 """, (identifier, identifier))
@@ -114,7 +194,7 @@ class SubdivisionMapper:
                 
                 # Try partial match
                 cursor.execute("""
-                    SELECT id, name, abbreviation 
+                    SELECT id, name, abbreviation, role_id
                     FROM subdivisions 
                     WHERE name ILIKE %s OR abbreviation ILIKE %s
                     LIMIT 1;
@@ -453,14 +533,10 @@ class SubdivisionMapper:
             return False
 
     async def get_subdivision_id(self, identifier: str) -> Optional[int]:
-        """Get subdivision ID by name, abbreviation, or config key"""
+        """Get subdivision ID by config key using role_id lookup"""
         try:
-            # First try to convert config key to database abbreviation
-            db_identifier = identifier
-            if identifier in self.config_to_db_mapping:
-                db_identifier = self.config_to_db_mapping[identifier]
-            
-            subdivision = await self._get_db_subdivision(db_identifier)
+            # Use the new method that looks up by role_id from config
+            subdivision = await self.get_subdivision_by_config_key(identifier)
             return subdivision['id'] if subdivision else None
         except Exception as e:
             logger.error(f"get_subdivision_id failed for identifier '{identifier}': {e}")

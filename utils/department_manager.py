@@ -4,6 +4,7 @@ Department Manager - Centralized management for departments
 import discord
 from typing import Dict, List, Optional, Tuple
 from utils.config_manager import load_config, save_config
+from utils.postgresql_pool import get_db_cursor
 import logging
 
 logger = logging.getLogger(__name__)
@@ -185,12 +186,74 @@ class DepartmentManager:
             config['departments'][dept_id] = new_department
             save_config(config)
 
+            # Синхронизация с БД: добавляем запись в subdivisions
+            if role_id:
+                try:
+                    with get_db_cursor() as cursor:
+                        # Проверяем, существует ли уже запись с таким role_id
+                        cursor.execute("SELECT id FROM subdivisions WHERE role_id = %s", (role_id,))
+                        existing = cursor.fetchone()
+
+                        if not existing:
+                            # Получаем следующий ID
+                            cursor.execute("SELECT MAX(id) FROM subdivisions")
+                            max_id_result = cursor.fetchone()
+                            next_id = (max_id_result['max'] or 0) + 1
+
+                            # Определяем аббревиатуру на основе dept_id
+                            abbreviation = cls._get_abbreviation_for_dept_id(dept_id)
+
+                            # Добавляем в subdivisions
+                            cursor.execute("""
+                                INSERT INTO subdivisions (id, name, abbreviation, role_id)
+                                VALUES (%s, %s, %s, %s)
+                            """, (next_id, name, abbreviation, role_id))
+
+                            logger.info(f"Added subdivision to DB: {name} ({abbreviation}) with role_id {role_id}")
+                        else:
+                            logger.warning(f"Subdivision with role_id {role_id} already exists in DB")
+                except Exception as e:
+                    logger.error(f"Error syncing department {dept_id} to database: {e}")
+                    # Не возвращаем False, так как config.json уже обновлен
+
             logger.info(f"Added department: {dept_id} - {name}")
             return True
 
         except Exception as e:
             logger.error(f"Error adding department {dept_id}: {e}")
             return False
+
+    @classmethod
+    def _get_abbreviation_for_dept_id(cls, dept_id: str) -> str:
+        """Получить аббревиатуру для dept_id"""
+        # Отображение config ключей на аббревиатуры БД
+        mapping = {
+            'genshtab': 'Штаб',
+            'УВП': 'УВП',
+            'ССО': 'CCO',
+            'РОиО': 'POиO',
+            'ВК': 'BK',
+            'МР': 'MP',
+            'ВА': 'ВА',
+            'ВБП': 'ВБП'
+        }
+
+        # Если есть в mapping, используем его
+        if dept_id in mapping:
+            return mapping[dept_id]
+
+        # Для новых подразделений генерируем короткую аббревиатуру
+        # Берем первые буквы слов или первые 3-4 символа
+        if '_' in dept_id:
+            # Разделяем по подчеркиванию и берем первые буквы
+            parts = dept_id.split('_')
+            abbrev = ''.join(word[0].upper() for word in parts if word)
+        else:
+            # Берем первые 3 символа и делаем заглавными
+            abbrev = dept_id[:3].upper()
+
+        # Ограничиваем длину 4 символами максимум
+        return abbrev[:4]
 
     @classmethod
     def edit_department(cls, dept_id: str, name: str, description: Optional[str] = None,
@@ -210,6 +273,8 @@ class DepartmentManager:
         Returns:
             bool: Успешность операции
         """
+        logger.info(f"edit_department called with: dept_id={dept_id}, name={name}, role_id={role_id}")
+        print(f"DEBUG: edit_department called with: dept_id={dept_id}, name={name}, role_id={role_id}")
         try:
             config = load_config()
             departments = config.get('departments', {})
@@ -219,6 +284,10 @@ class DepartmentManager:
                 return False
 
             department = departments[dept_id]
+
+            # Сохраняем старые значения для синхронизации с БД
+            old_role_id = department.get('role_id')
+            old_name = department.get('name')
 
             # Обновляем поля
             if name is not None:
@@ -243,6 +312,78 @@ class DepartmentManager:
                 department['role_id'] = role_id
 
             save_config(config)
+
+            # Синхронизация с БД: обновляем запись в subdivisions
+            logger.info(f"DB Sync: Starting sync for dept_id {dept_id}")
+            if role_id is not None or name is not None:
+                logger.info(f"DB Sync: Conditions met - role_id={role_id}, name={name}")
+                try:
+                    with get_db_cursor() as cursor:
+                        logger.info(f"DB Sync: dept_id={dept_id}, old_role_id={old_role_id}, new_role_id={role_id}, old_name={old_name}, new_name={name}")
+
+                        # Находим запись по старому role_id
+                        if old_role_id:
+                            logger.info(f"DB Sync: Found old_role_id {old_role_id}, proceeding with update")
+                            # Обновляем существующую запись
+                            update_fields = []
+                            update_values = []
+
+                            if name is not None and name != old_name:
+                                update_fields.append("name = %s")
+                                update_values.append(name)
+
+                            if role_id is not None and role_id != old_role_id:
+                                update_fields.append("role_id = %s")
+                                update_values.append(role_id)
+
+                            logger.info(f"DB Sync: update_fields={update_fields}, update_values={update_values}")
+
+                            if update_fields:
+                                update_values.append(old_role_id)
+                                query = f"""
+                                    UPDATE subdivisions
+                                    SET {', '.join(update_fields)}
+                                    WHERE role_id = %s
+                                """
+                                logger.info(f"DB Sync: executing query: {query.strip()}")
+                                logger.info(f"DB Sync: with values: {update_values}")
+                                cursor.execute(query, update_values)
+
+                                # Проверяем, сколько строк обновлено
+                                rows_affected = cursor.rowcount
+                                logger.info(f"DB Sync: rows affected: {rows_affected}")
+
+                                if rows_affected > 0:
+                                    logger.info(f"Updated subdivision in DB for dept_id {dept_id} (rows affected: {rows_affected})")
+                                else:
+                                    logger.warning(f"No rows updated in DB for dept_id {dept_id}, old_role_id {old_role_id}")
+                                    # Let's check if the record still exists
+                                    cursor.execute("SELECT COUNT(*) FROM subdivisions WHERE role_id = %s", (old_role_id,))
+                                    still_exists = cursor.fetchone()['count']
+                                    logger.warning(f"Record still exists with old_role_id: {still_exists}")
+                            else:
+                                logger.info(f"No fields to update for dept_id {dept_id}")
+                        elif role_id:
+                            # Создаем новую запись, если добавили role_id
+                            logger.info(f"Creating new DB record for dept_id {dept_id}")
+                            cursor.execute("SELECT MAX(id) FROM subdivisions")
+                            max_id_result = cursor.fetchone()
+                            next_id = (max_id_result['max'] or 0) + 1
+
+                            abbreviation = cls._get_abbreviation_for_dept_id(dept_id)
+                            final_name = name if name is not None else department.get('name', dept_id)
+
+                            cursor.execute("""
+                                INSERT INTO subdivisions (id, name, abbreviation, role_id)
+                                VALUES (%s, %s, %s, %s)
+                            """, (next_id, final_name, abbreviation, role_id))
+
+                            logger.info(f"Added subdivision to DB for dept_id {dept_id}")
+                except Exception as e:
+                    logger.error(f"Error syncing department {dept_id} changes to database: {e}")
+                    import traceback
+                    traceback.print_exc()
+
             logger.info(f"Edited department: {dept_id} - {name}")
             return True
 
@@ -329,6 +470,17 @@ class DepartmentManager:
                 config['ping_settings'] = ping_settings
 
             save_config(config)
+
+            # Синхронизация с БД: удаляем запись из subdivisions
+            role_id = department.get('role_id')
+            if role_id:
+                try:
+                    with get_db_cursor() as cursor:
+                        cursor.execute("DELETE FROM subdivisions WHERE role_id = %s", (role_id,))
+                        logger.info(f"Removed subdivision from DB for dept_code {dept_code} (role_id: {role_id})")
+                except Exception as e:
+                    logger.error(f"Error removing department {dept_code} from database: {e}")
+                    # Не возвращаем ошибку, так как config.json уже обновлен
 
             logger.info(f"Removed department: {dept_code}")
             return True, f"Подразделение '{dept_code}' и все связанные настройки удалены"
@@ -480,6 +632,9 @@ class DepartmentManager:
 
             department = departments[dept_id]
 
+            # Сохраняем старый role_id для синхронизации с БД
+            old_role_id = department.get('role_id')
+            
             # Обновляем только переданные поля
             if name is not None:
                 department['name'] = name
@@ -495,6 +650,52 @@ class DepartmentManager:
 
             config['departments'][dept_id] = department
             save_config(config)
+
+            # Синхронизация с PostgreSQL БД
+            if role_id is not None:
+                try:
+                    with get_db_cursor() as cursor:
+                        # Сначала попробуем найти запись по старому role_id
+                        update_query = """
+                        UPDATE subdivisions 
+                        SET role_id = %s, name = %s, abbreviation = %s
+                        WHERE role_id = %s
+                        """
+                        new_name = name if name is not None else department.get('name', '')
+                        abbreviation = cls._get_abbreviation_for_dept_id(dept_id)
+                        
+                        cursor.execute(update_query, (role_id, new_name, abbreviation, old_role_id))
+                        rows_affected = cursor.rowcount
+                        
+                        # Если не нашли по старому role_id, попробуем найти по текущему имени подразделения
+                        if rows_affected == 0:
+                            current_name = department.get('name', '')
+                            find_by_name_query = "SELECT id, role_id FROM subdivisions WHERE name = %s"
+                            cursor.execute(find_by_name_query, (current_name,))
+                            existing_by_name = cursor.fetchone()
+                            
+                            if existing_by_name:
+                                # Обновляем найденную запись
+                                update_by_id_query = """
+                                UPDATE subdivisions 
+                                SET role_id = %s, name = %s, abbreviation = %s
+                                WHERE id = %s
+                                """
+                                cursor.execute(update_by_id_query, (role_id, new_name, abbreviation, existing_by_name[0]))
+                                rows_affected = cursor.rowcount
+                            else:
+                                # Если совсем не нашли, создадим новую запись (fallback)
+                                cursor.execute("SELECT MAX(id) FROM subdivisions")
+                                max_id_result = cursor.fetchone()
+                                next_id = (max_id_result['max'] or 0) + 1
+                                
+                                insert_query = """
+                                INSERT INTO subdivisions (id, name, abbreviation, role_id)
+                                VALUES (%s, %s, %s, %s)
+                                """
+                                cursor.execute(insert_query, (next_id, new_name, abbreviation, role_id))
+                except Exception as db_e:
+                    logger.error(f"DB sync error in edit_department: {db_e}")
 
             logger.info(f"Updated department: {dept_id}")
             return True

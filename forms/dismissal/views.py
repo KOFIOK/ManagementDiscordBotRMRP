@@ -14,7 +14,7 @@ import re
 import traceback
 from datetime import datetime
 from utils.config_manager import load_config, is_moderator_or_admin, can_moderate_user, get_dismissal_message_link
-from utils.rank_utils import get_rank_from_roles_postgresql
+from utils.user_cache import get_cached_user_info
 from utils.nickname_manager import nickname_manager
 
 
@@ -1094,7 +1094,9 @@ class AutomaticDismissalApprovalView(ui.View):
             if not user_has_left_server and (user_rank_for_audit == DismissalConstants.UNKNOWN_VALUE or user_unit_for_audit == DismissalConstants.UNKNOWN_VALUE):
                 try:
                     if user_rank_for_audit == DismissalConstants.UNKNOWN_VALUE:
-                        role_rank = get_rank_from_roles_postgresql(target_user)
+                        # Get rank from database cache
+                        user_data = await get_cached_user_info(target_user.id)
+                        role_rank = user_data.get('rank', DismissalConstants.UNKNOWN_VALUE) if user_data else DismissalConstants.UNKNOWN_VALUE
                         if role_rank != DismissalConstants.UNKNOWN_VALUE:
                             user_rank_for_audit = role_rank
                     

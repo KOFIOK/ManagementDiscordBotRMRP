@@ -7,7 +7,7 @@ import discord
 from discord import ui
 import re
 from utils.config_manager import load_config, has_pending_dismissal_report
-from utils.rank_utils import get_rank_from_roles_postgresql
+
 from utils.user_cache import get_cached_user_info
 
 

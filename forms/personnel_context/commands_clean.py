@@ -1324,7 +1324,7 @@ class PositionSelect(ui.Select):
                         'static': personnel_data_raw.get('static', ''),
                         'rank': personnel_data_raw.get('rank_name', 'Неизвестно'),
                         'department': self.dept_name,  # Use the new department name
-                        'position': None,  # No position for department transfer
+                        'position': old_position_name,  # Show previous position before transfer
                         'reason': None
                     }
                     
@@ -1386,12 +1386,97 @@ class PositionSelect(ui.Select):
                     except Exception as e:
                         print(f"⚠️ Error sending position assignment audit notification: {e}")
             
+            # Handle "no_position" selection - check if user had a position before department change
+            elif selected_position_id == "no_position" and old_position_name:
+                print(f"🔄 DEPARTMENT CHANGE: User had position '{old_position_name}' before transfer, logging demotion")
+                
+                # Create history record for position demotion (action_id = 6)
+                moderator_personnel_id = await manager._get_personnel_id(interaction.user.id)
+                if moderator_personnel_id:
+                    changes = {
+                        "rank": {
+                            "new": None,
+                            "previous": None
+                        },
+                        "position": {
+                            "new": None,
+                            "previous": old_position_name
+                        },
+                        "subdivision": {
+                            "new": None,  # No subdivision change in position demotion
+                            "previous": None
+                        }
+                    }
+                    
+                    with get_db_cursor() as cursor:
+                        cursor.execute("""
+                            INSERT INTO history (personnel_id, action_id, performed_by, details, changes, action_date)
+                            VALUES (%s, %s, %s, %s, %s, %s);
+                        """, (
+                            personnel_id,
+                            6,  # action_id for demotion
+                            moderator_personnel_id,
+                            f"Разжалован с должности '{old_position_name}' при переводе в {self.dept_name}",
+                            json.dumps(changes, ensure_ascii=False),
+                            datetime.now(timezone(timedelta(hours=3)))  # Moscow time
+                        ))
+                
+                # Send audit notification for position demotion SECOND
+                try:
+                    # Get personnel data for demotion audit
+                    demotion_personnel_data = await manager.get_personnel_data_for_audit(self.target_user.id)
+                    if demotion_personnel_data:
+                        # Format data for demotion audit
+                        full_name = f"{demotion_personnel_data.get('first_name', '')} {demotion_personnel_data.get('last_name', '')}".strip()
+                        if not full_name:
+                            full_name = "Неизвестно"
+                        
+                        demotion_audit_data = {
+                            'name': full_name,
+                            'static': demotion_personnel_data.get('static', ''),
+                            'rank': demotion_personnel_data.get('rank_name', 'Неизвестно'),
+                            'department': demotion_personnel_data.get('subdivision_name', self.dept_name),
+                            'position': None,  # No position after demotion
+                            'reason': None
+                        }
+                        
+                        await audit_logger.send_personnel_audit(
+                            guild=interaction.guild,
+                            action=await AuditAction.POSITION_DEMOTION(),
+                            target_user=self.target_user,
+                            moderator=interaction.user,
+                            personnel_data=demotion_audit_data
+                        )
+                        print(f"✅ Sent position demotion audit notification for {full_name} (position: {old_position_name})")
+                    else:
+                        print(f"⚠️ Could not get personnel data for position demotion audit")
+                except Exception as e:
+                    print(f"⚠️ Error sending position demotion audit notification: {e}")
+                
+                # Update Discord roles for position removal
+                try:
+                    await position_manager.smart_update_user_position_roles(
+                        interaction.guild,
+                        self.target_user,
+                        None  # Remove position role
+                    )
+                    print(f"✅ Removed position role for {self.target_user.display_name}")
+                except Exception as e:
+                    print(f"⚠️ Error removing position role: {e}")
+            
             # Remove the old department transfer history logging code that's later in the method
             # (it was moved up here)
             
             # Return success message
             action_text = "принят" if self.action_type == "join" else "переведен"
-            position_text = f" на должность **{position_name}**" if position_assigned else ""
+            position_text = ""
+            if position_assigned:
+                position_text = f" на должность **{position_name}**"
+            elif selected_position_id == "no_position" and old_position_name:
+                position_text = f" с разжалованием с должности **{old_position_name}**"
+            elif selected_position_id == "no_position":
+                position_text = " без должности"
+            
             success_message = f"Пользователь **{self.target_user.display_name}** успешно {action_text} в **{self.dept_name}**{position_text}!"
             
             print(f"✅ DEPARTMENT CHANGE: Successfully completed for user {self.target_user.id}")
@@ -2695,9 +2780,9 @@ async def general_edit(interaction: discord.Interaction, user: discord.Member):
     
     # Get current user information from cache and database
     try:
-        # Get data from cache first
-        from utils.user_cache import get_cached_user_info_sync
-        user_data = get_cached_user_info_sync(user.id)
+        # Get data from cache first (async version that can load from DB)
+        from utils.user_cache import get_cached_user_info
+        user_data = await get_cached_user_info(user.id)
         
         # Get rank from database
         current_rank = await get_user_rank_from_db(user.id) or "Не указано"
@@ -2752,8 +2837,20 @@ async def general_edit(interaction: discord.Interaction, user: discord.Member):
         position_name = "Не назначено"
         full_name = user.display_name
     
-    # Format user information
+    # Format user information - get static from user_data or fallback to DB query
     static = user_data.get('static', 'Не указано') if user_data else 'Не указано'
+    
+    # If static is still not found, try to get it directly from database
+    if static == 'Не указано':
+        try:
+            from utils.postgresql_pool import get_db_cursor
+            with get_db_cursor() as cursor:
+                cursor.execute("SELECT static FROM personnel WHERE discord_id = %s AND is_dismissal = false;", (user.id,))
+                static_result = cursor.fetchone()
+                if static_result and static_result['static']:
+                    static = static_result['static']
+        except Exception as static_error:
+            print(f"Warning: Could not get static for {user.id}: {static_error}")
     
     # Send general editing view with current information
     view = GeneralEditView(user)

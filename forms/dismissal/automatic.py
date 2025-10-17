@@ -5,7 +5,7 @@ Handles creation of automatic dismissal reports when members leave the server
 
 import discord
 from utils.config_manager import load_config
-from utils.rank_utils import get_rank_from_roles_postgresql
+from utils.user_cache import get_cached_user_info
 
 
 async def create_automatic_dismissal_report(guild, member, target_role_name="Военнослужащий ВС РФ"):
@@ -85,8 +85,9 @@ async def create_automatic_dismissal_report(guild, member, target_role_name="В�
             else:
                 print(f"⚠️ No ping roles found for user, department remains unknown")
             
-            # Get rank from roles
-            user_rank = get_rank_from_roles_postgresql(member)
+            # Get rank from database cache
+            user_data = await get_cached_user_info(member.id)
+            user_rank = user_data.get('rank', 'Не указано') if user_data else 'Не указано'
           # Create embed for automatic dismissal report
         embed = discord.Embed(
             description=f"## 🚨 Автоматический рапорт на увольнение\n**{member.mention} покинул сервер!**",

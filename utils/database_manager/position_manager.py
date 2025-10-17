@@ -392,7 +392,7 @@ class PositionManager:
                     personnel_id,
                     5,  # Position assignment action_id
                     moderator_personnel_id,
-                    f"Automatic assignment via department application",
+                    None,
                     json.dumps(changes, ensure_ascii=False),
                     datetime.now(timezone(timedelta(hours=3)))  # Moscow time
                 ))

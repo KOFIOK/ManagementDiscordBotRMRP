@@ -309,15 +309,15 @@ class PositionManager:
             print(f"❌ Error getting user position: {e}")
             return None
     
-    async def update_position_subdivision_by_role_name(self, user_discord_id: int, position_role_name: str, 
+    async def update_position_subdivision_by_role_id(self, user_discord_id: int, position_role_id: int, 
                                                      dept_code: str, moderator_discord_id: int) -> bool:
         """
-        Update position_subdivision_id in employees table based on Discord role name.
+        Update position_subdivision_id in employees table based on Discord role ID.
         Used for department applications where positions are assigned automatically.
         
         Args:
             user_discord_id: Discord user ID
-            position_role_name: Name of the Discord role assigned
+            position_role_id: Discord role ID of the position
             dept_code: Department code (УВП, ССО, etc.)
             moderator_discord_id: Discord ID of the moderator who approved
             
@@ -331,7 +331,7 @@ class PositionManager:
             
             # Initialize subdivision mapper to get subdivision_id
             subdivision_mapper = SubdivisionMapper()
-            subdivision_id = subdivision_mapper.get_subdivision_id(dept_code)
+            subdivision_id = await subdivision_mapper.get_subdivision_id(dept_code)
             
             if not subdivision_id:
                 print(f"⚠️ Could not find subdivision_id for department {dept_code}")
@@ -346,23 +346,18 @@ class PositionManager:
                     return False
                 personnel_id = personnel_result['id']
                 
-                # Find position_subdivision_id by matching role name with position name
-                # Try exact match first, then partial match
+                # Find position_subdivision_id by matching Discord role ID
                 cursor.execute("""
-                    SELECT ps.id, p.name as position_name
+                    SELECT ps.id, p.name as position_name, p.role_id
                     FROM position_subdivision ps
                     JOIN positions p ON ps.position_id = p.id
-                    WHERE ps.subdivision_id = %s AND (
-                        p.name = %s OR 
-                        p.name LIKE %s OR
-                        %s LIKE CONCAT('%%', p.name, '%%')
-                    )
+                    WHERE ps.subdivision_id = %s AND p.role_id = %s
                     LIMIT 1;
-                """, (subdivision_id, position_role_name, f"%{position_role_name}%", position_role_name))
+                """, (subdivision_id, position_role_id))
                 
                 ps_result = cursor.fetchone()
                 if not ps_result:
-                    print(f"⚠️ Could not find position_subdivision for role '{position_role_name}' in department {dept_code}")
+                    print(f"⚠️ Could not find position_subdivision for role ID {position_role_id} in department {dept_code}")
                     return False
                 
                 position_subdivision_id = ps_result['id']

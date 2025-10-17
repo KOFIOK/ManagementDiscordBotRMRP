@@ -54,10 +54,10 @@ class RoleAssignmentView(ui.View):
     @discord.ui.button(label="📜 Эта фракция", style=discord.ButtonStyle.green, custom_id="role_military")
     async def military_application(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Open military service application form"""
-        # Check if user has active blacklist entry
-        from utils.audit_logger import audit_logger
+        # Check if user has active blacklist entry (CACHED - should be fast)
+        from utils.database_manager import personnel_manager
         
-        blacklist_info = await audit_logger.check_active_blacklist(interaction.user.id)
+        blacklist_info = await personnel_manager.check_active_blacklist(interaction.user.id)
         
         if blacklist_info:
             # User is blacklisted, deny application

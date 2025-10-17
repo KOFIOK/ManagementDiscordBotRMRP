@@ -6,6 +6,7 @@ import os
 import yaml
 from typing import Dict, Any, Optional
 from pathlib import Path
+import discord
 
 # Message files configuration
 MESSAGES_DIR = 'data/messages'
@@ -74,6 +75,7 @@ def load_guild_messages(guild_id: int) -> Dict[str, Any]:
 def get_message(guild_id: int, key_path: str, default: str = None) -> str:
     """
     Get message by dot-separated key path (e.g., 'dismissal.ui_labels.processing')
+    Supports template references like {templates.permissions.insufficient}
     Returns default if key not found
     """
     messages = load_guild_messages(guild_id)
@@ -85,12 +87,62 @@ def get_message(guild_id: int, key_path: str, default: str = None) -> str:
     try:
         for key in keys:
             current = current[key]
-        return str(current)
+
+        # Check if the result contains template references
+        result = str(current)
+        if '{' in result and '}' in result:
+            # Resolve template references
+            result = _resolve_template_references(result, messages)
+
+        return result
     except (KeyError, TypeError):
         if default:
             return default
         print(f"⚠️ Message key '{key_path}' not found for guild {guild_id}, using fallback")
         return f"[{key_path}]"  # Fallback indicator
+
+def _resolve_template_references(message: str, messages: Dict[str, Any]) -> str:
+    """
+    Resolve template references in message like {templates.permissions.insufficient}
+    Only resolves references that start with known prefixes
+    """
+    import re
+
+    def replace_template(match):
+        template_path = match.group(1)
+
+        # Only resolve references that start with known prefixes
+        known_prefixes = ['templates.', 'global.']
+        if not any(template_path.startswith(prefix) for prefix in known_prefixes):
+            return match.group(0)  # Return original for parameter placeholders
+
+        try:
+            # Always resolve from root of messages
+            keys = template_path.split('.')
+            current = messages
+            for key in keys:
+                current = current[key]
+            return str(current)
+        except (KeyError, TypeError):
+            print(f"⚠️ Template reference '{template_path}' not found")
+            return match.group(0)  # Return original if template not found
+
+    # Replace all {template.path} patterns
+    return re.sub(r'\{([^}]+)\}', replace_template, message)
+
+def get_message_with_params(guild_id: int, key_path: str, default: str = None, **params) -> str:
+    """
+    Get message by key path and format it with parameters
+    Example: get_message_with_params(guild_id, "templates.permissions.insufficient", action="для модерации")
+    """
+    message = get_message(guild_id, key_path, default)
+    if params:
+        try:
+            return message.format(**params)
+        except (KeyError, ValueError) as e:
+            print(f"⚠️ Error formatting message '{key_path}' with params {params}: {e}")
+            return message  # Return unformatted message as fallback
+    return message
 
 def save_guild_messages(guild_id: int, messages: Dict[str, Any]) -> bool:
     """
@@ -121,12 +173,26 @@ def save_guild_messages(guild_id: int, messages: Dict[str, Any]) -> bool:
         print(f"❌ Error saving messages for guild {guild_id}: {e}")
         return False
 
-def clear_messages_cache(guild_id: Optional[int] = None):
-    """Clear messages cache for specific guild or all guilds"""
-    if guild_id:
-        _messages_cache.pop(guild_id, None)
-    else:
-        _messages_cache.clear()
+def get_embed_color(guild_id: int, color_key: str) -> discord.Color:
+    """
+    Get embed color by key, converting HEX string to discord.Color
+    Returns default color if key not found or invalid
+    """
+    import discord
+    
+    color_hex = get_message(guild_id, f"colors.{color_key}", "#808080")  # Default to gray
+    
+    try:
+        # Remove # if present
+        if color_hex.startswith('#'):
+            color_hex = color_hex[1:]
+        
+        # Convert hex to int
+        color_int = int(color_hex, 16)
+        return discord.Color(color_int)
+    except (ValueError, TypeError):
+        print(f"⚠️ Invalid color format for '{color_key}': {color_hex}, using default")
+        return discord.Color.default()
 
 def get_messages_status() -> Dict[str, Any]:
     """Get status information about messages system"""
@@ -145,6 +211,72 @@ def get_messages_status() -> Dict[str, Any]:
         'backup_count': backup_count,
         'cache_size': len(_messages_cache)
     }
+
+def get_warehouse_message(guild_id: int, key_path: str, default: str = None) -> str:
+    """
+    Get warehouse message by dot-separated key path (e.g., 'cart.error_no_permissions')
+    Returns default if key not found
+    """
+    return get_message(guild_id, f"warehouse.{key_path}", default)
+
+def get_department_applications_message(guild_id: int, key_path: str, default: str = None) -> str:
+    """
+    Get department applications message by dot-separated key path (e.g., 'transfer.error_no_permissions')
+    Returns default if key not found
+    """
+    return get_message(guild_id, f"department_applications.{key_path}", default)
+
+def get_leave_requests_message(guild_id: int, key_path: str, default: str = None) -> str:
+    """
+    Get leave requests message by dot-separated key path (e.g., 'approval.error_insufficient_permissions')
+    Returns default if key not found
+    """
+    return get_message(guild_id, f"leave_requests.{key_path}", default)
+
+def get_role_assignment_message(guild_id: int, key_path: str, default: str = None) -> str:
+    """
+    Get role assignment message by dot-separated key path (e.g., 'application.error_banned_from_service')
+    Returns default if key not found
+    """
+    return get_message(guild_id, f"role_assignment.{key_path}", default)
+
+def get_safe_documents_message(guild_id: int, key_path: str, default: str = None) -> str:
+    """
+    Get safe documents message by dot-separated key path (e.g., 'approval.error_not_found')
+    Returns default if key not found
+    """
+    return get_message(guild_id, f"safe_documents.{key_path}", default)
+
+def get_settings_message(guild_id: int, key_path: str, default: str = None) -> str:
+    """
+    Get settings message by dot-separated key path (e.g., 'warehouse.error_channel_not_found')
+    Returns default if key not found
+    """
+    return get_message(guild_id, f"settings.{key_path}", default)
+
+def get_supplies_message(guild_id: int, key_path: str, default: str = None) -> str:
+    """
+    Get supplies message by dot-separated key path (e.g., 'control.error_no_permission')
+    Returns default if key not found
+    """
+    return get_message(guild_id, f"supplies.{key_path}", default)
+
+def get_supplies_color(guild_id: int, key_path: str, default_color: str = "#3498DB") -> discord.Color:
+    """
+    Get supplies embed color by dot-separated key path (e.g., 'colors.main_embed')
+    Returns default discord.Color.blue() if key not found or invalid
+    """
+    try:
+        color_hex = get_message(guild_id, f"supplies.{key_path}", default_color)
+        if isinstance(color_hex, str) and color_hex.startswith('#'):
+            # Convert hex to discord.Color
+            color_hex = color_hex.lstrip('#')
+            return discord.Color(int(color_hex, 16))
+        else:
+            # Fallback to default
+            return discord.Color.blue()
+    except (ValueError, TypeError):
+        return discord.Color.blue()
 
 # Initialize on import
 _ensure_messages_directory()

@@ -6,6 +6,7 @@ import discord
 from discord import ui
 from .modals import MilitaryApplicationModal, CivilianApplicationModal, SupplierApplicationModal
 from utils.config_manager import load_config
+from utils.message_manager import get_role_assignment_message
 
 
 class RoleAssignmentView(ui.View):
@@ -65,7 +66,7 @@ class RoleAssignmentView(ui.View):
             end_date_str = blacklist_info['end_date'].strftime('%d.%m.%Y') if blacklist_info['end_date'] else 'Бессрочно'
             
             await interaction.response.send_message(
-                f"❌ **Вам запрещен приём на службу**\n\n"
+                f"{get_role_assignment_message(interaction.guild.id, 'application.error_banned_from_service', '❌ **Вам запрещен приём на службу**')}\n\n"
                 f"📋 **Вы находитесь в Чёрном списке ВС РФ**\n"
                 f"> **Причина:** {blacklist_info['reason']}\n"
                 f"> **Период:** {start_date_str} - {end_date_str}\n\n"
@@ -85,7 +86,7 @@ class RoleAssignmentView(ui.View):
         role_check = await self._check_existing_supplier_roles(interaction)
         if role_check["has_roles"]:
             await interaction.response.send_message(
-                f"❌ **У вас уже есть доступ к поставкам**\n"
+                f"{get_role_assignment_message(interaction.guild.id, 'application.error_already_has_supplies_access', '❌ **У вас уже есть доступ к поставкам**')}\n"
                 f"> - **Ваши роли:**\n{role_check['role_list']}\n\n"
                 f"> *Подача дополнительной заявки не требуется.*",
                 ephemeral=True

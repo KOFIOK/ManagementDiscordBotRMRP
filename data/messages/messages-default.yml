@@ -1,0 +1,276 @@
+# Шаблон сообщений по умолчанию для Discord-бота
+# Этот файл содержит все сообщения по умолчанию, используемые ботом.
+# Сообщения, специфичные для гильдии, можно переопределить в файле messages-{guild_id}.yml
+
+# Глобальные шаблоны сообщений с параметрами
+templates:
+  permissions:
+    insufficient: "❌ У вас нет прав {action}"
+    hierarchy: "❌ Нарушение иерархии: {reason}"
+    no_access: "❌ Доступ запрещен: {reason}"
+    general: "❌ У вас нет прав для выполнения этой команды"
+
+  errors:
+    general: "❌ Произошла ошибка {context}"
+    processing: "❌ Ошибка обработки {object}"
+    validation: "❌ Ошибка валидации: {details}"
+    system: "❌ Системная ошибка: {code}"
+    not_found: "❌ {entity} не найден{details}"
+
+  status:
+    processing: "⏳ Обрабатывается..."
+    approved: "✅ Одобрено"
+    rejected: "❌ Отказано"
+    completed: "✅ {action} выполнено успешно"
+
+  entities:
+    user: "пользователь"
+    channel: "канал"
+    request: "запрос"
+    role: "роль"
+    application: "заявка"
+    timer: "таймер"
+
+# Устаревшие системные сообщения (будут перенесены в шаблоны)
+dismissal:
+  ui_labels:
+    processing: "{templates.status.processing}"
+    approved: "{templates.status.approved}"
+    rejected: "{templates.status.rejected}"
+    reject_button: "{templates.status.rejected}"
+
+  error_messages:
+    no_permission_approval: "{templates.permissions.insufficient} для одобрения рапортов на увольнение. Только модераторы могут выполнять это действие."
+    no_permission_rejection: "{templates.permissions.insufficient} для отказа рапортов на увольнение. Только модераторы могут выполнять это действие."
+    authorization_error: "{templates.errors.system} проверки авторизации модератора."
+    general_error: "{templates.errors.general} при обработке рапорта. Пожалуйста, обратитесь к администратору."
+    processing_error_approval: "{templates.errors.processing} одобрения заявки."
+    processing_error_rejection: "{templates.errors.processing} отказа."
+    auth_data_error: "{templates.errors.processing} данных авторизации."
+    dismissal_processing_error: "{templates.errors.processing} увольнения."
+
+  success_messages:
+    static_received: "✅ Статик получен, продолжаем обработку..."
+
+  form_fields:
+    name: "Имя Фамилия"
+    static: "Статик"
+    department: "Подразделение"
+    rank: "Воинское звание"
+    reason: "Причина увольнения"
+
+  indicators:
+    auto_report: "🚨 Автоматический рапорт на увольнение"
+    static_input_required: "Требуется ввод"
+
+  self_moderation_errors:
+    self_approval: "{templates.permissions.no_access} одобрить свой собственный рапорт на увольнение."
+    self_rejection: "{templates.permissions.no_access} отклонить свой собственный рапорт на увольнение."
+    hierarchy_approval: "{templates.permissions.hierarchy} Вы не можете одобрить рапорт модератора того же или более высокого уровня."
+    hierarchy_rejection: "{templates.permissions.hierarchy} Вы не можете отклонить рапорт модератора того же или более высокого уровня."
+    insufficient_permissions_approval: "{templates.permissions.insufficient} для одобрения этого рапорта."
+    insufficient_permissions_rejection: "{templates.permissions.insufficient} для отклонения этого рапорта."
+
+  audit_patterns:
+    sender_prefix: "Отправлено:"
+    name_static_field: "Имя Фамилия | 6 цифр статика"
+
+  defaults:
+    unknown_value: "Неизвестно"
+
+# Глобальные сообщения, используемые в боте
+global:
+  errors:
+    general: "{templates.errors.general} Пожалуйста, обратитесь к администратору."
+    permission_denied: "{templates.permissions.general}"
+    invalid_input: "{templates.errors.validation} Неверный формат данных."
+
+  success:
+    operation_completed: "{templates.status.completed}"
+
+# Встроенные цвета (HEX-коды)
+colors:
+  success: "#00ff00"      # Green
+  error: "#ff0000"        # Red
+  warning: "#ffa500"      # Orange
+  info: "#0000ff"         # Blue
+  neutral: "#808080"      # Gray
+  special: "#ffd700"      # Gold
+
+# Плейсхолдеры для будущих разделов
+personnel_context:
+  recruitment:
+    modal_title: "Принятие на службу"
+    name_label: "Имя Фамилия"
+    name_placeholder: "Например: Олег Дубов"
+    static_label: "Статик"
+    static_placeholder: "123-456 (допускается 5-6 цифр)"
+    success: "{templates.status.completed}"
+    error_invalid_static: "{templates.errors.validation} Статик должен содержать 5 или 6 цифр."
+    error_no_permissions: "{templates.permissions.general}"
+    error_general: "{templates.errors.general} при обработке принятия на службу."
+    error_blacklisted: "{templates.permissions.no_access} этому пользователю запрещен приём на службу."
+  dismissal:
+    error_no_permissions: "{templates.permissions.general} Требуются права модератора или администратора."
+    error_hierarchy: "{templates.permissions.hierarchy} Вы не можете выполнять действия над этим пользователем."
+    error_general: "{templates.errors.general} при обработке увольнения."
+warehouse:
+  cart:
+    error_no_permissions: "{templates.permissions.general}"
+    error_cooldown_active: "{templates.errors.system} Кулдаун активен! Следующий запрос:"
+    error_insufficient_permissions: "{templates.permissions.insufficient} для выполнения действия."
+    error_invalid_weapon: "{templates.errors.validation} Вам недоступен данный тип оружия. Доступно:"
+    error_weapon_limit: "{templates.errors.validation} Превышен лимит оружия. В корзине уже:"
+    error_armor_limit: "{templates.errors.validation} Превышен лимит бронежилетов. В корзине уже:"
+    error_user_not_found: "{templates.errors.not_found} в БД"
+    success_request_submitted: "{templates.status.completed}"
+    status_processing: "{templates.status.processing}"
+    status_approved: "{templates.status.approved}"
+    status_rejected: "{templates.status.rejected}"
+  audit:
+    error_no_permissions: "{templates.permissions.general}"
+    error_general: "{templates.errors.general}"
+  status:
+    error_no_permissions: "{templates.permissions.general}"
+    error_request_not_found: "{templates.errors.not_found}"
+    error_general: "{templates.errors.general}"
+
+department_applications:
+  transfer:
+    error_not_transfer_application: "{templates.errors.validation} Эта кнопка доступна только для заявлений на перевод."
+    error_no_permissions: "{templates.permissions.no_access} выдачи разрешения на перевод. Это действие доступно только модераторам."
+    error_already_permitted: "{templates.errors.validation} Разрешение уже было дано для этого перевода."
+    success_permission_granted: "{templates.status.completed} Разрешение на перевод выдано! Ожидаем одобрения руководства нового подразделения."
+    error_general: "{templates.errors.general} при выдаче разрешения."
+    error_user_not_found: "{templates.errors.not_found} Пользователь не найден на сервере."
+    success_transfer_completed: "{templates.status.completed} Перевод пользователя выполнен! Роли подразделения и должности назначены автоматически."
+    success_transfer_approved: "{templates.status.approved} Перевод одобрен!"
+    error_transfer_failed: "{templates.errors.processing} выполнения перевода."
+
+leave_requests:
+  approval:
+    error_insufficient_permissions: "{templates.permissions.insufficient}"
+    error_already_submitted: "{templates.errors.validation} Заявка уже подана"
+    error_not_found: "{templates.errors.not_found}"
+    error_already_processed: "{templates.errors.validation} Заявка уже обработана"
+    error_cannot_review_own: "{templates.permissions.no_access} рассматривать свою заявку"
+    success_approved: "{templates.status.approved}"
+    error_general: "{templates.errors.general}"
+    error_processing: "{templates.errors.processing}"
+  rejection:
+    error_insufficient_permissions: "{templates.permissions.insufficient}"
+    error_not_found: "{templates.errors.not_found}"
+    error_already_processed: "{templates.errors.validation} Заявка уже обработана"
+    error_cannot_review_own: "{templates.permissions.no_access} рассматривать свою заявку"
+    error_processing: "{templates.errors.processing}"
+  deletion:
+    error_not_found: "{templates.errors.not_found}"
+    error_insufficient_permissions: "{templates.permissions.insufficient}"
+    error_cannot_delete: "{templates.permissions.no_access} удалить заявку"
+    error_deletion_failed: "{templates.errors.processing} удаления"
+    error_processing: "{templates.errors.processing}"
+
+role_assignment:
+  application:
+    error_banned_from_service: "{templates.permissions.no_access} приём на службу"
+    error_already_has_supplies_access: "{templates.errors.validation} У вас уже есть доступ к поставкам"
+    error_pending_application: "{templates.errors.validation} У вас уже есть заявка на получение роли, которая находится на рассмотрении."
+    error_invalid_static_format: "{templates.errors.validation} Статик должен содержать 5 или 6 цифр."
+    error_invalid_proof_link: "{templates.errors.validation} укажите корректную ссылку в поле доказательств."
+    error_moderation_channel_not_configured: "{templates.errors.not_found} Канал модерации не настроен. Обратитесь к администратору."
+    error_moderation_channel_not_found: "{templates.errors.not_found} Канал модерации не найден. Обратитесь к администратору."
+    success_application_submitted: "{templates.status.completed} Ваша заявка отправлена на рассмотрение военнослужащим. Ожидайте решения."
+    error_submission_failed: "{templates.errors.general} при отправке заявки. Попробуйте позже."
+
+safe_documents:
+  approval:
+    error_general: "{templates.errors.general} при открытии формы"
+    error_not_found: "{templates.errors.not_found} Не удалось получить данные заявки!"
+    error_approval_failed: "{templates.errors.processing} одобрения заявки"
+    error_rejection_failed: "{templates.errors.processing} отклонения заявки"
+    error_no_edit_permissions: "{templates.permissions.no_access} редактирования этой заявки!"
+    error_edit_failed: "{templates.errors.processing} редактирования заявки"
+    error_only_moderators_can_edit_approved: "{templates.permissions.no_access} Только модераторы могут редактировать одобренные заявки!"
+  modal:
+    error_processing: "{templates.errors.processing} формы"
+    error_rejection: "{templates.errors.processing} отклонения заявки"
+    error_edit: "{templates.errors.processing} редактирования заявки"
+  manager:
+    error_channel_not_configured: "{templates.errors.not_found} Канал для безопасных документов не настроен!"
+    error_channel_not_found: "{templates.errors.not_found} Канал для безопасных документов не найден!"
+
+settings:
+  warehouse:
+    error_channel_not_found: "{templates.errors.not_found} Канал (ID: {0})"
+    error_channel_not_configured: "{templates.errors.not_found} Не настроен"
+    success_request_channel_set: "{templates.status.completed} Канал запросов настроен: {0}\n📌 Закрепленное сообщение склада добавлено!"
+    success_request_channel_set_error: "{templates.status.completed} Канал запросов настроен: {0}\n❗ Ошибка при добавлении закрепленного сообщения: {1}"
+    success_submission_channel_set: "{templates.status.completed} Канал отправки заявок настроен: {0}\n📤 Все заявки склада будут отправляться в этот канал!"
+    success_audit_channel_set: "{templates.status.completed} Канал аудита настроен: {0}"
+    success_channel_set: "{templates.status.completed} Канал настроен: {0}"
+    error_general: "{templates.errors.general}: {0}"
+    error_invalid_number: "{templates.errors.validation} Введите корректное число (например: 6 или 0.5)!"
+    error_cooldown_range: "{templates.errors.validation} Кулдаун должен быть от 0 до 168 часов!"
+    success_cooldown_set: "{templates.status.completed} Кулдаун установлен: {0} часов"
+    error_cooldown_set: "{templates.errors.processing} установки кулдауна: {0}"
+    success_limits_updated: "{templates.status.completed} Лимиты по {0} {1}"
+  general:
+    error_ping_not_configured: "{templates.errors.not_found} Настройки пингов не настроены"
+    error_ping_not_found: "{templates.errors.not_found} Настройки пингов не найдены"
+
+supplies:
+  colors:
+    main_embed: "#00FF00"
+    timer_embed: "#3498DB"
+    notification_embed: "#3498DB"
+
+  control:
+    error_no_permission: "{templates.permissions.general}"
+    error_timer_already_active: "⏰ {emoji} **{object_name}** уже находится в процессе поставки.\n⏳ Осталось времени: **{remaining_time}**"
+    success_timer_started: "✅ {emoji} **{object_name}** - поставка запущена!\n⏰ Длительность: **{time_display}**\n👤 Запустил: {user_mention}"
+    error_timer_start_failed: "{templates.errors.processing} таймера для {object_name}"
+    error_general_processing: "{templates.errors.general} при обработке запроса"
+    timer_ready_status: "🟢 Все объекты готовы к поставке"
+    timer_active_field: "⏰ Осталось: **{remaining}**\n👤 Запустил: {started_by}"
+    main_embed_title: "🚚 Управление поставками"
+    main_embed_description: "**Военные объекты для поставки материалов**\n\n⚠️ *Доступно только от Капитана*"
+    main_embed_footer: "Нажмите кнопку для запуска таймера"
+    timer_embed_title: "📊 Активные поставки"
+    error_send_control_message: "{templates.errors.processing} сообщения управления поставками: {error}"
+
+  subscription:
+    error_role_not_configured: "{templates.errors.not_found} Роль для подписки на уведомления не настроена. Обратитесь к администратору."
+    error_role_not_found: "{templates.errors.not_found} Роль для подписки не найдена на сервере. Обратитесь к администратору."
+    info_already_subscribed: "ℹ️ У вас уже включены уведомления о поставках!"
+    success_subscribed: "✅ Уведомления о поставках **включены**!\n🔔 Теперь вы будете получать уведомления о готовности военных объектов."
+    info_already_unsubscribed: "ℹ️ У вас уже выключены уведомления о поставках!"
+    success_unsubscribed: "✅ Уведомления о поставках **выключены**.\n🔕 Вы больше не будете получать уведомления о готовности объектов."
+    error_subscription_processing: "{templates.errors.processing} подписки. Попробуйте позже."
+    embed_title: "🔔 Подписка на уведомления о поставках"
+    embed_description: "**Управление уведомлениями о военных поставках**\n\n🔔 **Включить** - Получать уведомления о готовности объектов\n🔕 **Выключить** - Отключить все уведомления\n\nℹ️ Уведомления приходят когда военные объекты готовы к новой поставке материалов."
+    embed_footer: "Выберите нужное действие"
+    error_send_subscription_message: "{templates.errors.processing} сообщения подписки на поставки: {error}"
+
+  manager:
+    error_load_data: "{templates.errors.processing} загрузки данных поставок: {error}"
+    error_save_data: "{templates.errors.processing} сохранения данных поставок: {error}"
+    error_unknown_object: "{templates.errors.not_found} Неизвестный объект: {object_key}"
+    success_timer_started: "{templates.status.completed} Таймер запущен для {object_key} на {duration_str}"
+    error_timer_start: "{templates.errors.processing} запуска таймера для {object_key}: {error}"
+    error_timer_check: "{templates.errors.processing} проверки таймера {object_key}: {error}"
+    error_get_remaining_time: "{templates.errors.processing} получения оставшегося времени для {object_key}: {error}"
+    error_get_active_timers: "{templates.errors.processing} получения активных таймеров: {error}"
+    success_timer_cancelled: "{templates.status.completed} Таймер для {object_key} отменен и сообщения удалены"
+    error_timer_cancel: "{templates.errors.processing} отмены таймера с очисткой для {object_key}: {error}"
+    error_get_timer_info: "{templates.errors.processing} получения информации о таймере {object_key}: {error}"
+    error_get_expired_timers: "{templates.errors.processing} получения истекших таймеров: {error}"
+    success_message_saved: "{templates.status.completed} Сохранен ID сообщения {message_type} для {object_key}: {message_id}"
+    error_save_message_id: "{templates.errors.processing} сохранения ID сообщения: {error}"
+
+  notifications:
+    warning_channel_not_configured: "⚠️ Канал уведомлений не настроен"
+    error_channel_not_found: "{templates.errors.not_found} Канал уведомлений: {channel_id}"
+    notification_footer: "Уведомление будет отправлено за несколько минут до конца таймера"
+    success_notification_sent: "{templates.status.completed} Уведомление о начале поставки отправлено для {object_name}"
+    error_send_notification: "{templates.errors.processing} отправки уведомления о начале поставки: {error}"
+    error_notify_scheduler: "{templates.errors.processing} уведомления планировщика: {error}"

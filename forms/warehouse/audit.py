@@ -8,6 +8,7 @@
 
 import discord
 from datetime import datetime
+from utils.message_manager import get_warehouse_message
 from typing import Optional
 from utils.config_manager import load_config
 
@@ -32,8 +33,9 @@ class WarehouseAuditPinMessageView(discord.ui.View):
             from utils.config_manager import is_moderator_or_admin, load_config
             config = load_config()
             if not is_moderator_or_admin(interaction.user, config):
+                error_msg = get_warehouse_message(interaction.guild.id, "audit.error_no_permissions", "❌ У вас нет прав для выполнения этой команды.")
                 await interaction.response.send_message(
-                    "❌ У вас нет прав для создания записей аудита!\n"
+                    f"{error_msg}\n"
                     "Доступно только модераторам и администраторам.",
                     ephemeral=True
                 )
@@ -45,8 +47,9 @@ class WarehouseAuditPinMessageView(discord.ui.View):
             
         except Exception as e:
             print(f"Ошибка при создании аудита выдачи: {e}")
+            error_msg = get_warehouse_message(interaction.guild.id, "audit.error_general", "❌ Произошла ошибка при обработке запроса.")
             await interaction.response.send_message(
-                "❌ Произошла ошибка при открытии формы аудита.", ephemeral=True
+                error_msg, ephemeral=True
             )
     
     @discord.ui.button(
@@ -61,8 +64,9 @@ class WarehouseAuditPinMessageView(discord.ui.View):
             from utils.config_manager import is_moderator_or_admin, load_config
             config = load_config()
             if not is_moderator_or_admin(interaction.user, config):
+                error_msg = get_warehouse_message(interaction.guild.id, "audit.error_no_permissions", "❌ У вас нет прав для выполнения этой команды.")
                 await interaction.response.send_message(
-                    "❌ У вас нет прав для создания записей аудита!\n"
+                    f"{error_msg}\n"
                     "Доступно только модераторам и администраторам.",
                     ephemeral=True
                 )
@@ -74,8 +78,9 @@ class WarehouseAuditPinMessageView(discord.ui.View):
             
         except Exception as e:
             print(f"Ошибка при создании аудита чистки: {e}")
+            error_msg = get_warehouse_message(interaction.guild.id, "audit.error_general", "❌ Произошла ошибка при обработке запроса.")
             await interaction.response.send_message(
-                "❌ Произошла ошибка при открытии формы аудита.", ephemeral=True
+                error_msg, ephemeral=True
             )
 
 

@@ -8,6 +8,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 
 from utils.config_manager import load_config
+from utils.message_manager import get_department_applications_message
 from utils.ping_manager import ping_manager
 from utils.nickname_manager import nickname_manager
 from utils import get_safe_personnel_name
@@ -286,8 +287,9 @@ class DepartmentApplicationView(ui.View):
             
             # Check if this is a transfer application first
             if self.application_data.get('application_type') != 'transfer':
+                error_msg = get_department_applications_message(interaction.guild.id, "transfer.error_not_transfer_application", "❌ Эта кнопка доступна только для заявлений на перевод.")
                 await interaction.response.send_message(
-                    "❌ Эта кнопка доступна только для заявлений на перевод.",
+                    error_msg,
                     ephemeral=True
                 )
                 return
@@ -310,8 +312,9 @@ class DepartmentApplicationView(ui.View):
             
             # If not admin and not moderator, show basic access denied message
             if not (is_admin or is_moderator):
+                error_msg = get_department_applications_message(interaction.guild.id, "transfer.error_no_permissions", "❌ У вас нет прав для выдачи разрешения на перевод. Это действие доступно только модераторам.")
                 await interaction.response.send_message(
-                    "❌ У вас нет прав для выдачи разрешения на перевод. Это действие доступно только модераторам.",
+                    error_msg,
                     ephemeral=True
                 )
                 return
@@ -327,8 +330,9 @@ class DepartmentApplicationView(ui.View):
             
             # Check if permission already given
             if current_state['permission_given']:
+                error_msg = get_department_applications_message(interaction.guild.id, "transfer.error_already_permitted", "❌ Разрешение уже было дано для этого перевода.")
                 await interaction.response.send_message(
-                    "❌ Разрешение уже было дано для этого перевода.",
+                    error_msg,
                     ephemeral=True
                 )
                 return
@@ -354,14 +358,14 @@ class DepartmentApplicationView(ui.View):
                 
                 # Send feedback message
                 await interaction.followup.send(
-                    "✅ Разрешение на перевод выдано! Ожидаем одобрения руководства нового подразделения.",
+                    get_department_applications_message(interaction.guild.id, "transfer.success_permission_granted", "✅ Разрешение на перевод выдано! Ожидаем одобрения руководства нового подразделения."),
                     ephemeral=True
                 )
             
         except Exception as e:
             logger.error(f"Error giving permission for department transfer: {e}")
             await interaction.followup.send(
-                "❌ Произошла ошибка при выдаче разрешения.",
+                get_department_applications_message(interaction.guild.id, "transfer.error_general", "❌ Произошла ошибка при выдаче разрешения."),
                 ephemeral=True
             )
     
@@ -401,7 +405,7 @@ class DepartmentApplicationView(ui.View):
                 restored_view = self._create_transfer_buttons_view(state)
                 await interaction.edit_original_response(embed=embed, view=restored_view)
                 await interaction.followup.send(
-                    "❌ Пользователь не найден на сервере.",
+                    get_department_applications_message(interaction.guild.id, "transfer.error_user_not_found", "❌ Пользователь не найден на сервере."),
                     ephemeral=True
                 )
                 return
@@ -470,14 +474,14 @@ class DepartmentApplicationView(ui.View):
                 
                 # Send success message
                 await interaction.followup.send(
-                    f"✅ Перевод пользователя {target_user.mention} выполнен! Роли подразделения и должности назначены автоматически.",
+                    get_department_applications_message(interaction.guild.id, "transfer.success_transfer_completed", "✅ Перевод пользователя выполнен! Роли подразделения и должности назначены автоматически.").replace("пользователя", f"пользователя {target_user.mention}"),
                     ephemeral=True
                 )
                 
                 # Send DM to user
                 try:
                     dm_embed = discord.Embed(
-                        title="✅ Перевод одобрен!",
+                        title=get_department_applications_message(interaction.guild.id, "transfer.success_transfer_approved", "✅ Перевод одобрен!"),
                         description=f"Ваш перевод в подразделение **{self.application_data['department_code']}** был одобрен и выполнен!",
                         color=discord.Color.green(),
                         timestamp=datetime.now(timezone(timedelta(hours=3)))
@@ -493,7 +497,7 @@ class DepartmentApplicationView(ui.View):
         except Exception as e:
             logger.error(f"Error processing final transfer approval: {e}")
             await interaction.followup.send(
-                "❌ Произошла ошибка при выполнении перевода.",
+                get_department_applications_message(interaction.guild.id, "transfer.error_transfer_failed", "❌ Произошла ошибка при выполнении перевода."),
                 ephemeral=True
             )
     

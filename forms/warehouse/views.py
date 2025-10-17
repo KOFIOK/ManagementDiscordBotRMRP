@@ -8,6 +8,7 @@ import discord
 from datetime import datetime, timezone, timedelta
 from typing import Dict
 from utils.warehouse_manager import WarehouseManager
+from utils.message_manager import get_warehouse_message
 from .cart import WarehouseRequestCart, clear_user_cart_safe, get_user_cart_message, user_cart_messages
 
 

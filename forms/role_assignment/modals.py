@@ -6,6 +6,7 @@ import discord
 import re
 from discord import ui
 from utils.config_manager import load_config, has_pending_role_application
+from utils.message_manager import get_role_assignment_message
 
 
 class MilitaryApplicationModal(ui.Modal):
@@ -44,7 +45,7 @@ class MilitaryApplicationModal(ui.Modal):
             has_pending = await has_pending_role_application(interaction.client, interaction.user.id, role_assignment_channel_id)
             if has_pending:
                 await interaction.response.send_message(
-                    "❌ **У вас уже есть заявка на получение роли, которая находится на рассмотрении.**\n\n"
+                    f"{get_role_assignment_message(interaction.guild.id, 'application.error_pending_application', '❌ **У вас уже есть заявка на получение роли, которая находится на рассмотрении.**')}\n\n"
                     "Пожалуйста, дождитесь решения по текущей заявке, прежде чем подавать новую.\n"
                     "Это поможет избежать путаницы и ускорить обработку вашего запроса.",
                     ephemeral=True
@@ -56,7 +57,7 @@ class MilitaryApplicationModal(ui.Modal):
         formatted_static = self._format_static(static)
         if not formatted_static:
             await interaction.response.send_message(
-                "❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.\n"
+                f"{get_role_assignment_message(interaction.guild.id, 'application.error_invalid_static_format', '❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.')}\n"
                 "Примеры: 123456, 123-456, 12345, 12-345, 123 456",
                 ephemeral=True
             )
@@ -154,14 +155,14 @@ class MilitaryApplicationModal(ui.Modal):
             await moderation_channel.send(content=ping_content, embed=embed, view=approval_view)
             
             await interaction.response.send_message(
-                "✅ Ваша заявка отправлена на рассмотрение военнослужащим. Ожидайте решения.",
+                get_role_assignment_message(interaction.guild.id, "application.success_application_submitted", "✅ Ваша заявка отправлена на рассмотрение военнослужащим. Ожидайте решения."),
                 ephemeral=True
             )
             
         except Exception as e:
             print(f"Error sending military application: {e}")
             await interaction.response.send_message(
-                "❌ Произошла ошибка при отправке заявки. Попробуйте позже.",
+                get_role_assignment_message(interaction.guild.id, "application.error_submission_failed", "❌ Произошла ошибка при отправке заявки. Попробуйте позже."),
                 ephemeral=True
             )
 
@@ -227,7 +228,7 @@ class CivilianApplicationModal(ui.Modal):
             has_pending = await has_pending_role_application(interaction.client, interaction.user.id, role_assignment_channel_id)
             if has_pending:
                 await interaction.response.send_message(
-                    "❌ **У вас уже есть заявка на получение роли, которая находится на рассмотрении.**\n\n"
+                    f"{get_role_assignment_message(interaction.guild.id, 'application.error_pending_application', '❌ **У вас уже есть заявка на получение роли, которая находится на рассмотрении.**')}\n\n"
                     "Пожалуйста, дождитесь решения по текущей заявке, прежде чем подавать новую.\n"
                     "Это поможет избежать путаницы и ускорить обработку вашего запроса.",
                     ephemeral=True
@@ -239,7 +240,7 @@ class CivilianApplicationModal(ui.Modal):
         formatted_static = self._format_static(static)
         if not formatted_static:
             await interaction.response.send_message(
-                "❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.\n"
+                f"{get_role_assignment_message(interaction.guild.id, 'application.error_invalid_static_format', '❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.')}\n"
                 "Примеры: 123456, 123-456, 12345, 12-345, 123 456",
                 ephemeral=True
             )
@@ -249,7 +250,7 @@ class CivilianApplicationModal(ui.Modal):
         proof = self.proof_input.value.strip()
         if not self._validate_url(proof):
             await interaction.response.send_message(
-                "❌ Пожалуйста, укажите корректную ссылку в поле доказательств.",
+                get_role_assignment_message(interaction.guild.id, "application.error_invalid_proof_link", "❌ Пожалуйста, укажите корректную ссылку в поле доказательств."),
                 ephemeral=True
             )
             return
@@ -425,7 +426,7 @@ class SupplierApplicationModal(ui.Modal):
         proof = self.proof_input.value.strip()
         if not self._validate_url(proof):
             await interaction.response.send_message(
-                "❌ Пожалуйста, укажите корректную ссылку в поле доказательств.",
+                get_role_assignment_message(interaction.guild.id, "application.error_invalid_proof_link", "❌ Пожалуйста, укажите корректную ссылку в поле доказательств."),
                 ephemeral=True
             )
             return

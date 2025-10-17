@@ -168,7 +168,7 @@ class WarehouseRequestModal(discord.ui.Modal):
             category_key = self._get_category_key(self.category)
             
             is_valid, corrected_quantity, validation_msg = self.warehouse_manager.validate_item_request(
-                category_key, self.item_name, quantity, position, rank, cart.items
+                interaction.guild.id, category_key, self.item_name, quantity, position, rank, cart.items
             )
             
             validation_message = ""
@@ -406,7 +406,7 @@ class WarehouseQuantityModal(discord.ui.Modal):
                   # Валидация количества с учетом ограничений пользователя
             category_key = self._get_category_key(self.category)
             is_valid, corrected_quantity, validation_msg = self.warehouse_manager.validate_item_request(
-                category_key, self.item_name, quantity, position, rank, cart.items
+                interaction.guild.id, category_key, self.item_name, quantity, position, rank, cart.items
             )
             
             validation_message = ""
@@ -1077,7 +1077,7 @@ class WarehouseCustomItemModal(discord.ui.Modal):
             # Валидация с учетом корзины
             category_key = self._get_category_key(self.category)
             is_valid, corrected_quantity, validation_msg = self.warehouse_manager.validate_item_request(
-                category_key, item_name, quantity, position, rank, cart.items
+                interaction.guild.id, category_key, item_name, quantity, position, rank, cart.items
             )
             
             validation_message = ""

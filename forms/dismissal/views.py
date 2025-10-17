@@ -14,7 +14,7 @@ import re
 import traceback
 from datetime import datetime
 from utils.config_manager import load_config, is_moderator_or_admin, can_moderate_user, get_dismissal_message_link
-from utils.message_manager import get_message
+from utils.message_manager import get_message, get_embed_color
 from utils.user_cache import get_cached_user_info
 from utils.nickname_manager import nickname_manager
 
@@ -24,6 +24,10 @@ from utils.nickname_manager import nickname_manager
 def get_dismissal_message(guild_id: int, key: str) -> str:
     """Get dismissal message for specific guild"""
     return get_message(guild_id, f"dismissal.{key}")
+
+def get_dismissal_embed_color(guild_id: int, color_key: str) -> discord.Color:
+    """Get dismissal embed color for specific guild"""
+    return get_embed_color(guild_id, color_key)
 
 
 class ProcessingApplicationView(discord.ui.View):
@@ -164,7 +168,7 @@ class SimplifiedDismissalApprovalView(ui.View):
             
             if success:
                 # Update embed to show approval
-                embed.color = discord.Color.green()
+                embed.color = get_dismissal_embed_color(interaction.guild.id, 'success')
                 embed.add_field(
                     name="Обработано",
                     value=f"Сотрудник: {interaction.user.mention}\nВремя: {discord.utils.format_dt(discord.utils.utcnow(), 'F')}",
@@ -260,7 +264,7 @@ class SimplifiedDismissalApprovalView(ui.View):
         try:
             # Update embed to show rejection
             embed = interaction.message.embeds[0]
-            embed.color = discord.Color.red()
+            embed.color = get_dismissal_embed_color(interaction.guild.id, 'error')
             
             # Формируем поле с отказом в едином стиле
             moderator_text = "🤖 Система" if is_automatic else interaction.user.mention
@@ -606,7 +610,7 @@ class AutomaticDismissalApprovalView(ui.View):
                 embed = discord.Embed(
                     title="❌ Недостаточно прав",
                     description="У вас нет прав для рассмотрения автоматических рапортов на увольнение.",
-                    color=discord.Color.red()
+                    color=get_dismissal_embed_color(interaction.guild.id, 'error')
                 )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
@@ -704,7 +708,7 @@ class AutomaticDismissalApprovalView(ui.View):
                 embed = discord.Embed(
                     title="❌ Недостаточно прав",
                     description="У вас нет прав для рассмотрения автоматических рапортов на увольнение.",
-                    color=discord.Color.red()
+                    color=get_dismissal_embed_color(interaction.guild.id, 'error')
                 )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
@@ -755,7 +759,7 @@ class AutomaticDismissalApprovalView(ui.View):
                 embed = discord.Embed(
                     title="❌ Недостаточно прав",
                     description="У вас нет прав для редактирования автоматических рапортов на увольнение.",
-                    color=discord.Color.red()
+                    color=get_dismissal_embed_color(interaction.guild.id, 'error')
                 )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
@@ -810,7 +814,7 @@ class AutomaticDismissalApprovalView(ui.View):
                     f"**Причина:** {current_data.get('reason', 'Неизвестно')}\n\n"
                     f"⚠️ **Это действие нельзя отменить!**"
                 ),
-                color=discord.Color.orange()
+                color=get_dismissal_embed_color(interaction.guild.id, 'warning')
             )
             
             # Add dismissal footer with link to submit new applications
@@ -1252,7 +1256,7 @@ class AutomaticDismissalApprovalView(ui.View):
             # Update embed to show approval
             print(f"🎨 Updating UI to show approval status...")
             embed = interaction.message.embeds[0]
-            embed.color = discord.Color.green()
+            embed.color = get_dismissal_embed_color(interaction.guild.id, 'success')
             
             # Add approval status field
             embed.add_field(
@@ -1299,7 +1303,7 @@ class AutomaticDismissalApprovalView(ui.View):
             
             # Update embed to show rejection
             embed = original_message.embeds[0]
-            embed.color = discord.Color.red()
+            embed.color = get_dismissal_embed_color(interaction.guild.id, 'error')
             
             # Add rejection status field
             embed.add_field(

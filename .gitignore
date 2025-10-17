@@ -94,8 +94,11 @@ tmp/
 *.sqlite3
 
 # Config backups
-config.json
-data/
+data/config.json
+data/backups/
+data/exports/
+data/leave_requests.json
+data/supplies_timers.json
 
 # Other
 tests/

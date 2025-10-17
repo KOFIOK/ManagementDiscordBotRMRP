@@ -2,6 +2,7 @@ import discord
 from datetime import datetime
 
 from utils.config_manager import load_config
+from utils.message_manager import get_safe_documents_message
 
 
 class SafeDocumentsManager:
@@ -37,7 +38,7 @@ class SafeDocumentsManager:
             channel_id = self.config.get('safe_documents_channel')
             if not channel_id:
                 await interaction.response.send_message(
-                    "❌ Канал для безопасных документов не настроен!",
+                    get_safe_documents_message(interaction.guild.id, "manager.error_channel_not_configured", "❌ Канал для безопасных документов не настроен!"),
                     ephemeral=True
                 )
                 return
@@ -45,7 +46,7 @@ class SafeDocumentsManager:
             channel = interaction.guild.get_channel(channel_id)
             if not channel:
                 await interaction.response.send_message(
-                    "❌ Канал для безопасных документов не найден!",
+                    get_safe_documents_message(interaction.guild.id, "manager.error_channel_not_found", "❌ Канал для безопасных документов не найден!"),
                     ephemeral=True
                 )
                 return

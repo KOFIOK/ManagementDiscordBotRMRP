@@ -12,10 +12,16 @@ from utils.config_manager import load_config, is_moderator_or_admin, is_administ
 from utils.database_manager import PersonnelManager
 from utils.database_manager.position_manager import position_manager
 from utils.nickname_manager import nickname_manager
+from utils.message_manager import get_message
 from discord import ui
 import re
 
 from utils.postgresql_pool import get_db_cursor
+
+
+def get_personnel_message(guild_id: int, key: str) -> str:
+    """Get personnel context message for specific guild"""
+    return get_message(guild_id, f"personnel_context.{key}")
 
 
 async def get_user_rank_from_db(user_discord_id: int) -> str:
@@ -69,13 +75,14 @@ def handle_context_errors(func):
 class RecruitmentModal(ui.Modal, title="Принятие на службу"):
     """Modal for recruiting new personnel using PersonnelManager"""
     
-    def __init__(self, target_user: discord.Member):
-        super().__init__()
+    def __init__(self, target_user: discord.Member, guild_id: int):
+        super().__init__(title=get_personnel_message(guild_id, 'recruitment.modal_title'))
         self.target_user = target_user
+        self.guild_id = guild_id
         
         self.name_input = ui.TextInput(
-            label="Имя Фамилия",
-            placeholder="Например: Олег Дубов",
+            label=get_personnel_message(guild_id, 'recruitment.name_label'),
+            placeholder=get_personnel_message(guild_id, 'recruitment.name_placeholder'),
             min_length=2,
             max_length=50,
             required=True
@@ -83,8 +90,8 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
         self.add_item(self.name_input)
         
         self.static_input = ui.TextInput(
-            label="Статик",
-            placeholder="123-456 (допускается 5-6 цифр)",
+            label=get_personnel_message(guild_id, 'recruitment.static_label'),
+            placeholder=get_personnel_message(guild_id, 'recruitment.static_placeholder'),
             min_length=5,
             max_length=7,
             required=True
@@ -100,7 +107,7 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
             config = load_config()
             if not is_moderator_or_admin(interaction.user, config):
                 await interaction.response.send_message(
-                    "❌ У вас нет прав для выполнения этой команды.",
+                    get_personnel_message(interaction.guild.id, 'recruitment.error_no_permissions'),
                     ephemeral=True
                 )
                 return
@@ -110,7 +117,7 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
             formatted_static = self._format_static(static)
             if not formatted_static:
                 await interaction.response.send_message(
-                    "❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.\n"
+                    get_personnel_message(interaction.guild.id, 'recruitment.error_invalid_static') +
                     "Примеры: 123456, 123-456, 12345, 12-345, 123 456",
                     ephemeral=True
                 )
@@ -406,7 +413,7 @@ async def recruit_user(interaction: discord.Interaction, user: discord.Member):
             return
     
     # No blacklist, proceed with recruitment
-    modal = RecruitmentModal(user)
+    modal = RecruitmentModal(user, interaction.guild.id)
     await interaction.response.send_modal(modal)
     print(f"✅ Recruitment modal sent for {user.display_name}")
 

@@ -78,18 +78,42 @@ class MessageManagement(commands.Cog):
         except Exception as e:
             print(f"Warning: Failed to cleanup old backups: {e}")
 
-    def _get_message_categories(self) -> Dict[str, str]:
-        """Get available message categories"""
-        return {
-            "welcome": "Приветственные сообщения",
-            "role_assignment": "Назначение ролей",
-            "dismissal": "Увольнения",
-            "personnel": "Кадровые сообщения",
-            "department_applications": "Заявки в подразделения",
-            "leave_requests": "Заявки на отгул",
-            "safe_documents": "Безопасные документы",
-            "moderator_notifications": "Уведомления модераторов"
-        }
+    def _get_message_categories(self, guild_id: int) -> Dict[str, str]:
+        """Get available message categories for specific guild"""
+        # Динамическая загрузка категорий из YAML файла
+        try:
+            messages = load_guild_messages(guild_id)  # Загружаем сообщения для конкретного гильда
+
+            categories = {}
+            if 'private_messages' in messages:
+                for category_key in messages['private_messages'].keys():
+                    # Преобразуем ключи в читаемые названия
+                    category_names = {
+                        "welcome": "Приветственные сообщения",
+                        "role_assignment": "Назначение ролей",
+                        "dismissal": "Увольнения",
+                        "personnel": "Кадровые сообщения",
+                        "department_applications": "Заявки в подразделения",
+                        "leave_requests": "Заявки на отгул",
+                        "safe_documents": "Безопасные документы",
+                        "moderator_notifications": "Уведомления модераторов"
+                    }
+                    categories[category_key] = category_names.get(category_key, category_key.replace('_', ' ').title())
+
+            return categories
+        except Exception as e:
+            print(f"Warning: Failed to load categories dynamically: {e}")
+            # Fallback to hardcoded categories
+            return {
+                "welcome": "Приветственные сообщения",
+                "role_assignment": "Назначение ролей",
+                "dismissal": "Увольнения",
+                "personnel": "Кадровые сообщения",
+                "department_applications": "Заявки в подразделения",
+                "leave_requests": "Заявки на отгул",
+                "safe_documents": "Безопасные документы",
+                "moderator_notifications": "Уведомления модераторов"
+            }
 
     def _get_messages_in_category(self, guild_id: int, category: str) -> Dict[str, str]:
         """Get all messages in a specific category"""
@@ -131,7 +155,7 @@ class MessageManagement(commands.Cog):
         config = load_config()
         return is_administrator(interaction.user, config)
 
-    @app_commands.command(name="messages", description="Управление сообщениями бота (только администраторы)")
+    @app_commands.command(name="messages", description="Управление сообщениями бота")
     @app_commands.describe(action="Действие с сообщениями")
     @app_commands.choices(action=[
         app_commands.Choice(name="📋 Список категорий", value="list"),
@@ -170,7 +194,7 @@ class MessageManagement(commands.Cog):
 
     async def _handle_list_categories(self, interaction: discord.Interaction):
         """Handle listing message categories"""
-        categories = self._get_message_categories()
+        categories = self._get_message_categories(interaction.guild.id)
 
         embed = discord.Embed(
             title="📂 Категории сообщений",
@@ -191,7 +215,7 @@ class MessageManagement(commands.Cog):
 
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="messages_edit", description="Редактировать сообщение (только администраторы)")
+    @app_commands.command(name="messages_edit", description="Редактировать сообщения")
     @app_commands.describe(category="Категория сообщения")
     @app_commands.choices(category=[
         app_commands.Choice(name="Приветственные сообщения", value="welcome"),
@@ -210,6 +234,16 @@ class MessageManagement(commands.Cog):
         if not await self._check_admin_permissions(interaction):
             await interaction.response.send_message(
                 "❌ У вас нет прав администратора для выполнения этой команды.",
+                ephemeral=True
+            )
+            return
+
+        # Validate category exists
+        available_categories = self._get_message_categories(interaction.guild.id)
+        if category not in available_categories:
+            await interaction.response.send_message(
+                f"❌ Категория `{category}` не найдена.\n\nДоступные категории:\n" +
+                "\n".join([f"• `{key}` - {name}" for key, name in available_categories.items()]),
                 ephemeral=True
             )
             return
@@ -261,7 +295,7 @@ class MessageManagement(commands.Cog):
 
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
-    @app_commands.command(name="messages_download", description="Скачать файл сообщений для редактирования (только администраторы)")
+    @app_commands.command(name="messages_download", description="Скачать файл сообщений для редактирования")
     async def messages_download_command(self, interaction: discord.Interaction):
         """Download the entire messages file for editing"""
 
@@ -275,7 +309,7 @@ class MessageManagement(commands.Cog):
 
         await self._handle_full_file_download(interaction)
 
-    @app_commands.command(name="messages_upload", description="Загрузить отредактированный файл сообщений (только администраторы)")
+    @app_commands.command(name="messages_upload", description="Загрузить отредактированный файл сообщений")
     @app_commands.describe(file="YAML файл с отредактированными сообщениями")
     async def messages_upload_command(self, interaction: discord.Interaction, file: discord.Attachment):
         """Upload edited messages file"""
@@ -369,6 +403,90 @@ class MessageManagement(commands.Cog):
         except Exception as e:
             await interaction.followup.send(
                 f"❌ Ошибка обработки файла: {str(e)}",
+                ephemeral=True
+            )
+
+    @app_commands.command(name="messages_add_category", description="Добавить новую категорию сообщений (Для новых функций, для разработчиков)")
+    @app_commands.describe(
+        category_key="Ключ категории (латиницей, без пробелов)",
+        category_name="Отображаемое название категории"
+    )
+    async def messages_add_category_command(self, interaction: discord.Interaction, category_key: str, category_name: str):
+        """Add a new message category"""
+
+        # Check admin permissions
+        if not await self._check_admin_permissions(interaction):
+            await interaction.response.send_message(
+                "❌ У вас нет прав администратора для выполнения этой команды.",
+                ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            # Validate category key format
+            if not category_key.replace('_', '').isalnum():
+                await interaction.followup.send(
+                    "❌ Ключ категории должен содержать только буквы, цифры и подчеркивания.",
+                    ephemeral=True
+                )
+                return
+
+            # Load current messages
+            messages = load_guild_messages(interaction.guild.id)
+
+            # Check if category already exists
+            if 'private_messages' in messages and category_key in messages['private_messages']:
+                await interaction.followup.send(
+                    f"❌ Категория `{category_key}` уже существует.",
+                    ephemeral=True
+                )
+                return
+
+            # Initialize private_messages structure if needed
+            if 'private_messages' not in messages:
+                messages['private_messages'] = {}
+
+            # Add new category with sample message
+            messages['private_messages'][category_key] = {
+                "sample_message": f"Пример сообщения для категории '{category_name}'"
+            }
+
+            # Save messages
+            success = save_guild_messages(interaction.guild.id, messages, create_backup=True)
+
+            if success:
+                embed = discord.Embed(
+                    title="✅ Категория добавлена",
+                    description=f"Новая категория сообщений успешно создана.",
+                    color=0x00ff00
+                )
+
+                embed.add_field(
+                    name="📁 Категория",
+                    value=f"Ключ: `{category_key}`\nНазвание: {category_name}",
+                    inline=False
+                )
+
+                embed.add_field(
+                    name="📝 Следующие шаги",
+                    value="1. Используйте `/messages_download` для получения файла\n"
+                          "2. Добавьте сообщения в новую категорию\n"
+                          "3. Загрузите файл обратно через `/messages_upload`",
+                    inline=False
+                )
+
+                await interaction.followup.send(embed=embed, ephemeral=True)
+            else:
+                await interaction.followup.send(
+                    "❌ Ошибка сохранения новой категории.",
+                    ephemeral=True
+                )
+
+        except Exception as e:
+            await interaction.followup.send(
+                f"❌ Ошибка добавления категории: {str(e)}",
                 ephemeral=True
             )
 
@@ -505,77 +623,7 @@ class MessageManagement(commands.Cog):
                 ephemeral=True
             )
 
-    @app_commands.command(name="messages_edit", description="Редактировать сообщение (только администраторы)")
-    @app_commands.describe(category="Категория сообщения")
-    @app_commands.choices(category=[
-        app_commands.Choice(name="Приветственные сообщения", value="welcome"),
-        app_commands.Choice(name="Назначение ролей", value="role_assignment"),
-        app_commands.Choice(name="Увольнения", value="dismissal"),
-        app_commands.Choice(name="Кадровые сообщения", value="personnel"),
-        app_commands.Choice(name="Заявки в подразделения", value="department_applications"),
-        app_commands.Choice(name="Заявки на отгул", value="leave_requests"),
-        app_commands.Choice(name="Безопасные документы", value="safe_documents"),
-        app_commands.Choice(name="Уведомления модераторов", value="moderator_notifications")
-    ])
-    async def messages_edit_command(self, interaction: discord.Interaction, category: str):
-        """Edit messages in a specific category"""
-
-        # Check admin permissions
-        if not await self._check_admin_permissions(interaction):
-            await interaction.response.send_message(
-                "❌ У вас нет прав администратора для выполнения этой команды.",
-                ephemeral=True
-            )
-            return
-
-        # Get messages in category
-        messages = self._get_messages_in_category(interaction.guild.id, category)
-
-        if not messages:
-            await interaction.response.send_message(
-                f"❌ В категории `{category}` нет доступных сообщений.",
-                ephemeral=True
-            )
-            return
-
-        # Create select menu for message selection
-        options = []
-        for key, value in list(messages.items())[:25]:  # Discord limit is 25 options
-            # Truncate long values for display
-            display_value = value[:50] + "..." if len(value) > 50 else value
-            display_value = display_value.replace('\n', ' ')  # Remove newlines
-
-            options.append(
-                discord.SelectOption(
-                    label=key[:25],  # Discord limit is 25 chars for label
-                    description=display_value[:50],  # Discord limit is 50 chars for description
-                    value=key
-                )
-            )
-
-        if not options:
-            await interaction.response.send_message(
-                f"❌ В категории `{category}` нет доступных для редактирования сообщений.",
-                ephemeral=True
-            )
-            return
-
-        select = discord.ui.Select(
-            placeholder="Выберите сообщение для редактирования...",
-            options=options,
-            custom_id=f"message_select_{category}"
-        )
-
-        view = MessageSelectView(select, self, interaction.guild.id, category)
-        embed = discord.Embed(
-            title=f"📝 Редактирование сообщений: {category}",
-            description="Выберите сообщение для редактирования:",
-            color=0x3498db
-        )
-
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-
-    @app_commands.command(name="messages_restore", description="Восстановить сообщения из бэкапа (только администраторы)")
+    @app_commands.command(name="messages_restore", description="Восстановить сообщения из бэкапа")
     @app_commands.describe(backup_name="Имя файла бэкапа")
     async def messages_restore_command(self, interaction: discord.Interaction, backup_name: str):
         """Restore messages from a backup"""

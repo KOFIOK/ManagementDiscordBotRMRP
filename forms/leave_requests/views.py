@@ -5,7 +5,7 @@ import discord
 from discord import ui
 from utils.config_manager import load_config, is_moderator_or_admin
 from utils.leave_request_storage import LeaveRequestStorage
-from utils.message_manager import get_leave_requests_message
+from utils.message_manager import get_leave_requests_message, get_private_messages
 class LeaveRequestButton(ui.View):
     """Persistent button for submitting leave requests"""
     
@@ -326,23 +326,18 @@ class LeaveRequestApprovalView(ui.View):
                 return
             
             embed = discord.Embed(
-                title="✅ Ваша заявка на отгул была одобрена",
+                title=get_private_messages(interaction.guild.id, 'leave_requests.approval.title'),
+                description=get_private_messages(interaction.guild.id, 'leave_requests.approval.description').format(
+                    date=discord.utils.format_dt(discord.utils.utcnow(), 'd'),
+                    time=f"{request['start_time']} - {request['end_time']}",
+                    reason=request['reason']
+                ),
                 color=discord.Color.green(),
                 timestamp=discord.utils.utcnow()
             )
             
             embed.add_field(
-                name="📋 Детали заявки:",
-                value=(
-                    f"**Время:** {request['start_time']} - {request['end_time']}\n"
-                    f"**Дата:** {discord.utils.format_dt(discord.utils.utcnow(), 'd')}\n"
-                    f"**Причина:** {request['reason']}"
-                ),
-                inline=False
-            )
-            
-            embed.add_field(
-                name="👤 Одобрил:",
+                name=get_private_messages(interaction.guild.id, 'leave_requests.approval.approved_by'),
                 value=interaction.user.mention,
                 inline=True
             )

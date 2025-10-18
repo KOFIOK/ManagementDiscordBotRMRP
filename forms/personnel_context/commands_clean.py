@@ -12,7 +12,7 @@ from utils.config_manager import load_config, is_moderator_or_admin, is_administ
 from utils.database_manager import PersonnelManager
 from utils.database_manager.position_manager import position_manager
 from utils.nickname_manager import nickname_manager
-from utils.message_manager import get_message
+from utils.message_manager import get_message, get_private_messages
 from discord import ui
 import re
 
@@ -243,21 +243,14 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                 # Send DM to recruited user
                 try:
                     dm_embed = discord.Embed(
-                        title="✅ Вы приняты на службу!",
-                        description=(
-                            "Поздравляем! Вы успешно приняты на службу в Вооруженные Силы РФ.\n\n"
-                            "📋 **Важная информация:**\n"
-                            "> • Следите за каналом общения и оповещениями\n"
-                            "> • Выполняйте приказы командования\n"
-                            "> • Участвуйте в учебных мероприятиях для повышения\n\n"
-                            "🎖️ Удачи в службе!"
-                        ),
+                        title=get_private_messages(interaction.guild.id, 'personnel.recruitment.title'),
+                        description=get_private_messages(interaction.guild.id, 'personnel.recruitment.description'),
                         color=discord.Color.green()
                     )
-                    dm_embed.add_field(name="ФИО", value=full_name, inline=True)
-                    dm_embed.add_field(name="Статик", value=static, inline=True)
-                    dm_embed.add_field(name="Звание", value="Рядовой", inline=True)
-                    dm_embed.add_field(name="Подразделение", value="Военная Академия", inline=False)
+                    dm_embed.add_field(name=get_private_messages(interaction.guild.id, 'personnel.recruitment.fields.name'), value=full_name, inline=True)
+                    dm_embed.add_field(name=get_private_messages(interaction.guild.id, 'personnel.recruitment.fields.static'), value=static, inline=True)
+                    dm_embed.add_field(name=get_private_messages(interaction.guild.id, 'personnel.recruitment.fields.rank'), value="Рядовой", inline=True)
+                    dm_embed.add_field(name=get_private_messages(interaction.guild.id, 'personnel.recruitment.fields.department'), value="Военная Академия", inline=False)
                     
                     await self.target_user.send(embed=dm_embed)
                     print(f"✅ RECRUITMENT: DM sent to {self.target_user.display_name}")
@@ -683,15 +676,12 @@ class DismissalModal(ui.Modal, title="Увольнение"):
                 # Send DM to dismissed user
                 try:
                     dm_embed = discord.Embed(
-                        title="📋 Вы уволены со службы",
-                        description=(
-                            "Вы были уволены из Вооруженных Сил РФ.\n\n"
-                            "Благодарим за службу!"
-                        ),
+                        title=get_private_messages(interaction.guild.id, 'personnel.dismissal.title'),
+                        description=get_private_messages(interaction.guild.id, 'personnel.dismissal.description'),
                         color=discord.Color.orange()
                     )
-                    dm_embed.add_field(name="Причина увольнения", value=reason, inline=False)
-                    dm_embed.add_field(name="Уволил", value=interaction.user.display_name, inline=False)
+                    dm_embed.add_field(name=get_private_messages(interaction.guild.id, 'personnel.dismissal.fields.reason'), value=reason, inline=False)
+                    dm_embed.add_field(name=get_private_messages(interaction.guild.id, 'personnel.dismissal.fields.dismissed_by'), value=interaction.user.display_name, inline=False)
                     
                     await self.target_user.send(embed=dm_embed)
                     print(f"✅ DISMISSAL: DM sent to {self.target_user.display_name}")

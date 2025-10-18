@@ -14,7 +14,7 @@ import re
 import traceback
 from datetime import datetime
 from utils.config_manager import load_config, is_moderator_or_admin, can_moderate_user, get_dismissal_message_link
-from utils.message_manager import get_message, get_embed_color
+from utils.message_manager import get_message, get_embed_color, get_private_messages
 from utils.user_cache import get_cached_user_info
 from utils.nickname_manager import nickname_manager
 
@@ -299,10 +299,12 @@ class SimplifiedDismissalApprovalView(ui.View):
                 target_user_member = interaction.guild.get_member(self.user_id)
                 if target_user_member:
                     try:
+                        rejection_content = get_private_messages(interaction.guild.id, 'dismissal.rejection.content')
                         await target_user_member.send(
-                            f"❌ **Ваш рапорт на увольнение был отклонен**\n"
-                            f"Модератор: {interaction.user.display_name}\n"
-                            f"Причина: {reason}"
+                            rejection_content.format(
+                                moderator_name=interaction.user.display_name,
+                                reason=reason
+                            )
                         )
                     except:
                         pass
@@ -461,10 +463,9 @@ class SimplifiedDismissalApprovalView(ui.View):
             # 5. Send DM to user (if still on server)
             if not user_has_left_server:
                 try:
+                    approval_content = get_private_messages(interaction.guild.id, 'dismissal.approval.content')
                     await target_user.send(
-                        f"✅ **Ваш рапорт на увольнение был одобрен**\n"
-                        f"Модератор: {interaction.user.display_name}\n"
-                        f"С вас были сняты все роли."
+                        approval_content.format(moderator_name=interaction.user.display_name)
                     )
                 except:
                     pass  # User has DMs disabled

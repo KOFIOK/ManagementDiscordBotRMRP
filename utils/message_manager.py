@@ -96,10 +96,69 @@ def get_message(guild_id: int, key_path: str, default: str = None) -> str:
 
         return result
     except (KeyError, TypeError):
+        # Try to find a matching template based on the key path
+        template_fallback = _find_template_fallback(key_path)
+        if template_fallback:
+            print(f"📝 Message key '{key_path}' not found, using template fallback: {template_fallback}")
+            return get_message(guild_id, template_fallback, default)
+        
         if default:
             return default
         print(f"⚠️ Message key '{key_path}' not found for guild {guild_id}, using fallback")
         return f"[{key_path}]"  # Fallback indicator
+
+def _find_template_fallback(key_path: str) -> str:
+    """
+    Try to find a matching template for a missing message key.
+    Maps common error/status patterns to appropriate templates.
+    """
+    # Common mappings for error messages
+    error_mappings = {
+        'error_no_permissions': 'templates.permissions.general',
+        'error_insufficient_permissions': 'templates.permissions.insufficient',
+        'error_not_found': 'templates.errors.not_found',
+        'error_general': 'templates.errors.general',
+        'error_processing': 'templates.errors.processing',
+        'error_validation': 'templates.errors.validation',
+        'permission_denied': 'templates.permissions.general',
+    }
+    
+    # Common mappings for status messages
+    status_mappings = {
+        'status_processing': 'templates.status.processing',
+        'status_approved': 'templates.status.approved',
+        'status_rejected': 'templates.status.rejected',
+        'processing': 'templates.status.processing',
+        'approved': 'templates.status.approved',
+        'rejected': 'templates.status.rejected',
+        'success': 'templates.status.completed',
+        'operation_completed': 'templates.status.completed',
+    }
+    
+    # Extract the last part of the key (the actual message name)
+    key_parts = key_path.split('.')
+    if not key_parts:
+        return None
+    
+    message_name = key_parts[-1]
+    
+    # Check error mappings
+    if message_name in error_mappings:
+        return error_mappings[message_name]
+    
+    # Check status mappings
+    if message_name in status_mappings:
+        return status_mappings[message_name]
+    
+    # Special cases based on keywords
+    if 'permission' in message_name.lower() or 'access' in message_name.lower():
+        return 'templates.permissions.general'
+    if 'error' in message_name.lower():
+        return 'templates.errors.general'
+    if 'success' in message_name.lower() or 'completed' in message_name.lower():
+        return 'templates.status.completed'
+    
+    return None
 
 def _resolve_template_references(message: str, messages: Dict[str, Any]) -> str:
     """
@@ -112,7 +171,7 @@ def _resolve_template_references(message: str, messages: Dict[str, Any]) -> str:
         template_path = match.group(1)
 
         # Only resolve references that start with known prefixes
-        known_prefixes = ['templates.', 'global.']
+        known_prefixes = ['templates.', 'global.', 'moderator_notifications.']
         if not any(template_path.startswith(prefix) for prefix in known_prefixes):
             return match.group(0)  # Return original for parameter placeholders
 
@@ -263,11 +322,11 @@ def get_supplies_message(guild_id: int, key_path: str, default: str = None) -> s
 
 def get_supplies_color(guild_id: int, key_path: str, default_color: str = "#3498DB") -> discord.Color:
     """
-    Get supplies embed color by dot-separated key path (e.g., 'colors.main_embed')
-    Returns default discord.Color.blue() if key not found or invalid
+    Get supplies color by dot-separated key path (e.g., 'main_embed')
+    Returns default color if key not found
     """
     try:
-        color_hex = get_message(guild_id, f"supplies.{key_path}", default_color)
+        color_hex = get_message(guild_id, f"supplies.colors.{key_path}")
         if isinstance(color_hex, str) and color_hex.startswith('#'):
             # Convert hex to discord.Color
             color_hex = color_hex.lstrip('#')
@@ -277,6 +336,13 @@ def get_supplies_color(guild_id: int, key_path: str, default_color: str = "#3498
             return discord.Color.blue()
     except (ValueError, TypeError):
         return discord.Color.blue()
+
+def get_private_messages(guild_id: int, key_path: str, default: str = None) -> str:
+    """
+    Get private messages by dot-separated key path (e.g., 'welcome.title')
+    Returns default if key not found
+    """
+    return get_message(guild_id, f"private_messages.{key_path}", default)
 
 # Initialize on import
 _ensure_messages_directory()

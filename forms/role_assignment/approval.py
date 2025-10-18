@@ -9,6 +9,7 @@ from discord import ui
 import asyncio
 from datetime import datetime, timezone
 from utils.config_manager import load_config, is_moderator_or_admin
+from utils.message_manager import get_private_messages
 # PostgreSQL integration with enhanced personnel management
 from utils.database_manager import personnel_manager
 from utils.nickname_manager import nickname_manager
@@ -395,15 +396,20 @@ class RoleApplicationApprovalView(ui.View):
                 ephemeral=True
             )
     
-    async def _send_rejection_dm_with_reason(self, user, rejection_reason):
-        """Send rejection DM to user with specified reason"""
+    async def _send_rejection_dm(self, user, rejection_reason=""):
+        """Send rejection DM to user"""
         try:
-            dm_content = (
-                f"## ❌ Ваша заявка на получение ролей была **отклонена**\n"
-                f"**Причина отказа:** {rejection_reason}\n\n"
-                "Вы можете подать новую заявку, устранив указанные недостатки."
-            )
-            
+            role_type = "военнослужащего" if self.application_data["type"] == "military" else "госслужащего"
+
+            if rejection_reason:
+                dm_content = get_private_messages(user.guild.id if hasattr(user, 'guild') else 0,
+                                                "role_assignment.rejection.content",
+                                                "").format(rejection_reason=rejection_reason)
+            else:
+                dm_content = get_private_messages(user.guild.id if hasattr(user, 'guild') else 0,
+                                                "role_assignment.rejection.simple",
+                                                "").format(role_type=role_type)
+
             await user.send(dm_content)
         except discord.Forbidden:
             # User has DMs disabled
@@ -572,28 +578,28 @@ class RoleApplicationApprovalView(ui.View):
     async def _send_approval_dm(self, user):
         """Send approval DM to user"""
         try:
-            if self.application_data["type"] == "military":
-                instructions = (
-                    "## ✅ **Ваша заявка на получение роли военнослужащего была одобрена!**\n\n"
-                    "📋 **Полезная информация:**\n"
-                    "> • Канал общения:\n> <#1246126422251278597>\n"
-                    "> • Расписание занятий (необходимых для повышения):\n> <#1336337899309895722>\n"
-                    "> • Следите за оповещениями обучения:\n> <#1337434149274779738>\n"
-                    "> • Ознакомьтесь с сайтом Вооружённых Сил РФ:\n> <#1326022450307137659>\n"
-                    "> • Следите за последними приказами:\n> <#1251166871064019015>\n"
-                    "> • Уже были в ВС РФ? Попробуйте восстановиться:\n> <#1317830537724952626>\n"
-                    "> • Решили, что служба не для вас? Напишите рапорт на увольнение:\n> <#1246119825487564981>"
-                )
-            else:
-                instructions = (
-                    "## ✅ **Ваша заявка на получение роли госслужащего была одобрена!**\n\n"
-                    "📋 **Полезная информация:**\n"
-                    "> • Канал общения:\n> <#1246125346152251393>\n"
-                    "> • Запросить поставку:\n> <#1246119051726553099>\n"
-                    "> • Запросить допуск на территорию ВС РФ:\n> <#1246119269784354888>"
-                )
-            
-            await user.send(instructions)
+            role_type = "военнослужащего" if self.application_data["type"] == "military" else "госслужащего"
+
+            # Create embed with approval message
+            embed = discord.Embed(
+                title=get_private_messages(user.guild.id if hasattr(user, 'guild') else 0,
+                                         "role_assignment.approval.title", "🎉 Заявка одобрена!"),
+                description=get_private_messages(user.guild.id if hasattr(user, 'guild') else 0,
+                                               "role_assignment.approval.description",
+                                               "").format(role_type=role_type),
+                color=discord.Color.green()
+            )
+
+            instructions = get_private_messages(user.guild.id if hasattr(user, 'guild') else 0,
+                                              "role_assignment.approval.instructions", "")
+
+            embed.add_field(
+                name="📋 Полезная информация",
+                value=instructions,
+                inline=False
+            )
+
+            await user.send(embed=embed)
         except discord.Forbidden:
             pass  # User has DMs disabled
     

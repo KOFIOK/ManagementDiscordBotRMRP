@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 
 from utils.config_manager import load_config
-from utils.message_manager import get_department_applications_message
+from utils.message_manager import get_department_applications_message, get_private_messages
 from utils.ping_manager import ping_manager
 from utils.nickname_manager import nickname_manager
 from utils import get_safe_personnel_name
@@ -481,8 +481,10 @@ class DepartmentApplicationView(ui.View):
                 # Send DM to user
                 try:
                     dm_embed = discord.Embed(
-                        title=get_department_applications_message(interaction.guild.id, "transfer.success_transfer_approved", "✅ Перевод одобрен!"),
-                        description=f"Ваш перевод в подразделение **{self.application_data['department_code']}** был одобрен и выполнен!",
+                        title=get_private_messages(interaction.guild.id, 'department_applications.transfer_approval.title'),
+                        description=get_private_messages(interaction.guild.id, 'department_applications.transfer_approval.description').format(
+                            department_code=self.application_data['department_code']
+                        ),
                         color=discord.Color.green(),
                         timestamp=datetime.now(timezone(timedelta(hours=3)))
                     )
@@ -623,8 +625,10 @@ class DepartmentApplicationView(ui.View):
                 # Send DM to user
                 try:
                     dm_embed = discord.Embed(
-                        title="✅ Заявление одобрено!",
-                        description=f"Ваше заявление в подразделение **{self.application_data['department_code']}** было одобрено!",
+                        title=get_private_messages(interaction.guild.id, 'department_applications.approval.title'),
+                        description=get_private_messages(interaction.guild.id, 'department_applications.approval.description').format(
+                            department_code=self.application_data['department_code']
+                        ),
                         color=discord.Color.green(),
                         timestamp=datetime.now(timezone(timedelta(hours=3)))
                     )
@@ -1629,13 +1633,15 @@ class RejectionReasonModal(ui.Modal):
             if target_user:
                 try:
                     dm_embed = discord.Embed(
-                        title="❌ Заявление отклонено",
-                        description=f"Ваше заявление в подразделение **{self.application_data['department_code']}** было отклонено.",
+                        title=get_private_messages(interaction.guild.id, 'department_applications.rejection.title'),
+                        description=get_private_messages(interaction.guild.id, 'department_applications.rejection.description').format(
+                            department_code=self.application_data['department_code']
+                        ),
                         color=discord.Color.red(),
                         timestamp=datetime.now(timezone(timedelta(hours=3)))
                     )
                     dm_embed.add_field(
-                        name="📝 Причина",
+                        name=get_private_messages(interaction.guild.id, 'department_applications.rejection.reason_field'),
                         value=self.reason.value,
                         inline=False
                     )

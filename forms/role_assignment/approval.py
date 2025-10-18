@@ -403,7 +403,7 @@ class RoleApplicationApprovalView(ui.View):
 
             if rejection_reason:
                 dm_content = get_private_messages(user.guild.id if hasattr(user, 'guild') else 0,
-                                                "role_assignment.rejection.content",
+                                                "role_assignment.rejection.description",
                                                 "").format(rejection_reason=rejection_reason)
             else:
                 dm_content = get_private_messages(user.guild.id if hasattr(user, 'guild') else 0,

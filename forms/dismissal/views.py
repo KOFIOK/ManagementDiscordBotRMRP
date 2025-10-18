@@ -299,7 +299,7 @@ class SimplifiedDismissalApprovalView(ui.View):
                 target_user_member = interaction.guild.get_member(self.user_id)
                 if target_user_member:
                     try:
-                        rejection_content = get_private_messages(interaction.guild.id, 'dismissal.rejection.content')
+                        rejection_content = get_private_messages(interaction.guild.id, 'dismissal.rejection.description')
                         await target_user_member.send(
                             rejection_content.format(
                                 moderator_name=interaction.user.display_name,
@@ -463,10 +463,7 @@ class SimplifiedDismissalApprovalView(ui.View):
             # 5. Send DM to user (if still on server)
             if not user_has_left_server:
                 try:
-                    approval_content = get_private_messages(interaction.guild.id, 'dismissal.approval.content')
-                    await target_user.send(
-                        approval_content.format(moderator_name=interaction.user.display_name)
-                    )
+                    approval_content = get_private_messages(interaction.guild.id, 'dismissal.approval.description').format(moderator_name=interaction.user.display_name)
                 except:
                     pass  # User has DMs disabled
             

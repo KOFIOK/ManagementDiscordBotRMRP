@@ -6,7 +6,7 @@ import discord
 import re
 from discord import ui
 from utils.config_manager import load_config, has_pending_role_application
-from utils.message_manager import get_role_assignment_message
+from utils.message_manager import get_role_assignment_message, get_message_with_params
 
 
 class MilitaryApplicationModal(ui.Modal):
@@ -155,7 +155,7 @@ class MilitaryApplicationModal(ui.Modal):
             await moderation_channel.send(content=ping_content, embed=embed, view=approval_view)
             
             await interaction.response.send_message(
-                get_role_assignment_message(interaction.guild.id, "application.success_application_submitted", "✅ Ваша заявка отправлена на рассмотрение военнослужащим. Ожидайте решения."),
+                get_message_with_params(interaction.guild.id, "role_assignment.application.success_application_submitted", action="Заявка на получение роли"),
                 ephemeral=True
             )
             
@@ -282,9 +282,13 @@ class CivilianApplicationModal(ui.Modal):
             return ""
     
     def _validate_url(self, url):
-        """Basic URL validation"""
-        url_pattern = r'https?://[^\s/$.?#].[^\s]*'
-        return bool(re.match(url_pattern, url))
+        """Basic URL validation - accepts various formats"""
+        # More permissive URL pattern that accepts:
+        # - http/https URLs
+        # - URLs without protocol (like discord.gg/...)
+        # - Common domain formats including single-letter TLDs
+        url_pattern = r'(https?://)?([a-zA-Z0-9-]+\.)*[a-zA-Z0-9-]+\.[a-zA-Z]{1,}(/[^\s]*)?'
+        return bool(re.match(url_pattern, url.strip()))
     
     async def _send_application_for_approval(self, interaction, application_data):
         """Send application to moderation channel"""
@@ -456,9 +460,13 @@ class SupplierApplicationModal(ui.Modal):
         else:
             return ""
     def _validate_url(self, url):
-        """Basic URL validation"""
-        url_pattern = r'https?://[^\s/$.?#].[^\s]*'
-        return bool(re.match(url_pattern, url))
+        """Basic URL validation - accepts various formats"""
+        # More permissive URL pattern that accepts:
+        # - http/https URLs
+        # - URLs without protocol (like discord.gg/...)
+        # - Common domain formats including single-letter TLDs
+        url_pattern = r'(https?://)?([a-zA-Z0-9-]+\.)*[a-zA-Z0-9-]+\.[a-zA-Z]{1,}(/[^\s]*)?'
+        return bool(re.match(url_pattern, url.strip()))
     
     async def _send_application_for_approval(self, interaction, application_data):
         """Send application to moderation channel"""
@@ -760,15 +768,13 @@ class CivilianEditModal(ui.Modal):
             return ""
     
     def _validate_url(self, url):
-        """Basic URL validation"""
-        url_pattern = re.compile(
-            r'^https?://'  # http:// or https://
-            r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # domain...
-            r'localhost|'  # localhost...
-            r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # ...or ip
-            r'(?::\d+)?'  # optional port
-            r'(?:/?|[/?]\S+)$', re.IGNORECASE)
-        return url_pattern.match(url) is not None
+        """Basic URL validation - accepts various formats"""
+        # More permissive URL pattern that accepts:
+        # - http/https URLs
+        # - URLs without protocol (like discord.gg/...)
+        # - Common domain formats
+        url_pattern = r'(https?://)?([a-zA-Z0-9-]+\.)*[a-zA-Z0-9-]+\.[a-zA-Z]{1,}(/[^\s]*)?'
+        return bool(re.match(url_pattern, url.strip()))
     
     async def _handle_edit_update(self, interaction: discord.Interaction, updated_data: dict):
         """Обновление embed с новыми данными"""
@@ -919,15 +925,13 @@ class SupplierEditModal(ui.Modal):
             return ""
     
     def _validate_url(self, url):
-        """Basic URL validation"""
-        url_pattern = re.compile(
-            r'^https?://'  # http:// or https://
-            r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # domain...
-            r'localhost|'  # localhost...
-            r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # ...or ip
-            r'(?::\d+)?'  # optional port
-            r'(?:/?|[/?]\S+)$', re.IGNORECASE)
-        return url_pattern.match(url) is not None
+        """Basic URL validation - accepts various formats"""
+        # More permissive URL pattern that accepts:
+        # - http/https URLs
+        # - URLs without protocol (like discord.gg/...)
+        # - Common domain formats
+        url_pattern = r'(https?://)?([a-zA-Z0-9-]+\.)*[a-zA-Z0-9-]+\.[a-zA-Z]{1,}(/[^\s]*)?'
+        return bool(re.match(url_pattern, url.strip()))
     
     async def _handle_edit_update(self, interaction: discord.Interaction, updated_data: dict):
         """Обновление embed с новыми данными"""

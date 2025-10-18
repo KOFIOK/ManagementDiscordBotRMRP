@@ -161,7 +161,7 @@ role_assignment:
     error_already_has_supplies_access: "{templates.errors.validation} У вас уже есть доступ к поставкам"
     error_pending_application: "{templates.errors.validation} У вас уже есть заявка на получение роли, которая находится на рассмотрении."
     error_invalid_static_format: "{templates.errors.validation} Статик должен содержать 5 или 6 цифр."
-    error_invalid_proof_link: "{templates.errors.validation} укажите корректную ссылку в поле доказательств."
+    error_invalid_proof_link: "❌ Пожалуйста, укажите корректную ссылку в поле доказательств."
     error_moderation_channel_not_configured: "{templates.errors.not_found} Канал модерации не настроен. Обратитесь к администратору."
     error_moderation_channel_not_found: "{templates.errors.not_found} Канал модерации не найден. Обратитесь к администратору."
     success_application_submitted: "{templates.status.completed} Ваша заявка отправлена на рассмотрение военнослужащим. Ожидайте решения."
@@ -345,13 +345,13 @@ private_messages:
     approval:
       title: "✅ Рапорт на увольнение одобрен"
       description: |
-        {moderator_templates.moderator_info}
+        {templates.moderator_templates.moderator_info}
         С вас были сняты все роли, кроме ролей-исключений.
     rejection:
       title: "❌ Рапорт на увольнение отклонен"
       description: |
-        {moderator_templates.moderator_info}
-        {moderator_templates.reason_info}
+        {templates.moderator_templates.moderator_info}
+        {templates.moderator_templates.reason_info}
 
   personnel:
     recruitment:
@@ -380,6 +380,18 @@ private_messages:
         reason: "Причина увольнения"
         dismissed_by: "Уволил"
 
+  supplies_access:
+    title: "📦 Доступ к поставкам одобрен!"
+    description: |
+      Вам предоставлен доступ к системе военных поставок!
+
+      Теперь вы можете:
+      • Запрашивать поставки материалов для военных объектов
+      • Управлять таймерами поставок
+      • Получать уведомления о готовности объектов
+
+      Для получения дополнительной информации обратитесь к командованию.
+
   department_applications:
     approval:
       title: "✅ Заявление одобрено!"
@@ -400,7 +412,7 @@ private_messages:
         > • Дата: {date}
         > • Время: {time}
         > • Причина: {reason}
-      approved_by: "{moderator_templates.approved_by_info}"
+      approved_by: "{templates.moderator_templates.approved_by_info}"
     rejection:
       title: "❌ Заявка на отгул отклонена"
       description: |
@@ -440,7 +452,7 @@ private_messages:
         • Поддержание порядка на сервере
         • Помощь администрации
       help_command: *common_help_text
-      footer: "{moderator_templates.help_footer}"
+      footer: "{templates.moderator_templates.help_footer}"
     admin_welcome:
       title: "👑 Добро пожаловать в команду администраторов!"
       description: |
@@ -452,4 +464,4 @@ private_messages:
         • Настройка систем бота
         • Решение глобальных вопросов
       help_command: *common_help_text
-      footer: "{moderator_templates.help_footer}"
+      footer: "{templates.moderator_templates.help_footer}"

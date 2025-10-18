@@ -193,6 +193,24 @@ class SimplifiedDismissalApprovalView(ui.View):
                     embed=embed, 
                     view=approved_view
                 )
+                
+                # Send DM to dismissed user (if still on server)
+                if not getattr(target_user, '_is_mock', False):  # Only if user is still on server
+                    try:
+                        dm_embed = discord.Embed(
+                            title=get_private_messages(interaction.guild.id, 'personnel.dismissal.title'),
+                            description=get_private_messages(interaction.guild.id, 'personnel.dismissal.description'),
+                            color=discord.Color.orange()
+                        )
+                        dm_embed.add_field(name=get_private_messages(interaction.guild.id, 'personnel.dismissal.fields.reason'), value=form_data.get('reason', 'Не указана'), inline=False)
+                        dm_embed.add_field(name=get_private_messages(interaction.guild.id, 'personnel.dismissal.fields.dismissed_by'), value=interaction.user.display_name, inline=False)
+                        
+                        await target_user.send(embed=dm_embed)
+                        print(f"✅ DISMISSAL: DM sent to {target_user.display_name}")
+                    except discord.Forbidden:
+                        print(f"⚠️ DISMISSAL: Could not send DM to {target_user.display_name} (DMs disabled)")
+                    except Exception as dm_error:
+                        print(f"⚠️ DISMISSAL: Failed to send DM: {dm_error}")
             
         except Exception as e:
             print(f"❌ Error in simplified dismissal approval: {e}")

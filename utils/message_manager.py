@@ -374,17 +374,17 @@ def get_message_with_params(guild_id: int, key_path: str, default: str = None, *
         logger.error(f"❌ Unexpected error formatting message '{key_path}' with params {list(params.keys())}: {e}")
         return message  # Return unformatted message as fallback
 
-def save_guild_messages(guild_id: int, messages: Dict[str, Any]) -> bool:
+def save_guild_messages(guild_id: int, messages: Dict[str, Any], create_backup: bool = True) -> bool:
     """
     Save guild-specific messages to file
-    Creates backup before saving
+    Creates backup before saving if create_backup=True
     """
     _ensure_messages_directory()
 
     file_path = _get_guild_messages_file(guild_id)
 
-    # Create backup if file exists
-    if os.path.exists(file_path):
+    # Create backup if file exists and create_backup is True
+    if create_backup and os.path.exists(file_path):
         import shutil
         from datetime import datetime
         backup_name = f"messages-{guild_id}_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.yml"

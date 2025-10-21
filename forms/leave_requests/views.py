@@ -6,6 +6,7 @@ from discord import ui
 from utils.config_manager import load_config, is_moderator_or_admin
 from utils.leave_request_storage import LeaveRequestStorage
 from utils.message_manager import get_leave_requests_message, get_private_messages
+from utils.message_service import MessageService
 class LeaveRequestButton(ui.View):
     """Persistent button for submitting leave requests"""
     
@@ -130,7 +131,16 @@ class LeaveRequestApprovalView(ui.View):
                 await self._update_request_embed(interaction)
                 
                 # Send DM to user
-                await self._send_dm_notification(interaction, request)
+                user = interaction.guild.get_member(request["user_id"])
+                if user:
+                    await MessageService.send_leave_approval_dm(
+                        user=user,
+                        guild_id=interaction.guild.id,
+                        start_time=request['start_time'],
+                        end_time=request['end_time'],
+                        reason=request['reason'],
+                        approved_by=interaction.user.mention
+                    )
                 
                 embed = discord.Embed(
                     title=get_leave_requests_message(interaction.guild.id, "approval.success_approved", "✅ Заявка одобрена"),

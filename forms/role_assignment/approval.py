@@ -7,9 +7,9 @@ This module handles the approval/rejection workflow with proper interaction hand
 import discord
 from discord import ui
 import asyncio
-from datetime import datetime, timezone
 from utils.config_manager import load_config, is_moderator_or_admin
 from utils.message_manager import get_private_messages
+from utils.message_service import MessageService
 # PostgreSQL integration with enhanced personnel management
 from utils.database_manager import personnel_manager
 from utils.nickname_manager import nickname_manager
@@ -137,24 +137,21 @@ class RoleApplicationApprovalView(ui.View):
         except Exception as e:
             print(f"Error in approval process: {e}")
             # Use proper error handling based on interaction state
-            await self._send_error_message(interaction, "Произошла ошибка при одобрении заявки.")
+            MessageService.send_error(interaction, "Произошла ошибка при одобрении заявки.")
     
     @discord.ui.button(label="❌ Отклонить", style=discord.ButtonStyle.red, custom_id="reject_role_app")
     async def reject_application(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Handle application rejection"""
-        # Check permissions first  
+        # Check permissions first
         if not await self._check_moderator_permissions(interaction):
-            await interaction.response.send_message(
-                "❌ У вас нет прав для модерации заявок.",
-                ephemeral=True
-            )
+            MessageService.send_error(interaction, "У вас нет прав для модерации заявок.")
             return
         
         try:
             await self._request_rejection_reason(interaction)
         except Exception as e:
             print(f"Error in rejection process: {e}")
-            await self._send_error_message(interaction, "Произошла ошибка при отклонении заявки.")
+            MessageService.send_error(interaction, "Произошла ошибка при отклонении заявки.")
     
     @discord.ui.button(label="Изменить", style=discord.ButtonStyle.secondary, custom_id="role_assignment:edit_pending", emoji="✏️")
     async def edit_pending_application(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -218,10 +215,7 @@ class RoleApplicationApprovalView(ui.View):
             # Получаем актуальные данные из embed
             current_application_data = self._get_current_application_data(interaction)
             if not current_application_data:
-                await interaction.response.send_message(
-                    "❌ Не удалось получить данные заявки!",
-                    ephemeral=True
-                )
+                MessageService.send_error(interaction, "Не удалось получить данные заявки!")
                 return
             
             from utils.config_manager import is_administrator, load_config
@@ -323,10 +317,13 @@ class RoleApplicationApprovalView(ui.View):
         
         # Send DM to user
         if user:
-            if rejection_reason:
-                await self._send_rejection_dm(user, rejection_reason)
-            else:
-                await self._send_rejection_dm(user)
+            role_type = "военнослужащего" if self.application_data["type"] == "military" else "госслужащего"
+            await MessageService.send_rejection_dm(
+                user=user,
+                guild_id=interaction.guild.id,
+                rejection_reason=rejection_reason,
+                role_type=role_type
+            )
     
     async def _request_rejection_reason(self, interaction):
         """Request rejection reason from moderator via modal."""
@@ -387,7 +384,13 @@ class RoleApplicationApprovalView(ui.View):
             
             # Send DM to user with rejection reason
             if user:
-                await self._send_rejection_dm(user, rejection_reason)
+                role_type = "военнослужащего" if self.application_data["type"] == "military" else "госслужащего"
+                await MessageService.send_rejection_dm(
+                    user=user,
+                    guild_id=interaction.guild.id,
+                    rejection_reason=rejection_reason,
+                    role_type=role_type
+                )
                 
         except Exception as e:
             print(f"Error in _finalize_rejection_with_reason: {e}")
@@ -395,27 +398,6 @@ class RoleApplicationApprovalView(ui.View):
                 "❌ Произошла ошибка при финализации отказа.",
                 ephemeral=True
             )
-    
-    async def _send_rejection_dm(self, user, rejection_reason=""):
-        """Send rejection DM to user"""
-        try:
-            role_type = "военнослужащего" if self.application_data["type"] == "military" else "госслужащего"
-
-            if rejection_reason:
-                dm_content = get_private_messages(user.guild.id if hasattr(user, 'guild') else 0,
-                                                "role_assignment.rejection.description",
-                                                "").format(rejection_reason=rejection_reason)
-            else:
-                dm_content = get_private_messages(user.guild.id if hasattr(user, 'guild') else 0,
-                                                "role_assignment.rejection.simple",
-                                                "").format(role_type=role_type)
-
-            await user.send(dm_content)
-        except discord.Forbidden:
-            # User has DMs disabled
-            pass
-        except Exception as e:
-            print(f"Error sending rejection DM: {e}")
     
     def _should_auto_process(self):
         """Determine if this application should be automatically processed"""
@@ -575,65 +557,6 @@ class RoleApplicationApprovalView(ui.View):
         
         return embed
     
-    async def _send_approval_dm(self, user):
-        """Send approval DM to user"""
-        try:
-            if self.application_data["type"] == "supplier":
-                # Special message for supplies access
-                embed = discord.Embed(
-                    title=get_private_messages(user.guild.id if hasattr(user, 'guild') else 0,
-                                             "supplies_access.title", "📦 Доступ к поставкам одобрен!"),
-                    description=get_private_messages(user.guild.id if hasattr(user, 'guild') else 0,
-                                                   "supplies_access.description",
-                                                   "Вам предоставлен доступ к системе поставок!"),
-                    color=discord.Color.blue()
-                )
-            else:
-                # Standard recruitment message for military/civilian
-                role_type = "военнослужащего" if self.application_data["type"] == "military" else "госслужащего"
-
-                embed = discord.Embed(
-                    title=get_private_messages(user.guild.id if hasattr(user, 'guild') else 0,
-                                             "personnel.recruitment.title", "✅ Вы приняты во фракцию!"),
-                    description=get_private_messages(user.guild.id if hasattr(user, 'guild') else 0,
-                                                   "personnel.recruitment.description",
-                                                   "Поздравляем! Вы успешно приняты во Фракцию."),
-                    color=discord.Color.green()
-                )
-
-                instructions = get_private_messages(user.guild.id if hasattr(user, 'guild') else 0,
-                                                  "role_assignment.approval.instructions", "")
-
-                if instructions:
-                    embed.add_field(
-                        name="📋 Полезная информация",
-                        value=instructions,
-                        inline=False
-                    )
-
-            await user.send(embed=embed)
-        except discord.Forbidden:
-            pass  # User has DMs disabled
-    
-    async def _send_error_message(self, interaction, message):
-        """Send error message with proper interaction handling"""
-        try:
-            if interaction.response.is_done():                # Interaction already responded, use followup
-                await interaction.followup.send(f"❌ {message}", ephemeral=True)
-            else:
-                # Interaction not responded yet, use response
-                await interaction.response.send_message(f"❌ {message}", ephemeral=True)
-        except Exception as e:
-            print(f"Failed to send error message: {e}")
-            # Last resort - try both methods
-            try:
-                await interaction.response.send_message(f"❌ {message}", ephemeral=True)
-            except:
-                try:
-                    await interaction.followup.send(f"❌ {message}", ephemeral=True)
-                except:
-                    pass  # Give up
-    
     async def _continue_approval_process(self, interaction, user, guild, config, signed_by_name):
         """Continue with approval processing after authorization is successful"""
         try:
@@ -670,7 +593,21 @@ class RoleApplicationApprovalView(ui.View):
             
             # Send DM to user
             try:
-                await self._send_approval_dm(user)
+                if self.application_data["type"] == "supplier":
+                    # Special message for supplies access
+                    embed = discord.Embed(
+                        title=get_private_messages(guild.id,
+                                                 "supplies_access.title", "📦 Доступ к поставкам одобрен!"),
+                        description=get_private_messages(guild.id,
+                                                       "supplies_access.description",
+                                                       "Вам предоставлен доступ к системе поставок!"),
+                        color=discord.Color.blue()
+                    )
+                    await user.send(embed=embed)
+                else:
+                    # Standard approval DM
+                    role_type = "военнослужащего" if self.application_data["type"] == "military" else "госслужащего"
+                    await MessageService.send_approval_dm(user, guild.id, role_type)
             except Exception as e:
                 print(f"Warning: Error sending DM: {e}")
                 # Continue even if DM fails
@@ -772,7 +709,21 @@ class RoleApplicationApprovalView(ui.View):
                     # Continue processing even if personnel processing fails
               # Send DM to user
             try:
-                await self._send_approval_dm(user)
+                if self.application_data["type"] == "supplier":
+                    # Special message for supplies access
+                    embed = discord.Embed(
+                        title=get_private_messages(guild.id,
+                                                 "supplies_access.title", "📦 Доступ к поставкам одобрен!"),
+                        description=get_private_messages(guild.id,
+                                                       "supplies_access.description",
+                                                       "Вам предоставлен доступ к системе поставок!"),
+                        color=discord.Color.blue()
+                    )
+                    await user.send(embed=embed)
+                else:
+                    # Standard approval DM
+                    role_type = "военнослужащего" if self.application_data["type"] == "military" else "госслужащего"
+                    await MessageService.send_approval_dm(user, guild.id, role_type)
             except Exception as e:
                 print(f"Warning: Error sending DM: {e}")
                 # Continue even if DM fails

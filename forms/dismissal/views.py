@@ -317,15 +317,28 @@ class SimplifiedDismissalApprovalView(ui.View):
                 target_user_member = interaction.guild.get_member(self.user_id)
                 if target_user_member:
                     try:
-                        rejection_content = get_private_messages(interaction.guild.id, 'dismissal.rejection.description')
-                        await target_user_member.send(
-                            rejection_content.format(
-                                moderator_name=interaction.user.display_name,
-                                reason=reason
-                            )
+                        dm_embed = discord.Embed(
+                            title=get_private_messages(interaction.guild.id, 'dismissal.rejection.title'),
+                            description=get_private_messages(interaction.guild.id, 'dismissal.rejection.description'),
+                            color=discord.Color.red()
                         )
-                    except:
-                        pass
+                        dm_embed.add_field(
+                            name=get_private_messages(interaction.guild.id, 'personnel.dismissal.fields.dismissed_by'),
+                            value=interaction.user.display_name,
+                            inline=False
+                        )
+                        dm_embed.add_field(
+                            name=get_private_messages(interaction.guild.id, 'personnel.dismissal.fields.reason'),
+                            value=reason,
+                            inline=False
+                        )
+
+                        await target_user_member.send(embed=dm_embed)
+                        print(f"❌ DISMISSAL REJECTION: DM sent to {target_user_member.display_name}")
+                    except discord.Forbidden:
+                        print(f"⚠️ DISMISSAL REJECTION: Could not send DM to {target_user_member.display_name} (DMs disabled)")
+                    except Exception as dm_error:
+                        print(f"⚠️ DISMISSAL REJECTION: Failed to send DM: {dm_error}")
             
             # Логирование
             if is_automatic:

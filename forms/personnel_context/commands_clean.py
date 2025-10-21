@@ -13,6 +13,7 @@ from utils.database_manager import PersonnelManager
 from utils.database_manager.position_manager import position_manager
 from utils.nickname_manager import nickname_manager
 from utils.message_manager import get_message, get_private_messages
+from utils.message_service import MessageService
 from discord import ui
 import re
 
@@ -242,20 +243,13 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                 
                 # Send DM to recruited user
                 try:
-                    dm_embed = discord.Embed(
-                        title=get_private_messages(interaction.guild.id, 'personnel.recruitment.title'),
-                        description=get_private_messages(interaction.guild.id, 'personnel.recruitment.description'),
-                        color=discord.Color.green()
+                    await MessageService.send_recruitment_dm(
+                        user=self.target_user,
+                        guild_id=interaction.guild.id,
+                        full_name=full_name,
+                        static=static
                     )
-                    dm_embed.add_field(name=get_private_messages(interaction.guild.id, 'personnel.recruitment.fields.name'), value=full_name, inline=True)
-                    dm_embed.add_field(name=get_private_messages(interaction.guild.id, 'personnel.recruitment.fields.static'), value=static, inline=True)
-                    dm_embed.add_field(name=get_private_messages(interaction.guild.id, 'personnel.recruitment.fields.rank'), value="Рядовой", inline=True)
-                    dm_embed.add_field(name=get_private_messages(interaction.guild.id, 'personnel.recruitment.fields.department'), value="Военная Академия", inline=False)
-                    
-                    await self.target_user.send(embed=dm_embed)
                     print(f"✅ RECRUITMENT: DM sent to {self.target_user.display_name}")
-                except discord.Forbidden:
-                    print(f"⚠️ RECRUITMENT: Could not send DM to {self.target_user.display_name} (DMs disabled)")
                 except Exception as dm_error:
                     print(f"⚠️ RECRUITMENT: Failed to send DM: {dm_error}")
                 
@@ -675,18 +669,13 @@ class DismissalModal(ui.Modal, title="Увольнение"):
                 
                 # Send DM to dismissed user
                 try:
-                    dm_embed = discord.Embed(
-                        title=get_private_messages(interaction.guild.id, 'personnel.dismissal.title'),
-                        description=get_private_messages(interaction.guild.id, 'personnel.dismissal.description'),
-                        color=discord.Color.orange()
+                    await MessageService.send_dismissal_dm(
+                        user=self.target_user,
+                        guild_id=interaction.guild.id,
+                        reason=reason,
+                        dismissed_by=interaction.user.display_name
                     )
-                    dm_embed.add_field(name=get_private_messages(interaction.guild.id, 'personnel.dismissal.fields.reason'), value=reason, inline=False)
-                    dm_embed.add_field(name=get_private_messages(interaction.guild.id, 'personnel.dismissal.fields.dismissed_by'), value=interaction.user.display_name, inline=False)
-                    
-                    await self.target_user.send(embed=dm_embed)
                     print(f"✅ DISMISSAL: DM sent to {self.target_user.display_name}")
-                except discord.Forbidden:
-                    print(f"⚠️ DISMISSAL: Could not send DM to {self.target_user.display_name} (DMs disabled)")
                 except Exception as dm_error:
                     print(f"⚠️ DISMISSAL: Failed to send DM: {dm_error}")
                 

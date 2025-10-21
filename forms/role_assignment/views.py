@@ -54,6 +54,32 @@ class RoleAssignmentView(ui.View):
     @discord.ui.button(label="📜 Эта фракция", style=discord.ButtonStyle.green, custom_id="role_military")
     async def military_application(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Open military service application form"""
+        # Check if user is already an active employee (CACHE first, then DB)
+        from forms.personnel_context.commands_clean import get_user_status
+        
+        user_status = await get_user_status(interaction.user.id)
+        
+        if user_status['is_active']:
+            # User is already active, show information
+            full_name = user_status['full_name'] or interaction.user.display_name
+            rank = user_status['rank'] or "Не указано"
+            department = user_status['department'] or "Не указано"
+            position = user_status['position'] or "Не назначено"
+            
+            await interaction.response.send_message(
+                f"❌ **Вы уже состоите в нашей фракции**\n\n"
+                f"📋 **Ваша текущая информация:**\n"
+                f"> • **Имя, Фамилия:** `{full_name}`\n"
+                f"> • **Звание:** `{rank}`\n"
+                f"> • **Подразделение:** `{department}`\n"
+                f"> • **Должность:** `{position}`\n\n"
+                f"💡 **Если вам нужно изменить данные, используйте:**\n"
+                f"• **Общее редактирование** - для изменения личных данных\n"
+                f"• **Изменить ранг** - для изменения звания",
+                ephemeral=True
+            )
+            return
+        
         # Check if user has active blacklist entry (CACHED - should be fast)
         from utils.database_manager import personnel_manager
         
@@ -74,7 +100,7 @@ class RoleAssignmentView(ui.View):
             )
             return
         
-        # No blacklist, proceed with application
+        # No issues, proceed with application
         modal = MilitaryApplicationModal()
         await interaction.response.send_modal(modal)
     

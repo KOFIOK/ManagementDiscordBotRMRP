@@ -15,7 +15,6 @@ Features:
 import asyncio
 from datetime import datetime, timedelta
 from typing import Dict, Optional, Any, Tuple, List
-from utils.database_manager import personnel_manager
 
 
 class UserDataCache:
@@ -108,6 +107,8 @@ class UserDataCache:
             
             # Используем database_manager для получения данных
             try:
+                # Lazy import to avoid circular dependency
+                from utils.database_manager import personnel_manager
                 user_data = await personnel_manager.get_personnel_summary(user_id)
                 if user_data:
                     # Данные уже в правильном формате, не нужно переопределять с fallback значениями
@@ -183,7 +184,8 @@ class UserDataCache:
         
         try:
             # Используем database_manager для получения ПОЛНЫХ данных
-            import asyncio
+            # Lazy import to avoid circular dependency
+            from utils.database_manager import personnel_manager
             user_data = await personnel_manager.get_personnel_summary(user_id)
             
             if user_data:
@@ -387,6 +389,8 @@ class UserDataCache:
             
             try:
                 # Получаем ВСЕ полные данные из database_manager используя get_all_personnel
+                # Lazy import to avoid circular dependency
+                from utils.database_manager import personnel_manager
                 all_users_raw = await personnel_manager.get_all_personnel()
                 
                 # Преобразуем в ожидаемый формат для leave_requests
@@ -802,3 +806,24 @@ def print_cache_status():
 async def force_refresh_user_cache(user_id: int) -> Optional[Dict[str, Any]]:
     """Принудительное обновление конкретного пользователя"""
     return await _global_cache.force_refresh_user(user_id)
+
+
+def invalidate_user_cache(user_id: int) -> None:
+    """
+    Удалить конкретного пользователя из кэша
+    
+    Args:
+        user_id: Discord ID пользователя для удаления
+    """
+    if user_id in _global_cache._cache:
+        del _global_cache._cache[user_id]
+        del _global_cache._expiry[user_id]
+        _global_cache._stats['cache_size'] = len(_global_cache._cache)
+        print(f"🗑️ CACHE INVALIDATE: Пользователь {user_id} удален из кэша")
+
+
+def clear_user_cache() -> None:
+    """
+    Очистить весь кэш пользователей
+    """
+    _global_cache.clear_cache()

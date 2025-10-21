@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List, Tuple
 import logging
 from ..postgresql_pool import get_db_cursor, get_connection_pool
+from ..user_cache import invalidate_user_cache
 
 logger = logging.getLogger(__name__)
 
@@ -190,6 +191,16 @@ class PersonnelManager:
             """, (first_name, last_name, static_id, datetime.now(timezone.utc), personnel_id))
             
             print(f"Обновлена запись personnel: {first_name} {last_name} (ID: {personnel_id})")
+            
+            # Get discord_id for cache invalidation
+            cursor.execute("SELECT discord_id FROM personnel WHERE id = %s;", (personnel_id,))
+            result = cursor.fetchone()
+            if result:
+                discord_id = result['discord_id']
+                # Lazy import to avoid circular dependency
+                from ..user_cache import invalidate_user_cache
+                invalidate_user_cache(discord_id)
+                print(f"🗑️ CACHE INVALIDATE: Personnel record updated for user {discord_id}")
             
         except Exception as e:
             logger.error(f"_update_personnel_record failed: {e}")
@@ -837,6 +848,11 @@ class PersonnelManager:
                 
                 if cursor.rowcount > 0:
                     logger.info(f"✅ {message} (ID: {discord_id})")
+                    # Invalidate user cache after profile update
+                    # Lazy import to avoid circular dependency
+                    from ..user_cache import invalidate_user_cache
+                    invalidate_user_cache(discord_id)
+                    print(f"🗑️ CACHE INVALIDATE: Personnel profile updated for user {discord_id}")
                     return True, message
                 else:
                     return False, f"Активный персонал с ID {discord_id} не найден"
@@ -1224,6 +1240,10 @@ class PersonnelManager:
                 
                 # Invalidate cache for this user
                 self.invalidate_blacklist_cache(discord_id)
+                # Lazy import to avoid circular dependency
+                from ..user_cache import invalidate_user_cache
+                invalidate_user_cache(discord_id)
+                print(f"🗑️ CACHE INVALIDATE: User added to blacklist, cache invalidated for {discord_id}")
                 
                 blacklist_data = {
                     'id': blacklist_id,
@@ -1509,6 +1529,17 @@ class PersonnelManager:
                     SET subdivision_id = %s, position_subdivision_id = NULL
                     WHERE personnel_id = %s;
                 """, (subdivision_id, personnel_id))
+                
+                # Get discord_id for cache invalidation
+                cursor.execute("SELECT discord_id FROM personnel WHERE id = %s;", (personnel_id,))
+                result = cursor.fetchone()
+                if result:
+                    discord_id = result['discord_id']
+                    # Lazy import to avoid circular dependency
+                    from ..user_cache import invalidate_user_cache
+                    invalidate_user_cache(discord_id)
+                    print(f"🗑️ CACHE INVALIDATE: Employee subdivision updated for user {discord_id}")
+                
                 return True
         except Exception as e:
             logger.error(f"_update_employee_subdivision failed: {e}")

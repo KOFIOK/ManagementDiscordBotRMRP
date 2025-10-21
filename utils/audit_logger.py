@@ -728,7 +728,7 @@ class PersonnelAuditLogger:
             bool: True if user was auto-blacklisted, False otherwise
         """
         try:
-            # Import PersonnelManager for service time calculation
+            # Import personnel_manager for service time calculation
             from utils.database_manager import personnel_manager
             
             # Calculate total service time

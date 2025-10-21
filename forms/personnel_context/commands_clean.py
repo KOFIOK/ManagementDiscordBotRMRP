@@ -25,6 +25,124 @@ def get_personnel_message(guild_id: int, key: str) -> str:
     return get_message(guild_id, f"personnel_context.{key}")
 
 
+async def get_user_status(user_discord_id: int) -> dict:
+    """
+    Get comprehensive user status information.
+    
+    Returns:
+        dict with keys:
+        - is_active: bool - currently on active service
+        - is_dismissed: bool - has been dismissed (but may have history)
+        - blacklist_info: dict|None - active blacklist info if exists
+        - rank: str|None - current rank if active
+        - department: str|None - current department if active
+        - position: str|None - current position if active
+        - full_name: str|None - full name from personnel table
+        - static: str|None - static number
+    """
+    try:
+        from utils.database_manager import personnel_manager
+        from utils.user_cache import get_cached_user_info
+        
+        status = {
+            'is_active': False,
+            'is_dismissed': False,
+            'blacklist_info': None,
+            'rank': None,
+            'department': None,
+            'position': None,
+            'full_name': None,
+            'static': None
+        }
+        
+        # First, try to get data from cache
+        cached_data = await get_cached_user_info(user_discord_id)
+        
+        if cached_data:
+            # Use cached data for basic information
+            status['full_name'] = cached_data.get('full_name')
+            status['static'] = cached_data.get('static')
+            status['rank'] = cached_data.get('rank')
+            status['department'] = cached_data.get('department')
+            status['position'] = cached_data.get('position')
+            
+            # If we have rank data, user is likely active
+            if status['rank'] and status['rank'] != 'Не указано':
+                status['is_active'] = True
+                status['is_dismissed'] = False
+            else:
+                # Need to check dismissal status from database
+                with get_db_cursor() as cursor:
+                    cursor.execute("""
+                        SELECT is_dismissal
+                        FROM personnel 
+                        WHERE discord_id = %s
+                        ORDER BY id DESC
+                        LIMIT 1;
+                    """, (user_discord_id,))
+                    
+                    personnel_result = cursor.fetchone()
+                    if personnel_result:
+                        status['is_dismissed'] = personnel_result['is_dismissal']
+                        if not status['is_dismissed']:
+                            # User has personnel record but no active service - might be inactive
+                            status['is_active'] = False
+        else:
+            # No cached data, check database directly
+            with get_db_cursor() as cursor:
+                # Check if user has any personnel record
+                cursor.execute("""
+                    SELECT id, first_name, last_name, static, is_dismissal
+                    FROM personnel 
+                    WHERE discord_id = %s
+                    ORDER BY id DESC
+                    LIMIT 1;
+                """, (user_discord_id,))
+                
+                personnel_result = cursor.fetchone()
+                if personnel_result:
+                    status['is_dismissed'] = personnel_result['is_dismissal']
+                    status['full_name'] = f"{personnel_result['first_name']} {personnel_result['last_name']}".strip() if personnel_result['first_name'] and personnel_result['last_name'] else None
+                    status['static'] = personnel_result['static']
+                    
+                    # If not dismissed, get active service info
+                    if not personnel_result['is_dismissal']:
+                        cursor.execute("""
+                            SELECT r.name as rank_name, s.name as dept_name, pos.name as pos_name
+                            FROM employees e
+                            JOIN ranks r ON e.rank_id = r.id
+                            JOIN subdivisions s ON e.subdivision_id = s.id
+                            LEFT JOIN position_subdivision ps ON e.position_subdivision_id = ps.id
+                            LEFT JOIN positions pos ON ps.position_id = pos.id
+                            WHERE e.personnel_id = %s;
+                        """, (personnel_result['id'],))
+                        
+                        service_result = cursor.fetchone()
+                        if service_result:
+                            status['is_active'] = True
+                            status['rank'] = service_result['rank_name']
+                            status['department'] = service_result['dept_name']
+                            status['position'] = service_result['pos_name']
+        
+        # Always check blacklist (this might not be cached, so we check it separately)
+        status['blacklist_info'] = await personnel_manager.check_active_blacklist(user_discord_id)
+        
+        return status
+        
+    except Exception as e:
+        print(f"Error getting user status for {user_discord_id}: {e}")
+        return {
+            'is_active': False,
+            'is_dismissed': False,
+            'blacklist_info': None,
+            'rank': None,
+            'department': None,
+            'position': None,
+            'full_name': None,
+            'static': None
+        }
+
+
 async def get_user_rank_from_db(user_discord_id: int) -> str:
     """Get user's current rank from database instead of Discord roles"""
     try:
@@ -81,14 +199,23 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
         self.target_user = target_user
         self.guild_id = guild_id
         
-        self.name_input = ui.TextInput(
-            label=get_personnel_message(guild_id, 'recruitment.name_label'),
-            placeholder=get_personnel_message(guild_id, 'recruitment.name_placeholder'),
+        self.first_name_input = ui.TextInput(
+            label=get_personnel_message(guild_id, 'recruitment.first_name_label'),
+            placeholder=get_personnel_message(guild_id, 'recruitment.first_name_placeholder'),
             min_length=2,
-            max_length=50,
+            max_length=25,
             required=True
         )
-        self.add_item(self.name_input)
+        self.add_item(self.first_name_input)
+        
+        self.last_name_input = ui.TextInput(
+            label=get_personnel_message(guild_id, 'recruitment.last_name_label'),
+            placeholder=get_personnel_message(guild_id, 'recruitment.last_name_placeholder'),
+            min_length=2,
+            max_length=25,
+            required=True
+        )
+        self.add_item(self.last_name_input)
         
         self.static_input = ui.TextInput(
             label=get_personnel_message(guild_id, 'recruitment.static_label'),
@@ -108,18 +235,38 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
             config = load_config()
             if not is_moderator_or_admin(interaction.user, config):
                 await interaction.response.send_message(
-                    get_personnel_message(interaction.guild.id, 'recruitment.error_no_permissions'),
+                    "❌ У вас нет прав для выполнения этой команды.",
                     ephemeral=True
                 )
                 return
+            
+            # Validate first name and last name (must be single words)
+            first_name = self.first_name_input.value.strip()
+            last_name = self.last_name_input.value.strip()
+            
+            if ' ' in first_name or '\t' in first_name:
+                await interaction.response.send_message(
+                    get_personnel_message(interaction.guild.id, 'recruitment.error_first_name_spaces'),
+                    ephemeral=True
+                )
+                return
+            
+            if ' ' in last_name or '\t' in last_name:
+                await interaction.response.send_message(
+                    get_personnel_message(interaction.guild.id, 'recruitment.error_last_name_spaces'),
+                    ephemeral=True
+                )
+                return
+            
+            # Combine first and last name
+            full_name = f"{first_name} {last_name}"
             
             # Validate and format static
             static = self.static_input.value.strip()
             formatted_static = self._format_static(static)
             if not formatted_static:
                 await interaction.response.send_message(
-                    get_personnel_message(interaction.guild.id, 'recruitment.error_invalid_static') +
-                    "Примеры: 123456, 123-456, 12345, 12-345, 123 456",
+                    get_personnel_message(interaction.guild.id, 'recruitment.error_invalid_static_format'),
                     ephemeral=True
                 )
                 return
@@ -130,7 +277,7 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
             # Process recruitment using PersonnelManager
             success = await self._process_recruitment_with_personnel_manager(
                 interaction,
-                self.name_input.value.strip(),
+                full_name,
                 formatted_static,
                 "Рядовой"  # Always set rank as "Рядовой" for new recruits
             )
@@ -144,7 +291,8 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                 embed.add_field(
                     name="📋 Детали:",
                     value=(
-                        f"**ФИО:** {self.name_input.value.strip()}\n"
+                        f"**Имя:** {first_name}\n"
+                        f"**Фамилия:** {last_name}\n"
                         f"**Статик:** {formatted_static}\n"
                         f"**Звание:** Рядовой"
                     ),
@@ -243,13 +391,27 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                 
                 # Send DM to recruited user
                 try:
-                    await MessageService.send_recruitment_dm(
-                        user=self.target_user,
-                        guild_id=interaction.guild.id,
-                        full_name=full_name,
-                        static=static
+                    dm_embed = discord.Embed(
+                        title="✅ Вы приняты на службу!",
+                        description=(
+                            "Поздравляем! Вы успешно приняты на службу в Вооруженные Силы РФ.\n\n"
+                            "📋 **Важная информация:**\n"
+                            "> • Следите за каналом общения и оповещениями\n"
+                            "> • Выполняйте приказы командования\n"
+                            "> • Участвуйте в учебных мероприятиях для повышения\n\n"
+                            "🎖️ Удачи в службе!"
+                        ),
+                        color=discord.Color.green()
                     )
+                    dm_embed.add_field(name="ФИО", value=full_name, inline=True)
+                    dm_embed.add_field(name="Статик", value=static, inline=True)
+                    dm_embed.add_field(name="Звание", value="Рядовой", inline=True)
+                    dm_embed.add_field(name="Подразделение", value="Военная Академия", inline=False)
+                    
+                    await self.target_user.send(embed=dm_embed)
                     print(f"✅ RECRUITMENT: DM sent to {self.target_user.display_name}")
+                except discord.Forbidden:
+                    print(f"⚠️ RECRUITMENT: Could not send DM to {self.target_user.display_name} (DMs disabled)")
                 except Exception as dm_error:
                     print(f"⚠️ RECRUITMENT: Failed to send DM: {dm_error}")
                 
@@ -261,6 +423,7 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                 except Exception as role_error:
                     print(f"⚠️ RECRUITMENT: Failed to assign roles: {role_error}")
                     # Continue even if role assignment fails
+                    
             else:
                 print(f"❌ RECRUITMENT: PersonnelManager failed: {message}")
             
@@ -357,26 +520,6 @@ async def recruit_user(interaction: discord.Interaction, user: discord.Member):
         )
         return
     
-    # Check if user has active blacklist entry
-    from utils.database_manager import personnel_manager
-    
-    blacklist_info = await personnel_manager.check_active_blacklist(user.id)
-    
-    if blacklist_info:
-        # User is blacklisted, deny recruitment
-        start_date_str = blacklist_info['start_date'].strftime('%d.%m.%Y')
-        end_date_str = blacklist_info['end_date'].strftime('%d.%m.%Y') if blacklist_info['end_date'] else 'Бессрочно'
-        
-        await interaction.response.send_message(
-            f"❌ **Этому пользователю запрещен приём на службу**\n\n"
-            f"📋 **{blacklist_info['full_name']} | {blacklist_info['static']} находится в Чёрном списке ВС РФ**\n"
-            f"> **Причина:** {blacklist_info['reason']}\n"
-            f"> **Период:** {start_date_str} - {end_date_str}\n\n"
-            f"*Для снятия с чёрного списка обратитесь к руководству бригады.*",
-            ephemeral=True
-        )
-        return
-            
     # Check if user is already on service (has a record in employees table)
     from utils.postgresql_pool import get_db_cursor
     with get_db_cursor() as cursor:
@@ -399,8 +542,28 @@ async def recruit_user(interaction: discord.Interaction, user: discord.Member):
             )
             return
     
+    # Check if user has active blacklist entry (only if not already in service)
+    from utils.database_manager import personnel_manager
+    
+    blacklist_info = await personnel_manager.check_active_blacklist(user.id)
+    
+    if blacklist_info:
+        # User is blacklisted, deny recruitment
+        start_date_str = blacklist_info['start_date'].strftime('%d.%m.%Y')
+        end_date_str = blacklist_info['end_date'].strftime('%d.%m.%Y') if blacklist_info['end_date'] else 'Бессрочно'
+        
+        await interaction.response.send_message(
+            f"❌ **Этому пользователю запрещен приём на службу**\n\n"
+            f"📋 **{blacklist_info['full_name']} | {blacklist_info['static']} находится в Чёрном списке ВС РФ**\n"
+            f"> **Причина:** {blacklist_info['reason']}\n"
+            f"> **Период:** {start_date_str} - {end_date_str}\n\n"
+            f"*Для снятия с чёрного списка обратитесь к руководству бригады.*",
+            ephemeral=True
+        )
+        return
+    
     # No blacklist, proceed with recruitment
-    modal = RecruitmentModal(user, interaction.guild.id)
+    modal = RecruitmentModal(user)
     await interaction.response.send_modal(modal)
     print(f"✅ Recruitment modal sent for {user.display_name}")
 
@@ -669,13 +832,21 @@ class DismissalModal(ui.Modal, title="Увольнение"):
                 
                 # Send DM to dismissed user
                 try:
-                    await MessageService.send_dismissal_dm(
-                        user=self.target_user,
-                        guild_id=interaction.guild.id,
-                        reason=reason,
-                        dismissed_by=interaction.user.display_name
+                    dm_embed = discord.Embed(
+                        title="📋 Вы уволены со службы",
+                        description=(
+                            "Вы были уволены из Вооруженных Сил РФ.\n\n"
+                            "Благодарим за службу!"
+                        ),
+                        color=discord.Color.orange()
                     )
+                    dm_embed.add_field(name="Причина увольнения", value=reason, inline=False)
+                    dm_embed.add_field(name="Уволил", value=interaction.user.display_name, inline=False)
+                    
+                    await self.target_user.send(embed=dm_embed)
                     print(f"✅ DISMISSAL: DM sent to {self.target_user.display_name}")
+                except discord.Forbidden:
+                    print(f"⚠️ DISMISSAL: Could not send DM to {self.target_user.display_name} (DMs disabled)")
                 except Exception as dm_error:
                     print(f"⚠️ DISMISSAL: Failed to send DM: {dm_error}")
                 
@@ -687,6 +858,7 @@ class DismissalModal(ui.Modal, title="Увольнение"):
                 except Exception as role_error:
                     print(f"⚠️ DISMISSAL: Failed to remove roles: {role_error}")
                     # Continue even if role removal fails
+                    
             else:
                 print(f"❌ DISMISSAL: PersonnelManager failed: {message}")
             
@@ -779,6 +951,17 @@ async def dismiss_user(interaction: discord.Interaction, user: discord.User):
     if not can_moderate_user(interaction.user, target_user, config):
         await interaction.response.send_message(
             "❌ Вы не можете выполнять действия над этим пользователем. Недостаточно прав в иерархии.",
+            ephemeral=True
+        )
+        return
+    
+    # Check user status before proceeding
+    user_status = await get_user_status(target_user.id)
+    
+    # Check if user is active
+    if not user_status['is_active']:
+        await interaction.response.send_message(
+            f"⚠️ **{target_user.display_name} не состоит в вашей фракции**",
             ephemeral=True
         )
         return
@@ -2705,6 +2888,17 @@ async def quick_promote(interaction: discord.Interaction, user: discord.Member):
         await interaction.response.send_message("❌ Нельзя повысить бота.", ephemeral=True)
         return
     
+    # Check user status
+    user_status = await get_user_status(user.id)
+    
+    # Check if user is active
+    if not user_status['is_active']:
+        await interaction.response.send_message(
+            f"⚠️ **{user.display_name} не состоит в вашей фракции**",
+            ephemeral=True
+        )
+        return
+    
     try:
         from forms.personnel_context.rank_utils import RankHierarchy
         
@@ -2764,6 +2958,88 @@ async def general_edit(interaction: discord.Interaction, user: discord.Member):
         await interaction.response.send_message("❌ Нельзя редактировать данные бота.", ephemeral=True)
         return
     
+    # Get comprehensive user status
+    user_status = await get_user_status(user.id)
+    
+    # Handle dismissed users - show information instead of edit buttons
+    if user_status['is_dismissed'] and not user_status['is_active']:
+        # User is dismissed, show dismissal information
+        full_name = user_status['full_name'] or user.display_name
+        static = user_status['static'] or 'Не указан'
+
+        # Try to get dismissal reason from history
+        dismissal_reason = "Не указана"
+        try:
+            from utils.postgresql_pool import get_db_cursor
+            with get_db_cursor() as cursor:
+                cursor.execute("""
+                    SELECT details
+                    FROM history h
+                    JOIN personnel p ON h.personnel_id = p.id
+                    WHERE p.discord_id = %s AND h.action_id = 3
+                    ORDER BY h.action_date DESC
+                    LIMIT 1;
+                """, (user.id,))
+
+                history_result = cursor.fetchone()
+                if history_result and history_result['details']:
+                    dismissal_reason = history_result['details']
+        except Exception as e:
+            print(f"Warning: Could not get dismissal reason for {user.id}: {e}")
+
+        # Check blacklist
+        blacklist_text = ""
+        if user_status['blacklist_info']:
+            start_date_str = user_status['blacklist_info']['start_date'].strftime('%d.%m.%Y')
+            end_date_str = user_status['blacklist_info']['end_date'].strftime('%d.%m.%Y') if user_status['blacklist_info']['end_date'] else 'Бессрочно'
+            blacklist_text = f"\n\n⚠️ **Чёрный список:** {user_status['blacklist_info']['reason']} ({start_date_str} - {end_date_str})"
+
+        await interaction.response.send_message(
+            f"👤 **Информация о пользователе {user.mention}**\n\n"
+            f"📊 **Данные:**\n"
+            f"> • **Имя, Фамилия:** `{full_name}`\n"
+            f"> • **Статик:** `{static}`\n"
+            f"> • **Статус:** `Уволен со службы`\n"
+            f"> • **Причина увольнения:** `{dismissal_reason}`{blacklist_text}\n\n"
+            f"💡 **Для восстановления на службу используйте:**\n"
+            f"• **Принять во фракцию** - для повторного приёма\n"
+            f"• **Изменить ранг** - для восстановления звания",
+            ephemeral=True
+        )
+        return
+    
+    # Handle users not in service (never served)
+    if not user_status['is_active'] and not user_status['is_dismissed']:
+        # User never served, show recruitment suggestion
+        full_name = user_status['full_name'] or user.display_name
+        static = user_status['static'] or 'Не указан'
+        
+        # Check blacklist
+        blacklist_text = ""
+        if user_status['blacklist_info']:
+            start_date_str = user_status['blacklist_info']['start_date'].strftime('%d.%m.%Y')
+            end_date_str = user_status['blacklist_info']['end_date'].strftime('%d.%m.%Y') if user_status['blacklist_info']['end_date'] else 'Бессрочно'
+            blacklist_text = f"\n\n⚠️ **Чёрный список:** {user_status['blacklist_info']['reason']} ({start_date_str} - {end_date_str})"
+        
+        await interaction.response.send_message(
+            f"👤 **Информация о пользователе {user.mention}**\n\n"
+            f"📊 **Данные:**\n"
+            f"> • **Имя, Фамилия:** `{full_name}`\n"
+            f"> • **Статик:** `{static}`\n"
+            f"> • **Статус:** `Не состоит в фракции`{blacklist_text}\n\n"
+            f"💡 **Для приёма на службу используйте:**\n"
+            f"• **Принять во фракцию** - для первичного приёма",
+            ephemeral=True
+        )
+        return
+    
+    # User is active - show edit options with blacklist warning if needed
+    blacklist_warning = ""
+    if user_status['blacklist_info']:
+        start_date_str = user_status['blacklist_info']['start_date'].strftime('%d.%m.%Y')
+        end_date_str = user_status['blacklist_info']['end_date'].strftime('%d.%m.%Y') if user_status['blacklist_info']['end_date'] else 'Бессрочно'
+        blacklist_warning = f"\n\n⚠️ **ВНИМАНИЕ: Пользователь в Чёрном списке!**\n> **Причина:** {user_status['blacklist_info']['reason']}\n> **Период:** {start_date_str} - {end_date_str}"
+    
     # Get current user information from cache and database
     try:
         # Get data from cache first (async version that can load from DB)
@@ -2771,87 +3047,36 @@ async def general_edit(interaction: discord.Interaction, user: discord.Member):
         user_data = await get_cached_user_info(user.id)
         
         # Get rank from database
-        current_rank = await get_user_rank_from_db(user.id) or "Не указано"
+        current_rank = user_status['rank'] or "Не указано"
         
         # Get department and position from database
-        department_name = "Не указано"
-        position_name = "Не назначено"
-        full_name = user.display_name  # Fallback to display name
+        department_name = user_status['department'] or "Не указано"
+        position_name = user_status['position'] or "Не назначено"
+        full_name = user_status['full_name'] or user.display_name
         
-        try:
-            from utils.postgresql_pool import get_db_cursor
-            with get_db_cursor() as cursor:
-                # Get department name and full name
-                cursor.execute("""
-                    SELECT s.name as dept_name, p.first_name, p.last_name
-                    FROM employees e
-                    JOIN personnel p ON e.personnel_id = p.id
-                    JOIN subdivisions s ON e.subdivision_id = s.id
-                    WHERE p.discord_id = %s AND p.is_dismissal = false;
-                """, (user.id,))
-                
-                dept_result = cursor.fetchone()
-                if dept_result:
-                    department_name = dept_result['dept_name']
-                    # Format full name from database
-                    if dept_result['first_name'] and dept_result['last_name']:
-                        full_name = f"{dept_result['first_name']} {dept_result['last_name']}"
-                
-                # Get position name
-                cursor.execute("""
-                    SELECT pos.name 
-                    FROM employees e
-                    JOIN personnel p ON e.personnel_id = p.id
-                    JOIN position_subdivision ps ON e.position_subdivision_id = ps.id
-                    JOIN positions pos ON ps.position_id = pos.id
-                    WHERE p.discord_id = %s AND p.is_dismissal = false;
-                """, (user.id,))
-                
-                pos_result = cursor.fetchone()
-                if pos_result:
-                    position_name = pos_result['name']
-                    
-        except Exception as db_error:
-            print(f"Warning: Could not get department/position data for {user.id}: {db_error}")
-    
+        # Format user information - get static from user_data or fallback to DB query
+        static = user_data.get('static', user_status['static']) if user_data else user_status['static']
+        if not static:
+            static = 'Не указано'
+        
+        # Send general editing view with current information
+        view = GeneralEditView(user)
+        await interaction.response.send_message(
+            f"⚙️ **Общее редактирование для {user.mention}**\n\n"
+            f"📊 **Текущая информация:**\n"
+            f"> • **Имя, Фамилия:** `{full_name}`\n"
+            f"> • **Статик:** `{static}`\n"
+            f"> • **Звание:** `{current_rank}`\n"
+            f"> • **Подразделение:** `{department_name}`\n"
+            f"> • **Должность:** `{position_name}`{blacklist_warning}\n\n"
+            f"Выберите что хотите изменить:",
+            view=view,
+            ephemeral=True
+        )
+        
     except Exception as e:
-        print(f"Warning: Could not get user data for {user.id}: {e}")
-        # Fallback values
-        user_data = {}
-        current_rank = "Не указано"
-        department_name = "Не указано"
-        position_name = "Не назначено"
-        full_name = user.display_name
-    
-    # Format user information - get static from user_data or fallback to DB query
-    static = user_data.get('static', 'Не указано') if user_data else 'Не указано'
-    
-    # If static is still not found, try to get it directly from database
-    if static == 'Не указано':
-        try:
-            from utils.postgresql_pool import get_db_cursor
-            with get_db_cursor() as cursor:
-                cursor.execute("SELECT static FROM personnel WHERE discord_id = %s AND is_dismissal = false;", (user.id,))
-                static_result = cursor.fetchone()
-                if static_result and static_result['static']:
-                    static = static_result['static']
-        except Exception as static_error:
-            print(f"Warning: Could not get static for {user.id}: {static_error}")
-    
-    # Send general editing view with current information
-    view = GeneralEditView(user)
-    await interaction.response.send_message(
-        f"⚙️ **Общее редактирование для {user.mention}**\n\n"
-        f"📊 **Текущая информация:**\n"
-        f"> • **Имя, Фамилия:** `{full_name}`\n"
-        f"> • **Статик:** `{static}`\n"
-        f"> • **Звание:** `{current_rank}`\n"
-        f"> • **Подразделение:** `{department_name}`\n"
-        f"> • **Должность:** `{position_name}`\n\n"
-        f"Выберите что хотите изменить:",
-        view=view,
-        ephemeral=True
-    )
+        print(f"Error in general editing: {e}")
+        await interaction.response.send_message(f"❌ **Ошибка:** {str(e)}", ephemeral=True)
 
 
 def setup_context_commands(bot):

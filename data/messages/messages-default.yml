@@ -114,6 +114,9 @@ personnel_context:
     error_invalid_static: "{templates.errors.validation} Статик должен содержать 5 или 6 цифр."
     error_general: "{templates.errors.general} при обработке принятия на службу."
     error_blacklisted: "{templates.permissions.no_access} этому пользователю запрещен приём на службу."
+    error_first_name_spaces: "❌ **Имя должно содержать только одно слово.**\nПожалуйста, введите только имя без пробелов."
+    error_last_name_spaces: "❌ **Фамилия должна содержать только одно слово.**\nПожалуйста, введите только фамилию без пробелов."
+    error_invalid_static_format: "❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.\nПримеры: 123456, 123-456, 12345, 12-345, 123 456"
 
   dismissal:
     error_no_permissions: "{templates.permissions.general} Требуются права модератора или администратора."

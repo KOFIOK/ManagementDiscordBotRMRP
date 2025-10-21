@@ -759,6 +759,9 @@ class PersonnelAuditLogger:
                     # Invalidate cache for this user
                     from utils.database_manager import personnel_manager
                     personnel_manager.invalidate_blacklist_cache(target_user.id)
+                    # Also invalidate general user cache since blacklist status changed
+                    from utils.user_cache import invalidate_user_cache
+                    invalidate_user_cache(target_user.id)
                     return True
                 else:
                     print(f"❌ Auto-blacklist failed for {personnel_data.get('name')}")

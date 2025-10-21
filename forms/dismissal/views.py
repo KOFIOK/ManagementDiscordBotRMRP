@@ -442,6 +442,11 @@ class SimplifiedDismissalApprovalView(ui.View):
                     else:
                         print(f"✅ PersonnelManager dismissal successful: {message}")
                         
+                        # Invalidate user cache after successful dismissal
+                        from utils.user_cache import invalidate_user_cache
+                        invalidate_user_cache(target_user.id)
+                        print(f"🗑️ CACHE INVALIDATE: User cache cleared for dismissed user {target_user.id}")
+                        
                 except Exception as e:
                     print(f"❌ Error in PersonnelManager dismissal: {e}")
             
@@ -1166,6 +1171,11 @@ class AutomaticDismissalApprovalView(ui.View):
                             pass  # If followup fails, continue silently
                     else:
                         print(f"✅ Personnel database updated: {registry_message}")
+                        
+                        # Invalidate user cache after successful dismissal
+                        from utils.user_cache import invalidate_user_cache
+                        invalidate_user_cache(user_id)
+                        print(f"🗑️ CACHE INVALIDATE: User cache cleared for dismissed user {user_id}")
                 else:
                     print(f"⚠️ Could not get user ID for {target_user.display_name}")
             except asyncio.TimeoutError:

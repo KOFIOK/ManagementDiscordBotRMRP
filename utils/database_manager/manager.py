@@ -1291,6 +1291,10 @@ class PersonnelManager:
             # Invalidate cache for this user
             self.invalidate_blacklist_cache(discord_id)
             
+            # Also invalidate general user cache since blacklist status changed
+            from ..user_cache import invalidate_user_cache
+            invalidate_user_cache(discord_id)
+            
             removed_data = blacklist_info.copy()
             
             print(f"✅ Blacklist DELETED for discord_id={discord_id}")

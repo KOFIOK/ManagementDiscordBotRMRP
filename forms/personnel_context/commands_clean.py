@@ -200,7 +200,7 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
         self.guild_id = guild_id
         
         self.first_name_input = ui.TextInput(
-            label=get_personnel_message(guild_id, 'recruitment.first_name_label'),
+            label="Имя",
             placeholder=get_personnel_message(guild_id, 'recruitment.first_name_placeholder'),
             min_length=2,
             max_length=25,
@@ -209,7 +209,7 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
         self.add_item(self.first_name_input)
         
         self.last_name_input = ui.TextInput(
-            label=get_personnel_message(guild_id, 'recruitment.last_name_label'),
+            label="Фамилия",
             placeholder=get_personnel_message(guild_id, 'recruitment.last_name_placeholder'),
             min_length=2,
             max_length=25,
@@ -541,6 +541,25 @@ async def recruit_user(interaction: discord.Interaction, user: discord.Member):
                 ephemeral=True
             )
             return
+        
+        # Check if user has a personnel record (even if dismissed)
+        cursor.execute("""
+            SELECT id, is_dismissal FROM personnel WHERE discord_id = %s
+        """, (user.id,))
+        existing_personnel = cursor.fetchone()
+        
+        if existing_personnel:
+            if existing_personnel['is_dismissal']:
+                # User was dismissed, can be recruited again
+                pass  # Continue with recruitment
+            else:
+                # User has personnel record but no active service - this shouldn't happen
+                await interaction.response.send_message(
+                    f"⚠️ **Найдена некорректная запись персонала для пользователя**\n\n"
+                    f"Обратитесь к администратору для исправления данных.",
+                    ephemeral=True
+                )
+                return
     
     # Check if user has active blacklist entry (only if not already in service)
     from utils.database_manager import personnel_manager
@@ -563,7 +582,7 @@ async def recruit_user(interaction: discord.Interaction, user: discord.Member):
         return
     
     # No blacklist, proceed with recruitment
-    modal = RecruitmentModal(user)
+    modal = RecruitmentModal(user, interaction.guild.id)
     await interaction.response.send_modal(modal)
     print(f"✅ Recruitment modal sent for {user.display_name}")
 

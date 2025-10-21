@@ -61,6 +61,27 @@ class MilitaryApplicationModal(ui.Modal):
                 )
                 return
         
+        # Check if user already has a personnel record
+        from utils.postgresql_pool import get_db_cursor
+        with get_db_cursor() as cursor:
+            cursor.execute("""
+                SELECT is_dismissal FROM personnel WHERE discord_id = %s
+            """, (interaction.user.id,))
+            existing_personnel = cursor.fetchone()
+            
+            if existing_personnel:
+                if not existing_personnel['is_dismissal']:
+                    # User is already active
+                    await interaction.response.send_message(
+                        "❌ **Вы уже находитесь на службе в Вооруженных Силах РФ.**\n\n"
+                        "Если вам нужно изменить данные или перевестись, обратитесь к командованию.",
+                        ephemeral=True
+                    )
+                    return
+                else:
+                    # User was dismissed, can reapply
+                    pass  # Continue with application
+        
         # Validate first name and last name (must be single words)
         first_name = self.first_name_input.value.strip()
         last_name = self.last_name_input.value.strip()

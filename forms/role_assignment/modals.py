@@ -14,14 +14,23 @@ class MilitaryApplicationModal(ui.Modal):
     def __init__(self):
         super().__init__(title="Заявка на получение роли военнослужащего")
         
-        self.name_input = ui.TextInput(
-            label="Имя Фамилия",
-            placeholder="Например: Олег Дубов",
+        self.first_name_input = ui.TextInput(
+            label="Имя",
+            placeholder="Например: Олег",
             min_length=2,
-            max_length=50,
+            max_length=25,
             required=True
         )
-        self.add_item(self.name_input)
+        self.add_item(self.first_name_input)
+        
+        self.last_name_input = ui.TextInput(
+            label="Фамилия",
+            placeholder="Например: Дубов",
+            min_length=2,
+            max_length=25,
+            required=True
+        )
+        self.add_item(self.last_name_input)
         
         self.static_input = ui.TextInput(
             label="Статик",
@@ -51,6 +60,29 @@ class MilitaryApplicationModal(ui.Modal):
                 )
                 return
         
+        # Validate first name and last name (must be single words)
+        first_name = self.first_name_input.value.strip()
+        last_name = self.last_name_input.value.strip()
+        
+        if ' ' in first_name or '\t' in first_name:
+            await interaction.response.send_message(
+                "❌ **Имя должно содержать только одно слово.**\n"
+                "Пожалуйста, введите только имя без пробелов.",
+                ephemeral=True
+            )
+            return
+        
+        if ' ' in last_name or '\t' in last_name:
+            await interaction.response.send_message(
+                "❌ **Фамилия должна содержать только одно слово.**\n"
+                "Пожалуйста, введите только фамилию без пробелов.",
+                ephemeral=True
+            )
+            return
+        
+        # Combine first and last name
+        full_name = f"{first_name} {last_name}"
+        
         # Validate and format static
         static = self.static_input.value.strip()
         formatted_static = self._format_static(static)
@@ -65,7 +97,7 @@ class MilitaryApplicationModal(ui.Modal):
         # Create application data
         application_data = {
             "type": "military",
-            "name": self.name_input.value.strip(),
+            "name": full_name,
             "static": formatted_static,
             "rank": "Рядовой",  # Always set rank as "Рядовой" for new military recruits
             "user_id": interaction.user.id,

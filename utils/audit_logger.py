@@ -728,6 +728,9 @@ class PersonnelAuditLogger:
             bool: True if user was auto-blacklisted, False otherwise
         """
         try:
+            # Import personnel_manager for service time calculation
+            from utils.database_manager import personnel_manager
+            
             # Calculate total service time
             total_days = await personnel_manager.calculate_total_service_time(personnel_id)
             

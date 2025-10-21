@@ -724,13 +724,19 @@ class PersonnelManager:
             with get_db_cursor() as cursor:
                 # Проверяем, есть ли активный сотрудник
                 cursor.execute("""
-                    SELECT first_name, last_name FROM personnel 
-                    WHERE discord_id = %s AND is_dismissal = false;
+                    SELECT first_name, last_name, is_dismissal FROM personnel 
+                    WHERE discord_id = %s;
                 """, (discord_id,))
                 
                 personnel = cursor.fetchone()
                 if not personnel:
-                    return False, f"Активный персонал с ID {discord_id} не найден"
+                    return False, f"Персонал с ID {discord_id} не найден в базе данных"
+                
+                # Если уже уволен, возвращаем успех
+                if personnel['is_dismissal']:
+                    full_name = f"{personnel['first_name']} {personnel['last_name']}"
+                    logger.info(f"✅ Персонал уже уволен: {full_name} (ID: {discord_id})")
+                    return True, f"Персонал {full_name} уже уволен"
                 
                 # Увольняем сотрудника
                 cursor.execute("""
@@ -1069,57 +1075,56 @@ class PersonnelManager:
 
     async def calculate_total_service_time(self, personnel_id: int) -> int:
         """
-        Calculate total service time in days for a personnel member.
+        Calculate current service period in days for a personnel member.
         
-        Handles multiple hiring/dismissal cycles by pairing them chronologically.
+        Only considers the most recent service period (from last hiring to dismissal or current time).
+        Previous service periods are ignored for blacklist calculations.
         
         Args:
             personnel_id: Internal personnel.id from database
             
         Returns:
-            int: Total days of service (sum of all service periods)
+            int: Days in current/most recent service period
         """
         try:
-            # Get all hiring and dismissal events for this person
+            # Get the most recent hiring event (action_id = 10)
             with get_db_cursor() as cursor:
-                # Get hiring events (action_id = 10)
                 cursor.execute("""
                     SELECT action_date 
                     FROM history 
                     WHERE personnel_id = %s AND action_id = 10
-                    ORDER BY action_date ASC
+                    ORDER BY action_date DESC
+                    LIMIT 1;
                 """, (personnel_id,))
-                hiring_dates = [row['action_date'] for row in cursor.fetchall()]
                 
-                # Get dismissal events (action_id = 3)
+                latest_hiring = cursor.fetchone()
+                if not latest_hiring:
+                    return 0
+                
+                hire_date = latest_hiring['action_date']
+                
+                # Get the dismissal after this hiring (if any)
                 cursor.execute("""
                     SELECT action_date 
                     FROM history 
-                    WHERE personnel_id = %s AND action_id = 3
+                    WHERE personnel_id = %s AND action_id = 3 AND action_date > %s
                     ORDER BY action_date ASC
-                """, (personnel_id,))
-                dismissal_dates = [row['action_date'] for row in cursor.fetchall()]
-            
-            # Calculate total service time by pairing hirings with dismissals
-            total_days = 0
-            
-            for i, hire_date in enumerate(hiring_dates):
-                # Find corresponding dismissal (or use current time if still serving)
-                if i < len(dismissal_dates):
-                    dismiss_date = dismissal_dates[i]
-                else:
-                    # Currently serving, use current time
-                    dismiss_date = datetime.now()
+                    LIMIT 1;
+                """, (personnel_id, hire_date))
                 
-                # Calculate days for this service period
-                service_period = (dismiss_date - hire_date).days
-                total_days += service_period
-            
-            print(f"📊 Calculated service time for personnel {personnel_id}: {total_days} days")
-            print(f"   Hirings: {len(hiring_dates)}, Dismissals: {len(dismissal_dates)}")
-            
-            return total_days
-            
+                dismissal_result = cursor.fetchone()
+                
+                if dismissal_result:
+                    # Person was dismissed after this hiring
+                    dismiss_date = dismissal_result['action_date']
+                    service_days = (dismiss_date - hire_date).days
+                else:
+                    # Person is still serving
+                    current_time = datetime.now()
+                    service_days = (current_time - hire_date).days
+                
+                return service_days
+                
         except Exception as e:
             print(f"❌ Error calculating service time: {e}")
             import traceback

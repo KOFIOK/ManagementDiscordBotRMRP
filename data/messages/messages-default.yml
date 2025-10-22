@@ -169,6 +169,17 @@ role_assignment:
     error_moderation_channel_not_found: "{templates.errors.not_found} Канал модерации не найден. Обратитесь к администратору."
     success_application_submitted: "{templates.status.completed} Ваша заявка отправлена на рассмотрение военнослужащим. Ожидайте решения."
     error_submission_failed: "{templates.errors.general} при отправке заявки. Попробуйте позже."
+    
+    # Modal placeholders
+    military_modal_title: "Получение ролей"
+    first_name_label: "Имя"
+    first_name_placeholder: "Например: Олег"
+    last_name_label: "Фамилия"
+    last_name_placeholder: "Например: Дубов"
+    static_label: "Статик"
+    static_placeholder: "123-456 (допускается 5-6 цифр)"
+    error_first_name_spaces: "❌ **Имя должно содержать только одно слово.**\nПожалуйста, введите только имя без пробелов."
+    error_last_name_spaces: "❌ **Фамилия должна содержать только одно слово.**\nПожалуйста, введите только фамилию без пробелов."
 
 safe_documents:
   approval:

@@ -13,11 +13,11 @@ class MilitaryApplicationModal(ui.Modal):
     """Modal for military service role applications"""
     
     def __init__(self):
-        super().__init__(title="Заявка на получение роли военнослужащего")
+        super().__init__(title=get_role_assignment_message(0, 'application.military_modal_title', 'Заявка на получение роли военнослужащего'))
         
         self.first_name_input = ui.TextInput(
-            label="Имя",
-            placeholder="Например: Олег",
+            label=get_role_assignment_message(0, 'application.first_name_label', 'Имя'),
+            placeholder=get_role_assignment_message(0, 'application.first_name_placeholder', 'Например: Олег'),
             min_length=2,
             max_length=25,
             required=True
@@ -25,8 +25,8 @@ class MilitaryApplicationModal(ui.Modal):
         self.add_item(self.first_name_input)
         
         self.last_name_input = ui.TextInput(
-            label="Фамилия",
-            placeholder="Например: Дубов",
+            label=get_role_assignment_message(0, 'application.last_name_label', 'Фамилия'),
+            placeholder=get_role_assignment_message(0, 'application.last_name_placeholder', 'Например: Дубов'),
             min_length=2,
             max_length=25,
             required=True
@@ -34,8 +34,8 @@ class MilitaryApplicationModal(ui.Modal):
         self.add_item(self.last_name_input)
         
         self.static_input = ui.TextInput(
-            label="Статик",
-            placeholder="123-456 (допускается 5-6 цифр)",
+            label=get_role_assignment_message(0, 'application.static_label', 'Статик'),
+            placeholder=get_role_assignment_message(0, 'application.static_placeholder', '123-456 (допускается 5-6 цифр)'),
             min_length=5,
             max_length=7,
             required=True
@@ -82,22 +82,39 @@ class MilitaryApplicationModal(ui.Modal):
                     # User was dismissed, can reapply
                     pass  # Continue with application
         
+        # Check if user has active blacklist entry
+        from utils.database_manager import personnel_manager
+        blacklist_info = await personnel_manager.check_active_blacklist(interaction.user.id)
+        
+        if blacklist_info:
+            # User is blacklisted, deny application
+            start_date_str = blacklist_info['start_date'].strftime('%d.%m.%Y')
+            end_date_str = blacklist_info['end_date'].strftime('%d.%m.%Y') if blacklist_info['end_date'] else 'Бессрочно'
+            
+            await interaction.response.send_message(
+                f"❌ **Вам запрещен приём на службу**\n\n"
+                f"📋 **{blacklist_info['full_name']} | {blacklist_info['static']} находится в Чёрном списке ВС РФ**\n"
+                f"> **Причина:** {blacklist_info['reason']}\n"
+                f"> **Период:** {start_date_str} - {end_date_str}\n\n"
+                f"*Для снятия с чёрного списка обратитесь к руководству бригады.*",
+                ephemeral=True
+            )
+            return
+        
         # Validate first name and last name (must be single words)
         first_name = self.first_name_input.value.strip()
         last_name = self.last_name_input.value.strip()
         
         if ' ' in first_name or '\t' in first_name:
             await interaction.response.send_message(
-                "❌ **Имя должно содержать только одно слово.**\n"
-                "Пожалуйста, введите только имя без пробелов.",
+                get_role_assignment_message(interaction.guild.id, 'application.error_first_name_spaces', "❌ **Имя должно содержать только одно слово.**\nПожалуйста, введите только имя без пробелов."),
                 ephemeral=True
             )
             return
         
         if ' ' in last_name or '\t' in last_name:
             await interaction.response.send_message(
-                "❌ **Фамилия должна содержать только одно слово.**\n"
-                "Пожалуйста, введите только фамилию без пробелов.",
+                get_role_assignment_message(interaction.guild.id, 'application.error_last_name_spaces', "❌ **Фамилия должна содержать только одно слово.**\nПожалуйста, введите только фамилию без пробелов."),
                 ephemeral=True
             )
             return

@@ -731,6 +731,23 @@ class PersonnelAuditLogger:
             # Import personnel_manager for service time calculation
             from utils.database_manager import personnel_manager
             
+            # Проверяет, есть ли у пользователя какие-либо записи о приеме во фракцию
+            # (чтобы избежать ложного черного списка для устаревших пользователей)
+            # Фиксит баг с legacy пользователями, у которых нет записей о приеме во фракцию
+            from utils.postgresql_pool import get_db_cursor
+            with get_db_cursor() as cursor:
+                cursor.execute("""
+                    SELECT COUNT(*) as hiring_count 
+                    FROM history 
+                    WHERE personnel_id = %s AND action_id = 10;
+                """, (personnel_id,))
+                hiring_result = cursor.fetchone()
+                has_hiring_records = hiring_result['hiring_count'] > 0 if hiring_result else False
+            
+            if not has_hiring_records:
+                print(f"ℹ️ No hiring records found for {personnel_data.get('name')} - skipping auto-blacklist check")
+                return False
+            
             # Calculate total service time
             total_days = await personnel_manager.calculate_total_service_time(personnel_id)
             

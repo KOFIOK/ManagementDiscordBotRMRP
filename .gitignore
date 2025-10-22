@@ -100,3 +100,4 @@ data/
 # Other
 tests/
 .github/copilot-instructions.md
+test_selectmenu.py

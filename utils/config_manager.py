@@ -61,6 +61,20 @@ default_config = {
     'administrators': {
         'users': [],
         'roles': []
+    },
+    'blacklist': {
+        'users': [],
+        'roles': [],
+        'default_module_permissions': {
+            'dismissal': False,
+            'role_assignment': False,
+            'warehouse': False,
+            'personnel_commands': False,
+            'moderation': False,
+            'administration': False,
+            'settings': False,
+            'audit': False
+        }
     },    # Warehouse system configuration
     'warehouse_request_channel': None,
     'warehouse_audit_channel': None,
@@ -592,6 +606,83 @@ def is_moderator_or_admin(user, config):
     
     # Check regular moderator permissions
     return is_moderator(user, config)
+
+def is_blacklisted_user(user, config, module=None):
+    """
+    Check if user is blacklisted with optional module-specific check.
+    
+    Args:
+        user: Discord user object
+        config: Bot configuration
+        module: Specific module to check (optional)
+    
+    Returns:
+        dict: {
+            'blacklisted': bool,
+            'reason': str or None,
+            'module_blocked': bool (if module specified)
+        }
+    """
+    blacklist = config.get('blacklist', {'users': [], 'roles': []})
+    
+    # Check if user is in blacklist
+    user_blacklisted = user.id in blacklist.get('users', [])
+    
+    # Check if user has blacklisted role
+    role_blacklisted = False
+    if hasattr(user, 'roles') and user.roles:
+        user_role_ids = [role.id for role in user.roles]
+        blacklisted_role_ids = blacklist.get('roles', [])
+        role_blacklisted = any(role_id in user_role_ids for role_id in blacklisted_role_ids)
+    
+    is_blacklisted = user_blacklisted or role_blacklisted
+    
+    result = {
+        'blacklisted': is_blacklisted,
+        'reason': None,
+        'module_blocked': False
+    }
+    
+    if not is_blacklisted:
+        return result
+    
+    # Determine reason
+    if user_blacklisted:
+        result['reason'] = f"Пользователь {user.display_name} в чёрном списке"
+    elif role_blacklisted:
+        blacklisted_roles = [role for role in user.roles if role.id in blacklisted_role_ids]
+        result['reason'] = f"Роль '{blacklisted_roles[0].name}' в чёрном списке"
+    
+    # Check module-specific permissions if module specified
+    if module and is_blacklisted:
+        default_permissions = config.get('blacklist', {}).get('default_module_permissions', {})
+        module_allowed = default_permissions.get(module, True)  # Default to allowed if not specified
+        
+        # TODO: In future, we can add per-user module overrides here
+        # For now, use default permissions for all blacklisted users
+        
+        result['module_blocked'] = not module_allowed
+    
+    return result
+
+def can_user_access_module(user, config, module):
+    """
+    Check if user can access a specific module.
+    
+    Args:
+        user: Discord user object
+        config: Bot configuration  
+        module: Module name to check
+    
+    Returns:
+        bool: True if user can access the module
+    """
+    blacklist_check = is_blacklisted_user(user, config, module)
+    
+    if blacklist_check['blacklisted']:
+        return not blacklist_check['module_blocked']
+    
+    return True
 
 async def has_pending_dismissal_report(bot, user_id, dismissal_channel_id):
     """

@@ -13,7 +13,7 @@ import asyncio
 import re
 import traceback
 from datetime import datetime
-from utils.config_manager import load_config, is_moderator_or_admin, can_moderate_user, get_dismissal_message_link
+from utils.config_manager import load_config, is_moderator_or_admin, can_moderate_user, get_dismissal_message_link, is_blacklisted_user, can_user_access_module
 from utils.user_cache import get_cached_user_info
 from utils.nickname_manager import nickname_manager
 
@@ -123,8 +123,17 @@ class SimplifiedDismissalApprovalView(ui.View):
     async def approve_dismissal(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Simplified dismissal approval"""
         try:
-            # Check permissions
+            # Check if moderator is blacklisted from dismissal module
             config = load_config()
+            if not can_user_access_module(interaction.user, config, 'dismissal'):
+                await interaction.response.send_message(
+                    "❌ **Доступ к модулю увольнений ограничен**\n\n"
+                    "Вы находитесь в чёрном списке и не можете одобрять рапорты на увольнение.",
+                    ephemeral=True
+                )
+                return
+            
+            # Check permissions
             if not is_moderator_or_admin(interaction.user, config):
                 await interaction.response.send_message(
                     "❌ У вас нет прав для одобрения рапортов на увольнение.",
@@ -249,8 +258,17 @@ class SimplifiedDismissalApprovalView(ui.View):
     async def reject_dismissal(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Simplified dismissal rejection"""
         try:
-            # Check permissions
+            # Check if moderator is blacklisted from dismissal module
             config = load_config()
+            if not can_user_access_module(interaction.user, config, 'dismissal'):
+                await interaction.response.send_message(
+                    "❌ **Доступ к модулю увольнений ограничен**\n\n"
+                    "Вы находитесь в чёрном списке и не можете отклонять рапорты на увольнение.",
+                    ephemeral=True
+                )
+                return
+            
+            # Check permissions
             if not is_moderator_or_admin(interaction.user, config):
                 await interaction.response.send_message(
                     "❌ У вас нет прав для отказа рапортов на увольнение.",
@@ -645,8 +663,18 @@ class AutomaticDismissalApprovalView(ui.View):
     async def approve_dismissal(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Handle approval of automatic dismissal report"""
         try:
-            # Check moderator permissions
+            # Check if moderator is blacklisted from dismissal module
             config = load_config()
+            if not can_user_access_module(interaction.user, config, 'dismissal'):
+                embed = discord.Embed(
+                    title="❌ Доступ ограничен",
+                    description="Вы находитесь в чёрном списке и не можете одобрять автоматические рапорты на увольнение.",
+                    color=discord.Color.red()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+            
+            # Check moderator permissions
             if not is_moderator_or_admin(interaction.user, config):
                 embed = discord.Embed(
                     title="❌ Недостаточно прав",
@@ -743,8 +771,18 @@ class AutomaticDismissalApprovalView(ui.View):
     async def reject_dismissal(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Handle rejection of automatic dismissal report"""
         try:
-            # Check moderator permissions
+            # Check if moderator is blacklisted from dismissal module
             config = load_config()
+            if not can_user_access_module(interaction.user, config, 'dismissal'):
+                embed = discord.Embed(
+                    title="❌ Доступ ограничен",
+                    description="Вы находитесь в чёрном списке и не можете отклонять автоматические рапорты на увольнение.",
+                    color=discord.Color.red()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+            
+            # Check moderator permissions
             if not is_moderator_or_admin(interaction.user, config):
                 embed = discord.Embed(
                     title="❌ Недостаточно прав",

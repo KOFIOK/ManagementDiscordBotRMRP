@@ -5,7 +5,7 @@ Views for role assignment system
 import discord
 from discord import ui
 from .modals import MilitaryApplicationModal, CivilianApplicationModal, SupplierApplicationModal
-from utils.config_manager import load_config, can_user_access_module
+from utils.config_manager import load_config
 
 
 class RoleAssignmentView(ui.View):

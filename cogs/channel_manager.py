@@ -8,7 +8,7 @@ from utils.config_manager import load_config, save_config
 # Enhanced config manager for backup functionality
 from utils.config_manager import (
     create_backup, list_backups, restore_from_backup, 
-    export_config, get_config_status, is_blacklisted_user, can_user_access_module
+    export_config, get_config_status, is_blacklisted_user
 )
 # Импорт централизованных функций уведомлений
 from utils.moderator_notifications import (
@@ -757,19 +757,6 @@ class ChannelManagementCog(commands.Cog):
                     inline=False
                 )
             
-            # Module permissions info
-            default_perms = config.get('blacklist', {}).get('default_module_permissions', {})
-            blocked_modules = [module for module, allowed in default_perms.items() if not allowed]
-            
-            if blocked_modules:
-                embed.add_field(
-                    name="🚫 Заблокированные модули",
-                    value="• " + "\n• ".join(blocked_modules),
-                    inline=False
-                )
-            
-            embed.set_footer(text="Используйте /blacklist settings для настройки модулей")
-            
             await interaction.response.send_message(embed=embed, ephemeral=True)
         
         except Exception as e:
@@ -778,20 +765,6 @@ class ChannelManagementCog(commands.Cog):
                 ephemeral=True
             )
             print(f"List blacklist error: {e}")
-
-    @blacklist.command(name="settings", description="⚙️ Настройки модулей для чёрного списка")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def blacklist_settings(self, interaction: discord.Interaction):
-        """Configure module permissions for blacklisted users"""
-        # This will open a settings interface for configuring which modules
-        # blacklisted users can/cannot access
-        await interaction.response.send_message(
-            "⚙️ **Настройки чёрного списка**\n\n"
-            "Эта функция находится в разработке. Пока что используются настройки по умолчанию:\n"
-            "• Все модули заблокированы для пользователей в чёрном списке\n\n"
-            "Для изменения настроек отредактируйте `default_module_permissions` в конфигурации.",
-            ephemeral=True
-        )
 
     @app_commands.command(name="send_welcome_message", description="📨 Отправить приветственное сообщение пользователю")
     @app_commands.describe(user="Пользователь, которому отправить приветственное сообщение")

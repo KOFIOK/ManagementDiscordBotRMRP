@@ -61,6 +61,10 @@ default_config = {
     'administrators': {
         'users': [],
         'roles': []
+    },
+    'blacklist': {
+        'users': [],
+        'roles': []
     },    # Warehouse system configuration
     'warehouse_request_channel': None,
     'warehouse_audit_channel': None,
@@ -336,6 +340,11 @@ def save_config(config: Dict[Any, Any]) -> bool:
 
 def is_moderator(user, config):
     """Check if a user has moderator permissions (excludes administrators to maintain separation)."""
+    # First check if user is blacklisted - blacklisted users lose ALL moderator privileges
+    blacklist_check = is_blacklisted_user(user, config)
+    if blacklist_check['blacklisted']:
+        return False
+    
     moderators = config.get('moderators', {'users': [], 'roles': []})
     
     # Check if user is in moderator users list
@@ -351,7 +360,7 @@ def is_moderator(user, config):
             return True
     
     # Discord administrators have moderator privileges but are handled separately (only if user has guild_permissions)
-    if hasattr(user, 'guild_permissions') and user.guild_permissions.administrator:
+    if hasattr(user, 'guild_permissions') and user.guild_permissions and user.guild_permissions.administrator:
         return True
     
     return False
@@ -564,6 +573,7 @@ def get_config_status() -> Dict[str, Any]:
 
 def is_administrator(user, config):
     """Check if a user has administrator permissions."""
+    
     administrators = config.get('administrators', {'users': [], 'roles': []})
     
     # Check if user is in administrator users list
@@ -579,7 +589,7 @@ def is_administrator(user, config):
             return True
     
     # Discord administrators are always considered administrators (only if user has guild_permissions)
-    if hasattr(user, 'guild_permissions') and user.guild_permissions.administrator:
+    if hasattr(user, 'guild_permissions') and user.guild_permissions and user.guild_permissions.administrator:
         return True
     
     return False
@@ -592,6 +602,52 @@ def is_moderator_or_admin(user, config):
     
     # Check regular moderator permissions
     return is_moderator(user, config)
+
+def is_blacklisted_user(user, config, module=None):
+    """
+    Check if user is blacklisted.
+    
+    Args:
+        user: Discord user object
+        config: Bot configuration
+        module: (deprecated) - ignored for backward compatibility
+    
+    Returns:
+        dict: {
+            'blacklisted': bool,
+            'reason': str or None
+        }
+    """
+    blacklist = config.get('blacklist', {'users': [], 'roles': []})
+    
+    # Check if user is in blacklist
+    user_blacklisted = user.id in blacklist.get('users', [])
+    
+    # Check if user has blacklisted role
+    role_blacklisted = False
+    if hasattr(user, 'roles') and user.roles:
+        user_role_ids = [role.id for role in user.roles]
+        blacklisted_role_ids = blacklist.get('roles', [])
+        role_blacklisted = any(role_id in user_role_ids for role_id in blacklisted_role_ids)
+    
+    is_blacklisted = user_blacklisted or role_blacklisted
+    
+    result = {
+        'blacklisted': is_blacklisted,
+        'reason': None
+    }
+    
+    if not is_blacklisted:
+        return result
+    
+    # Determine reason
+    if user_blacklisted:
+        result['reason'] = f"Пользователь {user.display_name} в чёрном списке"
+    elif role_blacklisted:
+        blacklisted_roles = [role for role in user.roles if role.id in blacklisted_role_ids]
+        result['reason'] = f"Роль '{blacklisted_roles[0].name}' в чёрном списке"
+    
+    return result
 
 async def has_pending_dismissal_report(bot, user_id, dismissal_channel_id):
     """

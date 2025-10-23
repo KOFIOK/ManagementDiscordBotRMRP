@@ -13,7 +13,7 @@ import asyncio
 import re
 import traceback
 from datetime import datetime
-from utils.config_manager import load_config, is_moderator_or_admin, can_moderate_user, get_dismissal_message_link
+from utils.config_manager import load_config, is_moderator_or_admin, can_moderate_user, get_dismissal_message_link, is_blacklisted_user
 from utils.user_cache import get_cached_user_info
 from utils.nickname_manager import nickname_manager
 

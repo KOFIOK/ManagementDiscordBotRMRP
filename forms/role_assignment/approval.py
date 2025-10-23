@@ -7,7 +7,7 @@ This module handles the approval/rejection workflow with proper interaction hand
 import discord
 from discord import ui
 import asyncio
-from utils.config_manager import load_config, is_moderator_or_admin
+from utils.config_manager import is_administrator, load_config, is_moderator_or_admin
 from utils.message_manager import get_private_messages
 from utils.message_service import MessageService
 # PostgreSQL integration with enhanced personnel management
@@ -166,9 +166,7 @@ class RoleApplicationApprovalView(ui.View):
                 )
                 return
             
-            from utils.config_manager import is_moderator_or_admin, load_config
             config = load_config()
-            
             # Проверяем права на редактирование: автор заявки или администратор
             can_edit = (
                 interaction.user.id == current_application_data.get('user_id') or  # Автор заявки
@@ -218,9 +216,7 @@ class RoleApplicationApprovalView(ui.View):
                 MessageService.send_error(interaction, "Не удалось получить данные заявки!")
                 return
             
-            from utils.config_manager import is_administrator, load_config
             config = load_config()
-            
             # Проверяем права на удаление: автор заявки или администратор
             can_delete = (
                 interaction.user.id == current_application_data.get('user_id') or  # Автор заявки

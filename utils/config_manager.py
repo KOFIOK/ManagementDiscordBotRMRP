@@ -350,6 +350,11 @@ def save_config(config: Dict[Any, Any]) -> bool:
 
 def is_moderator(user, config):
     """Check if a user has moderator permissions (excludes administrators to maintain separation)."""
+    # First check if user is blacklisted - blacklisted users lose ALL moderator privileges
+    blacklist_check = is_blacklisted_user(user, config)
+    if blacklist_check['blacklisted']:
+        return False
+    
     moderators = config.get('moderators', {'users': [], 'roles': []})
     
     # Check if user is in moderator users list
@@ -365,7 +370,7 @@ def is_moderator(user, config):
             return True
     
     # Discord administrators have moderator privileges but are handled separately (only if user has guild_permissions)
-    if hasattr(user, 'guild_permissions') and user.guild_permissions.administrator:
+    if hasattr(user, 'guild_permissions') and user.guild_permissions and user.guild_permissions.administrator:
         return True
     
     return False
@@ -578,6 +583,16 @@ def get_config_status() -> Dict[str, Any]:
 
 def is_administrator(user, config):
     """Check if a user has administrator permissions."""
+    # Discord administrators always have full access (even if blacklisted)
+    # if hasattr(user, 'guild_permissions') and user.guild_permissions and user.guild_permissions.administrator:
+    #    return True
+    # ДЛЯ ТЕСТИРОВАНИЯ ОТКЛЮЧЕНО
+
+    # First check if user is blacklisted - blacklisted users lose ALL moderator privileges
+    blacklist_check = is_blacklisted_user(user, config)
+    if blacklist_check['blacklisted']:
+        return False
+    
     administrators = config.get('administrators', {'users': [], 'roles': []})
     
     # Check if user is in administrator users list
@@ -593,7 +608,7 @@ def is_administrator(user, config):
             return True
     
     # Discord administrators are always considered administrators (only if user has guild_permissions)
-    if hasattr(user, 'guild_permissions') and user.guild_permissions.administrator:
+    if hasattr(user, 'guild_permissions') and user.guild_permissions and user.guild_permissions.administrator:
         return True
     
     return False

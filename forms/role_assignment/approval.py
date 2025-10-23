@@ -92,16 +92,6 @@ class RoleApplicationApprovalView(ui.View):
     @discord.ui.button(label="✅ Одобрить", style=discord.ButtonStyle.green, custom_id="approve_role_app")
     async def approve_application(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Handle application approval"""
-        # Check if moderator is blacklisted from role_assignment module
-        config = load_config()
-        if not can_user_access_module(interaction.user, config, 'role_assignment'):
-            await interaction.response.send_message(
-                "❌ **Доступ к модулю выдачи ролей ограничен**\n\n"
-                "Вы находитесь в чёрном списке и не можете одобрять заявки на роли.",
-                ephemeral=True
-            )
-            return
-        
         # Check permissions first
         if not await self._check_moderator_permissions(interaction):
             await interaction.response.send_message(
@@ -151,16 +141,6 @@ class RoleApplicationApprovalView(ui.View):
     @discord.ui.button(label="❌ Отклонить", style=discord.ButtonStyle.red, custom_id="reject_role_app")
     async def reject_application(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Handle application rejection"""
-        # Check if moderator is blacklisted from role_assignment module
-        config = load_config()
-        if not can_user_access_module(interaction.user, config, 'role_assignment'):
-            await interaction.response.send_message(
-                "❌ **Доступ к модулю выдачи ролей ограничен**\n\n"
-                "Вы находитесь в чёрном списке и не можете отклонять заявки на роли.",
-                ephemeral=True
-            )
-            return
-        
         # Check permissions first  
         if not await self._check_moderator_permissions(interaction):
             await interaction.response.send_message(
@@ -179,16 +159,6 @@ class RoleApplicationApprovalView(ui.View):
     async def edit_pending_application(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Редактирование заявки на рассмотрении (только автор или администраторы)"""
         try:
-            # Check if user is blacklisted from role_assignment module
-            config = load_config()
-            if not can_user_access_module(interaction.user, config, 'role_assignment'):
-                await interaction.response.send_message(
-                    "❌ **Доступ к модулю выдачи ролей ограничен**\n\n"
-                    "Вы находитесь в чёрном списке и не можете редактировать заявки на роли.",
-                    ephemeral=True
-                )
-                return
-            
             # Получаем актуальные данные из embed (не оригинальные!)
             current_application_data = self._get_current_application_data(interaction)
             if not current_application_data:
@@ -198,6 +168,7 @@ class RoleApplicationApprovalView(ui.View):
                 )
                 return
             
+            config = load_config()
             # Проверяем права на редактирование: автор заявки или администратор
             can_edit = (
                 interaction.user.id == current_application_data.get('user_id') or  # Автор заявки
@@ -241,16 +212,6 @@ class RoleApplicationApprovalView(ui.View):
     async def delete_pending_application(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Удаление заявки на рассмотрении (только автор или администраторы)"""
         try:
-            # Check if user is blacklisted from role_assignment module
-            config = load_config()
-            if not can_user_access_module(interaction.user, config, 'role_assignment'):
-                await interaction.response.send_message(
-                    "❌ **Доступ к модулю выдачи ролей ограничен**\n\n"
-                    "Вы находитесь в чёрном списке и не можете удалять заявки на роли.",
-                    ephemeral=True
-                )
-                return
-            
             # Получаем актуальные данные из embed
             current_application_data = self._get_current_application_data(interaction)
             if not current_application_data:
@@ -260,6 +221,7 @@ class RoleApplicationApprovalView(ui.View):
                 )
                 return
             
+            config = load_config()
             # Проверяем права на удаление: автор заявки или администратор
             can_delete = (
                 interaction.user.id == current_application_data.get('user_id') or  # Автор заявки

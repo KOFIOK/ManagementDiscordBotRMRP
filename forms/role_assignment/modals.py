@@ -7,6 +7,7 @@ import re
 from discord import ui
 from utils.config_manager import load_config, has_pending_role_application
 from utils.message_manager import get_role_assignment_message, get_message_with_params
+from utils.database_manager.rank_manager import rank_manager
 
 
 class MilitaryApplicationModal(ui.Modal):
@@ -42,7 +43,7 @@ class MilitaryApplicationModal(ui.Modal):
         )
         self.add_item(self.static_input)
         
-        # Rank is always "Рядовой" for new military recruits, no need for input field
+        # Rank is always default recruit rank for new military recruits, no need for input field
     
     async def on_submit(self, interaction: discord.Interaction):
         """Process military application submission"""
@@ -138,7 +139,7 @@ class MilitaryApplicationModal(ui.Modal):
             "type": "military",
             "name": full_name,
             "static": formatted_static,
-            "rank": "Рядовой",  # Always set rank as "Рядовой" for new military recruits
+            "rank": rank_manager.get_default_recruit_rank_sync(),  # Always set rank as default for new military recruits
             "user_id": interaction.user.id,
             "user_mention": interaction.user.mention
         }
@@ -225,7 +226,7 @@ class MilitaryApplicationModal(ui.Modal):
             await moderation_channel.send(content=ping_content, embed=embed, view=approval_view)
             
             await interaction.response.send_message(
-                get_message_with_params(interaction.guild.id, "role_assignment.application.success_application_submitted", action="Заявка на получение роли"),
+                get_message_with_params(interaction.guild.id, "systems.role_assignment.application.success_application_submitted", action="Заявка на получение роли"),
                 ephemeral=True
             )
             
@@ -635,7 +636,7 @@ class MilitaryEditModal(ui.Modal):
         )
         self.add_item(self.static_input)
         
-        # Rank is always "Рядовой" for military personnel, no need for input field
+        # Rank is always default recruit rank for military personnel, no need for input field
     
     async def on_submit(self, interaction: discord.Interaction):
         """Обработка редактирования военной заявки"""
@@ -655,7 +656,7 @@ class MilitaryEditModal(ui.Modal):
             updated_data = {
                 'name': self.name_input.value.strip(),
                 'static': formatted_static,
-                'rank': "Рядовой",  # Always set rank as "Рядовой" for military personnel
+                'rank': rank_manager.get_default_recruit_rank_sync(),  # Always set rank as default for military personnel
                 # Сохраняем оригинальные данные
                 'type': self.application_data['type'],
                 'user_id': self.application_data['user_id'],

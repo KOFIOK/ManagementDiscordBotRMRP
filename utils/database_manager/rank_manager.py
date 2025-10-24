@@ -390,6 +390,42 @@ class RankManager:
             logger.error(f"Ошибка получения ранга {rank_name}: {str(e)}")
             return None
 
+    async def get_default_recruit_rank(self) -> Optional[str]:
+        """
+        Get the default recruit rank (lowest rank_level)
+        
+        Returns:
+            Rank name or None if no ranks found
+        """
+        try:
+            with get_db_cursor() as cursor:
+                cursor.execute("""
+                    SELECT name
+                    FROM ranks 
+                    WHERE role_id IS NOT NULL
+                    ORDER BY rank_level ASC
+                    LIMIT 1;
+                """)
+                
+                result = cursor.fetchone()
+                return result['name'] if result else None
+                
+        except Exception as e:
+            logger.error(f"Ошибка получения начального звания: {str(e)}")
+            return None
+
+    def get_default_recruit_rank_sync(self) -> Optional[str]:
+        """
+        Synchronous version of get_default_recruit_rank
+        Use only when async is not possible
+        """
+        try:
+            import asyncio
+            return asyncio.run(self.get_default_recruit_rank())
+        except Exception as e:
+            logger.error(f"Ошибка в синхронном получении начального звания: {str(e)}")
+            return None
+
 
 # Global instance
 rank_manager = RankManager()

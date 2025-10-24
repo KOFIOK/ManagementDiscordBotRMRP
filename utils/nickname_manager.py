@@ -27,6 +27,7 @@ from utils.database_manager.subdivision_mapper import SubdivisionMapper
 from utils.database_manager.rank_manager import rank_manager
 from utils.database_manager import personnel_manager
 from utils.config_manager import load_config
+from utils.message_manager import get_military_ranks
 
 logger = logging.getLogger(__name__)
 
@@ -42,17 +43,23 @@ class NicknameManager:
         # Загружаем конфигурацию
         self.config = load_config()
         
-        # Список известных рангов (встроенный список)
-        self.known_ranks = {
-            'Рядовой', 'Ефрейтор', 'Мл. Сержант', 'Сержант', 'Ст. Сержант', 
-            'Старшина', 'Прапорщик', 'Ст. Прапорщик', 'Мл. Лейтенант',
-            'Лейтенант', 'Ст. Лейтенант', 'Капитан', 'Майор', 'Подполковник', 'Полковник',
-            # Аббревиатуры
-            'Ефр-р', 'Мл. С-т', 'С-т', 'Ст. С-т', 'Ст-на', 'Ст. Прап-к', 'Мл. Л-т', 'Ст. Л-т', 'Подполк-к'
-        }
+        # Список известных рангов (fallback для случаев недоступности БД)
+        self.known_ranks = self._load_known_ranks_fallback()
         
         # Инициализируем паттерны с учетом кастомных настроек
         self._init_patterns()
+        
+    def _load_known_ranks_fallback(self) -> set:
+        """Load minimal fallback ranks for cases when database is unavailable"""
+        # Minimal fallback list - should be rarely used
+        fallback_ranks = {
+            'Рядовой', 'Ефрейтор', 'Сержант', 'Старшина',
+            'Лейтенант', 'Капитан', 'Майор', 'Полковник', 'Генерал',
+            # Common abbreviations
+            'Р-й', 'Еф-р', 'С-т', 'Ст-на', 'Л-т', 'К-н'
+        }
+        logger.warning("Using fallback rank list - database ranks should be used instead")
+        return fallback_ranks
         
     def _init_patterns(self):
         """Инициализация паттернов с учетом кастомных настроек"""

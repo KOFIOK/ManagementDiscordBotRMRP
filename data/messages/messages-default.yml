@@ -1,28 +1,47 @@
-# Шаблон сообщений по умолчанию для Discord-бота
+﻿# Шаблон сообщений по умолчанию для Discord-бота
 # Этот файл содержит все сообщения по умолчанию, используемые ботом.
 # Сообщения, специфичные для гильдии, можно переопределить в файле messages-{guild_id}.yml
 
-# Глобальные шаблоны сообщений с параметрами
+# =============================================================================
+# ГЛОБАЛЬНЫЕ ШАБЛОНЫ - базовые строительные блоки для всех сообщений
+# =============================================================================
+
 templates:
+  # Базовые шаблоны для всех типов сообщений
+  base:
+    error_prefix: "🚫"
+    success_prefix: "✅"
+    warning_prefix: "⚠️"
+    info_prefix: "ℹ️"
+    processing_prefix: "⏳"
+
+  # Шаблоны прав доступа
   permissions:
-    insufficient: "❌ У вас нет прав {action}"
-    hierarchy: "❌ Нарушение иерархии: {reason}"
-    no_access: "❌ Доступ запрещен: {reason}"
-    general: "❌ У вас нет прав для выполнения этой команды"
+    insufficient: "{templates.base.error_prefix} У вас нет прав {action}"
+    hierarchy: "{templates.base.error_prefix} Нарушение иерархии: {reason}"
+    no_access: "{templates.base.error_prefix} Доступ запрещен: {reason}"
+    general: "{templates.base.error_prefix} У вас нет прав для выполнения этой команды"
+    moderator_required: "{templates.permissions.general} Требуются права модератора или администратора"
 
+  # Шаблоны ошибок
   errors:
-    general: "❌ Произошла ошибка {context}"
-    processing: "❌ Ошибка обработки {object}"
-    validation: "❌ Ошибка валидации: {details}"
-    system: "❌ Системная ошибка: {code}"
-    not_found: "❌ {entity} не найден{details}"
+    general: "{templates.base.error_prefix} Произошла ошибка {context}"
+    processing: "{templates.base.error_prefix} Ошибка обработки {object}"
+    validation: "{templates.base.error_prefix} Ошибка валидации: {details}"
+    system: "{templates.base.error_prefix} Системная ошибка: {code}"
+    not_found: "{templates.base.error_prefix} {entity} не найден: {details}"
+    already_exists: "{templates.base.error_prefix} {entity} уже существует"
+    already_processed: "{templates.base.error_prefix} {object} уже обработан{details}"
 
+  # Шаблоны статусов
   status:
-    processing: "⏳ Обрабатывается..."
-    approved: "✅ Одобрено"
-    rejected: "❌ Отказано"
-    completed: "✅ {action} выполнено успешно"
+    processing: "{templates.base.processing_prefix} Обрабатывается..."
+    approved: "{templates.base.success_prefix} Одобрено"
+    rejected: "{templates.base.error_prefix} Отказано"
+    completed: "{templates.base.success_prefix} {action} выполнено успешно"
+    failed: "{templates.base.error_prefix} {action} не удалось"
 
+  # Шаблоны сущностей
   entities:
     user: "пользователь"
     channel: "канал"
@@ -30,223 +49,146 @@ templates:
     role: "роль"
     application: "заявка"
     timer: "таймер"
+    object: "объект"
+    department: "подразделение"
 
-  # Шаблоны для сообщений модераторов и уведомлений
-  moderator_templates:
-    moderator_info: "🎩 Модератор: {moderator_name}"
-    reason_info: "ℹ️ Причина: {reason}"
-    status_info: "📊 Статус: {status}"
-    timestamp_info: "🕒 Время: {timestamp}"
-    action_info: "⚡ Действие: {action}"
-    details_info: "📋 Детали: {details}"
-    application_details: "📄 Детали заявки:\n{application_info}"
-    processing_info: "⏳ Обработка: {processing_status}"
-    result_info: "🎯 Результат: {result}"
-    approved_by_info: "✅ Одобрил: {approver_name}"
-    rejected_by_info: "❌ Отклонил: {rejector_name}"
+  # Шаблоны каналов
+  channels:
+    not_configured: "{templates.errors.not_found} {channel_type} не настроен{details}"
+    not_found: "{templates.errors.not_found} {channel_type}: {channel_id}"
+    configured: "{templates.status.completed} {channel_type} настроен: {channel_name}"
+
+  # Шаблоны модераторов
+  moderator:
+    info: "🎩 Модератор: {moderator_name}"
+    reason: "ℹ️ Причина: {reason}"
+    status: "📊 Статус: {status}"
+    timestamp: "🕒 Время: {timestamp}"
+    action: "⚡ Действие: {action}"
+    approved_by: "{templates.base.success_prefix} Одобрил: {approver_name}"
+    rejected_by: "{templates.base.error_prefix} Отклонил: {rejector_name}"
     notification_header: "📢 Уведомление от системы кадрового управления"
     help_footer: "💡 Для получения помощи используйте команду `/help`"
 
-# Устаревшие системные сообщения (будут перенесены в шаблоны)
-dismissal:
-  error_messages:
-    no_permission_approval: "{templates.permissions.insufficient} для одобрения рапортов на увольнение. Только модераторы могут выполнять это действие."
-    no_permission_rejection: "{templates.permissions.insufficient} для отказа рапортов на увольнение. Только модераторы могут выполнять это действие."
-    authorization_error: "{templates.errors.system} проверки авторизации модератора."
-    general_error: "{templates.errors.general} при обработке рапорта. Пожалуйста, обратитесь к администратору."
-    processing_error_approval: "{templates.errors.processing} одобрения заявки."
-    processing_error_rejection: "{templates.errors.processing} отказа."
-    auth_data_error: "{templates.errors.processing} данных авторизации."
-    dismissal_processing_error: "{templates.errors.processing} увольнения."
+# =============================================================================
+# СИСТЕМНЫЕ СООБЩЕНИЯ - ошибки, успехи и статусы по системам
+# =============================================================================
 
-  success_messages:
-    static_received: "✅ Статик получен, продолжаем обработку..."
-
-  form_fields:
-    name: "Имя Фамилия"
-    static: "Статик"
-    department: "Подразделение"
-    rank: "Воинское звание"
-    reason: "Причина увольнения"
-
-  indicators:
-    auto_report: "🚨 Автоматический рапорт на увольнение"
-    static_input_required: "Требуется ввод"
-
-  self_moderation_errors:
-    self_approval: "{templates.permissions.no_access} одобрить свой собственный рапорт на увольнение."
-    self_rejection: "{templates.permissions.no_access} отклонить свой собственный рапорт на увольнение."
-    hierarchy_approval: "{templates.permissions.hierarchy} Вы не можете одобрить рапорт модератора того же или более высокого уровня."
-    hierarchy_rejection: "{templates.permissions.hierarchy} Вы не можете отклонить рапорт модератора того же или более высокого уровня."
-    insufficient_permissions_approval: "{templates.permissions.insufficient} для одобрения этого рапорта."
-    insufficient_permissions_rejection: "{templates.permissions.insufficient} для отклонения этого рапорта."
-
-  audit_patterns:
-    sender_prefix: "Отправлено:"
-    name_static_field: "Имя Фамилия | 6 цифр статика"
-
-  defaults:
-    unknown_value: "Неизвестно"
-
-# Глобальные сообщения, используемые в боте
-global:
-  errors:
-    general: "{templates.errors.general} Пожалуйста, обратитесь к администратору."
-    invalid_input: "{templates.errors.validation} Неверный формат данных."
-
-# Встроенные цвета (HEX-коды)
-colors:
-  success: "#00ff00"      # Green
-  error: "#ff0000"        # Red
-  warning: "#ffa500"      # Orange
-  info: "#0000ff"         # Blue
-  neutral: "#808080"      # Gray
-  special: "#ffd700"      # Gold
-
-# Плейсхолдеры для будущих разделов
-personnel_context:
-  recruitment:
-    modal_title: "Принятие на службу"
-    name_label: "Имя Фамилия"
-    name_placeholder: "Например: Олег Дубов"
-    static_label: "Статик"
-    static_placeholder: "123-456 (допускается 5-6 цифр)"
-    error_invalid_static: "{templates.errors.validation} Статик должен содержать 5 или 6 цифр."
-    error_general: "{templates.errors.general} при обработке принятия на службу."
-    error_blacklisted: "{templates.permissions.no_access} этому пользователю запрещен приём на службу."
-    error_first_name_spaces: "❌ **Имя должно содержать только одно слово.**\nПожалуйста, введите только имя без пробелов."
-    error_last_name_spaces: "❌ **Фамилия должна содержать только одно слово.**\nПожалуйста, введите только фамилию без пробелов."
-    error_invalid_static_format: "❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.\nПримеры: 123456, 123-456, 12345, 12-345, 123 456"
-
-  dismissal:
-    error_no_permissions: "{templates.permissions.general} Требуются права модератора или администратора."
-    error_hierarchy: "{templates.permissions.hierarchy} Вы не можете выполнять действия над этим пользователем."
-    error_general: "{templates.errors.general} при обработке увольнения."
-
-warehouse:
-  cart:
-    error_cooldown_active: "{templates.errors.system} Кулдаун активен! Следующий запрос:"
-    error_insufficient_permissions: "{templates.permissions.insufficient} для выполнения действия."
-    error_invalid_weapon: "{templates.errors.validation} Вам недоступен данный тип оружия. Доступно:"
-    error_weapon_limit: "{templates.errors.validation} Превышен лимит оружия. В корзине уже:"
-    error_armor_limit: "{templates.errors.validation} Превышен лимит бронежилетов. В корзине уже:"
-    error_user_not_found: "{templates.errors.not_found} в БД"
-
-department_applications:
-  transfer:
-    error_not_transfer_application: "{templates.errors.validation} Эта кнопка доступна только для заявлений на перевод."
-    error_no_permissions: "{templates.permissions.no_access} выдачи разрешения на перевод. Это действие доступно только модераторам."
-    error_already_permitted: "{templates.errors.validation} Разрешение уже было дано для этого перевода."
-    success_permission_granted: "{templates.status.completed} Разрешение на перевод выдано! Ожидаем одобрения руководства нового подразделения."
-    error_general: "{templates.errors.general} при выдаче разрешения."
-    error_user_not_found: "{templates.errors.not_found} Пользователь не найден на сервере."
-    success_transfer_completed: "{templates.status.completed} Перевод пользователя выполнен! Роли подразделения и должности назначены автоматически."
-    success_transfer_approved: "{templates.status.approved} Перевод одобрен!"
-    error_transfer_failed: "{templates.errors.processing} выполнения перевода."
-
-leave_requests:
-  approval:
-    error_already_submitted: "{templates.errors.validation} Заявка уже подана"
-    error_already_processed: "{templates.errors.validation} Заявка уже обработана"
-    error_cannot_review_own: "{templates.permissions.no_access} рассматривать свою заявку"
-
-  rejection:
-    error_already_processed: "{templates.errors.validation} Заявка уже обработана"
-    error_cannot_review_own: "{templates.permissions.no_access} рассматривать свою заявку"
-
-  deletion:
-    error_cannot_delete: "{templates.permissions.no_access} удалить заявку"
-    error_deletion_failed: "{templates.errors.processing} удаления"
-
-role_assignment:
-  application:
-    error_banned_from_service: "{templates.permissions.no_access} приём на службу"
-    error_already_has_supplies_access: "{templates.errors.validation} У вас уже есть доступ к поставкам"
-    error_pending_application: "{templates.errors.validation} У вас уже есть заявка на получение роли, которая находится на рассмотрении."
-    error_invalid_static_format: "{templates.errors.validation} Статик должен содержать 5 или 6 цифр."
-    error_invalid_proof_link: "❌ Пожалуйста, укажите корректную ссылку в поле доказательств."
-    error_moderation_channel_not_configured: "{templates.errors.not_found} Канал модерации не настроен. Обратитесь к администратору."
-    error_moderation_channel_not_found: "{templates.errors.not_found} Канал модерации не найден. Обратитесь к администратору."
-    success_application_submitted: "{templates.status.completed} Ваша заявка отправлена на рассмотрение военнослужащим. Ожидайте решения."
-    error_submission_failed: "{templates.errors.general} при отправке заявки. Попробуйте позже."
-    
-    # Modal placeholders
-    military_modal_title: "Получение ролей"
-    first_name_label: "Имя"
-    first_name_placeholder: "Например: Олег"
-    last_name_label: "Фамилия"
-    last_name_placeholder: "Например: Дубов"
-    static_label: "Статик"
-    static_placeholder: "123-456 (допускается 5-6 цифр)"
-    error_first_name_spaces: "❌ **Имя должно содержать только одно слово.**\nПожалуйста, введите только имя без пробелов."
-    error_last_name_spaces: "❌ **Фамилия должна содержать только одно слово.**\nПожалуйста, введите только фамилию без пробелов."
-
-safe_documents:
-  approval:
-    error_general: "{templates.errors.general} при открытии формы"
-    error_not_found: "{templates.errors.not_found} Не удалось получить данные заявки!"
-    error_approval_failed: "{templates.errors.processing} одобрения заявки"
-    error_rejection_failed: "{templates.errors.processing} отклонения заявки"
-    error_no_edit_permissions: "{templates.permissions.no_access} редактирования этой заявки!"
-    error_edit_failed: "{templates.errors.processing} редактирования заявки"
-    error_only_moderators_can_edit_approved: "{templates.permissions.no_access} Только модераторы могут редактировать одобренные заявки!"
-
-  modal:
-    error_processing: "{templates.errors.processing} формы"
-    error_rejection: "{templates.errors.processing} отклонения заявки"
-    error_edit: "{templates.errors.processing} редактирования заявки"
-
-  manager:
-    error_channel_not_configured: "{templates.errors.not_found} Канал для безопасных документов не настроен!"
-    error_channel_not_found: "{templates.errors.not_found} Канал для безопасных документов не найден!"
-
-settings:
-  warehouse:
-    error_channel_not_found: "{templates.errors.not_found} Канал (ID: {0})"
-    error_channel_not_configured: "{templates.errors.not_found} Не настроен"
-    success_request_channel_set: |
-      {templates.status.completed} Канал запросов настроен: {0}
-      📌 Закрепленное сообщение склада добавлено!
-    success_request_channel_set_error: |
-      {templates.status.completed} Канал запросов настроен: {0}
-      ❗ Ошибка при добавлении закрепленного сообщения: {1}
-    success_submission_channel_set: |
-      {templates.status.completed} Канал отправки заявок настроен: {0}
-      📤 Все заявки склада будут отправляться в этот канал!
-    success_audit_channel_set: "{templates.status.completed} Канал аудита настроен: {0}"
-    success_channel_set: "{templates.status.completed} Канал настроен: {0}"
-    error_general: "{templates.errors.general}: {0}"
-    error_invalid_number: "{templates.errors.validation} Введите корректное число (например: 6 или 0.5)!"
-    error_cooldown_range: "{templates.errors.validation} Кулдаун должен быть от 0 до 168 часов!"
-    success_cooldown_set: "{templates.status.completed} Кулдаун установлен: {0} часов"
-    error_cooldown_set: "{templates.errors.processing} установки кулдауна: {0}"
-    success_limits_updated: "{templates.status.completed} Лимиты по {0} {1}"
-
+system:
+  # Общие системные сообщения
   general:
-    error_ping_not_configured: "{templates.errors.not_found} Настройки пингов не настроены"
-    error_ping_not_found: "{templates.errors.not_found} Настройки пингов не найдены"
+    cooldown_active: "{templates.errors.system} Кулдаун активен! Следующий запрос: {next_time}"
+    processing_failed: "{templates.errors.processing} обработки запроса"
+    subscription_processing: "{templates.errors.processing} подписки. Попробуйте позже"
+    data_load: "{templates.errors.processing} загрузки данных: {error}"
+    data_save: "{templates.errors.processing} сохранения данных: {error}"
 
-supplies:
-  colors:
-    main_embed: "#00FF00"
-    timer_embed: "#3498DB"
-    notification_embed: "#3498DB"
+  # Сообщения персонала
+  personnel:
+    hierarchy_violation: "{templates.permissions.hierarchy} Вы не можете выполнять действия над этим пользователем"
+    self_action_denied: "{templates.permissions.no_access} {action} свой собственный {object}"
+    insufficient_permissions: "{templates.permissions.insufficient} для {action} этого {object}"
 
-  control:
-    error_no_permission: "{templates.permissions.general}"
-    error_timer_already_active: |
-      ⏰ {emoji} **{object_name}** уже находится в процессе поставки.
-      ⏳ Осталось времени: **{remaining_time}**
-    success_timer_started: |
-      ✅ {emoji} **{object_name}** - поставка запущена!
-      ⏰ Длительность: **{time_display}**
-      👤 Запустил: {user_mention}
-    error_timer_start_failed: "{templates.errors.processing} таймера для {object_name}"
-    error_general_processing: "{templates.errors.general} при обработке запроса"
-    timer_ready_status: "🟢 Все объекты готовы к поставке"
-    timer_active_field: |
-      ⏰ Осталось: **{remaining}**
-      👤 Запустил: {started_by}
+  # Сообщения таймеров
+  timers:
+    already_active: "⏰ {emoji} **{object_name}** уже находится в процессе {action}.\n⏳ Осталось времени: **{remaining_time}**"
+    started: "{templates.base.success_prefix} {emoji} **{object_name}** - {action} запущен!\n⏰ Длительность: **{time_display}**\n👤 Запустил: {user_mention}"
+    cancelled: "{templates.status.completed} Таймер для {object_key} отменен и сообщения удалены"
+    expired: "{templates.base.info_prefix} Таймер для {object_name} истек"
+    info_saved: "{templates.status.completed} Сохранен ID сообщения {message_type} для {object_key}: {message_id}"
+
+  # Сообщения каналов и ролей
+  channels_roles:
+    ping_not_configured: "{templates.channels.not_configured} Настройки пингов"
+    ping_not_found: "{templates.channels.not_found} Настройки пингов"
+    role_not_configured: "{templates.errors.not_found} Роль для {purpose} не настроена. Обратитесь к администратору"
+    role_not_found: "{templates.errors.not_found} Роль для {purpose} не найдена на сервере"
+
+# =============================================================================
+# СООБЩЕНИЯ ПО СИСТЕМАМ - специфичные для каждой подсистемы
+# =============================================================================
+
+systems:
+  dismissal:
+    processing_error: "{templates.errors.processing} увольнения"
+    static_received: "{templates.status.completed} Статик получен, продолжаем обработку..."
+    auto_report_indicator: "🚨 Автоматический рапорт на увольнение"
+    static_required: "Требуется ввод"
+    sender_prefix: "Отправлено:"
+    name_static_field: "Имя Фамилия | Статик"
+    unknown_value: "Неизвестно"
+    
+    # Сообщения об ошибках
+    errors:
+      no_permissions: "{templates.permissions.no_access} {action} рапортов на увольнение"
+      no_permissions_reject: "{templates.permissions.no_access} отказа рапортов на увольнение"
+      hierarchy_violation: "{templates.permissions.hierarchy} Вы не можете {action} увольнение этого пользователя"
+      database_error: "{templates.errors.general} проверки статуса пользователя в базе данных"
+      processing_error: "{templates.errors.processing} увольнения"
+      delete_not_allowed: "{templates.permissions.no_access} Удалять рапорт может только его автор или администратор"
+      no_static: "{templates.errors.validation} Невозможно одобрить рапорт без статика!"
+      static_required_hint: "Пожалуйста, нажмите кнопку **{edit_button}** и заполните статик"
+      user_extraction_failed: "{templates.errors.general} извлечения информации о пользователе из рапорта"
+      already_dismissed: "Пользователь ранее был уволен (не найден в базе данных сотрудников)"
+    
+    # Сообщения об успехе
+    success:
+      approved: "{templates.status.completed} Заявление пользователя {user} одобрено! Роли подразделения и должности назначены автоматически"
+      deleted: "{templates.status.completed} Рапорт на увольнение пользователя {user} был удален"
+
+  warehouse:
+    item_not_found: "{templates.errors.not_found} в БД"
+    weapon_access_denied: "{templates.errors.validation} Вам недоступен данный тип оружия. Доступно: {available}"
+    weapon_limit: "🚫 Превышен лимит оружия. В корзине уже: {current}"
+    armor_limit: "🚫 Превышен лимит бронежилетов. В корзине уже: {current}"
+
+  department_applications:
+    not_transfer: "{templates.errors.validation} Эта кнопка доступна только для заявлений на перевод"
+    transfer_permission_denied: "{templates.permissions.no_access} выдачи разрешения на перевод. Это действие доступно только модераторам"
+    transfer_already_permitted: "{templates.errors.already_exists} Разрешение уже было дано для этого перевода"
+    transfer_permission_granted: "{templates.status.completed} Разрешение на перевод выдано! Ожидаем одобрения руководства нового подразделения"
+    transfer_completed: "{templates.status.completed} Перевод пользователя выполнен! Роли подразделения и должности назначены автоматически"
+    transfer_approved: "{templates.status.approved} Перевод одобрен!"
+    
+    # Сообщения об ошибках
+    errors:
+      delete_not_allowed: "{templates.permissions.no_access} Только администратор или автор заявления может удалить его"
+      approval_denied: "{templates.permissions.no_access} Вы не можете одобрить это заявление"
+    
+    # Подтверждения
+    confirmations:
+      delete_warning: "{templates.status.warning} Вы уверены, что хотите удалить это заявление? Это действие нельзя отменить"
+
+  leave_requests:
+    cannot_review_own: "{templates.permissions.no_access} рассматривать свою заявку"
+
+  role_assignment:
+    banned_from_service: "{templates.permissions.no_access} приём на службу"
+    supplies_access_exists: "{templates.errors.already_exists} У вас уже есть доступ к поставкам"
+    pending_application: "{templates.errors.already_exists} У вас уже есть заявка на получение роли, которая находится на рассмотрении"
+    moderation_channel_not_configured: "{templates.channels.not_configured} Канал модерации"
+    moderation_channel_not_found: "{templates.channels.not_found} Канал модерации"
+    application_submitted: "{templates.status.completed} Ваша заявка отправлена на рассмотрение военнослужащим. Ожидайте решения"
+    submission_failed: "{templates.errors.processing} при отправке заявки. Попробуйте позже"
+    
+    # Сообщения об ошибках
+    errors:
+      already_serving: "{templates.errors.already_exists} Вы уже находитесь на службе в организации"
+      pending_application_detailed: "{templates.errors.already_exists} У вас уже есть заявка на получение роли, которая находится на рассмотрении.\n\nПожалуйста, дождитесь решения по текущей заявке, прежде чем подавать новую.\nЭто поможет избежать путаницы и ускорить обработку вашего запроса."
+      contact_command: "Если вам нужно изменить данные или перевестись, обратитесь к командованию"
+
+  safe_documents:
+    approval_general: "{templates.errors.general} при открытии формы"
+    application_not_found: "{templates.errors.not_found} Не удалось получить данные заявки"
+    edit_denied: "{templates.permissions.no_access} редактирования этой заявки"
+    moderator_edit_only: "{templates.permissions.no_access} Только модераторы могут редактировать одобренные заявки"
+    channel_not_configured: "{templates.channels.not_configured} Канал для безопасных документов"
+
+  supplies:
+    timer_start_failed: "{templates.errors.processing} таймера для {object_name}"
+    control_message_error: "{templates.errors.processing} сообщения управления поставками: {error}"
+    subscription_message_error: "{templates.errors.processing} сообщения подписки на поставки: {error}"
+    timer_ready: "🟢 Все объекты готовы к поставке"
     main_embed_title: "🚚 Управление поставками"
     main_embed_description: |
       **Военные объекты для поставки материалов**
@@ -254,59 +196,136 @@ supplies:
       ⚠️ *Доступно только от Капитана*
     main_embed_footer: "Нажмите кнопку для запуска таймера"
     timer_embed_title: "📊 Активные поставки"
-    error_send_control_message: "{templates.errors.processing} сообщения управления поставками: {error}"
-
-  subscription:
-    error_role_not_configured: "{templates.errors.not_found} Роль для подписки на уведомления не настроена. Обратитесь к администратору."
-    error_role_not_found: "{templates.errors.not_found} Роль для подписки не найдена на сервере. Обратитесь к администратору."
-    info_already_subscribed: "ℹ️ У вас уже включены уведомления о поставках!"
-    success_subscribed: |
-      ✅ Уведомления о поставках **включены**!
-      🔔 Теперь вы будете получать уведомления о готовности военных объектов.
-    info_already_unsubscribed: "ℹ️ У вас уже выключены уведомления о поставках!"
-    success_unsubscribed: |
-      ✅ Уведомления о поставках **выключены**.
-      🔕 Вы больше не будете получать уведомления о готовности объектов.
-    error_subscription_processing: "{templates.errors.processing} подписки. Попробуйте позже."
-    embed_title: "🔔 Подписка на уведомления о поставках"
-    embed_description: |
-      **Управление уведомлениями о военных поставках**
+    subscription_title: "🔔 Подписка на уведомления о поставках"
+    subscription_description: |
+      **Управление уведомлениями о поставках**
 
       🔔 **Включить** - Получать уведомления о готовности объектов
       🔕 **Выключить** - Отключить все уведомления
 
-      ℹ️ Уведомления приходят когда военные объекты готовы к новой поставке материалов.
-    embed_footer: "Выберите нужное действие"
-    error_send_subscription_message: "{templates.errors.processing} сообщения подписки на поставки: {error}"
+      ℹ️ Уведомления приходят когда военные объекты готовы к новой поставке материалов
+    subscription_footer: "Выберите нужное действие"
+    already_subscribed: "{templates.base.info_prefix} У вас уже включены уведомления о поставках!"
+    subscribed: |
+      {templates.base.success_prefix} Уведомления о поставках **включены**!
+      🔔 Теперь вы будете получать уведомления о готовности объектов
+    already_unsubscribed: "{templates.base.info_prefix} У вас уже выключены уведомления о поставках!"
+    unsubscribed: |
+      {templates.base.success_prefix} Уведомления о поставках **выключены**
+      🔕 Вы больше не будете получать уведомления о готовности объектов
 
-  manager:
-    error_load_data: "{templates.errors.processing} загрузки данных поставок: {error}"
-    error_save_data: "{templates.errors.processing} сохранения данных поставок: {error}"
-    error_unknown_object: "{templates.errors.not_found} Неизвестный объект: {object_key}"
-    success_timer_started: "{templates.status.completed} Таймер запущен для {object_key} на {duration_str}"
-    error_timer_start: "{templates.errors.processing} запуска таймера для {object_key}: {error}"
-    error_timer_check: "{templates.errors.processing} проверки таймера {object_key}: {error}"
-    error_get_remaining_time: "{templates.errors.processing} получения оставшегося времени для {object_key}: {error}"
-    error_get_active_timers: "{templates.errors.processing} получения активных таймеров: {error}"
-    success_timer_cancelled: "{templates.status.completed} Таймер для {object_key} отменен и сообщения удалены"
-    error_timer_cancel: "{templates.errors.processing} отмены таймера с очисткой для {object_key}: {error}"
-    error_get_timer_info: "{templates.errors.processing} получения информации о таймере {object_key}: {error}"
-    error_get_expired_timers: "{templates.errors.processing} получения истекших таймеров: {error}"
-    success_message_saved: "{templates.status.completed} Сохранен ID сообщения {message_type} для {object_key}: {message_id}"
-    error_save_message_id: "{templates.errors.processing} сохранения ID сообщения: {error}"
+  settings:
+    request_channel_set: |
+      {templates.channels.configured} Канал запросов склада
+      📌 Закрепленное сообщение склада добавлено!
+    request_channel_set_error: |
+      {templates.channels.configured} Канал запросов склада
+      ❗ Ошибка при добавлении закрепленного сообщения: {error}
+    submission_channel_set: |
+      {templates.channels.configured} Канал отправки заявок склада
+      📤 Все заявки склада будут отправляться в этот канал!
+    audit_channel_set: "{templates.channels.configured} Канал аудита склада"
+    cooldown_set: "{templates.status.completed} Кулдаун установлен: {hours} часов"
+    cooldown_error: "{templates.errors.processing} установки кулдауна: {error}"
+    limits_updated: "{templates.status.completed} Лимиты по {category} {type}"
 
-  notifications:
-    warning_channel_not_configured: "⚠️ Канал уведомлений не настроен"
-    error_channel_not_found: "{templates.errors.not_found} Канал уведомлений: {channel_id}"
-    notification_footer: "Уведомление будет отправлено за несколько минут до конца таймера"
-    success_notification_sent: "{templates.status.completed} Уведомление о начале поставки отправлено для {object_name}"
-    error_send_notification: "{templates.errors.processing} отправки уведомления о начале поставки: {error}"
-    error_notify_scheduler: "{templates.errors.processing} уведомления планировщика: {error}"
+# =============================================================================
+# ПОЛЬЗОВАТЕЛЬСКИЙ ИНТЕРФЕЙС - лейблы, плейсхолдеры, заголовки
+# =============================================================================
 
-# Личные сообщения пользователям
+ui:
+  # Заголовки модальных окон
+  modals:
+    military_ticket: "Получение ролей"
+    dismissal_rejection: "Отклонение рапорта на увольнение"
+    leave_request: "Заявка на отгул"
+    department_application: "Заявление в подразделение"
+    safe_documents: "Безопасные документы"
+    warehouse_request: "Запрос со склада"
+    supplies_subscription: "Подписка на поставки"
+    personnel_recruitment: "Приём на службу"
+
+  # Лейблы полей форм
+  labels:
+    first_name: "Имя"
+    last_name: "Фамилия"
+    static: "Статик"
+    department: "Подразделение"
+    reason: "Причина"
+    dismissal_reason: "Причина увольнения"
+    comment: "Комментарий"
+    description: "Описание"
+    notes: "Заметки"
+    date: "Дата"
+    time: "Время"
+    status: "Статус"
+    priority: "Приоритет"
+    join_department: "Заявление в подразделение"
+  
+  # Стандартизированные кнопки
+  buttons:
+    approve: "✅ Одобрить"
+    reject: "🚫 Отказать"
+    delete: "🗑️ Удалить"
+    edit: "✏️ Изменить"
+    submit: "📤 Отправить"
+    cancel: "🚫 Отмена"
+    confirm: "✅ Подтвердить"
+    processing: "🔄 Обрабатывается..."
+    refresh: "🔄 Обновить"
+    settings: "⚙️ Настройки"
+    approved: "✅ Одобрено"
+  
+  # Статусные сообщения
+  status:
+    success: "✅ Успешно"
+    error: "🚫 Ошибка"
+    warning: "⚠️ Предупреждение"
+    info: "ℹ️ Информация"
+    loading: "⏳ Загрузка..."
+    pending: "⏳ Ожидание"
+    completed: "✅ Завершено"
+    rejected: "🚫 Отказано"
+    failed: "🚫 Не удалось"
+    rank: "Воинское звание"
+    reason: "Причина"
+    phone: "Телефон"
+    email: "Почта"
+    quantity: "Количество"
+    time: "Время"
+
+  # Плейсхолдеры
+  placeholders:
+    first_name: "Например: Олег"
+    last_name: "Например: Дубов"
+    static: "123-456 (допускается 5-6 цифр)"
+    reason: "Укажите причину"
+    phone: "Например: +7 (999) 123-45-67"
+    email: "example@email.com"
+    proof_link: "https://example.com/proof"
+
+# =============================================================================
+# ЦВЕТА - встроенные цвета для эмбедов
+# =============================================================================
+
+colors:
+  success: "#00ff00"      # Зеленый
+  error: "#ff0000"        # Красный
+  warning: "#ffa500"      # Оранжевый
+  info: "#0000ff"         # Синий
+  neutral: "#808080"      # Серый
+  special: "#ffd700"      # Золотой
+  supplies_main: "#00FF00"    # Зеленый для поставок
+  supplies_timer: "#3498DB"   # Синий для таймеров
+  supplies_notification: "#3498DB"  # Синий для уведомлений
+
+# =============================================================================
+# ЛИЧНЫЕ СООБЩЕНИЯ ПОЛЬЗОВАТЕЛЯМ - DM сообщения
+# =============================================================================
+
 private_messages:
   welcome:
-    title: "🎖️ Добро пожаловать в нашу Фракцию!"
+    title: "🎖️ Добро пожаловать в нашу организацию!"
     description: |
       {step_text}
       2. **Ознакомьтесь с правилами** сервера
@@ -317,7 +336,7 @@ private_messages:
     military_ticket_title: "🎟️ Как получить военный билет?"
     military_ticket_info: |
       1. Дослужиться до звания **Старший Сержант**
-      2. Пробыть во фракции не менее **5-ти суток**
+      2. Пробыть в организации не менее **5-ти суток**
       3. Ожидать уведомления в канале `#теги-и-флуд` от __Полковника__ и выше о выдаче военных билетов
     footer: "Желаем успешной службы!"
 
@@ -327,80 +346,61 @@ private_messages:
       description: |
         Ваша заявка на получение роли {role_type} была одобрена!
 
-        Добро пожаловать во Фракцию!
+        Добро пожаловать в организацию!
       instructions: |
         > • Канал общения:
         > <#1246125346152251393>
         > • Запросить поставку:
         > <#1246119051726553099>
-        > • Запросить допуск на территорию фракции:
+        > • Запросить допуск на территорию организации:
         > <#1246119269784354888>
         > • Расписание занятий (необходимых для повышения):
-        > <#1336337899309895722>
+        > <#1246337899309895722>
         > • Следите за оповещениями обучения:
         > <#1337434149274779738>
-        > • Ознакомьтесь с сайтом фракции:
+        > • Ознакомьтесь с сайтом организации:
         > <#1326022450307137659>
         > • Следите за последними приказами:
         > <#1251166871064019015>
-        > • Уже были во фракции? Попробуйте восстановиться:
+        > • Уже были в организации? Попробуйте восстановиться:
         > <#1317830537724952626>
         > • Решили, что служба не для вас? Напишите рапорт на увольнение:
         > <#1246119825487564981>
     rejection:
-      title: "❌ Заявка отклонена"
+      title: "🚫 Заявка отклонена"
       description: |
         **Причина отказа:** {rejection_reason}
 
         Вы можете подать новую заявку, устранив указанные недостатки.
-      simple: "❌ Ваша заявка на получение роли {role_type} была отклонена.\n\nВы можете подать новую заявку позже."
+      simple: "🚫 Ваша заявка на получение роли {role_type} была отклонена.\n\nВы можете подать новую заявку позже."
 
   dismissal:
+    title: "📋 Вы уволены со службы"
+    description: |
+      Вы были уволены из организации.
+
+      Благодарим за службу!
+    fields:
+      reason: "Причина увольнения"
+      dismissed_by: "Уволил"
     approval:
       title: "✅ Рапорт на увольнение одобрен"
       description: |
-        {templates.moderator_templates.moderator_info}
+        {templates.moderator.info}
         С вас были сняты все роли, кроме ролей-исключений.
     rejection:
-      title: "❌ Рапорт на увольнение отклонен"
+      title: "🚫 Рапорт на увольнение отклонен"
       description: |
-        {templates.moderator_templates.moderator_info}
-        {templates.moderator_templates.reason_info}
-
-  personnel:
-    recruitment:
-      title: "✅ Вы приняты на службу!"
-      description: |
-        Поздравляем! Вы успешно приняты на службу во Фракцию.
-
-        📋 **Важная информация:**
-        > • Следите за каналом общения и оповещениями
-        > • Выполняйте приказы командования
-        > • Участвуйте в учебных мероприятиях для повышения
-
-        🎖️ Удачи в службе!
-      fields:
-        name: "Имя Фамилия"
-        static: "Статик"
-        rank: "Звание"
-        department: "Подразделение"
-    dismissal:
-      title: "📋 Вы уволены со службы"
-      description: |
-        Вы были уволены из Фракции.
-
-        Благодарим за службу!
-      fields:
-        reason: "Причина увольнения"
-        dismissed_by: "Уволил"
+        {templates.moderator.info}
+        {templates.moderator.reason}
 
   supplies_access:
     title: "📦 Доступ к поставкам одобрен!"
     description: |
-      Вам предоставлен доступ к системе военных поставок!
+      Вам предоставлен доступ к системе поставок!
 
       Теперь вы можете:
-      • Запрашивать поставки материалов для военных объектов
+      • Запрашивать поставки материалов для объектов
       • Управлять таймерами поставок
       • Получать уведомления о готовности объектов
 
@@ -411,7 +411,7 @@ private_messages:
       title: "✅ Заявление одобрено!"
       description: "Ваше заявление в подразделение **{department_code}** было одобрено!"
     rejection:
-      title: "❌ Заявление отклонено"
+      title: "🚫 Заявление отклонено"
       description: "Ваше заявление в подразделение **{department_code}** было отклонено."
       reason_field: "📝 Причина"
     transfer_approval:
@@ -426,9 +426,9 @@ private_messages:
         > • Дата: {date}
         > • Время: {time}
         > • Причина: {reason}
-      approved_by: "{templates.moderator_templates.approved_by_info}"
+      approved_by: "{templates.moderator.approved_by}"
     rejection:
-      title: "❌ Заявка на отгул отклонена"
+      title: "🚫 Заявка на отгул отклонена"
       description: |
         **Детали заявки:**
         > • Дата: {date}
@@ -452,7 +452,7 @@ private_messages:
         **Почта:** {email}
 
   moderator_notifications:
-    common_help_command: &common_help_text |
+    common_help_text: |
       Введите команду `/help` на дискорд-сервере для получения полной справки по системе
       > - Подробнее о системе можно узнать в документации [GitHub](https://github.com/KOFIOK/ManagementDiscordBotRMRP)
     moderator_welcome:
@@ -465,8 +465,7 @@ private_messages:
         • Обработка заявок пользователей
         • Поддержание порядка на сервере
         • Помощь администрации
-      help_command: *common_help_text
-      footer: "{templates.moderator_templates.help_footer}"
+      footer: "{templates.moderator.help_footer}"
     admin_welcome:
       title: "👑 Добро пожаловать в команду администраторов!"
       description: |
@@ -477,5 +476,36 @@ private_messages:
         • Управление модераторами
         • Настройка систем бота
         • Решение глобальных вопросов
-      help_command: *common_help_text
-      footer: "{templates.moderator_templates.help_footer}"
+      help_command: "{private_messages.moderator_notifications.common_help_text}"
+
+# =============================================================================
+# АУДИТ И ЛОГИРОВАНИЕ - настройки для embed сообщений аудита
+# =============================================================================
+
+audit:
+  embed_fields:
+    moderator: "Кадровую отписал"
+    name_static: "Имя Фамилия | № Паспорта"
+    action: "Действие"
+    action_date: "Дата Действия"
+    department: "Подразделение"
+    rank: "Воинское звание"
+    position: "Должность"
+    dismissal_reason: "Причина увольнения"
+    general_reason: "Примечание"
+
+# =============================================================================
+
+military:
+  # Название организации
+  faction_name: "Вооруженные Силы РФ"
+  terms:
+    command: "командование"
+    service: "служба"
+    personnel: "персонал"
+    subdivision: "подразделение"
+    department: "отдел"
+    dismissal_types:
+      psj: "ПСЖ"
+      psj_full: "По собственному желанию"
+      transfer: "Перевод"

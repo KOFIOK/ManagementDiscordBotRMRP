@@ -304,7 +304,7 @@ def _resolve_template_references(message: str, messages: Dict[str, Any]) -> str:
         template_path = match.group(1)
 
         # Only resolve references that start with known prefixes
-        known_prefixes = ['templates.', 'global.', 'moderator_notifications.', 'moderator_templates.']
+        known_prefixes = ['templates.', 'system.', 'systems.', 'ui.', 'private_messages.', 'global.', 'moderator_notifications.', 'moderator_templates.', 'military.']
         if not any(template_path.startswith(prefix) for prefix in known_prefixes):
             return match.group(0)  # Return original for parameter placeholders
 
@@ -447,49 +447,49 @@ def get_warehouse_message(guild_id: int, key_path: str, default: str = None) -> 
     Get warehouse message by dot-separated key path (e.g., 'cart.error_no_permissions')
     Returns default if key not found
     """
-    return get_message(guild_id, f"warehouse.{key_path}", default)
+    return get_message(guild_id, f"systems.warehouse.{key_path}", default)
 
 def get_department_applications_message(guild_id: int, key_path: str, default: str = None) -> str:
     """
     Get department applications message by dot-separated key path (e.g., 'transfer.error_no_permissions')
     Returns default if key not found
     """
-    return get_message(guild_id, f"department_applications.{key_path}", default)
+    return get_message(guild_id, f"systems.department_applications.{key_path}", default)
 
 def get_leave_requests_message(guild_id: int, key_path: str, default: str = None) -> str:
     """
     Get leave requests message by dot-separated key path (e.g., 'approval.error_insufficient_permissions')
     Returns default if key not found
     """
-    return get_message(guild_id, f"leave_requests.{key_path}", default)
+    return get_message(guild_id, f"systems.leave_requests.{key_path}", default)
 
 def get_role_assignment_message(guild_id: int, key_path: str, default: str = None) -> str:
     """
     Get role assignment message by dot-separated key path (e.g., 'application.error_banned_from_service')
     Returns default if key not found
     """
-    return get_message(guild_id, f"role_assignment.{key_path}", default)
+    return get_message(guild_id, f"systems.role_assignment.{key_path}", default)
 
 def get_safe_documents_message(guild_id: int, key_path: str, default: str = None) -> str:
     """
     Get safe documents message by dot-separated key path (e.g., 'approval.error_not_found')
     Returns default if key not found
     """
-    return get_message(guild_id, f"safe_documents.{key_path}", default)
+    return get_message(guild_id, f"systems.safe_documents.{key_path}", default)
 
 def get_settings_message(guild_id: int, key_path: str, default: str = None) -> str:
     """
     Get settings message by dot-separated key path (e.g., 'warehouse.error_channel_not_found')
     Returns default if key not found
     """
-    return get_message(guild_id, f"settings.{key_path}", default)
+    return get_message(guild_id, f"systems.settings.{key_path}", default)
 
 def get_supplies_message(guild_id: int, key_path: str, default: str = None) -> str:
     """
     Get supplies message by dot-separated key path (e.g., 'control.error_no_permission')
     Returns default if key not found
     """
-    return get_message(guild_id, f"supplies.{key_path}", default)
+    return get_message(guild_id, f"systems.supplies.{key_path}", default)
 
 def get_supplies_color(guild_id: int, key_path: str, default_color: str = "#3498DB") -> discord.Color:
     """
@@ -497,7 +497,7 @@ def get_supplies_color(guild_id: int, key_path: str, default_color: str = "#3498
     Returns default color if key not found
     """
     try:
-        color_hex = get_message(guild_id, f"supplies.colors.{key_path}")
+        color_hex = get_message(guild_id, f"systems.supplies.colors.{key_path}")
         if isinstance(color_hex, str) and color_hex.startswith('#'):
             # Convert hex to discord.Color
             color_hex = color_hex.lstrip('#')
@@ -602,6 +602,119 @@ def get_private_messages(guild_id: int, key_path: str, default: str = None) -> s
     Returns default if key not found
     """
     return get_message(guild_id, f"private_messages.{key_path}", default)
+
+def get_system_message(guild_id: int, key_path: str, default: str = None) -> str:
+    """
+    Get system messages by dot-separated key path (e.g., 'personnel.hierarchy_violation')
+    Returns default if key not found
+    """
+    return get_message(guild_id, f"system.{key_path}", default)
+
+def get_systems_message(guild_id: int, system: str, key_path: str, default: str = None) -> str:
+    """
+    Get system-specific messages by system name and key path
+    (e.g., 'dismissal', 'processing_error')
+    Returns default if key not found
+    """
+    return get_message(guild_id, f"systems.{system}.{key_path}", default)
+
+def get_ui_element(guild_id: int, category: str, key: str, default: str = None) -> str:
+    """
+    Get UI elements by category and key (e.g., 'labels', 'first_name')
+    Returns default if key not found
+    """
+    return get_message(guild_id, f"ui.{category}.{key}", default)
+
+def get_ui_label(guild_id: int, key: str, default: str = None) -> str:
+    """
+    Get UI label by key (e.g., 'first_name', 'department')
+    Returns default if key not found
+    """
+    return get_ui_element(guild_id, "labels", key, default)
+
+def get_color(guild_id: int, color_name: str, default: str = "#808080") -> str:
+    """
+    Get color by name (e.g., 'success', 'error')
+    Returns default gray if color not found
+    """
+    return get_message(guild_id, f"colors.{color_name}", default)
+
+def get_military_term(guild_id: int, term_key: str, default: str = None) -> str:
+    """
+    Get military term by key (e.g., 'faction_name', 'command')
+    Returns default if key not found
+    """
+    return get_message(guild_id, f"military.terms.{term_key}", default)
+
+def get_faction_name(guild_id: int, default: str = "Organization") -> str:
+    """
+    Get faction/organization name
+    Returns default if not found
+    """
+    return get_message(guild_id, "military.faction_name", default)
+
+def get_military_ranks(guild_id: int, rank_category: str, default: list = None) -> list:
+    """
+    DEPRECATED: Ranks are now stored in database only.
+    This function is kept for backward compatibility but will return empty list.
+    Use database rank_manager instead.
+    """
+    logger.warning("get_military_ranks is deprecated. Use rank_manager from database instead.")
+    return default or []
+
+def get_default_recruit_rank(guild_id: int, default: str = "Recruit") -> str:
+    """
+    DEPRECATED: Default recruit rank should be obtained from database.
+    This function is kept for backward compatibility but will return None.
+    Use rank_manager from database instead.
+    """
+    logger.warning("get_default_recruit_rank is deprecated. Use rank_manager from database instead.")
+    return None
+
+def get_default_recruit_rank_lower(guild_id: int, default: str = "recruit") -> str:
+    """
+    DEPRECATED: Default recruit rank should be obtained from database.
+    This function is kept for backward compatibility but will return None.
+    Use rank_manager from database instead.
+    """
+    logger.warning("get_default_recruit_rank_lower is deprecated. Use rank_manager from database instead.")
+    return None
+
+def get_faction_name(guild_id: int, default: str = "Организация") -> str:
+    """
+    Get faction/organization name
+    Returns default if not found
+    """
+    return get_message(guild_id, "military.faction_name", default)
+
+def get_ui_button(guild_id: int, button_key: str, default: str = None) -> str:
+    """
+    Get UI button label by key (e.g., 'approve', 'reject')
+    Returns default if key not found
+    """
+    return get_message(guild_id, f"ui.buttons.{button_key}", default)
+
+def get_ui_status(guild_id: int, status_key: str, default: str = None) -> str:
+    """
+    Get UI status message by key (e.g., 'success', 'error')
+    Returns default if key not found
+    """
+    return get_message(guild_id, f"ui.status.{status_key}", default)
+
+def get_ui_label(guild_id: int, label_key: str, default: str = None) -> str:
+    """
+    Get UI label by key (e.g., 'reason', 'description')
+    Returns default if key not found
+    """
+    return get_message(guild_id, f"ui.labels.{label_key}", default)
+
+def get_audit_embed_field(guild_id: int, field_key: str, default: str = None) -> str:
+    """
+    Get audit embed field name by key (e.g., 'moderator', 'action')
+    Returns default if key not found
+    """
+    return get_message(guild_id, f"audit.embed_fields.{field_key}", default)
+
 
 # Initialize on import
 _ensure_messages_directory()

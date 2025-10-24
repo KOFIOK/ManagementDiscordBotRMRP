@@ -1,5 +1,18 @@
 """
 Constants for message service - colors, emojis, and standard values
+
+ARCHITECTURE NOTE:
+This file contains PROGRAMMATIC constants used directly in Python code.
+These are separate from YAML message templates for the following reasons:
+
+1. COLORS: discord.Color objects cannot be serialized to YAML
+2. EMOJIS: While emojis appear in both places, they serve different purposes:
+   - Here: Direct programmatic use in message_service.py
+   - YAML: Template building blocks for configurable message composition
+3. TYPES: String constants for programmatic message type checking
+
+YAML (messages-default.yml) handles USER-CONFIGURABLE text and templates,
+while this file handles SYSTEM constants that code depends on.
 """
 import discord
 

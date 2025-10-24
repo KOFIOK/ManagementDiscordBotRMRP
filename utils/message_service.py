@@ -4,7 +4,8 @@ Provides standardized methods for sending messages, embeds, and DMs
 """
 import discord
 from typing import Dict, Any, List
-from utils.message_manager import get_message, get_private_messages
+from utils.message_manager import get_message, get_private_messages, get_faction_name
+from utils.database_manager.rank_manager import rank_manager
 from utils.message_constants import MessageColors, MessageEmojis
 
 class MessageService:
@@ -247,8 +248,8 @@ class MessageService:
             bool: True if DM was sent successfully
         """
         try:
-            title = MessageService.get_private_template(guild_id, 'role_assignment.approval.title', '✅ Заявка одобрена!')
-            description = MessageService.get_private_template(guild_id, 'role_assignment.approval.description', '').format(role_type=role_type)
+            title = MessageService.get_private_template(guild_id, 'private_messages.role_assignment.approval.title', '✅ Заявка одобрена!')
+            description = MessageService.get_private_template(guild_id, 'private_messages.role_assignment.approval.description', '').format(role_type=role_type)
 
             return await MessageService.send_dm(
                 user=user,
@@ -417,27 +418,27 @@ class MessageService:
             bool: True if DM was sent successfully
         """
         try:
-            title = MessageService.get_private_template(guild_id, 'personnel.recruitment.title', '🎖️ Вы приняты на службу!')
-            description = MessageService.get_private_template(guild_id, 'personnel.recruitment.description', 'Поздравляем! Вы успешно приняты в Вооруженные Силы.')
+            title = MessageService.get_private_template(guild_id, 'private_messages.recruitment.title', '🎖️ Вы приняты на службу!')
+            description = MessageService.get_private_template(guild_id, 'private_messages.recruitment.description', 'Поздравляем! Вы успешно приняты в Вооруженные Силы.')
 
             fields = [
                 {
-                    'name': MessageService.get_private_template(guild_id, 'personnel.recruitment.fields.name', 'ФИО'),
+                    'name': MessageService.get_private_template(guild_id, 'private_messages.recruitment.fields.name', 'ФИО'),
                     'value': full_name,
                     'inline': True
                 },
                 {
-                    'name': MessageService.get_private_template(guild_id, 'personnel.recruitment.fields.static', 'Статический'),
+                    'name': MessageService.get_private_template(guild_id, 'private_messages.recruitment.fields.static', 'Статический'),
                     'value': static,
                     'inline': True
                 },
                 {
-                    'name': MessageService.get_private_template(guild_id, 'personnel.recruitment.fields.rank', 'Звание'),
-                    'value': "Рядовой",
+                    'name': MessageService.get_private_template(guild_id, 'private_messages.recruitment.fields.rank', 'Звание'),
+                    'value': rank_manager.get_default_recruit_rank_sync(),
                     'inline': True
                 },
                 {
-                    'name': MessageService.get_private_template(guild_id, 'personnel.recruitment.fields.department', 'Подразделение'),
+                    'name': MessageService.get_private_template(guild_id, 'private_messages.recruitment.fields.department', 'Подразделение'),
                     'value': "Военная Академия",
                     'inline': False
                 }
@@ -472,17 +473,17 @@ class MessageService:
             bool: True if DM was sent successfully
         """
         try:
-            title = MessageService.get_private_template(guild_id, 'personnel.dismissal.title', '⚠️ Увольнение со службы')
-            description = MessageService.get_private_template(guild_id, 'personnel.dismissal.description', 'К сожалению, ваша служба в Вооруженных Силах завершена.')
+            title = MessageService.get_private_template(guild_id, 'private_messages.dismissal.title', '⚠️ Увольнение со службы')
+            description = MessageService.get_private_template(guild_id, 'private_messages.dismissal.description', f'К сожалению, ваша служба в {get_faction_name(guild_id)} завершена.')
 
             fields = [
                 {
-                    'name': MessageService.get_private_template(guild_id, 'personnel.dismissal.fields.reason', 'Причина увольнения'),
+                    'name': MessageService.get_private_template(guild_id, 'private_messages.dismissal.fields.reason', 'Причина увольнения'),
                     'value': reason,
                     'inline': False
                 },
                 {
-                    'name': MessageService.get_private_template(guild_id, 'personnel.dismissal.fields.dismissed_by', 'Уволен'),
+                    'name': MessageService.get_private_template(guild_id, 'private_messages.dismissal.fields.dismissed_by', 'Уволен'),
                     'value': dismissed_by,
                     'inline': False
                 }

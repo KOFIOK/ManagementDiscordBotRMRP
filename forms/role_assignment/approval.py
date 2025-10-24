@@ -12,6 +12,7 @@ from utils.message_manager import get_private_messages
 from utils.message_service import MessageService
 # PostgreSQL integration with enhanced personnel management
 from utils.database_manager import personnel_manager
+from utils.database_manager.rank_manager import rank_manager
 from utils.nickname_manager import nickname_manager
 from utils.audit_logger import audit_logger
 from .base import get_channel_with_fallback
@@ -399,7 +400,8 @@ class RoleApplicationApprovalView(ui.View):
         """Determine if this application should be automatically processed"""
         if self.application_data["type"] == "military":
             rank = self.application_data.get("rank", "").lower()
-            return rank == "рядовой"
+            default_rank = rank_manager.get_default_recruit_rank_sync()
+            return default_rank and rank == default_rank.lower()
         elif self.application_data["type"] == "supplier":
             return True  # Auto-process supplier applications
         else:  # civilian
@@ -409,15 +411,17 @@ class RoleApplicationApprovalView(ui.View):
         """Determine if nickname should be changed"""
         if self.application_data["type"] == "military":
             rank = self.application_data.get("rank", "").lower()
-            return rank == "рядовой"
+            default_rank = rank_manager.get_default_recruit_rank_sync()
+            return default_rank and rank == default_rank.lower()
         return False  # Never change nickname for suppliers or civilians
     
     def _should_process_personnel(self):
         """Determine if personnel record should be processed"""
-        # Only process personnel records for military recruits with rank 'рядовой'
+        # Only process personnel records for military recruits with default recruit rank
         if self.application_data["type"] == "military":
             rank = self.application_data.get("rank", "").lower()
-            return rank == "рядовой"
+            default_rank = rank_manager.get_default_recruit_rank_sync()
+            return default_rank and rank == default_rank.lower()
         return False  # Never process personnel records for suppliers or civilians
     
     async def _assign_roles(self, user, guild, config):
@@ -469,7 +473,7 @@ class RoleApplicationApprovalView(ui.View):
                 last_name = ''
             
             # Получаем звание из заявки
-            rank_name = self.application_data.get('rank', 'Рядовой')
+            rank_name = self.application_data.get('rank', rank_manager.get_default_recruit_rank_sync())
             
             # Получаем статик из заявки
             static = self.application_data.get('static', '')
@@ -579,7 +583,7 @@ class RoleApplicationApprovalView(ui.View):
                 print(f"Warning: Error in role assignment: {e}")
                 # Continue processing even if role assignment fails
                 
-            # Only do personnel processing for military recruits with rank 'рядовой'
+            # Only do personnel processing for military recruits with default recruit rank
             if self._should_process_personnel():
                 try:
                     await self._handle_auto_processing_with_auth(user, guild, config, signed_by_name, interaction.user.id)
@@ -660,7 +664,7 @@ class RoleApplicationApprovalView(ui.View):
                     personnel_data = {
                         'name': self.application_data.get('name', 'Неизвестно'),
                         'static': self.application_data.get('static', ''),
-                        'rank': self.application_data.get('rank', 'Рядовой'),
+                        'rank': self.application_data.get('rank', rank_manager.get_default_recruit_rank_sync()),
                         'department': 'Военная Академия',
                         'position': 'Не назначено'
                     }
@@ -696,7 +700,7 @@ class RoleApplicationApprovalView(ui.View):
                 print(f"Warning: Error in role assignment: {e}")
                 # Continue processing even if role assignment fails
                 
-            # Only do personnel processing for military recruits with rank 'рядовой'
+            # Only do personnel processing for military recruits with default recruit rank
             if self._should_process_personnel():
                 try:
                     await self._handle_auto_processing_with_auth(user, guild, config, signed_by_name, 0)  # Нет доступа к moderator_discord_id в этом контексте

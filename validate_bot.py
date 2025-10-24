@@ -93,7 +93,7 @@ def test_complete_setup():
         
         # Test default messages loading
         defaults = load_default_messages()
-        if defaults and 'dismissal' in defaults:
+        if defaults and 'systems' in defaults and 'dismissal' in defaults['systems']:
             print("   ✓ Default messages loaded successfully")
         else:
             print("   ✗ Default messages loading failed")
@@ -106,7 +106,7 @@ def test_complete_setup():
             print("   ✓ Guild messages loading works")
         
         # Test message retrieval
-        test_message = get_message(test_guild_id, 'dismissal.ui_labels.processing')
+        test_message = get_message(test_guild_id, 'systems.dismissal.ui_labels.processing')
         if test_message:
             print(f"   ✓ Message retrieval works: '{test_message}'")
         

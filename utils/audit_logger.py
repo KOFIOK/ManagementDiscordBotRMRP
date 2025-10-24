@@ -17,6 +17,7 @@ import discord
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any, Tuple
 from enum import Enum
+from utils.message_manager import get_audit_embed_field
 
 
 class AuditAction:
@@ -279,13 +280,14 @@ class PersonnelAuditLogger:
             
             # Create audit embed
             embed = await self._create_base_embed(
+                guild_id=guild.id,
                 action=action,
                 moderator_display=moderator_display,
                 personnel_data=personnel_data
             )
             
             # Add conditional fields
-            await self._add_conditional_fields(embed, personnel_data, action)
+            await self._add_conditional_fields(guild.id, embed, personnel_data, action)
             
             # Add custom fields if provided
             if custom_fields:
@@ -356,6 +358,7 @@ class PersonnelAuditLogger:
     
     async def _create_base_embed(
         self,
+        guild_id: int,
         action: str,
         moderator_display: str,
         personnel_data: Dict[str, Any]
@@ -386,7 +389,7 @@ class PersonnelAuditLogger:
         
         # Standard fields
         embed.add_field(
-            name="Кадровую отписал",
+            name=get_audit_embed_field(guild_id, 'moderator', 'Кадровую отписал'),
             value=moderator_display,
             inline=False
         )
@@ -397,13 +400,13 @@ class PersonnelAuditLogger:
         name_with_static = f"{name} | {static}" if static else name
         
         embed.add_field(
-            name="Имя Фамилия | 6 цифр статика",
+            name=get_audit_embed_field(guild_id, 'name_static', 'Имя Фамилия | 6 цифр статика'),
             value=name_with_static,
             inline=False
         )
         
         embed.add_field(
-            name="Действие",
+            name=get_audit_embed_field(guild_id, 'action', 'Действие'),
             value=action,
             inline=False
         )
@@ -411,19 +414,19 @@ class PersonnelAuditLogger:
         # Format date as dd-MM-yyyy using Moscow time
         action_date = moscow_time.strftime('%d-%m-%Y')
         embed.add_field(
-            name="Дата Действия",
+            name=get_audit_embed_field(guild_id, 'action_date', 'Дата Действия'),
             value=action_date,
             inline=False
         )
         
         embed.add_field(
-            name="Подразделение",
+            name=get_audit_embed_field(guild_id, 'department', 'Подразделение'),
             value=personnel_data.get('department', 'Неизвестно'),
             inline=False
         )
         
         embed.add_field(
-            name="Воинское звание",
+            name=get_audit_embed_field(guild_id, 'rank', 'Воинское звание'),
             value=personnel_data.get('rank', 'Неизвестно'),
             inline=False
         )
@@ -432,6 +435,7 @@ class PersonnelAuditLogger:
     
     async def _add_conditional_fields(
         self,
+        guild_id: int,
         embed: discord.Embed,
         personnel_data: Dict[str, Any],
         action: str
@@ -472,6 +476,7 @@ class PersonnelAuditLogger:
     
     async def _add_conditional_fields(
         self,
+        guild_id: int,
         embed: discord.Embed,
         personnel_data: Dict[str, Any],
         action: str

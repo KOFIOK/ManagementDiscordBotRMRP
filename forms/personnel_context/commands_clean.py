@@ -12,17 +12,12 @@ from utils.config_manager import load_config, is_moderator_or_admin, is_administ
 from utils.database_manager import PersonnelManager
 from utils.database_manager.position_manager import position_manager
 from utils.nickname_manager import nickname_manager
-from utils.message_manager import get_message, get_private_messages
+from utils.message_manager import get_message, get_private_messages, get_message_with_params, get_ui_label
 from utils.message_service import MessageService
 from discord import ui
 import re
 
 from utils.postgresql_pool import get_db_cursor
-
-
-def get_personnel_message(guild_id: int, key: str) -> str:
-    """Get personnel context message for specific guild"""
-    return get_message(guild_id, f"personnel_context.{key}")
 
 
 async def get_user_status(user_discord_id: int) -> dict:
@@ -195,13 +190,13 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
     """Modal for recruiting new personnel using PersonnelManager"""
     
     def __init__(self, target_user: discord.Member, guild_id: int):
-        super().__init__(title=get_personnel_message(guild_id, 'recruitment.modal_title'))
+        super().__init__(title=get_message(guild_id, 'ui.modals.personnel_recruitment'))
         self.target_user = target_user
         self.guild_id = guild_id
         
         self.first_name_input = ui.TextInput(
-            label="Имя",
-            placeholder=get_personnel_message(guild_id, 'recruitment.first_name_placeholder'),
+            label=get_ui_label(guild_id, 'first_name'),
+            placeholder=get_message(guild_id, 'ui.placeholders.first_name'),
             min_length=2,
             max_length=25,
             required=True
@@ -209,8 +204,8 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
         self.add_item(self.first_name_input)
         
         self.last_name_input = ui.TextInput(
-            label="Фамилия",
-            placeholder=get_personnel_message(guild_id, 'recruitment.last_name_placeholder'),
+            label=get_ui_label(guild_id, 'last_name'),
+            placeholder=get_message(guild_id, 'ui.placeholders.last_name'),
             min_length=2,
             max_length=25,
             required=True
@@ -218,8 +213,8 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
         self.add_item(self.last_name_input)
         
         self.static_input = ui.TextInput(
-            label=get_personnel_message(guild_id, 'recruitment.static_label'),
-            placeholder=get_personnel_message(guild_id, 'recruitment.static_placeholder'),
+            label=get_message(guild_id, 'ui.labels.static'),
+            placeholder=get_message(guild_id, 'ui.placeholders.static'),
             min_length=5,
             max_length=7,
             required=True
@@ -246,14 +241,14 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
             
             if ' ' in first_name or '\t' in first_name:
                 await interaction.response.send_message(
-                    get_personnel_message(interaction.guild.id, 'recruitment.error_first_name_spaces'),
+                    f"❌ Имя не должно содержать пробелы",
                     ephemeral=True
                 )
                 return
             
             if ' ' in last_name or '\t' in last_name:
                 await interaction.response.send_message(
-                    get_personnel_message(interaction.guild.id, 'recruitment.error_last_name_spaces'),
+                    f"❌ Фамилия не должна содержать пробелы",
                     ephemeral=True
                 )
                 return
@@ -266,7 +261,7 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
             formatted_static = self._format_static(static)
             if not formatted_static:
                 await interaction.response.send_message(
-                    get_personnel_message(interaction.guild.id, 'recruitment.error_invalid_static_format'),
+                    f"❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.\nПримеры: 123-456, 12-345",
                     ephemeral=True
                 )
                 return
@@ -590,12 +585,13 @@ async def recruit_user(interaction: discord.Interaction, user: discord.Member):
 class DismissalModal(ui.Modal, title="Увольнение"):
     """Modal for dismissing personnel using PersonnelManager"""
     
-    def __init__(self, target_user: discord.Member):
+    def __init__(self, target_user: discord.Member, guild_id: int):
         super().__init__()
         self.target_user = target_user
+        self.guild_id = guild_id
         
         self.reason_input = ui.TextInput(
-            label="Причина увольнения",
+            label=get_ui_label(self.guild_id, 'dismissal_reason'),
             placeholder="ПСЖ, Нарушение устава, и т.д.",
             min_length=2,
             max_length=100,
@@ -986,7 +982,7 @@ async def dismiss_user(interaction: discord.Interaction, user: discord.User):
         return
     
     # Open dismissal modal
-    modal = DismissalModal(target_user)
+    modal = DismissalModal(target_user, interaction.guild.id)
     await interaction.response.send_modal(modal)
     print(f"✅ Dismissal modal sent for {target_user.display_name}")
 

@@ -1,6 +1,6 @@
 import discord
 from utils.config_manager import load_config
-from utils.message_manager import get_supplies_message, get_supplies_color
+from utils.message_manager import get_supplies_message, get_supplies_color, get_message
 from datetime import datetime
 
 
@@ -80,7 +80,7 @@ class SuppliesControlView(discord.ui.View):
             
             if not (is_bot_moderator_or_admin or is_discord_admin):
                 await interaction.response.send_message(
-                    get_supplies_message(interaction.guild.id, "control.error_no_permission"), 
+                    get_message(interaction.guild.id, "templates.permissions.moderator_required"),
                     ephemeral=True
                 )
                 return

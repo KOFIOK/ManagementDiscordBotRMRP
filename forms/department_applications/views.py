@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 
 from utils.config_manager import load_config
-from utils.message_manager import get_department_applications_message, get_private_messages
+from utils.message_manager import get_department_applications_message, get_private_messages, get_ui_button, get_military_term, get_ui_label
 from utils.ping_manager import ping_manager
 from utils.nickname_manager import nickname_manager
 from utils import get_safe_personnel_name
@@ -228,7 +228,7 @@ class DepartmentApplicationView(ui.View):
         # Approve button
         approve_disabled = state['approved']
         approve_style = discord.ButtonStyle.grey if approve_disabled else discord.ButtonStyle.green
-        approve_label = "✅ Одобрено" if approve_disabled else "✅ Одобрить"
+        approve_label = get_ui_button(0, "approved") if approve_disabled else get_ui_button(0, "approve")
         
         approve_btn = ui.Button(
             label=approve_label,
@@ -481,8 +481,8 @@ class DepartmentApplicationView(ui.View):
                 # Send DM to user
                 try:
                     dm_embed = discord.Embed(
-                        title=get_private_messages(interaction.guild.id, 'department_applications.transfer_approval.title'),
-                        description=get_private_messages(interaction.guild.id, 'department_applications.transfer_approval.description').format(
+                        title=get_private_messages(interaction.guild.id, 'private_messages.department_applications.transfer_approval.title'),
+                        description=get_private_messages(interaction.guild.id, 'private_messages.department_applications.transfer_approval.description').format(
                             department_code=self.application_data['department_code']
                         ),
                         color=discord.Color.green(),
@@ -503,7 +503,7 @@ class DepartmentApplicationView(ui.View):
                 ephemeral=True
             )
     
-    @ui.button(label="✅ Одобрить", style=discord.ButtonStyle.green, row=0)
+    @ui.button(label=get_ui_button(0, "approve"), style=discord.ButtonStyle.green, row=0)
     async def approve_button(self, interaction: discord.Interaction, button: ui.Button):
         """Approve the application"""
         try:
@@ -618,15 +618,15 @@ class DepartmentApplicationView(ui.View):
                 
                 # Send success message
                 await interaction.followup.send(
-                    f"✅ Заявление пользователя {target_user.mention} одобрено! Роли подразделения и должности назначены автоматически.",
+                    get_department_applications_message(interaction.guild.id, "success.approved", "✅ Заявление пользователя {user} одобрено! Роли подразделения и должности назначены автоматически.").format(user=target_user.mention),
                     ephemeral=True
                 )
                 
                 # Send DM to user
                 try:
                     dm_embed = discord.Embed(
-                        title=get_private_messages(interaction.guild.id, 'department_applications.approval.title'),
-                        description=get_private_messages(interaction.guild.id, 'department_applications.approval.description').format(
+                        title=get_private_messages(interaction.guild.id, 'private_messages.department_applications.approval.title'),
+                        description=get_private_messages(interaction.guild.id, 'private_messages.department_applications.approval.description').format(
                             department_code=self.application_data['department_code']
                         ),
                         color=discord.Color.green(),
@@ -746,7 +746,7 @@ class DepartmentApplicationView(ui.View):
             # Confirm deletion
             confirm_view = ConfirmDeletionView()
             await interaction.response.send_message(
-                "⚠️ Вы уверены, что хотите удалить это заявление? Это действие нельзя отменить.",
+                get_department_applications_message(interaction.guild.id, "confirmations.delete_warning", "⚠️ Вы уверены, что хотите удалить это заявление? Это действие нельзя отменить."),
                 view=confirm_view,
                 ephemeral=True
             )
@@ -1687,7 +1687,7 @@ class DepartmentSelectView(ui.View):
         self.join_button.custom_id = f"dept_app_join_{department_code}"
         self.transfer_button.custom_id = f"dept_app_transfer_{department_code}"
     
-    @ui.button(label="Заявление в подразделение", style=discord.ButtonStyle.green, emoji="➕")
+    @ui.button(label=get_ui_label(0, "join_department"), style=discord.ButtonStyle.green, emoji="➕")
     async def join_button(self, interaction: discord.Interaction, button: ui.Button):
         """Handle department join application"""
         await self._handle_application_type(interaction, "join")

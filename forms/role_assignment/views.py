@@ -6,7 +6,7 @@ import discord
 from discord import ui
 from .modals import MilitaryApplicationModal, CivilianApplicationModal, SupplierApplicationModal
 from utils.config_manager import load_config
-from utils.message_manager import get_role_assignment_message
+from utils.message_manager import get_role_assignment_message, get_military_term
 
 
 class RoleAssignmentView(ui.View):
@@ -72,7 +72,7 @@ class RoleAssignmentView(ui.View):
                 f"📋 **Ваша текущая информация:**\n"
                 f"> • **Имя, Фамилия:** `{full_name}`\n"
                 f"> • **Звание:** `{rank}`\n"
-                f"> • **Подразделение:** `{department}`\n"
+                f"> • **{get_military_term(interaction.guild.id, 'subdivision').capitalize()}:** `{department}`\n"
                 f"> • **Должность:** `{position}`\n\n"
                 f"💡 **Если вам нужно изменить данные, используйте:**\n"
                 f"• **Общее редактирование** - для изменения личных данных\n"

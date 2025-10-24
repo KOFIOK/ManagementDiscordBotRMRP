@@ -44,6 +44,7 @@ class LeaveRequestModal(ui.Modal):
           label="Статик",
           placeholder=static_placeholder,
           default=static_value,
+          min_length=1,
           max_length=20,
           required=True
         )

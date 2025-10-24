@@ -577,8 +577,8 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
         
         self.static_input = ui.TextInput(
             label="Статик",
-            placeholder="123-456 (допускается 5-6 цифр)",
-            min_length=5,
+            placeholder="123-456 (допускается 1-6 цифр)",
+            min_length=1,
             max_length=7,
             required=True
         )
@@ -610,9 +610,9 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
             static = self.static_input.value.strip()
             formatted_static = self._format_static(static)
             if not formatted_static:
+                from utils.static_validator import StaticValidator
                 await interaction.response.send_message(
-                    "❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.\n"
-                    "Примеры: 123456, 123-456, 12345, 12-345, 123 456",
+                    StaticValidator.get_validation_error_message(),
                     ephemeral=True
                 )
                 return
@@ -669,9 +669,10 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                 print(f"Failed to send error response: {e}")
     
     def _format_static(self, static_input: str) -> str:
-        """Auto-format static number to standard format - copied from MilitaryApplicationModal"""
-        import re
-        digits_only = re.sub(r'\D', '', static_input.strip())
+        """Auto-format static number to standard format"""
+        from utils.static_validator import StaticValidator
+        is_valid, formatted = StaticValidator.validate_and_format(static_input)
+        return formatted if is_valid else ""
         
         if len(digits_only) == 5:
             return f"{digits_only[:2]}-{digits_only[2:]}"
@@ -761,8 +762,8 @@ class PersonalDataModal(ui.Modal, title="Изменить личные данн�
 
         self.static = ui.TextInput(
             label="Статик",
-            placeholder="123-456 (5-7 цифр)",
-            min_length=5,
+            placeholder="123-456 (1-6 цифр)",
+            min_length=1,
             max_length=7,
             required=True
         )
@@ -845,15 +846,9 @@ class PersonalDataModal(ui.Modal, title="Изменить личные данн�
 
     def _format_static(self, static_input: str) -> str:
         """Auto-format static number to standard format"""
-        import re
-        digits_only = re.sub(r'\D', '', static_input.strip())
-
-        if len(digits_only) == 5:
-            return f"{digits_only[:2]}-{digits_only[2:]}"
-        elif len(digits_only) == 6:
-            return f"{digits_only[:3]}-{digits_only[3:]}"
-        else:
-            return ""
+        from utils.static_validator import StaticValidator
+        is_valid, formatted = StaticValidator.validate_and_format(static_input)
+        return formatted if is_valid else ""
 
     async def on_submit(self, interaction: discord.Interaction):
         """Handle form submission with database update and history logging"""
@@ -927,9 +922,9 @@ class PersonalDataModal(ui.Modal, title="Изменить личные данн�
             # Validate and format static (required field)
             formatted_static = self._format_static(static)
             if not formatted_static:
+                from utils.static_validator import StaticValidator
                 await interaction.response.send_message(
-                    "❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.\n"
-                    "Примеры: 123456, 123-456, 12345, 12-345, 123 456",
+                    StaticValidator.get_validation_error_message(),
                     ephemeral=True
                 )
                 return

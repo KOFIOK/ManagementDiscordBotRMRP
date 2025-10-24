@@ -910,21 +910,13 @@ class PersonnelAuditLogger:
             print(f"🔍 FORMAT_STATIC: Статик пустой, возвращаем пустую строку")
             return ""
         
-        # Убираем все нецифровые символы
-        digits_only = ''.join(filter(str.isdigit, static))
-        print(f"🔍 FORMAT_STATIC: Только цифры: '{digits_only}' (длина: {len(digits_only)})")
+        # Используем унифицированную валидацию
+        from utils.static_validator import StaticValidator
+        is_valid, formatted = StaticValidator.validate_and_format(static)
         
-        # Проверяем длину
-        if len(digits_only) == 6:
-            # Форматируем как XXX-XXX
-            result = f"{digits_only[:3]}-{digits_only[3:]}"
-            print(f"🔍 FORMAT_STATIC: 6 цифр -> XXX-XXX: '{result}'")
-            return result
-        elif len(digits_only) == 5:
-            # Форматируем как XX-XXX
-            result = f"{digits_only[:2]}-{digits_only[2:]}"
-            print(f"🔍 FORMAT_STATIC: 5 цифр -> XX-XXX: '{result}'")
-            return result
+        if is_valid:
+            print(f"🔍 FORMAT_STATIC: Успешно отформатировано: '{formatted}'")
+            return formatted
         else:
             # Возвращаем как есть, если не подходит под стандарт
             result = static.strip()

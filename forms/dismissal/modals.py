@@ -30,9 +30,9 @@ class SimplifiedDismissalModal(ui.Modal):
         
         self.static_input = ui.TextInput(
             label="Статик", 
-            placeholder="123-456 или 12-345",
+            placeholder="123-456 (допускается 1-6 цифр)",
             default=prefilled_static,
-            min_length=5,
+            min_length=1,
             max_length=7,
             required=True
         )
@@ -66,14 +66,9 @@ class SimplifiedDismissalModal(ui.Modal):
     
     def format_static(self, static_input: str) -> str:
         """Auto-format static number to standard format"""
-        digits_only = re.sub(r'\D', '', static_input.strip())
-        
-        if len(digits_only) == 5:
-            return f"{digits_only[:2]}-{digits_only[2:]}"
-        elif len(digits_only) == 6:
-            return f"{digits_only[:3]}-{digits_only[3:]}"
-        else:
-            return ""
+        from utils.static_validator import StaticValidator
+        is_valid, formatted = StaticValidator.validate_and_format(static_input)
+        return formatted if is_valid else ""
     
     async def on_submit(self, interaction: discord.Interaction):
         """Handle simplified dismissal report submission"""
@@ -194,7 +189,7 @@ class StaticRequestModal(ui.Modal, title="Укажите статик уволь
     static_input = ui.TextInput(
         label="Статик (123-456)",
         placeholder="Введите статик покинувшего пользователя",
-        min_length=5,
+        min_length=1,
         max_length=7,
         required=True
     )
@@ -207,14 +202,9 @@ class StaticRequestModal(ui.Modal, title="Укажите статик уволь
     
     def format_static(self, static_input: str) -> str:
         """Auto-format static number to standard format"""
-        digits_only = re.sub(r'\D', '', static_input.strip())
-        
-        if len(digits_only) == 5:
-            return f"{digits_only[:2]}-{digits_only[2:]}"
-        elif len(digits_only) == 6:
-            return f"{digits_only[:3]}-{digits_only[3:]}"
-        else:
-            return ""
+        from utils.static_validator import StaticValidator
+        is_valid, formatted = StaticValidator.validate_and_format(static_input)
+        return formatted if is_valid else ""
     
     async def on_submit(self, interaction: discord.Interaction):
         try:
@@ -380,7 +370,7 @@ class AutomaticDismissalEditModal(ui.Modal, title="Редактирование 
             label="Статик",
             placeholder="Например: 123-456",
             default=current_data.get('static', ''),
-            min_length=5,
+            min_length=1,
             max_length=20,
             required=True
         )
@@ -407,14 +397,9 @@ class AutomaticDismissalEditModal(ui.Modal, title="Редактирование 
     
     def format_static(self, static_input: str) -> str:
         """Auto-format static number to standard format"""
-        digits_only = re.sub(r'\D', '', static_input.strip())
-        
-        if len(digits_only) == 5:
-            return f"{digits_only[:2]}-{digits_only[2:]}"
-        elif len(digits_only) == 6:
-            return f"{digits_only[:3]}-{digits_only[3:]}"
-        else:
-            return static_input.strip()  # Return as-is if can't format
+        from utils.static_validator import StaticValidator
+        is_valid, formatted = StaticValidator.validate_and_format(static_input)
+        return formatted if is_valid else static_input.strip()  # Return as-is if can't format
     
     async def on_submit(self, interaction: discord.Interaction):
         try:

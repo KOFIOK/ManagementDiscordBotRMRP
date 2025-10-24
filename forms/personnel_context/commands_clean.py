@@ -215,7 +215,7 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
         self.static_input = ui.TextInput(
             label=get_message(guild_id, 'ui.labels.static'),
             placeholder=get_message(guild_id, 'ui.placeholders.static'),
-            min_length=5,
+            min_length=1,
             max_length=7,
             required=True
         )
@@ -260,8 +260,9 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
             static = self.static_input.value.strip()
             formatted_static = self._format_static(static)
             if not formatted_static:
+                from utils.static_validator import StaticValidator
                 await interaction.response.send_message(
-                    f"❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.\nПримеры: 123-456, 12-345",
+                    StaticValidator.get_validation_error_message(),
                     ephemeral=True
                 )
                 return
@@ -320,14 +321,9 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
     
     def _format_static(self, static_input: str) -> str:
         """Auto-format static number to standard format"""
-        digits_only = re.sub(r'\D', '', static_input.strip())
-        
-        if len(digits_only) == 5:
-            return f"{digits_only[:2]}-{digits_only[2:]}"
-        elif len(digits_only) == 6:
-            return f"{digits_only[:3]}-{digits_only[3:]}"
-        else:
-            return ""
+        from utils.static_validator import StaticValidator
+        is_valid, formatted = StaticValidator.validate_and_format(static_input)
+        return formatted if is_valid else ""
     
     async def _process_recruitment_with_personnel_manager(self, interaction: discord.Interaction, full_name: str, static: str, rank: str) -> bool:
         """Process recruitment using PersonnelManager"""

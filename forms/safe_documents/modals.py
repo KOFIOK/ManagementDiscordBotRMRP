@@ -29,6 +29,7 @@ class SafeDocumentsModal(discord.ui.Modal):
             label="Статик",
             placeholder="Введите ваш статик",
             required=True,
+            min_length=1,
             max_length=100,
             default=self.existing_data.get('static', '')
         )
@@ -175,6 +176,7 @@ class SafeDocumentsEditModal(discord.ui.Modal):
             label="Статик",
             placeholder="Введите статик",
             required=True,
+            min_length=1,
             max_length=100,
             default=application_data.get('static', '')
         )

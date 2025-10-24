@@ -53,7 +53,7 @@ class WarehouseRequestModal(discord.ui.Modal):
             label="Статик",
             placeholder=static_placeholder,
             default=static_value,
-            min_length=5,
+            min_length=1,
             max_length=10,
             required=True
         )
@@ -286,16 +286,9 @@ class WarehouseRequestModal(discord.ui.Modal):
 
     def _format_static(self, static: str) -> str:
         """Форматирование статика в стандартный вид"""
-        # Удаляем все, кроме цифр
-        digits = re.sub(r'\D', '', static)
-        
-        # Проверяем длину
-        if len(digits) == 6:
-            return f"{digits[:3]}-{digits[3:]}"
-        elif len(digits) == 5:
-            return f"{digits[:2]}-{digits[2:]}"
-        
-        return ""
+        from utils.static_validator import StaticValidator
+        is_valid, formatted = StaticValidator.validate_and_format(static)
+        return formatted if is_valid else ""
 
     def _get_category_key(self, category: str) -> str:
         """Получить ключ категории"""
@@ -659,7 +652,7 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
             label="Статик",
             placeholder="Например: 123-456",
             default="",
-            min_length=5,
+            min_length=1,
             max_length=10,
             required=True
         )
@@ -956,16 +949,9 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
 
     def _format_static(self, static: str) -> str:
         """Форматирование статика в стандартный вид"""
-        # Удаляем все, кроме цифр
-        digits = re.sub(r'\D', '', static)
-        
-        # Проверяем длину
-        if len(digits) == 6:
-            return f"{digits[:3]}-{digits[3:]}"
-        elif len(digits) == 5:
-            return f"{digits[:2]}-{digits[2:]}"
-        
-        return ""
+        from utils.static_validator import StaticValidator
+        is_valid, formatted = StaticValidator.validate_and_format(static)
+        return formatted if is_valid else ""
 
 
 class WarehouseCustomItemModal(discord.ui.Modal):

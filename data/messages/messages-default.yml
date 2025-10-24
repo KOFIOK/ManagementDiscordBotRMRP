@@ -32,6 +32,16 @@ templates:
     not_found: "{templates.base.error_prefix} {entity} не найден: {details}"
     already_exists: "{templates.base.error_prefix} {entity} уже существует"
     already_processed: "{templates.base.error_prefix} {object} уже обработан{details}"
+    static_format: |
+      {templates.base.error_prefix} **Ошибка валидации статика**
+      Статик должен содержать от 1 до 6 цифр.
+      **Примеры:**
+      • `1` → `1`
+      • `11` → `11`
+      • `111` → `111`
+      • `1111` → `1-111`
+      • `11111` → `11-111`
+      • `111111` → `111-111`
 
   # Шаблоны статусов
   status:
@@ -298,7 +308,7 @@ ui:
   placeholders:
     first_name: "Например: Олег"
     last_name: "Например: Дубов"
-    static: "123-456 (допускается 5-6 цифр)"
+    static: "123-456 (допускается 1-6 цифр)"
     reason: "Укажите причину"
     phone: "Например: +7 (999) 123-45-67"
     email: "example@email.com"

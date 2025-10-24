@@ -36,8 +36,8 @@ class MilitaryApplicationModal(ui.Modal):
         
         self.static_input = ui.TextInput(
             label=get_role_assignment_message(0, 'application.static_label', 'Статик'),
-            placeholder=get_role_assignment_message(0, 'application.static_placeholder', '123-456 (допускается 5-6 цифр)'),
-            min_length=5,
+            placeholder=get_role_assignment_message(0, 'application.static_placeholder', '123-456 (допускается 1-6 цифр)'),
+            min_length=1,
             max_length=7,
             required=True
         )
@@ -127,9 +127,9 @@ class MilitaryApplicationModal(ui.Modal):
         static = self.static_input.value.strip()
         formatted_static = self._format_static(static)
         if not formatted_static:
+            from utils.static_validator import StaticValidator
             await interaction.response.send_message(
-                f"{get_role_assignment_message(interaction.guild.id, 'application.error_invalid_static_format', '❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.')}\n"
-                "Примеры: 123456, 123-456, 12345, 12-345, 123 456",
+                StaticValidator.get_validation_error_message(),
                 ephemeral=True
             )
             return
@@ -149,14 +149,9 @@ class MilitaryApplicationModal(ui.Modal):
     
     def _format_static(self, static_input: str) -> str:
         """Auto-format static number to standard format"""
-        digits_only = re.sub(r'\D', '', static_input.strip())
-        
-        if len(digits_only) == 5:
-            return f"{digits_only[:2]}-{digits_only[2:]}"
-        elif len(digits_only) == 6:
-            return f"{digits_only[:3]}-{digits_only[3:]}"
-        else:
-            return ""
+        from utils.static_validator import StaticValidator
+        is_valid, formatted = StaticValidator.validate_and_format(static_input)
+        return formatted if is_valid else ""
     
     async def _check_blacklist_status(self, static: str):
         """Check if user is in blacklist using PostgreSQL (stub)"""
@@ -255,8 +250,8 @@ class CivilianApplicationModal(ui.Modal):
         
         self.static_input = ui.TextInput(
             label="Статик",
-            placeholder="123-456 (допускается 5-6 цифр)",
-            min_length=5,
+            placeholder="123-456 (допускается 1-6 цифр)",
+            min_length=1,
             max_length=7,
             required=True
         )
@@ -310,9 +305,9 @@ class CivilianApplicationModal(ui.Modal):
         static = self.static_input.value.strip()
         formatted_static = self._format_static(static)
         if not formatted_static:
+            from utils.static_validator import StaticValidator
             await interaction.response.send_message(
-                f"{get_role_assignment_message(interaction.guild.id, 'application.error_invalid_static_format', '❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.')}\n"
-                "Примеры: 123456, 123-456, 12345, 12-345, 123 456",
+                StaticValidator.get_validation_error_message(),
                 ephemeral=True
             )
             return
@@ -343,14 +338,9 @@ class CivilianApplicationModal(ui.Modal):
     
     def _format_static(self, static_input: str) -> str:
         """Auto-format static number to standard format"""
-        digits_only = re.sub(r'\D', '', static_input.strip())
-        
-        if len(digits_only) == 5:
-            return f"{digits_only[:2]}-{digits_only[2:]}"
-        elif len(digits_only) == 6:
-            return f"{digits_only[:3]}-{digits_only[3:]}"
-        else:
-            return ""
+        from utils.static_validator import StaticValidator
+        is_valid, formatted = StaticValidator.validate_and_format(static_input)
+        return formatted if is_valid else ""
     
     def _validate_url(self, url):
         """Basic URL validation - accepts various formats"""
@@ -445,8 +435,8 @@ class SupplierApplicationModal(ui.Modal):
         
         self.static_input = ui.TextInput(
             label="Статик",
-            placeholder="123-456 (допускается 5-6 цифр)",
-            min_length=5,
+            placeholder="123-456 (допускается 1-6 цифр)",
+            min_length=1,
             max_length=7,
             required=True
         )
@@ -491,9 +481,9 @@ class SupplierApplicationModal(ui.Modal):
         static = self.static_input.value.strip()
         formatted_static = self._format_static(static)
         if not formatted_static:
+            from utils.static_validator import StaticValidator
             await interaction.response.send_message(
-                "❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.\n"
-                "Примеры: 123456, 123-456, 12345, 12-345, 123 456",
+                StaticValidator.get_validation_error_message(),
                 ephemeral=True
             )
             return
@@ -522,14 +512,9 @@ class SupplierApplicationModal(ui.Modal):
     
     def _format_static(self, static_input: str) -> str:
         """Auto-format static number to standard format"""
-        digits_only = re.sub(r'\D', '', static_input.strip())
-        
-        if len(digits_only) == 5:
-            return f"{digits_only[:2]}-{digits_only[2:]}"
-        elif len(digits_only) == 6:
-            return f"{digits_only[:3]}-{digits_only[3:]}"
-        else:
-            return ""
+        from utils.static_validator import StaticValidator
+        is_valid, formatted = StaticValidator.validate_and_format(static_input)
+        return formatted if is_valid else ""
     def _validate_url(self, url):
         """Basic URL validation - accepts various formats"""
         # More permissive URL pattern that accepts:
@@ -628,8 +613,8 @@ class MilitaryEditModal(ui.Modal):
         
         self.static_input = ui.TextInput(
             label="Статик",
-            placeholder="123-456 (допускается 5-6 цифр)",
-            min_length=5,
+            placeholder="123-456 (допускается 1-6 цифр)",
+            min_length=1,
             max_length=7,
             required=True,
             default=application_data.get('static', '')
@@ -645,9 +630,9 @@ class MilitaryEditModal(ui.Modal):
             static = self.static_input.value.strip()
             formatted_static = self._format_static(static)
             if not formatted_static:
+                from utils.static_validator import StaticValidator
                 await interaction.response.send_message(
-                    "❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.\n"
-                    "Примеры: 123456, 123-456, 12345, 12-345, 123 456",
+                    StaticValidator.get_validation_error_message(),
                     ephemeral=True
                 )
                 return
@@ -674,14 +659,9 @@ class MilitaryEditModal(ui.Modal):
     
     def _format_static(self, static_input: str) -> str:
         """Auto-format static number to standard format"""
-        digits_only = re.sub(r'\D', '', static_input.strip())
-        
-        if len(digits_only) == 5:
-            return f"{digits_only[:2]}-{digits_only[2:]}"
-        elif len(digits_only) == 6:
-            return f"{digits_only[:3]}-{digits_only[3:]}"
-        else:
-            return ""
+        from utils.static_validator import StaticValidator
+        is_valid, formatted = StaticValidator.validate_and_format(static_input)
+        return formatted if is_valid else ""
     
     async def _handle_edit_update(self, interaction: discord.Interaction, updated_data: dict):
         """Обновление embed с новыми данными"""
@@ -744,8 +724,8 @@ class CivilianEditModal(ui.Modal):
         
         self.static_input = ui.TextInput(
             label="Статик",
-            placeholder="123-456 (допускается 5-6 цифр)",
-            min_length=5,
+            placeholder="123-456 (допускается 1-6 цифр)",
+            min_length=1,
             max_length=7,
             required=True,
             default=application_data.get('static', '')
@@ -789,9 +769,9 @@ class CivilianEditModal(ui.Modal):
             static = self.static_input.value.strip()
             formatted_static = self._format_static(static)
             if not formatted_static:
+                from utils.static_validator import StaticValidator
                 await interaction.response.send_message(
-                    "❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.\n"
-                    "Примеры: 123456, 123-456, 12345, 12-345, 123 456",
+                    StaticValidator.get_validation_error_message(),
                     ephemeral=True
                 )
                 return
@@ -829,14 +809,9 @@ class CivilianEditModal(ui.Modal):
     
     def _format_static(self, static_input: str) -> str:
         """Auto-format static number to standard format"""
-        digits_only = re.sub(r'\D', '', static_input.strip())
-        
-        if len(digits_only) == 5:
-            return f"{digits_only[:2]}-{digits_only[2:]}"
-        elif len(digits_only) == 6:
-            return f"{digits_only[:3]}-{digits_only[3:]}"
-        else:
-            return ""
+        from utils.static_validator import StaticValidator
+        is_valid, formatted = StaticValidator.validate_and_format(static_input)
+        return formatted if is_valid else ""
     
     def _validate_url(self, url):
         """Basic URL validation - accepts various formats"""
@@ -912,8 +887,8 @@ class SupplierEditModal(ui.Modal):
         
         self.static_input = ui.TextInput(
             label="Статик",
-            placeholder="123-456 (допускается 5-6 цифр)",
-            min_length=5,
+            placeholder="123-456 (допускается 1-6 цифр)",
+            min_length=1,
             max_length=7,
             required=True,
             default=application_data.get('static', '')
@@ -947,9 +922,9 @@ class SupplierEditModal(ui.Modal):
             static = self.static_input.value.strip()
             formatted_static = self._format_static(static)
             if not formatted_static:
+                from utils.static_validator import StaticValidator
                 await interaction.response.send_message(
-                    "❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.\n"
-                    "Примеры: 123456, 123-456, 12345, 12-345, 123 456",
+                    StaticValidator.get_validation_error_message(),
                     ephemeral=True
                 )
                 return
@@ -986,14 +961,9 @@ class SupplierEditModal(ui.Modal):
     
     def _format_static(self, static_input: str) -> str:
         """Auto-format static number to standard format"""
-        digits_only = re.sub(r'\D', '', static_input.strip())
-        
-        if len(digits_only) == 5:
-            return f"{digits_only[:2]}-{digits_only[2:]}"
-        elif len(digits_only) == 6:
-            return f"{digits_only[:3]}-{digits_only[3:]}"
-        else:
-            return ""
+        from utils.static_validator import StaticValidator
+        is_valid, formatted = StaticValidator.validate_and_format(static_input)
+        return formatted if is_valid else ""
     
     def _validate_url(self, url):
         """Basic URL validation - accepts various formats"""

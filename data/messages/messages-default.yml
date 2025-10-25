@@ -102,7 +102,7 @@ system:
 
   # Сообщения таймеров
   timers:
-    already_active: "⏰ {emoji} **{object_name}** уже находится в процессе {action}.\n⏳ Осталось времени: **{remaining_time}**"
+    already_active: "{templates.base.warning_prefix} {emoji} **{object_name}** уже находится в процессе {action}.\n⏰ Осталось времени: **{remaining_time}**"
     started: "{templates.base.success_prefix} {emoji} **{object_name}** - {action} запущен!\n⏰ Длительность: **{time_display}**\n👤 Запустил: {user_mention}"
     cancelled: "{templates.status.completed} Таймер для {object_key} отменен и сообщения удалены"
     expired: "{templates.base.info_prefix} Таймер для {object_name} истек"
@@ -455,6 +455,9 @@ private_messages:
         > • Дата: {date}
         > • Время: {time}
         > • Причина: {reason}
+      details: "📋 Детали заявки"
+      rejected_by: "👤 Отклонил"
+      reason_field: "📝 Причина отклонения"
       rejection_reason: "**📝 Причина отклонения:**"
       info: "ℹ️ Информация:"
       info_text: "*Вы можете подать новую заявку на отгул сегодня же, так как предыдущая была отклонена.*"

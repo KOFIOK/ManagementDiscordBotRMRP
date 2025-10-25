@@ -35,7 +35,7 @@ class SuppliesSubscriptionView(discord.ui.View):
             
             if not subscription_role_id:
                 await interaction.response.send_message(
-                    get_supplies_message(interaction.guild.id, "subscription.error_role_not_configured"),
+                    "🚫 Роль для подписки на уведомления о поставках не настроена. Обратитесь к администратору.",
                     ephemeral=True
                 )
                 return
@@ -46,7 +46,7 @@ class SuppliesSubscriptionView(discord.ui.View):
             
             if not subscription_role:
                 await interaction.response.send_message(
-                    get_supplies_message(interaction.guild.id, "subscription.error_role_not_found"),
+                    "🚫 Роль для подписки на уведомления о поставках не найдена на сервере. Обратитесь к администратору.",
                     ephemeral=True
                 )
                 return
@@ -82,10 +82,17 @@ class SuppliesSubscriptionView(discord.ui.View):
                     
         except Exception as e:
             print(f"❌ Ошибка при управлении подпиской на поставки: {e}")
-            await interaction.response.send_message(
-                get_supplies_message(interaction.guild.id, "subscription.error_subscription_processing"),
-                ephemeral=True
-            )
+            try:
+                await interaction.response.send_message(
+                    get_supplies_message(interaction.guild.id, "subscription.error_subscription_processing"),
+                    ephemeral=True
+                )
+            except:
+                # If interaction.response is already used, use followup
+                await interaction.followup.send(
+                    get_supplies_message(interaction.guild.id, "subscription.error_subscription_processing"),
+                    ephemeral=True
+                )
 
 
 async def send_supplies_subscription_message(channel: discord.TextChannel):
@@ -103,5 +110,5 @@ async def send_supplies_subscription_message(channel: discord.TextChannel):
         return message
         
     except Exception as e:
-        print(get_supplies_message(channel.guild.id, "subscription.error_send_subscription_message").format(error=e))
+        print(f"❌ Ошибка отправки сообщения подписки на поставки: {e}")
         return None

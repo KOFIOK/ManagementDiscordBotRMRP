@@ -88,7 +88,7 @@ class SuppliesControlView(discord.ui.View):
             # Импортируем менеджер поставок
             from .supplies_manager import SuppliesManager
             
-            supplies_manager = SuppliesManager(interaction.client)
+            supplies_manager = SuppliesManager(interaction.client)  # Передаем client обратно
             
             # Проверяем, есть ли уже активный таймер
             if supplies_manager.is_timer_active(object_key):
@@ -102,7 +102,11 @@ class SuppliesControlView(discord.ui.View):
                 return
             
             # Запускаем таймер
-            success = await supplies_manager.start_timer(object_key, interaction.user)
+            try:
+                success = await supplies_manager.start_timer(object_key, interaction.user)
+            except Exception as e:
+                print(f"❌ Ошибка в start_timer(): {e}")
+                raise
             
             if success:
                 # Получаем настройки таймера
@@ -120,21 +124,33 @@ class SuppliesControlView(discord.ui.View):
                 else:
                     time_display = f"{remaining_minutes}м"
                 
-                await interaction.response.send_message(
-                    get_supplies_message(interaction.guild.id, "control.success_timer_started").format(
-                        emoji=emoji, object_name=object_name, time_display=time_display, user_mention=interaction.user.mention
-                    ),
-                    ephemeral=True
-                )
+                try:
+                    await interaction.response.send_message(
+                        get_supplies_message(interaction.guild.id, "control.success_timer_started").format(
+                            emoji=emoji, object_name=object_name, time_display=time_display, user_mention=interaction.user.mention
+                        ),
+                        ephemeral=True
+                    )
+                except Exception as e:
+                    print(f"❌ Ошибка в interaction.response.send_message(): {e}")
+                    raise
                 
                 # Обновляем состояние кнопок
                 self._update_button_states()
                 
                 # Обновляем основное сообщение с информацией о таймерах
-                await self._update_timer_info(interaction.message)
+                try:
+                    await self._update_timer_info(interaction.message)
+                except Exception as e:
+                    print(f"❌ Ошибка в _update_timer_info(): {e}")
+                    raise
                 
                 # Отправляем уведомление в канал оповещений
-                await self._send_start_notification(object_key, object_name, emoji, interaction.user)
+                try:
+                    await self._send_start_notification(object_key, object_name, emoji, interaction.user)
+                except Exception as e:
+                    print(f"❌ Ошибка в _send_start_notification(): {e}")
+                    raise
                 
                 # Уведомляем планировщик об изменении (для немедленного обновления)
                 await self._notify_scheduler_update()
@@ -146,10 +162,17 @@ class SuppliesControlView(discord.ui.View):
                 
         except Exception as e:
             print(f"❌ Ошибка в обработке кнопки поставок: {e}")
-            await interaction.response.send_message(
-                get_supplies_message(interaction.guild.id, "control.error_general_processing"),
-                ephemeral=True
-            )
+            try:
+                await interaction.response.send_message(
+                    get_supplies_message(interaction.guild.id, "control.error_general_processing"),
+                    ephemeral=True
+                )
+            except:
+                # If interaction.response is already used, use followup
+                await interaction.followup.send(
+                    get_supplies_message(interaction.guild.id, "control.error_general_processing"),
+                    ephemeral=True
+                )
     
     async def _update_timer_info(self, message: discord.Message):
         """Обновляет информацию о таймерах во втором embed"""
@@ -178,7 +201,7 @@ class SuppliesControlView(discord.ui.View):
                     timer_embed.add_field(
                         name=f"{emoji} {object_name}",
                         value=get_supplies_message(message.guild.id, "control.timer_active_field").format(
-                            remaining=remaining, started_by=started_by
+                            remaining_time=remaining, started_by=started_by
                         ),
                         inline=True
                     )
@@ -205,6 +228,7 @@ class SuppliesControlView(discord.ui.View):
             
         except Exception as e:
             print(f"❌ Ошибка при обновлении информации о таймерах: {e}")
+            raise
     
     async def _send_start_notification(self, object_key: str, object_name: str, emoji: str, user):
         """Отправляет уведомление о начале поставки в канал оповещений"""
@@ -213,13 +237,11 @@ class SuppliesControlView(discord.ui.View):
             notification_channel_id = config.get('supplies', {}).get('notification_channel_id')
             
             if not notification_channel_id:
-                print(get_supplies_message(user.guild.id, "notifications.warning_channel_not_configured"))
                 return
             
             # Получаем канал
             channel = user.guild.get_channel(notification_channel_id)
             if not channel:
-                print(get_supplies_message(user.guild.id, "notifications.error_channel_not_found").format(channel_id=notification_channel_id))
                 return
             
             # Получаем настройки времени
@@ -248,7 +270,7 @@ class SuppliesControlView(discord.ui.View):
             embed = discord.Embed(
                 title=f"{emoji} Поставка **{object_name}** запущена",
                 description="",
-                color=get_supplies_color(user.guild.id, "colors.notification_embed"),
+                color=get_supplies_color(user.guild.id, "supplies_notification"),
                 timestamp=datetime.now()
             )
             
@@ -264,7 +286,7 @@ class SuppliesControlView(discord.ui.View):
                 inline=True
             )
             
-            embed.set_footer(text=get_supplies_message(user.guild.id, "notifications.notification_footer"))
+            embed.set_footer(text=get_supplies_message(user.guild.id, "subscription.subscription_footer"))
             
             # Отправляем сообщение БЕЗ пинга роли
             message = await channel.send(embed=embed)
@@ -272,10 +294,9 @@ class SuppliesControlView(discord.ui.View):
             # Сохраняем ID сообщения для дальнейшего удаления
             await supplies_manager.save_notification_message(object_key, message.id, 'start')
             
-            print(get_supplies_message(user.guild.id, "notifications.success_notification_sent").format(object_name=object_name))
-            
         except Exception as e:
-            print(get_supplies_message(user.guild.id, "notifications.error_send_notification").format(error=e))
+            print(f"❌ Ошибка отправки уведомления: {e}")
+            raise
     
     async def _notify_scheduler_update(self):
         """Уведомляет планировщик об изменениях для немедленного обновления"""
@@ -323,7 +344,7 @@ async def send_supplies_control_message(channel: discord.TextChannel):
                 timer_embed.add_field(
                     name=f"{emoji} {object_name}",
                     value=get_supplies_message(channel.guild.id, "control.timer_active_field").format(
-                        remaining=remaining, started_by=started_by
+                        remaining_time=remaining, started_by=started_by
                     ),
                     inline=True
                 )

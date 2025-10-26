@@ -6,6 +6,7 @@ Simple version: positions with Discord roles only
 import discord
 from typing import Optional, Dict, List, Any, Tuple
 from utils.postgresql_pool import get_db_cursor
+from utils.message_manager import get_role_reason, get_moderator_display_name
 
 class PositionManager:
     """Simple position manager - just positions and roles"""
@@ -132,6 +133,19 @@ class PositionManager:
             print(f"❌ Error getting positions: {e}")
             return []
     
+    def get_position_by_id(self, position_id: int) -> Optional[Dict[str, Any]]:
+        """Get position information by ID from database"""
+        try:
+            with get_db_cursor() as cursor:
+                cursor.execute("SELECT id, name, role_id FROM positions WHERE id = %s", (position_id,))
+                result = cursor.fetchone()
+                
+                return dict(result) if result else None
+                
+        except Exception as e:
+            print(f"❌ Error getting position {position_id}: {e}")
+            return None
+    
     def update_position_role(self, position_id: int, role_id: Optional[int]) -> Tuple[bool, str]:
         """Update Discord role for position"""
         try:
@@ -215,9 +229,12 @@ class PositionManager:
             return role_input, None
 
     async def smart_update_user_position_roles(self, guild: discord.Guild, user: discord.Member, 
-                                             new_position_id: Optional[int]) -> bool:
+                                             new_position_id: Optional[int], moderator=None) -> bool:
         """Smart update - automatically detect current position roles and remove them (optimized)"""
         try:
+            # Get moderator display name for audit reasons
+            moderator_display = await get_moderator_display_name(moderator)
+            
             # Get position roles from cache (much faster than DB query)
             cache_data = self._get_position_roles_cached()
             all_position_roles = cache_data['role_to_position']  # {role_id: position_id}
@@ -247,7 +264,8 @@ class PositionManager:
             # Remove old position roles (if any)
             if roles_to_remove:
                 try:
-                    await user.remove_roles(*roles_to_remove, reason="Position change")
+                    reason = get_role_reason(guild.id, "role_removal.position_change", "Смена должности: снята роль").format(moderator=moderator_display)
+                    await user.remove_roles(*roles_to_remove, reason=reason)
                     for role in roles_to_remove:
                         print(f"🔄 Removed position role: {role.name}")
                         role_changes.append(f"-{role.name}")
@@ -263,8 +281,13 @@ class PositionManager:
                     new_role = guild.get_role(new_role_id)
                     if new_role:
                         try:
-                            await user.add_roles(new_role, reason="Position assignment")
-                            role_changes.append(f"+{new_role.name}")
+                            # Get position name from database
+                            position_data = self.get_position_by_id(new_position_id)
+                            position_name = position_data['name'] if position_data else f"Position ID {new_position_id}"
+                            
+                            reason = get_role_reason(guild.id, "position_assignment.assigned", "Назначение должности").format(position=position_name)
+                            await user.add_roles(new_role, reason=reason)
+                            role_changes.append(f"+{position_name}")
                         except Exception as e:
                             print(f"⚠️ Error adding role: {e}")
                     else:
@@ -450,7 +473,7 @@ class PositionManager:
                     old_role = guild.get_role(old_subdivision['role_id'])
                     if old_role and old_role in user.roles:
                         try:
-                            await user.remove_roles(old_role)
+                            await user.remove_roles(old_role, reason=get_role_reason(guild.id, "role_removal.department_change", "Смена подразделения: снята роль").format(moderator="система"))
                             role_changes.append(f"Removed {old_role.name} (old dept)")
                             print(f"✅ Removed old department role {old_role.name} from {user.display_name}")
                         except Exception as e:

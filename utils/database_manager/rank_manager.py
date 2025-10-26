@@ -9,6 +9,7 @@ import logging
 from typing import Optional, Dict, Any, List, Tuple
 from ..postgresql_pool import get_db_cursor
 from utils.config_manager import load_config, save_config
+from utils.message_manager import get_role_reason, get_moderator_display_name
 
 logger = logging.getLogger(__name__)
 
@@ -303,7 +304,7 @@ class RankManager:
             logger.error(f"Error getting previous rank for '{current_rank_name}': {e}")
             return None
     
-    async def update_user_rank_roles(self, guild, user, old_rank_name: str, new_rank_name: str) -> Tuple[bool, str]:
+    async def update_user_rank_roles(self, guild, user, old_rank_name: str, new_rank_name: str, moderator=None, change_type: str = None) -> Tuple[bool, str]:
         """
         Update Discord rank roles for user
         
@@ -324,11 +325,26 @@ class RankManager:
             if not new_rank_data:
                 return False, f"Новый ранг '{new_rank_name}' не найден в БД"
             
+            # Get moderator display name for audit reasons
+            moderator_display = await get_moderator_display_name(moderator)
+            
+            # Determine change type (promotion/demotion)
+            if change_type is None:
+                change_type = "automatic"  # Default
+                if old_rank_data and new_rank_data:
+                    old_level = old_rank_data.get('level', 0)
+                    new_level = new_rank_data.get('level', 0)
+                    if new_level > old_level:
+                        change_type = "promotion"
+                    elif new_level < old_level:
+                        change_type = "demotion"
+            
             # Remove old rank role
             if old_rank_data and old_rank_data.get('role_id'):
                 old_role = guild.get_role(old_rank_data['role_id'])
                 if old_role and old_role in user.roles:
-                    await user.remove_roles(old_role, reason=f"Смена ранга: {old_rank_name} -> {new_rank_name}")
+                    reason = get_role_reason(guild.id, f"rank_change.{change_type}", "Смена ранга: {old_rank} → {new_rank}").format(old_rank=old_rank_name, new_rank=new_rank_name, moderator=moderator_display)
+                    await user.remove_roles(old_role, reason=reason)
                     logger.info(f"✅ Removed old rank role {old_role.name} from {user.display_name}")
                 else:
                     logger.info(f"⚠️ Old role not found or not assigned: role_id={old_rank_data.get('role_id')}")
@@ -339,7 +355,8 @@ class RankManager:
             if new_rank_data.get('role_id'):
                 new_role = guild.get_role(new_rank_data['role_id'])
                 if new_role and new_role not in user.roles:
-                    await user.add_roles(new_role, reason=f"Смена ранга: {old_rank_name} -> {new_rank_name}")
+                    reason = get_role_reason(guild.id, f"rank_change.{change_type}", "Смена ранга: {old_rank} → {new_rank}").format(old_rank=old_rank_name or "нет", new_rank=new_rank_name, moderator=moderator_display)
+                    await user.add_roles(new_role, reason=reason)
                     logger.info(f"✅ Added new rank role {new_role.name} to {user.display_name}")
                     
                     return True, f"Роли обновлены: {old_rank_name} -> {new_rank_name}"
@@ -388,6 +405,42 @@ class RankManager:
                 
         except Exception as e:
             logger.error(f"Ошибка получения ранга {rank_name}: {str(e)}")
+            return None
+
+    async def get_default_recruit_rank(self) -> Optional[str]:
+        """
+        Get the default recruit rank (lowest rank_level)
+        
+        Returns:
+            Rank name or None if no ranks found
+        """
+        try:
+            with get_db_cursor() as cursor:
+                cursor.execute("""
+                    SELECT name
+                    FROM ranks 
+                    WHERE role_id IS NOT NULL
+                    ORDER BY rank_level ASC
+                    LIMIT 1;
+                """)
+                
+                result = cursor.fetchone()
+                return result['name'] if result else None
+                
+        except Exception as e:
+            logger.error(f"Ошибка получения начального звания: {str(e)}")
+            return None
+
+    def get_default_recruit_rank_sync(self) -> Optional[str]:
+        """
+        Synchronous version of get_default_recruit_rank
+        Use only when async is not possible
+        """
+        try:
+            import asyncio
+            return asyncio.run(self.get_default_recruit_rank())
+        except Exception as e:
+            logger.error(f"Ошибка в синхронном получении начального звания: {str(e)}")
             return None
 
 

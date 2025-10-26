@@ -4,6 +4,7 @@ import discord
 from datetime import datetime, timedelta
 from typing import Dict, Optional, Any
 from utils.config_manager import load_config
+from utils.message_manager import get_supplies_message
 
 
 class SuppliesManager:
@@ -78,7 +79,7 @@ class SuppliesManager:
             with open(self.data_file, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except Exception as e:
-            print(f"❌ Ошибка загрузки данных поставок: {e}")
+            print(get_supplies_message(0, "templates.errors.processing").format(object="загрузки данных поставок", error=e))
             return {"active_timers": {}}
     
     def _save_data(self, data: Dict[str, Any]):
@@ -87,7 +88,7 @@ class SuppliesManager:
             with open(self.data_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            print(f"❌ Ошибка сохранения данных поставок: {e}")
+            print(get_supplies_message(0, "templates.errors.processing").format(object="сохранения данных поставок", error=e))
     
     def get_categories(self) -> Dict[str, Dict[str, Dict[str, str]]]:
         """Возвращает все категории с объектами"""
@@ -113,7 +114,6 @@ class SuppliesManager:
         """Запускает таймер для объекта"""
         try:
             if object_key not in self.objects:
-                print(f"❌ Неизвестный объект: {object_key}")
                 return False
             
             # Получаем канал уведомлений для удаления старых сообщений
@@ -121,7 +121,9 @@ class SuppliesManager:
             notification_channel_id = config.get('supplies', {}).get('notification_channel_id')
             notification_channel = None
             
-            if notification_channel_id and hasattr(user, 'guild'):
+            if notification_channel_id and self.bot:
+                notification_channel = self.bot.get_channel(notification_channel_id)
+            elif notification_channel_id and hasattr(user, 'guild'):
                 notification_channel = user.guild.get_channel(notification_channel_id)
             
             # Удаляем все старые сообщения для этого объекта перед запуском нового таймера
@@ -129,7 +131,6 @@ class SuppliesManager:
             
             # Проверяем, нет ли уже активного таймера
             if self.is_timer_active(object_key):
-                print(f"⚠️ Таймер для {object_key} уже активен")
                 return False
             
             config = load_config()
@@ -171,11 +172,10 @@ class SuppliesManager:
             else:
                 duration_str = f"{remaining_minutes}м"
             
-            print(f"✅ Таймер запущен для {object_key} на {duration_str}")
             return True
             
         except Exception as e:
-            print(f"❌ Ошибка запуска таймера для {object_key}: {e}")
+            print(f"❌ Ошибка в start_timer(): {e}")
             return False
     
     def is_timer_active(self, object_key: str) -> bool:
@@ -199,7 +199,7 @@ class SuppliesManager:
             return True
             
         except Exception as e:
-            print(f"❌ Ошибка проверки таймера {object_key}: {e}")
+            print(get_supplies_message(0, "templates.errors.processing").format(object=f"проверки таймера для {object_key}", error=e))
             return False
     
     def get_remaining_time(self, object_key: str) -> str:
@@ -228,7 +228,7 @@ class SuppliesManager:
                 return f"{minutes}м"
                 
         except Exception as e:
-            print(f"❌ Ошибка получения оставшегося времени для {object_key}: {e}")
+            print(get_supplies_message(0, "templates.errors.processing").format(object=f"получения оставшегося времени для {object_key}", error=e))
             return "Ошибка"
     
     def get_active_timers(self) -> Dict[str, Any]:
@@ -255,7 +255,7 @@ class SuppliesManager:
             return active_timers
             
         except Exception as e:
-            print(f"❌ Ошибка получения активных таймеров: {e}")
+            print(get_supplies_message(0, "templates.errors.processing").format(object="получения активных таймеров", error=e))
             return {}
     
     async def cancel_timer_with_cleanup(self, object_key: str) -> bool:
@@ -277,14 +277,14 @@ class SuppliesManager:
             if object_key in active_timers:
                 del active_timers[object_key]
                 self._save_data(data)
-                print(f"✅ Таймер для {object_key} отменен и сообщения удалены")
+                print(f"{get_supplies_message(0, 'templates.status.completed')} Таймер для {object_key} отменен")
                 return True
             else:
                 print(f"⚠️ Активный таймер для {object_key} не найден")
                 return False
                 
         except Exception as e:
-            print(f"❌ Ошибка отмены таймера с очисткой для {object_key}: {e}")
+            print(get_supplies_message(0, "templates.errors.processing").format(object=f"отмены таймера для {object_key}", error=e))
             return False
     
     def get_timer_info(self, object_key: str) -> Optional[Dict[str, Any]]:
@@ -294,7 +294,7 @@ class SuppliesManager:
             active_timers = data.get("active_timers", {})
             return active_timers.get(object_key)
         except Exception as e:
-            print(f"❌ Ошибка получения информации о таймере {object_key}: {e}")
+            print(get_supplies_message(0, "templates.errors.processing").format(object=f"получения информации о таймере для {object_key}", error=e))
             return None
     
     def get_expired_timers(self) -> Dict[str, Any]:
@@ -319,7 +319,7 @@ class SuppliesManager:
             return expired_timers
             
         except Exception as e:
-            print(f"❌ Ошибка получения истекших таймеров: {e}")
+            print(get_supplies_message(0, "templates.errors.processing").format(object="получения истекших таймеров", error=e))
             return {}
     
     async def save_notification_message(self, object_key: str, message_id: int, message_type: str):
@@ -334,10 +334,10 @@ class SuppliesManager:
                 
                 active_timers[object_key]["notification_messages"][f"{message_type}_message_id"] = message_id
                 self._save_data(data)
-                print(f"✅ Сохранен ID сообщения {message_type} для {object_key}: {message_id}")
+                print(f"{get_supplies_message(0, 'templates.status.completed')} Сообщение {message_type} сохранено для {object_key} (ID: {message_id})")
             
         except Exception as e:
-            print(f"❌ Ошибка сохранения ID сообщения: {e}")
+            print(get_supplies_message(0, "templates.errors.processing").format(object="сохранения ID сообщения", error=e))
     
     async def clear_warning_messages(self, channel):
         """Удаляет все сообщения с предупреждениями (с пингами ролей)"""
@@ -397,6 +397,8 @@ class SuppliesManager:
     async def _delete_all_messages_for_object(self, object_key: str, channel=None):
         """Удаляет все существующие сообщения для объекта перед запуском нового таймера"""
         try:
+            print(f"🔍 Начинаем удаление сообщений для {object_key}")
+            
             config = load_config()
             
             # Если channel не передан, получаем из конфигурации
@@ -412,6 +414,8 @@ class SuppliesManager:
                     print(f"⚠️ Канал уведомлений {channel_id} не найден")
                     return
             
+            print(f"✅ Канал получен: {channel.id}")
+            
             # Получаем название объекта для поиска
             object_info = self.objects.get(object_key, {})
             object_name = object_info.get('name', object_key)
@@ -420,22 +424,27 @@ class SuppliesManager:
             
             # Ищем и удаляем все сообщения бота с упоминанием этого объекта
             deleted_count = 0
-            async for message in channel.history(limit=50):  # Проверяем последние 50 сообщений
-                if message.author == channel.guild.me and message.embeds:
-                    # Проверяем каждый embed на наличие названия объекта
-                    for embed in message.embeds:
-                        # Проверяем title и description
-                        embed_text = (embed.title or '') + ' ' + (embed.description or '')
+            try:
+                async for message in channel.history(limit=50):  # Проверяем последние 50 сообщений
+                    if message.author == channel.guild.me and message.embeds:
+                        # Проверяем каждый embed на наличие названия объекта
+                        for embed in message.embeds:
+                            # Проверяем title и description
+                            embed_text = (embed.title or '') + ' ' + (embed.description or '')
+                            
+                            if object_name in embed_text:
+                                try:
+                                    await message.delete()
+                                    deleted_count += 1
+                                    print(f"🗑️ Удалено старое сообщение для {object_name}: {message.id}")
+                                    break  # Переходим к следующему сообщению
+                                except (discord.NotFound, discord.HTTPException) as e:
+                                    print(f"⚠️ Не удалось удалить сообщение {message.id}: {e}")
+                                    
+            except Exception as e:
+                print(f"❌ Ошибка при получении истории канала: {e}")
+                raise
                         
-                        if object_name in embed_text:
-                            try:
-                                await message.delete()
-                                deleted_count += 1
-                                print(f"🗑️ Удалено старое сообщение для {object_name}: {message.id}")
-                                break  # Переходим к следующему сообщению
-                            except (discord.NotFound, discord.HTTPException) as e:
-                                print(f"⚠️ Не удалось удалить сообщение {message.id}: {e}")
-                                
             if deleted_count > 0:
                 print(f"✅ Удалено {deleted_count} старых сообщений для '{object_name}'")
             else:
@@ -443,6 +452,7 @@ class SuppliesManager:
                         
         except Exception as e:
             print(f"❌ Ошибка удаления старых сообщений для {object_key}: {e}")
+            raise
 
     async def update_notification_messages(self, channel):
         """Обновляет стартовые сообщения в канале оповещений с актуальным временем"""
@@ -452,8 +462,6 @@ class SuppliesManager:
             
             if not active_timers:
                 return
-            
-            print(f"🔄 Обновление {len(active_timers)} сообщений в канале оповещений...")
             
             for object_key, timer_info in active_timers.items():
                 notification_messages = timer_info.get("notification_messages", {})

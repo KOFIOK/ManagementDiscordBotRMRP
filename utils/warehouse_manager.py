@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional, Tuple, Any, List
 import re
 from .config_manager import load_config
+from .message_manager import get_warehouse_message
 
 class WarehouseManager:
     def __init__(self):
@@ -286,7 +287,7 @@ class WarehouseManager:
             "weapon_restrictions": []
         }
 
-    def validate_item_request(self, category_key: str, item_name: str, quantity: int, 
+    def validate_item_request(self, guild_id: int, category_key: str, item_name: str, quantity: int, 
                             position: str, rank: str, current_cart_items: List = None) -> Tuple[bool, int, str]:
         """
         Валидировать запрос предмета с учетом уже добавленных в корзину
@@ -308,7 +309,8 @@ class WarehouseManager:
             
             # Проверка ограничений на тип оружия
             if weapon_restrictions and item_name not in weapon_restrictions:
-                return False, 0, f"❌ Вам недоступен данный тип оружия. Доступно: {', '.join(weapon_restrictions)}"
+                error_msg = get_warehouse_message(guild_id, "cart.error_invalid_weapon", "❌ Вам недоступен данный тип оружия. Доступно:")
+                return False, 0, f"{error_msg} {', '.join(weapon_restrictions)}"
             
             # Проверка общего количества (существующие + новые)
             total_quantity = existing_quantity + quantity
@@ -316,7 +318,8 @@ class WarehouseManager:
                 # Корректируем количество с учетом уже имеющихся
                 corrected_quantity = max_weapons - existing_quantity
                 if corrected_quantity <= 0:
-                    return False, 0, f"❌ Превышен лимит оружия ({max_weapons}). В корзине уже: {existing_quantity}"
+                    error_msg = get_warehouse_message(guild_id, "cart.error_weapon_limit", "❌ Превышен лимит оружия. В корзине уже:")
+                    return False, 0, f"{error_msg} {existing_quantity}"
                 return True, corrected_quantity, f"Количество уменьшено до максимально возможного: {corrected_quantity} (лимит: {max_weapons}, в корзине: {existing_quantity})"
             
         elif category_key == "бронежилеты":
@@ -328,7 +331,8 @@ class WarehouseManager:
                 # Корректируем количество с учетом уже имеющихся
                 corrected_quantity = max_armor - existing_quantity
                 if corrected_quantity <= 0:
-                    return False, 0, f"❌ Превышен лимит бронежилетов ({max_armor}). В корзине уже: {existing_quantity}"
+                    error_msg = get_warehouse_message(guild_id, "cart.error_armor_limit", "❌ Превышен лимит бронежилетов. В корзине уже:")
+                    return False, 0, f"{error_msg} {existing_quantity}"
                 return True, corrected_quantity, f"Количество уменьшено до максимально возможного: {corrected_quantity} (лимит: {max_armor}, в корзине: {existing_quantity})"
                 
         elif category_key == "медикаменты":
@@ -355,7 +359,7 @@ class WarehouseManager:
                         return False, 0, f"❌ Превышен лимит материалов (1000). В корзине уже: {existing_quantity}"
                     return True, corrected_quantity, f"Количество уменьшено до максимально возможного: {corrected_quantity} (лимит: 1000, в корзине: {existing_quantity})"
         
-        return True, quantity, "✅ Запрос корректен"
+        return True, quantity, get_warehouse_message(guild_id, "cart.success_request_submitted", "✅ Запрос корректен")
 
     def get_ping_roles_for_warehouse_request(self, user: discord.Member, department: str) -> list:
         """

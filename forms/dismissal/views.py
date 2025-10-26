@@ -13,62 +13,25 @@ import asyncio
 import re
 import traceback
 from datetime import datetime
-from utils.config_manager import load_config, is_moderator_or_admin, can_moderate_user, get_dismissal_message_link, is_blacklisted_user
+from utils.config_manager import load_config, is_moderator_or_admin, can_moderate_user
+from utils.message_manager import (
+    get_message, get_embed_color, get_private_messages,
+    get_systems_message, get_ui_button, get_ui_status, get_military_term,
+    get_role_reason
+)
 from utils.user_cache import get_cached_user_info
 from utils.nickname_manager import nickname_manager
 
 
 # Constants for UI elements and messages
-class DismissalConstants:
-    # UI Labels
-    PROCESSING_LABEL = "⏳ Обрабатывается..."
-    APPROVED_LABEL = "✅ Одобрено"
-    REJECTED_LABEL = "❌ Отказано"
-    
-    # Error Messages
-    NO_PERMISSION_APPROVAL = "❌ У вас нет прав для одобрения рапортов на увольнение. Только модераторы могут выполнять это действие."
-    NO_PERMISSION_REJECTION = "❌ У вас нет прав для отказа рапортов на увольнение. Только модераторы могут выполнять это действие."
-    AUTHORIZATION_ERROR = "❌ Ошибка проверки авторизации модератора."
-    GENERAL_ERROR = "❌ Произошла ошибка при обработке рапорта. Пожалуйста, обратитесь к администратору."
-    PROCESSING_ERROR_APPROVAL = "❌ Произошла ошибка при обработке одобрения заявки."
-    PROCESSING_ERROR_REJECTION = "❌ Произошла ошибка при обработке отказа"
-    AUTH_DATA_ERROR = "❌ Произошла ошибка при обработке данных авторизации."
-    DISMISSAL_PROCESSING_ERROR = "❌ Произошла ошибка при обработке увольнения."
-    
-    # Success Messages
-    STATIC_RECEIVED = "✅ Статик получен, продолжаем обработку..."
-    
-    # Form Field Names
-    FIELD_NAME = "Имя Фамилия"
-    FIELD_STATIC = "Статик"
-    FIELD_DEPARTMENT = "Подразделение"
-    FIELD_RANK = "Воинское звание"
-    FIELD_REASON = "Причина увольнения"
-    
-    # Automatic Report Indicators
-    AUTO_REPORT_INDICATOR = "🚨 Автоматический рапорт на увольнение"
-    STATIC_INPUT_REQUIRED = "Требуется ввод"
-    
-    # Nickname Prefixes
-    DISMISSED_PREFIX = "Уволен | "
-    
-    # Self-moderation errors
-    SELF_APPROVAL_ERROR = "Вы не можете одобрить свой собственный рапорт на увольнение."
-    SELF_REJECTION_ERROR = "Вы не можете отклонить свой собственный рапорт на увольнение."
-    MODERATOR_HIERARCHY_APPROVAL = "Вы не можете одобрить рапорт модератора того же или более высокого уровня."
-    MODERATOR_HIERARCHY_REJECTION = "Вы не можете отклонить рапорт модератора того же или более высокого уровня."
-    INSUFFICIENT_PERMISSIONS_APPROVAL = "У вас недостаточно прав для одобрения этого рапорта."
-    INSUFFICIENT_PERMISSIONS_REJECTION = "У вас недостаточно прав для отклонения этого рапорта."
-    
-    # Footer and audit text patterns
-    REPORT_SENDER_PREFIX = "Отправлено:"
-    AUDIT_NAME_STATIC_FIELD = "Имя Фамилия | 6 цифр статика"
-    
-    # Default values
-    UNKNOWN_VALUE = "Неизвестно"
-    
-    # Rejection button label
-    REJECT_BUTTON_LABEL = "❌ Отказать"
+# Messages helper function
+def get_dismissal_message(guild_id: int, key: str) -> str:
+    """Get dismissal message for specific guild"""
+    return get_message(guild_id, f"systems.dismissal.{key}")
+
+def get_dismissal_embed_color(guild_id: int, color_key: str) -> discord.Color:
+    """Get dismissal embed color for specific guild"""
+    return get_embed_color(guild_id, color_key)
 
 
 class ProcessingApplicationView(discord.ui.View):
@@ -77,7 +40,7 @@ class ProcessingApplicationView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
         self.add_item(discord.ui.Button(
-            label="🔄 Обрабатывается...",
+            label=get_ui_button(0, "processing"),
             style=discord.ButtonStyle.secondary,
             disabled=True,
             custom_id="processing_application"
@@ -97,18 +60,18 @@ class DismissalReportButton(ui.View):
     def __init__(self):
         super().__init__(timeout=None)
     
-    @discord.ui.button(label="ПСЖ", style=discord.ButtonStyle.red, custom_id="dismissal_report_psj", emoji="📋")
+    @discord.ui.button(label=get_military_term(0, "dismissal_types.psj"), style=discord.ButtonStyle.red, custom_id="dismissal_report_psj", emoji="📋")
     async def dismissal_report_psj(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Handle PSJ (По собственному желанию) dismissal"""
         from .modals import SimplifiedDismissalModal
-        modal = await SimplifiedDismissalModal.create_with_user_data(interaction.user.id, "ПСЖ")
+        modal = await SimplifiedDismissalModal.create_with_user_data(interaction.user.id, get_military_term(interaction.guild.id, "dismissal_types.psj_full"))
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="Перевод", style=discord.ButtonStyle.secondary, custom_id="dismissal_report_transfer", emoji="🔄")
+    @discord.ui.button(label=get_military_term(0, "dismissal_types.transfer"), style=discord.ButtonStyle.secondary, custom_id="dismissal_report_transfer", emoji="🔄")
     async def dismissal_report_transfer(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Handle transfer dismissal"""
         from .modals import SimplifiedDismissalModal
-        modal = await SimplifiedDismissalModal.create_with_user_data(interaction.user.id, "Перевод")
+        modal = await SimplifiedDismissalModal.create_with_user_data(interaction.user.id, get_military_term(interaction.guild.id, "dismissal_types.transfer"))
         await interaction.response.send_modal(modal)
 
 
@@ -119,7 +82,7 @@ class SimplifiedDismissalApprovalView(ui.View):
         super().__init__(timeout=None)
         self.user_id = user_id
     
-    @discord.ui.button(label="✅ Одобрить", style=discord.ButtonStyle.green, custom_id="approve_dismissal_simple")
+    @discord.ui.button(label=get_ui_button(0, "approve"), style=discord.ButtonStyle.green, custom_id="approve_dismissal_simple")
     async def approve_dismissal(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Simplified dismissal approval"""
         try:
@@ -127,7 +90,7 @@ class SimplifiedDismissalApprovalView(ui.View):
             config = load_config()
             if not is_moderator_or_admin(interaction.user, config):
                 await interaction.response.send_message(
-                    "❌ У вас нет прав для одобрения рапортов на увольнение.",
+                    get_systems_message(interaction.guild.id, "dismissal", "errors.no_permissions", "❌ У вас нет прав для одобрения рапортов на увольнение.").format(action="одобрения"),
                     ephemeral=True
                 )
                 return
@@ -151,7 +114,7 @@ class SimplifiedDismissalApprovalView(ui.View):
             # Check moderator hierarchy - can this moderator approve this user's dismissal?
             if not can_moderate_user(interaction.user, target_user, config):
                 await interaction.response.send_message(
-                    "❌ Вы не можете одобрить увольнение этого пользователя из-за иерархии модераторов.",
+                    get_systems_message(interaction.guild.id, "dismissal", "errors.hierarchy_violation", "❌ Вы не можете одобрить увольнение этого пользователя из-за иерархии модераторов.").format(action="одобрить"),
                     ephemeral=True
                 )
                 return
@@ -172,7 +135,7 @@ class SimplifiedDismissalApprovalView(ui.View):
                 except Exception as e:
                     print(f"❌ Error checking personnel status: {e}")
                     await interaction.response.send_message(
-                        "❌ Ошибка проверки статуса пользователя в базе данных.",
+                        get_systems_message(interaction.guild.id, "dismissal", "errors.database_error", "❌ Ошибка проверки статуса пользователя в базе данных."),
                         ephemeral=True
                     )
                     return
@@ -209,7 +172,7 @@ class SimplifiedDismissalApprovalView(ui.View):
             
             if success:
                 # Update embed to show approval
-                embed.color = discord.Color.green()
+                embed.color = get_dismissal_embed_color(interaction.guild.id, 'success')
                 embed.add_field(
                     name="Обработано",
                     value=f"Сотрудник: {interaction.user.mention}\nВремя: {discord.utils.format_dt(discord.utils.utcnow(), 'F')}",
@@ -222,7 +185,7 @@ class SimplifiedDismissalApprovalView(ui.View):
                 # Create approved view (disabled button)
                 approved_view = ui.View(timeout=None)
                 approved_button = ui.Button(
-                    label="✅ Одобрено",
+                    label=get_ui_status(0, "completed"),
                     style=discord.ButtonStyle.green,
                     disabled=True
                 )
@@ -234,18 +197,36 @@ class SimplifiedDismissalApprovalView(ui.View):
                     embed=embed, 
                     view=approved_view
                 )
+                
+                # Send DM to dismissed user (if still on server)
+                if not getattr(target_user, '_is_mock', False):  # Only if user is still on server
+                    try:
+                        dm_embed = discord.Embed(
+                            title=get_private_messages(interaction.guild.id, 'private_messages.dismissal.title'),
+                            description=get_private_messages(interaction.guild.id, 'private_messages.dismissal.description'),
+                            color=discord.Color.orange()
+                        )
+                        dm_embed.add_field(name=get_private_messages(interaction.guild.id, 'private_messages.dismissal.fields.reason'), value=form_data.get('reason', 'Не указана'), inline=False)
+                        dm_embed.add_field(name=get_private_messages(interaction.guild.id, 'private_messages.dismissal.fields.dismissed_by'), value=interaction.user.display_name, inline=False)
+                        
+                        await target_user.send(embed=dm_embed)
+                        print(f"✅ DISMISSAL: DM sent to {target_user.display_name}")
+                    except discord.Forbidden:
+                        print(f"⚠️ DISMISSAL: Could not send DM to {target_user.display_name} (DMs disabled)")
+                    except Exception as dm_error:
+                        print(f"⚠️ DISMISSAL: Failed to send DM: {dm_error}")
             
         except Exception as e:
             print(f"❌ Error in simplified dismissal approval: {e}")
             try:
                 await interaction.followup.send(
-                    "❌ Произошла ошибка при обработке увольнения.",
+                    get_systems_message(interaction.guild.id, "dismissal", "errors.processing_error", "❌ Произошла ошибка при обработке увольнения."),
                     ephemeral=True
                 )
             except:
                 pass
     
-    @discord.ui.button(label="❌ Отказать", style=discord.ButtonStyle.red, custom_id="reject_dismissal_simple")
+    @discord.ui.button(label=get_ui_button(0, "reject"), style=discord.ButtonStyle.red, custom_id="reject_dismissal_simple")
     async def reject_dismissal(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Simplified dismissal rejection"""
         try:
@@ -253,7 +234,7 @@ class SimplifiedDismissalApprovalView(ui.View):
             config = load_config()
             if not is_moderator_or_admin(interaction.user, config):
                 await interaction.response.send_message(
-                    "❌ У вас нет прав для отказа рапортов на увольнение.",
+                    get_systems_message(interaction.guild.id, "dismissal", "errors.no_permissions_reject"),
                     ephemeral=True
                 )
                 return
@@ -277,7 +258,7 @@ class SimplifiedDismissalApprovalView(ui.View):
             # Check moderator hierarchy - can this moderator reject this user's dismissal?
             if not can_moderate_user(interaction.user, target_user, config):
                 await interaction.response.send_message(
-                    "❌ Вы не можете отклонить увольнение этого пользователя из-за иерархии модераторов.",
+                    get_systems_message(interaction.guild.id, "dismissal", "errors.hierarchy_violation", "❌ Вы не можете отклонить увольнение этого пользователя из-за иерархии модераторов.").format(action="отклонить"),
                     ephemeral=True
                 )
                 return
@@ -294,7 +275,7 @@ class SimplifiedDismissalApprovalView(ui.View):
             print(f"❌ Error in simplified dismissal rejection: {e}")
             try:
                 await interaction.response.send_message(
-                    "❌ Произошла ошибка при отказе.",
+                    get_systems_message(interaction.guild.id, "dismissal", "errors.processing_error", "❌ Произошла ошибка при отказе."),
                     ephemeral=True
                 )
             except:
@@ -305,13 +286,13 @@ class SimplifiedDismissalApprovalView(ui.View):
         try:
             # Update embed to show rejection
             embed = interaction.message.embeds[0]
-            embed.color = discord.Color.red()
+            embed.color = get_dismissal_embed_color(interaction.guild.id, 'error')
             
             # Формируем поле с отказом в едином стиле
             moderator_text = "🤖 Система" if is_automatic else interaction.user.mention
             
             embed.add_field(
-                name="Отказано",
+                name=get_ui_status(0, "rejected"),
                 value=f"Модератор: {moderator_text}\nПричина: {reason}\nВремя: {discord.utils.format_dt(discord.utils.utcnow(), 'F')}",
                 inline=False
             )
@@ -322,7 +303,7 @@ class SimplifiedDismissalApprovalView(ui.View):
             # Create rejected view (ЕДИНАЯ КНОПКА "Отказано")
             rejected_view = ui.View(timeout=None)
             rejected_button = ui.Button(
-                label="❌ Отказано",
+                label=get_ui_status(0, "rejected"),
                 style=discord.ButtonStyle.red,
                 disabled=True
             )
@@ -340,13 +321,28 @@ class SimplifiedDismissalApprovalView(ui.View):
                 target_user_member = interaction.guild.get_member(self.user_id)
                 if target_user_member:
                     try:
-                        await target_user_member.send(
-                            f"❌ **Ваш рапорт на увольнение был отклонен**\n"
-                            f"Модератор: {interaction.user.display_name}\n"
-                            f"Причина: {reason}"
+                        dm_embed = discord.Embed(
+                            title=get_private_messages(interaction.guild.id, 'systems.dismissal.rejection.title'),
+                            description=get_private_messages(interaction.guild.id, 'systems.dismissal.rejection.description'),
+                            color=discord.Color.red()
                         )
-                    except:
-                        pass
+                        dm_embed.add_field(
+                            name=get_private_messages(interaction.guild.id, 'private_messages.dismissal.fields.dismissed_by'),
+                            value=interaction.user.display_name,
+                            inline=False
+                        )
+                        dm_embed.add_field(
+                            name=get_private_messages(interaction.guild.id, 'private_messages.dismissal.fields.reason'),
+                            value=reason,
+                            inline=False
+                        )
+
+                        await target_user_member.send(embed=dm_embed)
+                        print(f"❌ DISMISSAL REJECTION: DM sent to {target_user_member.display_name}")
+                    except discord.Forbidden:
+                        print(f"⚠️ DISMISSAL REJECTION: Could not send DM to {target_user_member.display_name} (DMs disabled)")
+                    except Exception as dm_error:
+                        print(f"⚠️ DISMISSAL REJECTION: Failed to send DM: {dm_error}")
             
             # Логирование
             if is_automatic:
@@ -383,7 +379,7 @@ class SimplifiedDismissalApprovalView(ui.View):
             is_automatic=False
         )
     
-    @discord.ui.button(label="🗑️ Удалить", style=discord.ButtonStyle.grey, custom_id="delete_dismissal_simple")
+    @discord.ui.button(label=get_ui_button(0, "delete"), style=discord.ButtonStyle.grey, custom_id="delete_dismissal_simple")
     async def delete_dismissal(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Удаление рапорта (только автор или администратор)"""
         try:
@@ -395,7 +391,7 @@ class SimplifiedDismissalApprovalView(ui.View):
             
             if not (is_author or is_admin):
                 await interaction.response.send_message(
-                    "❌ Удалять рапорт может только его автор или администратор.",
+                    get_systems_message(interaction.guild.id, "dismissal", "errors.delete_not_allowed", "❌ Удалять рапорт может только его автор или администратор."),
                     ephemeral=True
                 )
                 return
@@ -450,6 +446,11 @@ class SimplifiedDismissalApprovalView(ui.View):
                     else:
                         print(f"✅ PersonnelManager dismissal successful: {message}")
                         
+                        # Invalidate user cache after successful dismissal
+                        from utils.user_cache import invalidate_user_cache
+                        invalidate_user_cache(target_user.id)
+                        print(f"🗑️ CACHE INVALIDATE: User cache cleared for dismissed user {target_user.id}")
+                        
                 except Exception as e:
                     print(f"❌ Error in PersonnelManager dismissal: {e}")
             
@@ -464,7 +465,7 @@ class SimplifiedDismissalApprovalView(ui.View):
                 
                 if roles_to_remove:
                     try:
-                        await target_user.remove_roles(*roles_to_remove, reason="Рапорт на увольнение одобрен")
+                        await target_user.remove_roles(*roles_to_remove, reason=get_role_reason(interaction.guild.id, "role_removal.dismissal", "Увольнение: сняты роли").format(moderator=interaction.user.mention))
                         print(f"✅ Removed {len(roles_to_remove)} roles from {target_user.display_name}")
                     except Exception as e:
                         print(f"❌ Failed to remove roles: {e}")
@@ -485,12 +486,12 @@ class SimplifiedDismissalApprovalView(ui.View):
                     )
                     
                     if new_nickname:
-                        await target_user.edit(nick=new_nickname, reason="Рапорт на увольнение одобрен")
+                        await target_user.edit(nick=new_nickname, reason=get_role_reason(interaction.guild.id, "nickname_change.dismissal", "Увольнение: изменён никнейм").format(moderator=interaction.user.mention))
                         print(f"✅ NICKNAME MANAGER: Успешно установлен никнейм {target_user} -> {new_nickname}")
                     else:
                         # Fallback к старому методу
                         fallback_nickname = f"Уволен | {provided_name}"
-                        await target_user.edit(nick=fallback_nickname, reason="Рапорт на увольнение одобрен")
+                        await target_user.edit(nick=fallback_nickname, reason=get_role_reason(interaction.guild.id, "nickname_change.dismissal", "Увольнение: изменён никнейм").format(moderator=interaction.user.mention))
                         print(f"⚠️ NICKNAME FALLBACK: Использовали fallback никнейм: {fallback_nickname}")
                         
                 except Exception as e:
@@ -502,11 +503,7 @@ class SimplifiedDismissalApprovalView(ui.View):
             # 5. Send DM to user (if still on server)
             if not user_has_left_server:
                 try:
-                    await target_user.send(
-                        f"✅ **Ваш рапорт на увольнение был одобрен**\n"
-                        f"Модератор: {interaction.user.display_name}\n"
-                        f"С вас были сняты все роли."
-                    )
+                    approval_content = get_private_messages(interaction.guild.id, 'systems.dismissal.approval.description').format(moderator_name=interaction.user.display_name)
                 except:
                     pass  # User has DMs disabled
             
@@ -597,7 +594,7 @@ class DeletionConfirmationView(ui.View):
             
             # Send ephemeral confirmation
             await interaction.response.send_message(
-                f"✅ Рапорт на увольнение пользователя {self.user_name} был удален.",
+                get_systems_message(interaction.guild.id, "dismissal", "success.deleted", f"✅ Рапорт на увольнение пользователя {self.user_name} был удален.").format(user=self.user_name),
                 ephemeral=True
             )
             
@@ -651,7 +648,7 @@ class AutomaticDismissalApprovalView(ui.View):
                 embed = discord.Embed(
                     title="❌ Недостаточно прав",
                     description="У вас нет прав для рассмотрения автоматических рапортов на увольнение.",
-                    color=discord.Color.red()
+                    color=get_dismissal_embed_color(interaction.guild.id, 'error')
                 )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
@@ -662,7 +659,7 @@ class AutomaticDismissalApprovalView(ui.View):
                 # Check moderator hierarchy
                 if not can_moderate_user(interaction.user, target_user, config):
                     await interaction.response.send_message(
-                        "❌ Вы не можете одобрить увольнение этого пользователя из-за иерархии модераторов.",
+                        get_systems_message(interaction.guild.id, "dismissal", "errors.hierarchy_violation", "❌ Вы не можете одобрить увольнение этого пользователя из-за иерархии модераторов.").format(action="одобрить"),
                         ephemeral=True
                     )
                     return
@@ -683,7 +680,7 @@ class AutomaticDismissalApprovalView(ui.View):
                     except Exception as e:
                         print(f"❌ Error checking personnel status: {e}")
                         await interaction.response.send_message(
-                            "❌ Ошибка проверки статуса пользователя в базе данных.",
+                            get_systems_message(interaction.guild.id, "dismissal", "errors.database_error", "❌ Ошибка проверки статуса пользователя в базе данных."),
                             ephemeral=True
                         )
                         return
@@ -695,9 +692,8 @@ class AutomaticDismissalApprovalView(ui.View):
             # Check if static is missing or invalid
             if not static_value or static_value.strip() in ['', 'Не найден в реестре']:
                 await interaction.response.send_message(
-                    "❌ **Невозможно одобрить рапорт без статика!**\n\n"
-                    "Пожалуйста, нажмите кнопку **✏️ Изменить** и заполните статик, "
-                    "прежде чем одобрять рапорт.",
+                    get_systems_message(interaction.guild.id, "dismissal", "errors.no_static", "❌ **Невозможно одобрить рапорт без статика!**\n\n") +
+                    get_systems_message(interaction.guild.id, "dismissal", "errors.static_required_hint", "Пожалуйста, нажмите кнопку **{edit_button}** и заполните статик, прежде чем одобрять рапорт.").format(edit_button=get_ui_button(0, "edit")),
                     ephemeral=True
                 )
                 return
@@ -714,7 +710,7 @@ class AutomaticDismissalApprovalView(ui.View):
             
             if not target_user:
                 await interaction.followup.send(
-                    "❌ Не удалось извлечь информацию о пользователе из рапорта.",
+                    get_systems_message(interaction.guild.id, "dismissal", "errors.user_extraction_failed", "❌ Не удалось извлечь информацию о пользователе из рапорта."),
                     ephemeral=True
                 )
                 return
@@ -749,7 +745,7 @@ class AutomaticDismissalApprovalView(ui.View):
                 embed = discord.Embed(
                     title="❌ Недостаточно прав",
                     description="У вас нет прав для рассмотрения автоматических рапортов на увольнение.",
-                    color=discord.Color.red()
+                    color=get_dismissal_embed_color(interaction.guild.id, 'error')
                 )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
@@ -760,7 +756,7 @@ class AutomaticDismissalApprovalView(ui.View):
                 # Check moderator hierarchy
                 if not can_moderate_user(interaction.user, target_user, config):
                     await interaction.response.send_message(
-                        "❌ Вы не можете отклонить увольнение этого пользователя из-за иерархии модераторов.",
+                        get_systems_message(interaction.guild.id, "dismissal", "errors.hierarchy_violation", "❌ Вы не можете отклонить увольнение этого пользователя из-за иерархии модераторов.").format(action="отклонить"),
                         ephemeral=True
                     )
                     return
@@ -786,7 +782,7 @@ class AutomaticDismissalApprovalView(ui.View):
         await self._finalize_rejection_universal(
             interaction, 
             target_user, 
-            "Пользователь ранее был уволен (не найден в базе данных сотрудников)", 
+            get_systems_message(interaction.guild.id, "dismissal", "errors.already_dismissed", "Пользователь ранее был уволен (не найден в базе данных сотрудников)"), 
             is_automatic=True
         )
 
@@ -800,7 +796,7 @@ class AutomaticDismissalApprovalView(ui.View):
                 embed = discord.Embed(
                     title="❌ Недостаточно прав",
                     description="У вас нет прав для редактирования автоматических рапортов на увольнение.",
-                    color=discord.Color.red()
+                    color=get_dismissal_embed_color(interaction.guild.id, 'error')
                 )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
@@ -855,7 +851,7 @@ class AutomaticDismissalApprovalView(ui.View):
                     f"**Причина:** {current_data.get('reason', 'Неизвестно')}\n\n"
                     f"⚠️ **Это действие нельзя отменить!**"
                 ),
-                color=discord.Color.orange()
+                color=get_dismissal_embed_color(interaction.guild.id, 'warning')
             )
             
             # Add dismissal footer with link to submit new applications
@@ -1040,8 +1036,8 @@ class AutomaticDismissalApprovalView(ui.View):
             
             # Get user info for audit - use the same logic as regular dismissals
             # First try to get from embed fields, then from PersonnelManager if user is still on server
-            user_rank_for_audit = form_data.get('rank', DismissalConstants.UNKNOWN_VALUE)
-            user_unit_for_audit = form_data.get('department', DismissalConstants.UNKNOWN_VALUE)
+            user_rank_for_audit = form_data.get('rank', get_dismissal_message(interaction.guild.id, 'defaults.unknown_value'))
+            user_unit_for_audit = form_data.get('department', get_dismissal_message(interaction.guild.id, 'defaults.unknown_value'))
             user_has_left_server = getattr(target_user, '_is_mock', False)            # Get user position for audit (from PersonnelManager or empty)
             user_position_for_audit = ""
             
@@ -1064,9 +1060,9 @@ class AutomaticDismissalApprovalView(ui.View):
                     
                     # Also check if we need to update other missing data (only for users still on server)
                     if not user_has_left_server:
-                        if user_rank_for_audit == DismissalConstants.UNKNOWN_VALUE and user_info.get('rank'):
+                        if user_rank_for_audit == get_dismissal_message(interaction.guild.id, 'defaults.unknown_value') and user_info.get('rank'):
                             user_rank_for_audit = user_info.get('rank')
-                        if user_unit_for_audit == DismissalConstants.UNKNOWN_VALUE and user_info.get('department'):
+                        if user_unit_for_audit == get_dismissal_message(interaction.guild.id, 'defaults.unknown_value') and user_info.get('department'):
                             user_unit_for_audit = user_info.get('department')
                     
                     print(f"Got user info from PersonnelManager: rank={user_rank_for_audit}, department={user_unit_for_audit}, position={user_position_for_audit}")
@@ -1091,20 +1087,20 @@ class AutomaticDismissalApprovalView(ui.View):
                     ephemeral=True
                 )
             # If data is still missing and user is still on server, try fallback to roles
-            if not user_has_left_server and (user_rank_for_audit == DismissalConstants.UNKNOWN_VALUE or user_unit_for_audit == DismissalConstants.UNKNOWN_VALUE):
+            if not user_has_left_server and (user_rank_for_audit == get_dismissal_message(interaction.guild.id, 'defaults.unknown_value') or user_unit_for_audit == get_dismissal_message(interaction.guild.id, 'defaults.unknown_value')):
                 try:
-                    if user_rank_for_audit == DismissalConstants.UNKNOWN_VALUE:
+                    if user_rank_for_audit == get_dismissal_message(interaction.guild.id, 'defaults.unknown_value'):
                         # Get rank from database cache
                         user_data = await get_cached_user_info(target_user.id)
-                        role_rank = user_data.get('rank', DismissalConstants.UNKNOWN_VALUE) if user_data else DismissalConstants.UNKNOWN_VALUE
-                        if role_rank != DismissalConstants.UNKNOWN_VALUE:
+                        role_rank = user_data.get('rank', get_dismissal_message(interaction.guild.id, 'defaults.unknown_value')) if user_data else get_dismissal_message(interaction.guild.id, 'defaults.unknown_value')
+                        if role_rank != get_dismissal_message(interaction.guild.id, 'defaults.unknown_value'):
                             user_rank_for_audit = role_rank
                     
-                    if user_unit_for_audit == DismissalConstants.UNKNOWN_VALUE:
+                    if user_unit_for_audit == get_dismissal_message(interaction.guild.id, 'defaults.unknown_value'):
                         from utils.department_manager import DepartmentManager
                         dept_manager = DepartmentManager()
                         role_unit = dept_manager.get_user_department_name(target_user)
-                        if role_unit != DismissalConstants.UNKNOWN_VALUE:
+                        if role_unit != get_dismissal_message(interaction.guild.id, 'defaults.unknown_value'):
                             user_unit_for_audit = role_unit
                     print(f"Fallback to roles: rank={user_rank_for_audit}, department={user_unit_for_audit}")
                 except Exception as e:
@@ -1178,6 +1174,11 @@ class AutomaticDismissalApprovalView(ui.View):
                             pass  # If followup fails, continue silently
                     else:
                         print(f"✅ Personnel database updated: {registry_message}")
+                        
+                        # Invalidate user cache after successful dismissal
+                        from utils.user_cache import invalidate_user_cache
+                        invalidate_user_cache(user_id)
+                        print(f"🗑️ CACHE INVALIDATE: User cache cleared for dismissed user {user_id}")
                 else:
                     print(f"⚠️ Could not get user ID for {target_user.display_name}")
             except asyncio.TimeoutError:
@@ -1209,7 +1210,7 @@ class AutomaticDismissalApprovalView(ui.View):
                 
                 # Prepare personnel data for audit logger
                 personnel_data = {
-                    'name': form_data.get('name', DismissalConstants.UNKNOWN_VALUE),
+                    'name': form_data.get('name', get_dismissal_message(interaction.guild.id, 'defaults.unknown_value')),
                     'static': form_data.get('static', ''),
                     'rank': user_rank_for_audit,
                     'department': user_unit_for_audit,
@@ -1297,7 +1298,7 @@ class AutomaticDismissalApprovalView(ui.View):
             # Update embed to show approval
             print(f"🎨 Updating UI to show approval status...")
             embed = interaction.message.embeds[0]
-            embed.color = discord.Color.green()
+            embed.color = get_dismissal_embed_color(interaction.guild.id, 'success')
             
             # Add approval status field
             embed.add_field(
@@ -1311,7 +1312,7 @@ class AutomaticDismissalApprovalView(ui.View):
             
             # Create new view with only "Approved" button (disabled)
             approved_view = ui.View(timeout=None)
-            approved_button = ui.Button(label=DismissalConstants.APPROVED_LABEL, style=discord.ButtonStyle.green, disabled=True)
+            approved_button = ui.Button(label=get_ui_button(interaction.guild.id, 'approved'), style=discord.ButtonStyle.green, disabled=True)
             approved_view.add_item(approved_button)
             
             # Update message with approved state
@@ -1335,7 +1336,7 @@ class AutomaticDismissalApprovalView(ui.View):
         try:
             # Show processing state first
             processing_view = ui.View(timeout=None)
-            processing_button = ui.Button(label=DismissalConstants.PROCESSING_LABEL, style=discord.ButtonStyle.gray, disabled=True)
+            processing_button = ui.Button(label=get_ui_button(interaction.guild.id, 'processing'), style=discord.ButtonStyle.gray, disabled=True)
             processing_view.add_item(processing_button)
             await original_message.edit(view=processing_view)
             
@@ -1344,7 +1345,7 @@ class AutomaticDismissalApprovalView(ui.View):
             
             # Update embed to show rejection
             embed = original_message.embeds[0]
-            embed.color = discord.Color.red()
+            embed.color = get_dismissal_embed_color(interaction.guild.id, 'error')
             
             # Add rejection status field
             embed.add_field(
@@ -1358,7 +1359,7 @@ class AutomaticDismissalApprovalView(ui.View):
             
             # Create new view with only "Rejected" button (disabled)
             rejected_view = ui.View(timeout=None)
-            rejected_button = ui.Button(label=DismissalConstants.REJECTED_LABEL, style=discord.ButtonStyle.red, disabled=True)
+            rejected_button = ui.Button(label=get_ui_button(interaction.guild.id, 'rejected'), style=discord.ButtonStyle.red, disabled=True)
             rejected_view.add_item(rejected_button)
             
             # Update message with rejected state

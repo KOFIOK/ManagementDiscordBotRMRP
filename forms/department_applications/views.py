@@ -8,6 +8,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 
 from utils.config_manager import load_config
+from utils.message_manager import get_department_applications_message, get_private_messages, get_ui_button, get_military_term, get_ui_label, get_role_reason, get_moderator_display_name
 from utils.ping_manager import ping_manager
 from utils.nickname_manager import nickname_manager
 from utils import get_safe_personnel_name
@@ -227,7 +228,7 @@ class DepartmentApplicationView(ui.View):
         # Approve button
         approve_disabled = state['approved']
         approve_style = discord.ButtonStyle.grey if approve_disabled else discord.ButtonStyle.green
-        approve_label = "✅ Одобрено" if approve_disabled else "✅ Одобрить"
+        approve_label = get_ui_button(0, "approved") if approve_disabled else get_ui_button(0, "approve")
         
         approve_btn = ui.Button(
             label=approve_label,
@@ -286,8 +287,9 @@ class DepartmentApplicationView(ui.View):
             
             # Check if this is a transfer application first
             if self.application_data.get('application_type') != 'transfer':
+                error_msg = get_department_applications_message(interaction.guild.id, "transfer.error_not_transfer_application", "❌ Эта кнопка доступна только для заявлений на перевод.")
                 await interaction.response.send_message(
-                    "❌ Эта кнопка доступна только для заявлений на перевод.",
+                    error_msg,
                     ephemeral=True
                 )
                 return
@@ -310,8 +312,9 @@ class DepartmentApplicationView(ui.View):
             
             # If not admin and not moderator, show basic access denied message
             if not (is_admin or is_moderator):
+                error_msg = get_department_applications_message(interaction.guild.id, "transfer_permission_denied", "❌ У вас нет прав для выдачи разрешения на перевод. Это действие доступно только модераторам.")
                 await interaction.response.send_message(
-                    "❌ У вас нет прав для выдачи разрешения на перевод. Это действие доступно только модераторам.",
+                    error_msg,
                     ephemeral=True
                 )
                 return
@@ -327,8 +330,9 @@ class DepartmentApplicationView(ui.View):
             
             # Check if permission already given
             if current_state['permission_given']:
+                error_msg = get_department_applications_message(interaction.guild.id, "transfer.error_already_permitted", "❌ Разрешение уже было дано для этого перевода.")
                 await interaction.response.send_message(
-                    "❌ Разрешение уже было дано для этого перевода.",
+                    error_msg,
                     ephemeral=True
                 )
                 return
@@ -354,14 +358,14 @@ class DepartmentApplicationView(ui.View):
                 
                 # Send feedback message
                 await interaction.followup.send(
-                    "✅ Разрешение на перевод выдано! Ожидаем одобрения руководства нового подразделения.",
+                    get_department_applications_message(interaction.guild.id, "transfer.success_permission_granted", "✅ Разрешение на перевод выдано! Ожидаем одобрения руководства нового подразделения."),
                     ephemeral=True
                 )
             
         except Exception as e:
             logger.error(f"Error giving permission for department transfer: {e}")
             await interaction.followup.send(
-                "❌ Произошла ошибка при выдаче разрешения.",
+                get_department_applications_message(interaction.guild.id, "transfer.error_general", "❌ Произошла ошибка при выдаче разрешения."),
                 ephemeral=True
             )
     
@@ -401,7 +405,7 @@ class DepartmentApplicationView(ui.View):
                 restored_view = self._create_transfer_buttons_view(state)
                 await interaction.edit_original_response(embed=embed, view=restored_view)
                 await interaction.followup.send(
-                    "❌ Пользователь не найден на сервере.",
+                    get_department_applications_message(interaction.guild.id, "transfer.error_user_not_found", "❌ Пользователь не найден на сервере."),
                     ephemeral=True
                 )
                 return
@@ -470,15 +474,17 @@ class DepartmentApplicationView(ui.View):
                 
                 # Send success message
                 await interaction.followup.send(
-                    f"✅ Перевод пользователя {target_user.mention} выполнен! Роли подразделения и должности назначены автоматически.",
+                    get_department_applications_message(interaction.guild.id, "transfer.success_transfer_completed", "✅ Перевод пользователя выполнен! Роли подразделения и должности назначены автоматически.").replace("пользователя", f"пользователя {target_user.mention}"),
                     ephemeral=True
                 )
                 
                 # Send DM to user
                 try:
                     dm_embed = discord.Embed(
-                        title="✅ Перевод одобрен!",
-                        description=f"Ваш перевод в подразделение **{self.application_data['department_code']}** был одобрен и выполнен!",
+                        title=get_private_messages(interaction.guild.id, 'department_applications.transfer_approval.title'),
+                        description=get_private_messages(interaction.guild.id, 'department_applications.transfer_approval.description').format(
+                            department_code=self.application_data['department_code']
+                        ),
                         color=discord.Color.green(),
                         timestamp=datetime.now(timezone(timedelta(hours=3)))
                     )
@@ -493,11 +499,11 @@ class DepartmentApplicationView(ui.View):
         except Exception as e:
             logger.error(f"Error processing final transfer approval: {e}")
             await interaction.followup.send(
-                "❌ Произошла ошибка при выполнении перевода.",
+                get_department_applications_message(interaction.guild.id, "transfer.error_transfer_failed", "❌ Произошла ошибка при выполнении перевода."),
                 ephemeral=True
             )
     
-    @ui.button(label="✅ Одобрить", style=discord.ButtonStyle.green, row=0)
+    @ui.button(label=get_ui_button(0, "approve"), style=discord.ButtonStyle.green, row=0)
     async def approve_button(self, interaction: discord.Interaction, button: ui.Button):
         """Approve the application"""
         try:
@@ -612,15 +618,17 @@ class DepartmentApplicationView(ui.View):
                 
                 # Send success message
                 await interaction.followup.send(
-                    f"✅ Заявление пользователя {target_user.mention} одобрено! Роли подразделения и должности назначены автоматически.",
+                    get_department_applications_message(interaction.guild.id, "success.approved", "✅ Заявление пользователя {user} одобрено! Роли подразделения и должности назначены автоматически.").format(user=target_user.mention),
                     ephemeral=True
                 )
                 
                 # Send DM to user
                 try:
                     dm_embed = discord.Embed(
-                        title="✅ Заявление одобрено!",
-                        description=f"Ваше заявление в подразделение **{self.application_data['department_code']}** было одобрено!",
+                        title=get_private_messages(interaction.guild.id, 'department_applications.approval.title'),
+                        description=get_private_messages(interaction.guild.id, 'department_applications.approval.description').format(
+                            department_code=self.application_data['department_code']
+                        ),
                         color=discord.Color.green(),
                         timestamp=datetime.now(timezone(timedelta(hours=3)))
                     )
@@ -738,7 +746,7 @@ class DepartmentApplicationView(ui.View):
             # Confirm deletion
             confirm_view = ConfirmDeletionView()
             await interaction.response.send_message(
-                "⚠️ Вы уверены, что хотите удалить это заявление? Это действие нельзя отменить.",
+                get_department_applications_message(interaction.guild.id, "confirmations.delete_warning", "⚠️ Вы уверены, что хотите удалить это заявление? Это действие нельзя отменить."),
                 view=confirm_view,
                 ephemeral=True
             )
@@ -930,7 +938,11 @@ class DepartmentApplicationView(ui.View):
             await self._remove_all_position_roles(target_user)
             
             # Step 3: Assign new department role
-            await target_user.add_roles(dept_role, reason=f"Approved department application by {interaction.user}")
+            # Get department name for the reason message
+            dept_info = ping_manager.get_department_info(dept_code)
+            dept_name = dept_info.get('name', dept_code) if dept_info else dept_code
+            reason = get_role_reason(interaction.guild.id, "department_application.approved", "Заявка в подразделение: одобрена").format(department_name=dept_name, moderator=interaction.user.mention)
+            await target_user.add_roles(dept_role, reason=reason)
             
             # Step 4: Assign assignable position roles for this department
             await self._assign_department_position_roles(target_user, dept_code, interaction.user)
@@ -965,7 +977,7 @@ class DepartmentApplicationView(ui.View):
             role = user.guild.get_role(role_id)
             if role and role in user.roles:
                 try:
-                    await user.remove_roles(role, reason="Department application approval - cleaning roles")
+                    await user.remove_roles(role, reason=get_role_reason(user.guild.id, "role_removal.department_change", "Смена подразделения: снята роль").format(moderator="система"))
                 except discord.Forbidden:
                     logger.warning(f"Could not remove department role {role.name} from {user} - insufficient permissions")
                 except Exception as e:
@@ -979,7 +991,7 @@ class DepartmentApplicationView(ui.View):
             role = user.guild.get_role(role_id)
             if role and role in user.roles:
                 try:
-                    await user.remove_roles(role, reason="Department application approval - cleaning position roles")
+                    await user.remove_roles(role, reason=get_role_reason(user.guild.id, "role_removal.position_change", "Смена должности: снята роль").format(moderator="система"))
                 except discord.Forbidden:
                     logger.warning(f"Could not remove position role {role.name} from {user} - insufficient permissions")
                 except Exception as e:
@@ -987,6 +999,9 @@ class DepartmentApplicationView(ui.View):
     
     async def _assign_department_position_roles(self, user: discord.Member, dept_code: str, moderator: discord.Member):
         """Assign assignable position roles for the department"""
+        # Get moderator display name for audit reasons
+        moderator_display = await get_moderator_display_name(moderator)
+        
         assignable_role_ids = ping_manager.get_department_assignable_position_roles(dept_code)
         
         logger.info(f"Attempting to assign position roles for {dept_code} to {user.display_name}")
@@ -1009,7 +1024,8 @@ class DepartmentApplicationView(ui.View):
             logger.info(f"Attempting to assign role {role.name} (ID: {role_id}) to {user.display_name}")
             
             try:
-                await user.add_roles(role, reason=f"Department application approved - automatic position assignment by {moderator}")
+                reason = get_role_reason(user.guild.id, "position_assignment.assigned", "Назначение должности").format(position=role.name, moderator=moderator_display)
+                await user.add_roles(role, reason=reason)
                 assigned_roles.append(role.name)
                 logger.info(f"Successfully assigned role {role.name} to {user.display_name}")
             except discord.Forbidden:
@@ -1066,7 +1082,7 @@ class DepartmentApplicationView(ui.View):
                 )
                 
                 if new_nickname:
-                    await user.edit(nick=new_nickname, reason=f"Department application approved - transfer to {dept_code}")
+                    await user.edit(nick=new_nickname, reason=get_role_reason(user.guild.id, "nickname_change.department_transfer", "Перевод в подразделение: изменён никнейм").format(moderator="система"))
                     print(f"✅ DEPT NICKNAME: Никнейм обновлён: {new_nickname}")
                 else:
                     # Fallback к улучшенному методу
@@ -1094,7 +1110,7 @@ class DepartmentApplicationView(ui.View):
                         )
                         
                         if new_nickname:
-                            await user.edit(nick=new_nickname, reason=f"Department application approved - hiring to {dept_code}")
+                            await user.edit(nick=new_nickname, reason=get_role_reason(user.guild.id, "nickname_change.department_join", "Приём в подразделение: изменён никнейм").format(moderator="система"))
                             print(f"✅ DEPT HIRING: Никнейм обновлён через handle_hiring: {new_nickname}")
                             return
                     
@@ -1172,7 +1188,7 @@ class DepartmentApplicationView(ui.View):
                     # В крайнем случае используем только аббревиатуру
                     new_nickname = abbreviation[:32]
             
-            await user.edit(nick=new_nickname, reason=f"Department application smart fallback - {dept_code}")
+            await user.edit(nick=new_nickname, reason=get_role_reason(user.guild.id, "nickname_change.department_join", "Приём в подразделение: изменён никнейм").format(moderator="система"))
             logger.info(f"Applied smart fallback nickname: {user} -> {new_nickname}")
             
         except discord.Forbidden:
@@ -1198,7 +1214,7 @@ class DepartmentApplicationView(ui.View):
             if len(fallback_nickname) > 32:
                 fallback_nickname = fallback_nickname[:32]
             
-            await user.edit(nick=fallback_nickname, reason=f"Department application fallback - {dept_code}")
+            await user.edit(nick=fallback_nickname, reason=get_role_reason(user.guild.id, "nickname_change.department_join", "Приём в подразделение: изменён никнейм").format(moderator="система"))
             logger.info(f"Applied fallback nickname: {user} -> {fallback_nickname}")
             
         except discord.Forbidden:
@@ -1625,13 +1641,15 @@ class RejectionReasonModal(ui.Modal):
             if target_user:
                 try:
                     dm_embed = discord.Embed(
-                        title="❌ Заявление отклонено",
-                        description=f"Ваше заявление в подразделение **{self.application_data['department_code']}** было отклонено.",
+                        title=get_private_messages(interaction.guild.id, 'department_applications.rejection.title'),
+                        description=get_private_messages(interaction.guild.id, 'department_applications.rejection.description').format(
+                            department_code=self.application_data['department_code']
+                        ),
                         color=discord.Color.red(),
                         timestamp=datetime.now(timezone(timedelta(hours=3)))
                     )
                     dm_embed.add_field(
-                        name="📝 Причина",
+                        name=get_private_messages(interaction.guild.id, 'department_applications.rejection.reason_field'),
                         value=self.reason.value,
                         inline=False
                     )
@@ -1677,7 +1695,7 @@ class DepartmentSelectView(ui.View):
         self.join_button.custom_id = f"dept_app_join_{department_code}"
         self.transfer_button.custom_id = f"dept_app_transfer_{department_code}"
     
-    @ui.button(label="Заявление в подразделение", style=discord.ButtonStyle.green, emoji="➕")
+    @ui.button(label=get_ui_label(0, "join_department"), style=discord.ButtonStyle.green, emoji="➕")
     async def join_button(self, interaction: discord.Interaction, button: ui.Button):
         """Handle department join application"""
         await self._handle_application_type(interaction, "join")

@@ -7,6 +7,7 @@ from discord.ext import commands
 from utils.config_manager import load_config, is_moderator_or_admin
 from utils.leave_request_storage import LeaveRequestStorage
 from utils.user_cache import get_cached_user_info
+from utils.message_service import MessageService
 from .utils import LeaveRequestValidator, LeaveRequestDepartmentDetector
 
 
@@ -43,6 +44,7 @@ class LeaveRequestModal(ui.Modal):
           label="Статик",
           placeholder=static_placeholder,
           default=static_value,
+          min_length=1,
           max_length=20,
           required=True
         )
@@ -440,7 +442,41 @@ class RejectReasonModal(ui.Modal):
               inline=False
           )
           
-          await user.send(embed=embed)
+          try:
+            await MessageService.send_dm(
+                user=user,
+                title=MessageService.get_private_template(interaction.guild.id, 'leave_requests.rejection.title', '❌ Ваша заявка на отгул была отклонена'),
+                description=None,
+                fields=[
+                    {
+                        'name': MessageService.get_private_template(interaction.guild.id, 'leave_requests.rejection.details', '📋 Детали заявки:'),
+                        'value': (
+                            f"**Время:** {request['start_time']} - {request['end_time']}\n"
+                            f"**Дата:** {discord.utils.format_dt(discord.utils.utcnow(), 'd')}\n"
+                            f"**Причина отгула:** {request['reason']}"
+                        ),
+                        'inline': False
+                    },
+                    {
+                        'name': MessageService.get_private_template(interaction.guild.id, 'leave_requests.rejection.rejected_by', '👤 Отклонил:'),
+                        'value': interaction.user.mention,
+                        'inline': True
+                    },
+                    {
+                        'name': MessageService.get_private_template(interaction.guild.id, 'leave_requests.rejection.reason_field', '📝 Причина отклонения:'),
+                        'value': reason,
+                        'inline': False
+                    },
+                    {
+                        'name': MessageService.get_private_template(interaction.guild.id, 'leave_requests.rejection.info', 'ℹ️ Информация:'),
+                        'value': MessageService.get_private_template(interaction.guild.id, 'leave_requests.rejection.info_text', 'Вы можете подать новую заявку на отгул в том же дне, так как предыдущая была отклонена.'),
+                        'inline': False
+                    }
+                ],
+                color=MessageService.MessageColors.REJECTION if hasattr(MessageService, 'MessageColors') else None
+            )
+          except Exception as send_err:
+            print(f"Error sending DM via MessageService: {send_err}")
           
         except Exception as e:
           print(f"Error sending DM notification: {e}")

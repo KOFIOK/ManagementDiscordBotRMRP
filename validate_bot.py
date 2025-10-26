@@ -81,6 +81,43 @@ def test_complete_setup():
     except Exception as e:
         print(f"   ✗ Configuration system failed: {e}")
         return False
+    
+    # Test 5.5: Messages system
+    print("\n5.5. Testing messages system...")
+    try:
+        from utils.message_manager import (
+            load_default_messages, load_guild_messages, 
+            get_message, get_messages_status
+        )
+        from utils.config_manager import get_messages_status as get_messages_status_config
+        
+        # Test default messages loading
+        defaults = load_default_messages()
+        if defaults and 'systems' in defaults and 'dismissal' in defaults['systems']:
+            print("   ✓ Default messages loaded successfully")
+        else:
+            print("   ✗ Default messages loading failed")
+            return False
+        
+        # Test guild messages (using test guild ID)
+        test_guild_id = 123456789  # Test ID
+        guild_messages = load_guild_messages(test_guild_id)
+        if guild_messages:
+            print("   ✓ Guild messages loading works")
+        
+        # Test message retrieval
+        test_message = get_message(test_guild_id, 'systems.dismissal.ui_labels.processing')
+        if test_message:
+            print(f"   ✓ Message retrieval works: '{test_message}'")
+        
+        # Test status
+        status = get_messages_status_config()
+        print(f"   ✓ Messages system status: {status.get('default_messages_exists', False)} defaults, {status.get('guild_specific_files', 0)} guild files")
+        
+        print("   ✓ Messages system working correctly")
+    except Exception as e:
+        print(f"   ✗ Messages system failed: {e}")
+        return False
       # Test 6: Enhanced backup features
     print("\n6. Testing backup and recovery features...")
     try:

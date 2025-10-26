@@ -3,6 +3,7 @@ Views и модалы для управления статусом заявок 
 """
 
 import discord
+from utils.message_manager import get_warehouse_message
 
 
 class WarehouseStatusView(discord.ui.View):

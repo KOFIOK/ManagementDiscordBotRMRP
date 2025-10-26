@@ -266,6 +266,7 @@ class DepartmentApplicationStage1Modal(ui.Modal):
             label="Статик",
             placeholder=static_placeholder,
             default=default_static,
+            min_length=1,
             max_length=10,
             required=True
         )
@@ -338,14 +339,9 @@ class DepartmentApplicationStage1Modal(ui.Modal):
     
     def format_static(self, static_input: str) -> str:
         """Auto-format static number to standard format"""
-        digits_only = re.sub(r'\D', '', static_input.strip())
-        
-        if len(digits_only) == 5:
-            return f"{digits_only[:2]}-{digits_only[2:]}"
-        elif len(digits_only) == 6:
-            return f"{digits_only[:3]}-{digits_only[3:]}"
-        else:
-            return ""
+        from utils.static_validator import StaticValidator
+        is_valid, formatted = StaticValidator.validate_and_format(static_input)
+        return formatted if is_valid else ""
     
     async def on_submit(self, interaction: discord.Interaction):
         """Handle Stage 1 submission"""

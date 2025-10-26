@@ -6,17 +6,19 @@ import discord
 import re
 from discord import ui
 from utils.config_manager import load_config, has_pending_role_application
+from utils.message_manager import get_role_assignment_message, get_message_with_params
+from utils.database_manager.rank_manager import rank_manager
 
 
 class MilitaryApplicationModal(ui.Modal):
     """Modal for military service role applications"""
     
     def __init__(self):
-        super().__init__(title="Заявка на получение роли военнослужащего")
+        super().__init__(title=get_role_assignment_message(0, 'application.military_modal_title', 'Заявка на получение роли военнослужащего'))
         
         self.first_name_input = ui.TextInput(
-            label="Имя",
-            placeholder="Например: Олег",
+            label=get_role_assignment_message(0, 'application.first_name_label', 'Имя'),
+            placeholder=get_role_assignment_message(0, 'application.first_name_placeholder', 'Например: Олег'),
             min_length=2,
             max_length=25,
             required=True
@@ -24,8 +26,8 @@ class MilitaryApplicationModal(ui.Modal):
         self.add_item(self.first_name_input)
         
         self.last_name_input = ui.TextInput(
-            label="Фамилия",
-            placeholder="Например: Дубов",
+            label=get_role_assignment_message(0, 'application.last_name_label', 'Фамилия'),
+            placeholder=get_role_assignment_message(0, 'application.last_name_placeholder', 'Например: Дубов'),
             min_length=2,
             max_length=25,
             required=True
@@ -33,15 +35,15 @@ class MilitaryApplicationModal(ui.Modal):
         self.add_item(self.last_name_input)
         
         self.static_input = ui.TextInput(
-            label="Статик",
-            placeholder="123-456 (допускается 5-6 цифр)",
-            min_length=5,
+            label=get_role_assignment_message(0, 'application.static_label', 'Статик'),
+            placeholder=get_role_assignment_message(0, 'application.static_placeholder', '123-456 (допускается 1-6 цифр)'),
+            min_length=1,
             max_length=7,
             required=True
         )
         self.add_item(self.static_input)
         
-        # Rank is always "Рядовой" for new military recruits, no need for input field
+        # Rank is always default recruit rank for new military recruits, no need for input field
     
     async def on_submit(self, interaction: discord.Interaction):
         """Process military application submission"""
@@ -53,12 +55,52 @@ class MilitaryApplicationModal(ui.Modal):
             has_pending = await has_pending_role_application(interaction.client, interaction.user.id, role_assignment_channel_id)
             if has_pending:
                 await interaction.response.send_message(
-                    "❌ **У вас уже есть заявка на получение роли, которая находится на рассмотрении.**\n\n"
+                    f"{get_role_assignment_message(interaction.guild.id, 'application.error_pending_application', '❌ **У вас уже есть заявка на получение роли, которая находится на рассмотрении.**')}\n\n"
                     "Пожалуйста, дождитесь решения по текущей заявке, прежде чем подавать новую.\n"
                     "Это поможет избежать путаницы и ускорить обработку вашего запроса.",
                     ephemeral=True
                 )
                 return
+        
+        # Check if user already has a personnel record
+        from utils.postgresql_pool import get_db_cursor
+        with get_db_cursor() as cursor:
+            cursor.execute("""
+                SELECT is_dismissal FROM personnel WHERE discord_id = %s
+            """, (interaction.user.id,))
+            existing_personnel = cursor.fetchone()
+            
+            if existing_personnel:
+                if not existing_personnel['is_dismissal']:
+                    # User is already active
+                    await interaction.response.send_message(
+                        "❌ **Вы уже находитесь на службе в Вооруженных Силах РФ.**\n\n"
+                        "Если вам нужно изменить данные или перевестись, обратитесь к командованию.",
+                        ephemeral=True
+                    )
+                    return
+                else:
+                    # User was dismissed, can reapply
+                    pass  # Continue with application
+        
+        # Check if user has active blacklist entry
+        from utils.database_manager import personnel_manager
+        blacklist_info = await personnel_manager.check_active_blacklist(interaction.user.id)
+        
+        if blacklist_info:
+            # User is blacklisted, deny application
+            start_date_str = blacklist_info['start_date'].strftime('%d.%m.%Y')
+            end_date_str = blacklist_info['end_date'].strftime('%d.%m.%Y') if blacklist_info['end_date'] else 'Бессрочно'
+            
+            await interaction.response.send_message(
+                f"❌ **Вам запрещен приём на службу**\n\n"
+                f"📋 **{blacklist_info['full_name']} | {blacklist_info['static']} находится в Чёрном списке ВС РФ**\n"
+                f"> **Причина:** {blacklist_info['reason']}\n"
+                f"> **Период:** {start_date_str} - {end_date_str}\n\n"
+                f"*Для снятия с чёрного списка обратитесь к руководству бригады.*",
+                ephemeral=True
+            )
+            return
         
         # Validate first name and last name (must be single words)
         first_name = self.first_name_input.value.strip()
@@ -66,16 +108,14 @@ class MilitaryApplicationModal(ui.Modal):
         
         if ' ' in first_name or '\t' in first_name:
             await interaction.response.send_message(
-                "❌ **Имя должно содержать только одно слово.**\n"
-                "Пожалуйста, введите только имя без пробелов.",
+                get_role_assignment_message(interaction.guild.id, 'application.error_first_name_spaces', "❌ **Имя должно содержать только одно слово.**\nПожалуйста, введите только имя без пробелов."),
                 ephemeral=True
             )
             return
         
         if ' ' in last_name or '\t' in last_name:
             await interaction.response.send_message(
-                "❌ **Фамилия должна содержать только одно слово.**\n"
-                "Пожалуйста, введите только фамилию без пробелов.",
+                get_role_assignment_message(interaction.guild.id, 'application.error_last_name_spaces', "❌ **Фамилия должна содержать только одно слово.**\nПожалуйста, введите только фамилию без пробелов."),
                 ephemeral=True
             )
             return
@@ -87,9 +127,9 @@ class MilitaryApplicationModal(ui.Modal):
         static = self.static_input.value.strip()
         formatted_static = self._format_static(static)
         if not formatted_static:
+            from utils.static_validator import StaticValidator
             await interaction.response.send_message(
-                "❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.\n"
-                "Примеры: 123456, 123-456, 12345, 12-345, 123 456",
+                StaticValidator.get_validation_error_message(),
                 ephemeral=True
             )
             return
@@ -99,7 +139,7 @@ class MilitaryApplicationModal(ui.Modal):
             "type": "military",
             "name": full_name,
             "static": formatted_static,
-            "rank": "Рядовой",  # Always set rank as "Рядовой" for new military recruits
+            "rank": rank_manager.get_default_recruit_rank_sync(),  # Always set rank as default for new military recruits
             "user_id": interaction.user.id,
             "user_mention": interaction.user.mention
         }
@@ -109,14 +149,9 @@ class MilitaryApplicationModal(ui.Modal):
     
     def _format_static(self, static_input: str) -> str:
         """Auto-format static number to standard format"""
-        digits_only = re.sub(r'\D', '', static_input.strip())
-        
-        if len(digits_only) == 5:
-            return f"{digits_only[:2]}-{digits_only[2:]}"
-        elif len(digits_only) == 6:
-            return f"{digits_only[:3]}-{digits_only[3:]}"
-        else:
-            return ""
+        from utils.static_validator import StaticValidator
+        is_valid, formatted = StaticValidator.validate_and_format(static_input)
+        return formatted if is_valid else ""
     
     async def _check_blacklist_status(self, static: str):
         """Check if user is in blacklist using PostgreSQL (stub)"""
@@ -186,14 +221,14 @@ class MilitaryApplicationModal(ui.Modal):
             await moderation_channel.send(content=ping_content, embed=embed, view=approval_view)
             
             await interaction.response.send_message(
-                "✅ Ваша заявка отправлена на рассмотрение военнослужащим. Ожидайте решения.",
+                get_message_with_params(interaction.guild.id, "systems.role_assignment.application.success_application_submitted", action="Заявка на получение роли"),
                 ephemeral=True
             )
             
         except Exception as e:
             print(f"Error sending military application: {e}")
             await interaction.response.send_message(
-                "❌ Произошла ошибка при отправке заявки. Попробуйте позже.",
+                get_role_assignment_message(interaction.guild.id, "application.error_submission_failed", "❌ Произошла ошибка при отправке заявки. Попробуйте позже."),
                 ephemeral=True
             )
 
@@ -215,8 +250,8 @@ class CivilianApplicationModal(ui.Modal):
         
         self.static_input = ui.TextInput(
             label="Статик",
-            placeholder="123-456 (допускается 5-6 цифр)",
-            min_length=5,
+            placeholder="123-456 (допускается 1-6 цифр)",
+            min_length=1,
             max_length=7,
             required=True
         )
@@ -259,7 +294,7 @@ class CivilianApplicationModal(ui.Modal):
             has_pending = await has_pending_role_application(interaction.client, interaction.user.id, role_assignment_channel_id)
             if has_pending:
                 await interaction.response.send_message(
-                    "❌ **У вас уже есть заявка на получение роли, которая находится на рассмотрении.**\n\n"
+                    f"{get_role_assignment_message(interaction.guild.id, 'application.error_pending_application', '❌ **У вас уже есть заявка на получение роли, которая находится на рассмотрении.**')}\n\n"
                     "Пожалуйста, дождитесь решения по текущей заявке, прежде чем подавать новую.\n"
                     "Это поможет избежать путаницы и ускорить обработку вашего запроса.",
                     ephemeral=True
@@ -270,9 +305,9 @@ class CivilianApplicationModal(ui.Modal):
         static = self.static_input.value.strip()
         formatted_static = self._format_static(static)
         if not formatted_static:
+            from utils.static_validator import StaticValidator
             await interaction.response.send_message(
-                "❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.\n"
-                "Примеры: 123456, 123-456, 12345, 12-345, 123 456",
+                StaticValidator.get_validation_error_message(),
                 ephemeral=True
             )
             return
@@ -281,7 +316,7 @@ class CivilianApplicationModal(ui.Modal):
         proof = self.proof_input.value.strip()
         if not self._validate_url(proof):
             await interaction.response.send_message(
-                "❌ Пожалуйста, укажите корректную ссылку в поле доказательств.",
+                get_role_assignment_message(interaction.guild.id, "application.error_invalid_proof_link", "❌ Пожалуйста, укажите корректную ссылку в поле доказательств."),
                 ephemeral=True
             )
             return
@@ -303,19 +338,18 @@ class CivilianApplicationModal(ui.Modal):
     
     def _format_static(self, static_input: str) -> str:
         """Auto-format static number to standard format"""
-        digits_only = re.sub(r'\D', '', static_input.strip())
-        
-        if len(digits_only) == 5:
-            return f"{digits_only[:2]}-{digits_only[2:]}"
-        elif len(digits_only) == 6:
-            return f"{digits_only[:3]}-{digits_only[3:]}"
-        else:
-            return ""
+        from utils.static_validator import StaticValidator
+        is_valid, formatted = StaticValidator.validate_and_format(static_input)
+        return formatted if is_valid else ""
     
     def _validate_url(self, url):
-        """Basic URL validation"""
-        url_pattern = r'https?://[^\s/$.?#].[^\s]*'
-        return bool(re.match(url_pattern, url))
+        """Basic URL validation - accepts various formats"""
+        # More permissive URL pattern that accepts:
+        # - http/https URLs
+        # - URLs without protocol (like discord.gg/...)
+        # - Common domain formats including single-letter TLDs
+        url_pattern = r'(https?://)?([a-zA-Z0-9-]+\.)*[a-zA-Z0-9-]+\.[a-zA-Z]{1,}(/[^\s]*)?'
+        return bool(re.match(url_pattern, url.strip()))
     
     async def _send_application_for_approval(self, interaction, application_data):
         """Send application to moderation channel"""
@@ -401,8 +435,8 @@ class SupplierApplicationModal(ui.Modal):
         
         self.static_input = ui.TextInput(
             label="Статик",
-            placeholder="123-456 (допускается 5-6 цифр)",
-            min_length=5,
+            placeholder="123-456 (допускается 1-6 цифр)",
+            min_length=1,
             max_length=7,
             required=True
         )
@@ -447,9 +481,9 @@ class SupplierApplicationModal(ui.Modal):
         static = self.static_input.value.strip()
         formatted_static = self._format_static(static)
         if not formatted_static:
+            from utils.static_validator import StaticValidator
             await interaction.response.send_message(
-                "❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.\n"
-                "Примеры: 123456, 123-456, 12345, 12-345, 123 456",
+                StaticValidator.get_validation_error_message(),
                 ephemeral=True
             )
             return
@@ -457,7 +491,7 @@ class SupplierApplicationModal(ui.Modal):
         proof = self.proof_input.value.strip()
         if not self._validate_url(proof):
             await interaction.response.send_message(
-                "❌ Пожалуйста, укажите корректную ссылку в поле доказательств.",
+                get_role_assignment_message(interaction.guild.id, "application.error_invalid_proof_link", "❌ Пожалуйста, укажите корректную ссылку в поле доказательств."),
                 ephemeral=True
             )
             return
@@ -478,18 +512,17 @@ class SupplierApplicationModal(ui.Modal):
     
     def _format_static(self, static_input: str) -> str:
         """Auto-format static number to standard format"""
-        digits_only = re.sub(r'\D', '', static_input.strip())
-        
-        if len(digits_only) == 5:
-            return f"{digits_only[:2]}-{digits_only[2:]}"
-        elif len(digits_only) == 6:
-            return f"{digits_only[:3]}-{digits_only[3:]}"
-        else:
-            return ""
+        from utils.static_validator import StaticValidator
+        is_valid, formatted = StaticValidator.validate_and_format(static_input)
+        return formatted if is_valid else ""
     def _validate_url(self, url):
-        """Basic URL validation"""
-        url_pattern = r'https?://[^\s/$.?#].[^\s]*'
-        return bool(re.match(url_pattern, url))
+        """Basic URL validation - accepts various formats"""
+        # More permissive URL pattern that accepts:
+        # - http/https URLs
+        # - URLs without protocol (like discord.gg/...)
+        # - Common domain formats including single-letter TLDs
+        url_pattern = r'(https?://)?([a-zA-Z0-9-]+\.)*[a-zA-Z0-9-]+\.[a-zA-Z]{1,}(/[^\s]*)?'
+        return bool(re.match(url_pattern, url.strip()))
     
     async def _send_application_for_approval(self, interaction, application_data):
         """Send application to moderation channel"""
@@ -580,15 +613,15 @@ class MilitaryEditModal(ui.Modal):
         
         self.static_input = ui.TextInput(
             label="Статик",
-            placeholder="123-456 (допускается 5-6 цифр)",
-            min_length=5,
+            placeholder="123-456 (допускается 1-6 цифр)",
+            min_length=1,
             max_length=7,
             required=True,
             default=application_data.get('static', '')
         )
         self.add_item(self.static_input)
         
-        # Rank is always "Рядовой" for military personnel, no need for input field
+        # Rank is always default recruit rank for military personnel, no need for input field
     
     async def on_submit(self, interaction: discord.Interaction):
         """Обработка редактирования военной заявки"""
@@ -597,9 +630,9 @@ class MilitaryEditModal(ui.Modal):
             static = self.static_input.value.strip()
             formatted_static = self._format_static(static)
             if not formatted_static:
+                from utils.static_validator import StaticValidator
                 await interaction.response.send_message(
-                    "❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.\n"
-                    "Примеры: 123456, 123-456, 12345, 12-345, 123 456",
+                    StaticValidator.get_validation_error_message(),
                     ephemeral=True
                 )
                 return
@@ -608,7 +641,7 @@ class MilitaryEditModal(ui.Modal):
             updated_data = {
                 'name': self.name_input.value.strip(),
                 'static': formatted_static,
-                'rank': "Рядовой",  # Always set rank as "Рядовой" for military personnel
+                'rank': rank_manager.get_default_recruit_rank_sync(),  # Always set rank as default for military personnel
                 # Сохраняем оригинальные данные
                 'type': self.application_data['type'],
                 'user_id': self.application_data['user_id'],
@@ -626,14 +659,9 @@ class MilitaryEditModal(ui.Modal):
     
     def _format_static(self, static_input: str) -> str:
         """Auto-format static number to standard format"""
-        digits_only = re.sub(r'\D', '', static_input.strip())
-        
-        if len(digits_only) == 5:
-            return f"{digits_only[:2]}-{digits_only[2:]}"
-        elif len(digits_only) == 6:
-            return f"{digits_only[:3]}-{digits_only[3:]}"
-        else:
-            return ""
+        from utils.static_validator import StaticValidator
+        is_valid, formatted = StaticValidator.validate_and_format(static_input)
+        return formatted if is_valid else ""
     
     async def _handle_edit_update(self, interaction: discord.Interaction, updated_data: dict):
         """Обновление embed с новыми данными"""
@@ -696,8 +724,8 @@ class CivilianEditModal(ui.Modal):
         
         self.static_input = ui.TextInput(
             label="Статик",
-            placeholder="123-456 (допускается 5-6 цифр)",
-            min_length=5,
+            placeholder="123-456 (допускается 1-6 цифр)",
+            min_length=1,
             max_length=7,
             required=True,
             default=application_data.get('static', '')
@@ -741,9 +769,9 @@ class CivilianEditModal(ui.Modal):
             static = self.static_input.value.strip()
             formatted_static = self._format_static(static)
             if not formatted_static:
+                from utils.static_validator import StaticValidator
                 await interaction.response.send_message(
-                    "❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.\n"
-                    "Примеры: 123456, 123-456, 12345, 12-345, 123 456",
+                    StaticValidator.get_validation_error_message(),
                     ephemeral=True
                 )
                 return
@@ -781,25 +809,18 @@ class CivilianEditModal(ui.Modal):
     
     def _format_static(self, static_input: str) -> str:
         """Auto-format static number to standard format"""
-        digits_only = re.sub(r'\D', '', static_input.strip())
-        
-        if len(digits_only) == 5:
-            return f"{digits_only[:2]}-{digits_only[2:]}"
-        elif len(digits_only) == 6:
-            return f"{digits_only[:3]}-{digits_only[3:]}"
-        else:
-            return ""
+        from utils.static_validator import StaticValidator
+        is_valid, formatted = StaticValidator.validate_and_format(static_input)
+        return formatted if is_valid else ""
     
     def _validate_url(self, url):
-        """Basic URL validation"""
-        url_pattern = re.compile(
-            r'^https?://'  # http:// or https://
-            r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # domain...
-            r'localhost|'  # localhost...
-            r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # ...or ip
-            r'(?::\d+)?'  # optional port
-            r'(?:/?|[/?]\S+)$', re.IGNORECASE)
-        return url_pattern.match(url) is not None
+        """Basic URL validation - accepts various formats"""
+        # More permissive URL pattern that accepts:
+        # - http/https URLs
+        # - URLs without protocol (like discord.gg/...)
+        # - Common domain formats
+        url_pattern = r'(https?://)?([a-zA-Z0-9-]+\.)*[a-zA-Z0-9-]+\.[a-zA-Z]{1,}(/[^\s]*)?'
+        return bool(re.match(url_pattern, url.strip()))
     
     async def _handle_edit_update(self, interaction: discord.Interaction, updated_data: dict):
         """Обновление embed с новыми данными"""
@@ -866,8 +887,8 @@ class SupplierEditModal(ui.Modal):
         
         self.static_input = ui.TextInput(
             label="Статик",
-            placeholder="123-456 (допускается 5-6 цифр)",
-            min_length=5,
+            placeholder="123-456 (допускается 1-6 цифр)",
+            min_length=1,
             max_length=7,
             required=True,
             default=application_data.get('static', '')
@@ -901,9 +922,9 @@ class SupplierEditModal(ui.Modal):
             static = self.static_input.value.strip()
             formatted_static = self._format_static(static)
             if not formatted_static:
+                from utils.static_validator import StaticValidator
                 await interaction.response.send_message(
-                    "❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.\n"
-                    "Примеры: 123456, 123-456, 12345, 12-345, 123 456",
+                    StaticValidator.get_validation_error_message(),
                     ephemeral=True
                 )
                 return
@@ -940,25 +961,18 @@ class SupplierEditModal(ui.Modal):
     
     def _format_static(self, static_input: str) -> str:
         """Auto-format static number to standard format"""
-        digits_only = re.sub(r'\D', '', static_input.strip())
-        
-        if len(digits_only) == 5:
-            return f"{digits_only[:2]}-{digits_only[2:]}"
-        elif len(digits_only) == 6:
-            return f"{digits_only[:3]}-{digits_only[3:]}"
-        else:
-            return ""
+        from utils.static_validator import StaticValidator
+        is_valid, formatted = StaticValidator.validate_and_format(static_input)
+        return formatted if is_valid else ""
     
     def _validate_url(self, url):
-        """Basic URL validation"""
-        url_pattern = re.compile(
-            r'^https?://'  # http:// or https://
-            r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # domain...
-            r'localhost|'  # localhost...
-            r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # ...or ip
-            r'(?::\d+)?'  # optional port
-            r'(?:/?|[/?]\S+)$', re.IGNORECASE)
-        return url_pattern.match(url) is not None
+        """Basic URL validation - accepts various formats"""
+        # More permissive URL pattern that accepts:
+        # - http/https URLs
+        # - URLs without protocol (like discord.gg/...)
+        # - Common domain formats
+        url_pattern = r'(https?://)?([a-zA-Z0-9-]+\.)*[a-zA-Z0-9-]+\.[a-zA-Z]{1,}(/[^\s]*)?'
+        return bool(re.match(url_pattern, url.strip()))
     
     async def _handle_edit_update(self, interaction: discord.Interaction, updated_data: dict):
         """Обновление embed с новыми данными"""

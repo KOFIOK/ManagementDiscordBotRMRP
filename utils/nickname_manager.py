@@ -27,6 +27,7 @@ from utils.database_manager.subdivision_mapper import SubdivisionMapper
 from utils.database_manager.rank_manager import rank_manager
 from utils.database_manager import personnel_manager
 from utils.config_manager import load_config
+from utils.message_manager import get_military_ranks, get_role_reason
 
 logger = logging.getLogger(__name__)
 
@@ -42,17 +43,23 @@ class NicknameManager:
         # Загружаем конфигурацию
         self.config = load_config()
         
-        # Список известных рангов (встроенный список)
-        self.known_ranks = {
-            'Рядовой', 'Ефрейтор', 'Мл. Сержант', 'Сержант', 'Ст. Сержант', 
-            'Старшина', 'Прапорщик', 'Ст. Прапорщик', 'Мл. Лейтенант',
-            'Лейтенант', 'Ст. Лейтенант', 'Капитан', 'Майор', 'Подполковник', 'Полковник',
-            # Аббревиатуры
-            'Ефр-р', 'Мл. С-т', 'С-т', 'Ст. С-т', 'Ст-на', 'Ст. Прап-к', 'Мл. Л-т', 'Ст. Л-т', 'Подполк-к'
-        }
+        # Список известных рангов (fallback для случаев недоступности БД)
+        self.known_ranks = self._load_known_ranks_fallback()
         
         # Инициализируем паттерны с учетом кастомных настроек
         self._init_patterns()
+        
+    def _load_known_ranks_fallback(self) -> set:
+        """Load minimal fallback ranks for cases when database is unavailable"""
+        # Minimal fallback list - should be rarely used
+        fallback_ranks = {
+            'Рядовой', 'Ефрейтор', 'Сержант', 'Старшина',
+            'Лейтенант', 'Капитан', 'Майор', 'Полковник', 'Генерал',
+            # Common abbreviations
+            'Р-й', 'Еф-р', 'С-т', 'Ст-на', 'Л-т', 'К-н'
+        }
+        logger.warning("Using fallback rank list - database ranks should be used instead")
+        return fallback_ranks
         
     def _init_patterns(self):
         """Инициализация паттернов с учетом кастомных настроек"""
@@ -668,7 +675,7 @@ class NicknameManager:
             # При приёме используем "ВА" (Военная Академия)
             new_nickname = self.build_service_nickname("ВА", rank_abbr, first_name, last_name)
             
-            await member.edit(nick=new_nickname, reason="Приём на службу")
+            await member.edit(nick=new_nickname, reason=get_role_reason(member.guild.id, "nickname_change.personnel_acceptance", "Приём в организацию: изменён никнейм").format(moderator="система"))
             logger.info(f"✅ Никнейм при приёме: {member} -> {new_nickname}")
             
             return new_nickname
@@ -747,7 +754,7 @@ class NicknameManager:
                     rank_abbr = rank_data['abbreviation']
                 
                 new_nickname = self.build_service_nickname(subdivision_abbr, rank_abbr, first_name, last_name)
-                reason = f"Перевод в {subdivision_data.get('name', subdivision_key)}"
+                reason = get_role_reason(member.guild.id, "nickname_change.department_transfer", "Перевод в подразделение: изменён никнейм").format(moderator="система")
             
             await member.edit(nick=new_nickname, reason=reason)
             logger.info(f"✅ Никнейм при переводе: {member} -> {new_nickname}")
@@ -842,7 +849,7 @@ class NicknameManager:
             new_nickname = self.build_service_nickname(subdivision_abbr, new_rank_abbr, first_name, last_name)
             logger.info(f"� RANK_CHANGE DEBUG: Построенный никнейм: '{new_nickname}'")
             
-            await member.edit(nick=new_nickname, reason=f"{change_type.capitalize()} до {new_rank_name}")
+            await member.edit(nick=new_nickname, reason=get_role_reason(member.guild.id, f"rank_change.{'promotion' if change_type == 'повышение' else 'demotion' if change_type == 'понижение' else 'restoration' if change_type == 'восстановление' else 'automatic'}", "Смена ранга: {old_rank} → {new_rank}").format(old_rank="предыдущий", new_rank=new_rank_name, moderator="система"))
             logger.info(f"✅ Никнейм при изменении звания ({change_type}): {member} -> {new_nickname}")
             
             return new_nickname
@@ -948,7 +955,7 @@ class NicknameManager:
             new_nickname = self.build_service_nickname(subdivision_abbr, rank_abbr, new_first_name, new_last_name)
             logger.info(f"🔍 NAME_CHANGE DEBUG: Построенный никнейм: '{new_nickname}'")
             
-            await member.edit(nick=new_nickname, reason=f"Изменение ФИО: {new_first_name} {new_last_name}")
+            await member.edit(nick=new_nickname, reason=get_role_reason(member.guild.id, "nickname_change.name_change", "Изменение ФИО: {old_name} → {new_name}").format(old_name=member.display_name, new_name=new_nickname, moderator="система"))
             logger.info(f"✅ Никнейм при изменении ФИО: {member} -> {new_nickname}")
             
             return new_nickname
@@ -1023,7 +1030,7 @@ class NicknameManager:
                 logger.error(f"❌ Ожидаемый никнейм был: '{new_nickname}'")
                 return None
             
-            await member.edit(nick=new_nickname, reason="Увольнение")
+            await member.edit(nick=new_nickname, reason=get_role_reason(member.guild.id, "nickname_change.dismissal", "Увольнение: изменён никнейм").format(moderator="система"))
             logger.info(f"✅ Никнейм при увольнении: {member} -> {new_nickname}")
             
             return new_nickname

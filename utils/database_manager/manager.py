@@ -152,25 +152,27 @@ class PersonnelManager:
             return None
     
     def _format_static_for_db(self, static_raw: str) -> str:
-        """Format static to match database constraint (XX-XXX or XXX-XXX)"""
-        # Remove all non-digits
+        """Format static to match database constraint using unified validator"""
+        from utils.static_validator import StaticValidator
+        
+        # Try to validate and format with standard rules
+        is_valid, formatted = StaticValidator.validate_and_format(static_raw)
+        if is_valid:
+            return formatted
+        
+        # If validation fails, try fallback logic for edge cases
         digits_only = ''.join(filter(str.isdigit, static_raw))
         
-        if len(digits_only) >= 5:
-            # Use first 5-6 digits and format as XX-XXX or XXX-XXX
-            if len(digits_only) == 5:
-                return f"{digits_only[:2]}-{digits_only[2:]}"  # XX-XXX
-            else:
-                return f"{digits_only[:3]}-{digits_only[3:6]}"  # XXX-XXX
-        elif len(digits_only) >= 2:
-            # Pad with zeros if needed
+        if len(digits_only) >= 2:
+            # Pad with zeros if needed to make at least 5 digits
             padded = digits_only.ljust(5, '0')
-            return f"{padded[:2]}-{padded[2:]}"
-        else:
-            # Generate unique static code based on current time
-            import time
-            timestamp = str(int(time.time()))[-5:]  # Last 5 digits of timestamp
-            return f"{timestamp[:2]}-{timestamp[2:]}"
+            if len(padded) >= 5:
+                return f"{padded[:2]}-{padded[2:]}"
+        
+        # Generate unique static code based on current time as last resort
+        import time
+        timestamp = str(int(time.time()))[-5:]  # Last 5 digits of timestamp
+        return f"{timestamp[:2]}-{timestamp[2:]}"
     
     async def _update_personnel_record(self, personnel_id: int, application_data: Dict, cursor):
         """Update existing personnel record"""
@@ -1290,6 +1292,10 @@ class PersonnelManager:
             
             # Invalidate cache for this user
             self.invalidate_blacklist_cache(discord_id)
+            
+            # Also invalidate general user cache since blacklist status changed
+            from ..user_cache import invalidate_user_cache
+            invalidate_user_cache(discord_id)
             
             removed_data = blacklist_info.copy()
             

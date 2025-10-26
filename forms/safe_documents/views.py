@@ -1,4 +1,5 @@
 import discord
+from utils.message_manager import get_safe_documents_message
 
 class SafeDocumentsPinView(discord.ui.View):
     """Постоянный view для закрепленного сообщения с кнопкой подачи заявки"""
@@ -28,7 +29,7 @@ class SafeDocumentsPinView(discord.ui.View):
             
         except Exception as e:
             await interaction.response.send_message(
-                f"❌ Произошла ошибка при открытии формы: {str(e)}",
+                get_safe_documents_message(interaction.guild.id, "approval.error_general", "❌ Произошла ошибка при открытии формы").format(str(e)),
                 ephemeral=True
             )
 
@@ -118,7 +119,7 @@ class SafeDocumentsApplicationView(discord.ui.View):
             application_data = self._get_application_data(interaction)
             if not application_data:
                 await interaction.response.send_message(
-                    "❌ Не удалось получить данные заявки!",
+                    get_safe_documents_message(interaction.guild.id, "approval.error_not_found", "❌ Не удалось получить данные заявки!"),
                     ephemeral=True
                 )
                 return
@@ -129,7 +130,7 @@ class SafeDocumentsApplicationView(discord.ui.View):
             
         except Exception as e:
             await interaction.response.send_message(
-                f"❌ Произошла ошибка при одобрении заявки: {str(e)}",
+                get_safe_documents_message(interaction.guild.id, "approval.error_approval_failed", "❌ Произошла ошибка при одобрении заявки").format(str(e)),
                 ephemeral=True
             )
     
@@ -146,7 +147,7 @@ class SafeDocumentsApplicationView(discord.ui.View):
             application_data = self._get_application_data(interaction)
             if not application_data:
                 await interaction.response.send_message(
-                    "❌ Не удалось получить данные заявки!",
+                    get_safe_documents_message(interaction.guild.id, "approval.error_not_found", "❌ Не удалось получить данные заявки!"),
                     ephemeral=True
                 )
                 return
@@ -159,7 +160,7 @@ class SafeDocumentsApplicationView(discord.ui.View):
             
         except Exception as e:
             await interaction.response.send_message(
-                f"❌ Произошла ошибка при отклонении заявки: {str(e)}",
+                get_safe_documents_message(interaction.guild.id, "approval.error_rejection_failed", "❌ Произошла ошибка при отклонении заявки").format(str(e)),
                 ephemeral=True
             )
     
@@ -194,7 +195,7 @@ class SafeDocumentsApplicationView(discord.ui.View):
             
             if not can_edit:
                 await interaction.response.send_message(
-                    "❌ У вас нет прав для редактирования этой заявки!",
+                    get_safe_documents_message(interaction.guild.id, "approval.error_no_edit_permissions", "❌ У вас нет прав для редактирования этой заявки!"),
                     ephemeral=True
                 )
                 return
@@ -205,7 +206,7 @@ class SafeDocumentsApplicationView(discord.ui.View):
             
         except Exception as e:
             await interaction.response.send_message(
-                f"❌ Произошла ошибка при редактировании заявки: {str(e)}",
+                get_safe_documents_message(interaction.guild.id, "approval.error_edit_failed", "❌ Произошла ошибка при редактировании заявки: {0}").format(str(e)),
                 ephemeral=True
             )
 
@@ -251,7 +252,7 @@ class SafeDocumentsApprovedView(discord.ui.View):
             application_data = self._get_application_data(interaction)
             if not application_data:
                 await interaction.response.send_message(
-                    "❌ Не удалось получить данные заявки!",
+                    get_safe_documents_message(interaction.guild.id, "approval.error_not_found", "❌ Не удалось получить данные заявки!"),
                     ephemeral=True
                 )
                 return
@@ -262,7 +263,7 @@ class SafeDocumentsApprovedView(discord.ui.View):
             # Только модераторы могут редактировать одобренные заявки
             if not await manager.check_moderator_permissions(interaction.user, application_data.get('department')):
                 await interaction.response.send_message(
-                    "❌ Только модераторы могут редактировать одобренные заявки!",
+                    get_safe_documents_message(interaction.guild.id, "approval.error_only_moderators_can_edit_approved", "❌ Только модераторы могут редактировать одобренные заявки!"),
                     ephemeral=True
                 )
                 return
@@ -273,7 +274,7 @@ class SafeDocumentsApprovedView(discord.ui.View):
             
         except Exception as e:
             await interaction.response.send_message(
-                f"❌ Произошла ошибка при редактировании заявки: {str(e)}",
+                get_safe_documents_message(interaction.guild.id, "approval.error_edit_failed", "❌ Произошла ошибка при редактировании заявки: {0}").format(str(e)),
                 ephemeral=True
             )
 

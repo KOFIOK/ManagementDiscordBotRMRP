@@ -2,6 +2,7 @@ import discord
 from datetime import datetime
 
 from utils.config_manager import load_config
+from utils.message_manager import get_safe_documents_message, get_private_messages
 
 
 class SafeDocumentsManager:
@@ -37,7 +38,7 @@ class SafeDocumentsManager:
             channel_id = self.config.get('safe_documents_channel')
             if not channel_id:
                 await interaction.response.send_message(
-                    "❌ Канал для безопасных документов не настроен!",
+                    get_safe_documents_message(interaction.guild.id, "manager.error_channel_not_configured", "❌ Канал для безопасных документов не настроен!"),
                     ephemeral=True
                 )
                 return
@@ -45,7 +46,7 @@ class SafeDocumentsManager:
             channel = interaction.guild.get_channel(channel_id)
             if not channel:
                 await interaction.response.send_message(
-                    "❌ Канал для безопасных документов не найден!",
+                    get_safe_documents_message(interaction.guild.id, "manager.error_channel_not_found", "❌ Канал для безопасных документов не найден!"),
                     ephemeral=True
                 )
                 return
@@ -425,34 +426,43 @@ class SafeDocumentsManager:
             if not user:
                 return
             
+            # Определяем статус текст и эмодзи
             if status == 'approved':
-                embed = discord.Embed(
-                    title="✅ Заявка одобрена",
-                    description="Ваша заявка на безопасные документы была одобрена!",
-                    color=discord.Color.green()
-                )
+                status_emoji = "✅"
+                status_text = "одобрена"
+                embed_color = discord.Color.green()
             elif status == 'rejected':
-                embed = discord.Embed(
-                    title="❌ Заявка отклонена",
-                    description="Ваша заявка на безопасные документы была отклонена.",
-                    color=discord.Color.red()
-                )
-                
-                if reason:
-                    embed.add_field(
-                        name="📝 Причина",
-                        value=reason,
-                        inline=False
-                    )
+                status_emoji = "❌"
+                status_text = "отклонена"
+                embed_color = discord.Color.red()
             else:
                 return
             
+            embed = discord.Embed(
+                title=get_private_messages(guild.id, 'safe_documents.notification.title'),
+                description=get_private_messages(guild.id, 'safe_documents.notification.description').format(
+                    status=status_text,
+                    status_emoji=status_emoji,
+                    status_text=status_text
+                ),
+                color=embed_color
+            )
+            
+            if status == 'rejected' and reason:
+                embed.add_field(
+                    name="📝 Причина",
+                    value=reason,
+                    inline=False
+                )
+            
             embed.add_field(
                 name="📋 Данные заявки",
-                value=f"**Имя Фамилия:** {application_data.get('name', 'Не указано')}\n"
-                      f"**Статик:** {application_data.get('static', 'Не указано')}\n"
-                      f"**Телефон:** {application_data.get('phone', 'Не указано')}\n"
-                      f"**Почта:** {application_data.get('email', 'Не указано')}",
+                value=get_private_messages(guild.id, 'safe_documents.notification.application_data').format(
+                    name=application_data.get('name', 'Не указано'),
+                    static=application_data.get('static', 'Не указано'),
+                    phone=application_data.get('phone', 'Не указано'),
+                    email=application_data.get('email', 'Не указано')
+                ),
                 inline=False
             )
             

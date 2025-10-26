@@ -7,6 +7,7 @@ import discord
 from discord.ext import commands
 from typing import Dict, List, Optional, Any
 from utils.config_manager import load_config, save_config
+from utils.message_manager import get_settings_message
 
 
 class WarehouseSettingsView(discord.ui.View):
@@ -183,8 +184,9 @@ class WarehouseChannelModal(discord.ui.Modal):
             channel = ChannelParser.parse_channel_input(channel_text, interaction.guild)
             
             if not channel:
+                error_msg = get_settings_message(interaction.guild.id, "warehouse.error_channel_not_found", "❌ Канал '{0}' не найден!")
                 await interaction.response.send_message(
-                    f"❌ Канал '{channel_text}' не найден!", ephemeral=True
+                    error_msg.format(channel_text), ephemeral=True
                 )
                 return
             
@@ -197,22 +199,23 @@ class WarehouseChannelModal(discord.ui.Modal):
                 try:
                     from utils.warehouse_utils import send_warehouse_message
                     await send_warehouse_message(channel)
-                    message = f"✅ Канал запросов настроен: {channel.mention}\n📌 Закрепленное сообщение склада добавлено!"
+                    message = get_settings_message(interaction.guild.id, "warehouse.success_request_channel_set", "✅ Канал запросов настроен: {0}\n📌 Закрепленное сообщение склада добавлено!").format(channel.mention)
                 except Exception as e:
                     print(f"Ошибка создания сообщения склада: {e}")
-                    message = f"✅ Канал запросов настроен: {channel.mention}\n❗ Ошибка при добавлении закрепленного сообщения: {str(e)}"
+                    message = get_settings_message(interaction.guild.id, "warehouse.success_request_channel_set_error", "✅ Канал запросов настроен: {0}\n❗ Ошибка при добавлении закрепленного сообщения: {1}").format(channel.mention, str(e))
             elif self.config_key == "warehouse_submission_channel":
-                message = f"✅ Канал отправки заявок настроен: {channel.mention}\n📤 Все заявки склада будут отправляться в этот канал!"
+                message = get_settings_message(interaction.guild.id, "warehouse.success_submission_channel_set", "✅ Канал отправки заявок настроен: {0}\n📤 Все заявки склада будут отправляться в этот канал!").format(channel.mention)
             elif self.config_key == "warehouse_audit_channel":
-                message = f"✅ Канал аудита настроен: {channel.mention}"
+                message = get_settings_message(interaction.guild.id, "warehouse.success_audit_channel_set", "✅ Канал аудита настроен: {0}").format(channel.mention)
             else:
-                message = f"✅ Канал настроен: {channel.mention}"
+                message = get_settings_message(interaction.guild.id, "warehouse.success_channel_set", "✅ Канал настроен: {0}").format(channel.mention)
             
             await interaction.response.send_message(message, ephemeral=True)
             
         except Exception as e:
+            error_msg = get_settings_message(interaction.guild.id, "warehouse.error_general", "❌ Ошибка: {0}")
             await interaction.response.send_message(
-                f"❌ Ошибка: {str(e)}", ephemeral=True
+                error_msg.format(str(e)), ephemeral=True
             )
 
 

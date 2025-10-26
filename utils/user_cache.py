@@ -806,24 +806,3 @@ def print_cache_status():
 async def force_refresh_user_cache(user_id: int) -> Optional[Dict[str, Any]]:
     """Принудительное обновление конкретного пользователя"""
     return await _global_cache.force_refresh_user(user_id)
-
-
-def invalidate_user_cache(user_id: int) -> None:
-    """
-    Удалить конкретного пользователя из кэша
-    
-    Args:
-        user_id: Discord ID пользователя для удаления
-    """
-    if user_id in _global_cache._cache:
-        del _global_cache._cache[user_id]
-        del _global_cache._expiry[user_id]
-        _global_cache._stats['cache_size'] = len(_global_cache._cache)
-        print(f"🗑️ CACHE INVALIDATE: Пользователь {user_id} удален из кэша")
-
-
-def clear_user_cache() -> None:
-    """
-    Очистить весь кэш пользователей
-    """
-    _global_cache.clear_cache()

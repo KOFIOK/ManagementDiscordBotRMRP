@@ -12,6 +12,8 @@ from utils.config_manager import load_config, is_moderator_or_admin, is_administ
 from utils.database_manager import PersonnelManager
 from utils.database_manager.position_manager import position_manager
 from utils.nickname_manager import nickname_manager
+from utils.message_manager import get_message, get_private_messages, get_message_with_params, get_ui_label, get_role_reason, get_role_assignment_message, get_moderator_display_name
+from utils.message_service import MessageService
 from discord import ui
 import re
 
@@ -187,13 +189,14 @@ def handle_context_errors(func):
 class RecruitmentModal(ui.Modal, title="Принятие на службу"):
     """Modal for recruiting new personnel using PersonnelManager"""
     
-    def __init__(self, target_user: discord.Member):
-        super().__init__()
+    def __init__(self, target_user: discord.Member, guild_id: int):
+        super().__init__(title=get_message(guild_id, 'ui.modals.personnel_recruitment'))
         self.target_user = target_user
+        self.guild_id = guild_id
         
         self.first_name_input = ui.TextInput(
-            label="Имя",
-            placeholder="Например: Олег",
+            label=get_ui_label(guild_id, 'first_name'),
+            placeholder=get_message(guild_id, 'ui.placeholders.first_name'),
             min_length=2,
             max_length=25,
             required=True
@@ -201,8 +204,8 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
         self.add_item(self.first_name_input)
         
         self.last_name_input = ui.TextInput(
-            label="Фамилия",
-            placeholder="Например: Дубов",
+            label=get_ui_label(guild_id, 'last_name'),
+            placeholder=get_message(guild_id, 'ui.placeholders.last_name'),
             min_length=2,
             max_length=25,
             required=True
@@ -210,9 +213,9 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
         self.add_item(self.last_name_input)
         
         self.static_input = ui.TextInput(
-            label="Статик",
-            placeholder="123-456 (допускается 5-6 цифр)",
-            min_length=5,
+            label=get_message(guild_id, 'ui.labels.static'),
+            placeholder=get_message(guild_id, 'ui.placeholders.static'),
+            min_length=1,
             max_length=7,
             required=True
         )
@@ -238,16 +241,14 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
             
             if ' ' in first_name or '\t' in first_name:
                 await interaction.response.send_message(
-                    "❌ **Имя должно содержать только одно слово.**\n"
-                    "Пожалуйста, введите только имя без пробелов.",
+                    f"❌ Имя не должно содержать пробелы",
                     ephemeral=True
                 )
                 return
             
             if ' ' in last_name or '\t' in last_name:
                 await interaction.response.send_message(
-                    "❌ **Фамилия должна содержать только одно слово.**\n"
-                    "Пожалуйста, введите только фамилию без пробелов.",
+                    f"❌ Фамилия не должна содержать пробелы",
                     ephemeral=True
                 )
                 return
@@ -259,9 +260,9 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
             static = self.static_input.value.strip()
             formatted_static = self._format_static(static)
             if not formatted_static:
+                from utils.static_validator import StaticValidator
                 await interaction.response.send_message(
-                    "❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.\n"
-                    "Примеры: 123456, 123-456, 12345, 12-345, 123 456",
+                    StaticValidator.get_validation_error_message(),
                     ephemeral=True
                 )
                 return
@@ -320,14 +321,9 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
     
     def _format_static(self, static_input: str) -> str:
         """Auto-format static number to standard format"""
-        digits_only = re.sub(r'\D', '', static_input.strip())
-        
-        if len(digits_only) == 5:
-            return f"{digits_only[:2]}-{digits_only[2:]}"
-        elif len(digits_only) == 6:
-            return f"{digits_only[:3]}-{digits_only[3:]}"
-        else:
-            return ""
+        from utils.static_validator import StaticValidator
+        is_valid, formatted = StaticValidator.validate_and_format(static_input)
+        return formatted if is_valid else ""
     
     async def _process_recruitment_with_personnel_manager(self, interaction: discord.Interaction, full_name: str, static: str, rank: str) -> bool:
         """Process recruitment using PersonnelManager"""
@@ -413,7 +409,7 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                 # Step: Assign Discord roles and set nickname (like button approval does)
                 try:
                     config = load_config()
-                    await self._assign_military_roles(interaction.guild, config)
+                    await self._assign_military_roles(interaction.guild, config, interaction.user)
                     print(f"✅ RECRUITMENT: Role assignment process completed")
                 except Exception as role_error:
                     print(f"⚠️ RECRUITMENT: Failed to assign roles: {role_error}")
@@ -430,9 +426,12 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
             traceback.print_exc()
             return False
     
-    async def _assign_military_roles(self, guild, config):
+    async def _assign_military_roles(self, guild, config, moderator):
         """Assign military roles and set nickname (same as button approval)"""
         try:
+            # Get moderator display name for audit reasons
+            moderator_display = await get_moderator_display_name(moderator)
+            
             # Get military roles from config
             role_ids = config.get('military_roles', [])
             
@@ -441,7 +440,8 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                 role = guild.get_role(role_id)
                 if role and role not in self.target_user.roles:
                     try:
-                        await self.target_user.add_roles(role, reason="Принят на службу через ПКМ")
+                        reason = get_role_reason(guild.id, "role_assignment.approved", "Заявка на роль: одобрена").format(moderator=moderator_display)
+                        await self.target_user.add_roles(role, reason=reason)
                     except discord.Forbidden:
                         print(f"⚠️ RECRUITMENT: No permission to assign role {role.name}")
                     except Exception as e:
@@ -485,7 +485,7 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                     first_initial = first_name[0] if first_name else "И"
                     new_nickname = f"ВА | {first_initial}. {last_name}"
                 
-                await self.target_user.edit(nick=new_nickname, reason="Принят на службу через ПКМ (fallback)")
+                await self.target_user.edit(nick=new_nickname, reason=get_role_reason(self.target_user.guild.id, "nickname_change.personnel_acceptance", "Приём в организацию: изменён никнейм").format(moderator="система"))
                 print(f"✅ RECRUITMENT: Fallback nickname set: {new_nickname}")
             
         except discord.Forbidden:
@@ -536,6 +536,25 @@ async def recruit_user(interaction: discord.Interaction, user: discord.Member):
                 ephemeral=True
             )
             return
+        
+        # Check if user has a personnel record (even if dismissed)
+        cursor.execute("""
+            SELECT id, is_dismissal FROM personnel WHERE discord_id = %s
+        """, (user.id,))
+        existing_personnel = cursor.fetchone()
+        
+        if existing_personnel:
+            if existing_personnel['is_dismissal']:
+                # User was dismissed, can be recruited again
+                pass  # Continue with recruitment
+            else:
+                # User has personnel record but no active service - this shouldn't happen
+                await interaction.response.send_message(
+                    f"⚠️ **Найдена некорректная запись персонала для пользователя**\n\n"
+                    f"Обратитесь к администратору для исправления данных.",
+                    ephemeral=True
+                )
+                return
     
     # Check if user has active blacklist entry (only if not already in service)
     from utils.database_manager import personnel_manager
@@ -558,7 +577,7 @@ async def recruit_user(interaction: discord.Interaction, user: discord.Member):
         return
     
     # No blacklist, proceed with recruitment
-    modal = RecruitmentModal(user)
+    modal = RecruitmentModal(user, interaction.guild.id)
     await interaction.response.send_modal(modal)
     print(f"✅ Recruitment modal sent for {user.display_name}")
 
@@ -566,12 +585,13 @@ async def recruit_user(interaction: discord.Interaction, user: discord.Member):
 class DismissalModal(ui.Modal, title="Увольнение"):
     """Modal for dismissing personnel using PersonnelManager"""
     
-    def __init__(self, target_user: discord.Member):
+    def __init__(self, target_user: discord.Member, guild_id: int):
         super().__init__()
         self.target_user = target_user
+        self.guild_id = guild_id
         
         self.reason_input = ui.TextInput(
-            label="Причина увольнения",
+            label=get_ui_label(self.guild_id, 'dismissal_reason'),
             placeholder="ПСЖ, Нарушение устава, и т.д.",
             min_length=2,
             max_length=100,
@@ -848,7 +868,7 @@ class DismissalModal(ui.Modal, title="Увольнение"):
                 # Step: Remove Discord roles and reset nickname (like button dismissal does)
                 try:
                     config = load_config()
-                    await self._remove_military_roles_and_reset_nickname(interaction.guild, config)
+                    await self._remove_military_roles_and_reset_nickname(interaction.guild, config, interaction)
                     print(f"✅ DISMISSAL: Role removal process completed")
                 except Exception as role_error:
                     print(f"⚠️ DISMISSAL: Failed to remove roles: {role_error}")
@@ -865,7 +885,7 @@ class DismissalModal(ui.Modal, title="Увольнение"):
             traceback.print_exc()
             return False
     
-    async def _remove_military_roles_and_reset_nickname(self, guild, config):
+    async def _remove_military_roles_and_reset_nickname(self, guild, config, interaction):
         """Remove all roles except excluded ones, then set dismissal nickname using nickname_manager"""
         try:
             # Step 1: Remove ALL roles except excluded ones
@@ -881,7 +901,7 @@ class DismissalModal(ui.Modal, title="Увольнение"):
             # Remove all roles at once for better performance
             if roles_to_remove:
                 try:
-                    await self.target_user.remove_roles(*roles_to_remove, reason="Уволен со службы через ПКМ")
+                    await self.target_user.remove_roles(*roles_to_remove, reason=get_role_reason(guild.id, "role_removal.dismissal", "Увольнение: сняты роли").format(moderator=interaction.user.mention))
                     print(f"✅ DISMISSAL: Removed {len(roles_to_remove)} roles from {self.target_user.display_name}")
                 except discord.Forbidden:
                     print(f"⚠️ DISMISSAL: No permission to remove roles")
@@ -962,7 +982,7 @@ async def dismiss_user(interaction: discord.Interaction, user: discord.User):
         return
     
     # Open dismissal modal
-    modal = DismissalModal(target_user)
+    modal = DismissalModal(target_user, interaction.guild.id)
     await interaction.response.send_modal(modal)
     print(f"✅ Dismissal modal sent for {target_user.display_name}")
 
@@ -1200,7 +1220,7 @@ class PositionSelect(ui.Select):
             except:
                 pass
     
-    async def _assign_position_in_db(self, user_discord_id: int, position_id: str, position_name: str, moderator_discord_id: int, old_position_name: str = None) -> bool:
+    async def _assign_position_in_db(self, user_discord_id: int, position_id: str, position_name: str, moderator_discord_id: int, old_position_name: str = None, moderator_member: discord.Member = None) -> bool:
         """Assign position to user in database and create history record"""
         try:
             from utils.postgresql_pool import get_db_cursor
@@ -1315,8 +1335,8 @@ class PositionSelect(ui.Select):
                         new_position_id = int(position_id) if position_id.isdigit() else None
                         await position_manager.smart_update_user_position_roles(
                             user_member.guild,
-                            user_member,
-                            new_position_id
+                            new_position_id,
+                            moderator_member
                         )
                     except Exception as e:
                         print(f"⚠️ Error updating position roles: {e}")
@@ -1513,7 +1533,8 @@ class PositionSelect(ui.Select):
                     selected_position_id, 
                     position_name, 
                     interaction.user.id,
-                    old_position_name  # Pass the old position for history tracking
+                    old_position_name,  # Pass the old position for history tracking
+                    interaction.user  # Pass moderator member
                 )
                 print(f"🔄 DEPARTMENT CHANGE: Position assignment result: {position_assigned}")
                 
@@ -2066,7 +2087,9 @@ class PositionOnlySelect(ui.Select):
                 self.target_user.id, 
                 position_id, 
                 position_name, 
-                interaction.user.id
+                interaction.user.id,
+                None,  # old_position_name
+                interaction.user  # moderator_member
             )
             
             if not success:
@@ -2210,7 +2233,7 @@ class PositionOnlySelect(ui.Select):
             print(f"Error in position assignment: {e}")
             await interaction.followup.send(f"❌ **Ошибка:** {str(e)}", ephemeral=True)
     
-    async def _assign_position_in_db(self, user_discord_id: int, position_id: str, position_name: str, moderator_discord_id: int) -> bool:
+    async def _assign_position_in_db(self, user_discord_id: int, position_id: str, position_name: str, moderator_discord_id: int, moderator_member: discord.Member = None) -> bool:
         """Assign position to user in database and create history record (reuse existing logic)"""
         try:
             from utils.postgresql_pool import get_db_cursor
@@ -2311,7 +2334,8 @@ class PositionOnlySelect(ui.Select):
                         await position_manager.smart_update_user_position_roles(
                             user_member.guild,
                             user_member,
-                            new_position_id
+                            new_position_id,
+                            moderator_member
                         )
                     except Exception as e:
                         print(f"⚠️ Error updating position roles: {e}")
@@ -2511,11 +2535,23 @@ class RankChangeView(ui.View):
                 from utils.database_manager import rank_manager
                 
                 # Update roles using RankManager (old_rank already obtained above)
+                # Determine change_type based on action_id
+                if action_id == 1:
+                    change_type = "promotion"
+                elif action_id == 2:
+                    change_type = "demotion"
+                elif action_id == 4:
+                    change_type = "restoration"
+                else:
+                    change_type = "automatic"  # fallback
+                
                 role_success, role_message = await rank_manager.update_user_rank_roles(
                     interaction.guild, 
                     self.target_user, 
                     old_rank, 
-                    self.new_rank
+                    self.new_rank,
+                    interaction.user,
+                    change_type=change_type
                 )
                 
                 if not role_success:

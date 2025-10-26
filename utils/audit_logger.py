@@ -400,7 +400,7 @@ class PersonnelAuditLogger:
         name_with_static = f"{name} | {static}" if static else name
         
         embed.add_field(
-            name=get_audit_embed_field(guild_id, 'name_static', 'Имя Фамилия | 6 цифр статика'),
+            name=get_audit_embed_field(guild_id, 'name_static', 'Имя Фамилия | № Паспорта'),
             value=name_with_static,
             inline=False
         )
@@ -411,8 +411,8 @@ class PersonnelAuditLogger:
             inline=False
         )
         
-        # Format date as dd-MM-yyyy using Moscow time
-        action_date = moscow_time.strftime('%d-%m-%Y')
+        # Format date as dd.MM.yyyy using Moscow time
+        action_date = moscow_time.strftime('%d.%m.%Y')
         embed.add_field(
             name=get_audit_embed_field(guild_id, 'action_date', 'Дата Действия'),
             value=action_date,

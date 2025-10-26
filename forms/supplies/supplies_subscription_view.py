@@ -1,6 +1,6 @@
 import discord
 from utils.config_manager import load_config
-from utils.message_manager import get_supplies_message, get_supplies_color, get_role_reason
+from utils.message_manager import get_supplies_message, get_supplies_color, get_role_reason, get_moderator_display_name
 
 
 class SuppliesSubscriptionView(discord.ui.View):
@@ -52,6 +52,8 @@ class SuppliesSubscriptionView(discord.ui.View):
                 return
             
             user = interaction.user
+            # Get user display name for audit reasons
+            user_display = await get_moderator_display_name(user)
             
             if subscribe:
                 # Включаем уведомления
@@ -61,7 +63,7 @@ class SuppliesSubscriptionView(discord.ui.View):
                         ephemeral=True
                     )
                 else:
-                    reason = get_role_reason(interaction.guild.id, "supplies_subscription.enabled", "Подписка на поставки: включена").format(user=user.mention)
+                    reason = get_role_reason(interaction.guild.id, "supplies_subscription.enabled", "Подписка на поставки: включена").format(user=user_display)
                     await user.add_roles(subscription_role, reason=reason)
                     await interaction.response.send_message(
                         get_supplies_message(interaction.guild.id, "subscription.success_subscribed"),
@@ -75,7 +77,7 @@ class SuppliesSubscriptionView(discord.ui.View):
                         ephemeral=True
                     )
                 else:
-                    await user.remove_roles(subscription_role, reason=get_role_reason(interaction.guild.id, "supplies_subscription.disabled", "Подписка на поставки: отключена").format(user=user.mention))
+                    await user.remove_roles(subscription_role, reason=get_role_reason(interaction.guild.id, "supplies_subscription.disabled", "Подписка на поставки: отключена").format(user=user_display))
                     await interaction.response.send_message(
                         get_supplies_message(interaction.guild.id, "subscription.success_unsubscribed"),
                         ephemeral=True

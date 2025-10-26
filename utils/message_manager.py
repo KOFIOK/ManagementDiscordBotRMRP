@@ -477,6 +477,27 @@ def get_role_reason(guild_id: int, key_path: str, default: str = None) -> str:
     """
     return get_message(guild_id, f"role_reasons.{key_path}", default)
 
+async def get_moderator_display_name(moderator) -> str:
+    """
+    Get moderator display name for audit messages.
+    Returns display_name of the Discord user, or "система" for system actions.
+
+    Args:
+        moderator: Discord Member/User object, or 0/"система" for system actions
+
+    Returns:
+        str: Moderator's display name or "система"
+    """
+    if moderator == 0 or moderator == "система" or moderator is None:
+        return "система"
+
+    # If it's a Discord user/member object, return display_name
+    if hasattr(moderator, 'display_name'):
+        return moderator.display_name
+
+    # Fallback
+    return str(moderator)
+
 def get_safe_documents_message(guild_id: int, key_path: str, default: str = None) -> str:
     """
     Get safe documents message by dot-separated key path (e.g., 'approval.error_not_found')

@@ -9,7 +9,7 @@ import logging
 from typing import Optional, Dict, Any, List, Tuple
 from ..postgresql_pool import get_db_cursor
 from utils.config_manager import load_config, save_config
-from utils.message_manager import get_role_reason
+from utils.message_manager import get_role_reason, get_moderator_display_name
 
 logger = logging.getLogger(__name__)
 
@@ -325,6 +325,9 @@ class RankManager:
             if not new_rank_data:
                 return False, f"Новый ранг '{new_rank_name}' не найден в БД"
             
+            # Get moderator display name for audit reasons
+            moderator_display = await get_moderator_display_name(moderator)
+            
             # Determine change type (promotion/demotion)
             change_type = "automatic"  # Default
             if old_rank_data and new_rank_data:
@@ -339,9 +342,7 @@ class RankManager:
             if old_rank_data and old_rank_data.get('role_id'):
                 old_role = guild.get_role(old_rank_data['role_id'])
                 if old_role and old_role in user.roles:
-                    reason = get_role_reason(guild.id, f"rank_change.{change_type}", "Смена ранга: {old_rank} → {new_rank}").format(old_rank=old_rank_name, new_rank=new_rank_name)
-                    if moderator:
-                        reason = reason.replace("автоматически", f"({moderator.mention})")
+                    reason = get_role_reason(guild.id, f"rank_change.{change_type}", "Смена ранга: {old_rank} → {new_rank}").format(old_rank=old_rank_name, new_rank=new_rank_name, moderator=moderator_display)
                     await user.remove_roles(old_role, reason=reason)
                     logger.info(f"✅ Removed old rank role {old_role.name} from {user.display_name}")
                 else:
@@ -353,9 +354,7 @@ class RankManager:
             if new_rank_data.get('role_id'):
                 new_role = guild.get_role(new_rank_data['role_id'])
                 if new_role and new_role not in user.roles:
-                    reason = get_role_reason(guild.id, f"rank_change.{change_type}", "Смена ранга: {old_rank} → {new_rank}").format(old_rank=old_rank_name or "нет", new_rank=new_rank_name)
-                    if moderator:
-                        reason = reason.replace("автоматически", f"({moderator.mention})")
+                    reason = get_role_reason(guild.id, f"rank_change.{change_type}", "Смена ранга: {old_rank} → {new_rank}").format(old_rank=old_rank_name or "нет", new_rank=new_rank_name, moderator=moderator_display)
                     await user.add_roles(new_role, reason=reason)
                     logger.info(f"✅ Added new rank role {new_role.name} to {user.display_name}")
                     

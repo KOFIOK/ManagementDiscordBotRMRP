@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 
 from utils.config_manager import load_config
-from utils.message_manager import get_department_applications_message, get_private_messages, get_ui_button, get_military_term, get_ui_label, get_role_reason
+from utils.message_manager import get_department_applications_message, get_private_messages, get_ui_button, get_military_term, get_ui_label, get_role_reason, get_moderator_display_name
 from utils.ping_manager import ping_manager
 from utils.nickname_manager import nickname_manager
 from utils import get_safe_personnel_name
@@ -999,6 +999,9 @@ class DepartmentApplicationView(ui.View):
     
     async def _assign_department_position_roles(self, user: discord.Member, dept_code: str, moderator: discord.Member):
         """Assign assignable position roles for the department"""
+        # Get moderator display name for audit reasons
+        moderator_display = await get_moderator_display_name(moderator)
+        
         assignable_role_ids = ping_manager.get_department_assignable_position_roles(dept_code)
         
         logger.info(f"Attempting to assign position roles for {dept_code} to {user.display_name}")
@@ -1021,7 +1024,7 @@ class DepartmentApplicationView(ui.View):
             logger.info(f"Attempting to assign role {role.name} (ID: {role_id}) to {user.display_name}")
             
             try:
-                reason = get_role_reason(user.guild.id, "position_assignment.assigned", "Назначение должности").format(position=role.name, moderator=moderator.mention)
+                reason = get_role_reason(user.guild.id, "position_assignment.assigned", "Назначение должности").format(position=role.name, moderator=moderator_display)
                 await user.add_roles(role, reason=reason)
                 assigned_roles.append(role.name)
                 logger.info(f"Successfully assigned role {role.name} to {user.display_name}")

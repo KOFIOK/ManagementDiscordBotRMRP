@@ -8,7 +8,7 @@ import discord
 from discord import ui
 import asyncio
 from utils.config_manager import is_administrator, load_config, is_moderator_or_admin
-from utils.message_manager import get_private_messages, get_role_reason
+from utils.message_manager import get_private_messages, get_role_reason, get_moderator_display_name
 from utils.message_service import MessageService
 # PostgreSQL integration with enhanced personnel management
 from utils.database_manager import personnel_manager
@@ -427,6 +427,9 @@ class RoleApplicationApprovalView(ui.View):
     async def _assign_roles(self, user, guild, config, moderator):
         """Assign appropriate roles to user"""
         try:
+            # Get moderator display name for audit reasons
+            moderator_display = await get_moderator_display_name(moderator)
+            
             if self.application_data["type"] == "military":
                 role_ids = config.get('military_roles', [])
                 
@@ -448,7 +451,7 @@ class RoleApplicationApprovalView(ui.View):
                 role = guild.get_role(role_id)
                 if role and role not in user.roles:
                     try:
-                        reason = get_role_reason(guild.id, "role_assignment.approved", "Заявка на роль: одобрена").format(moderator=moderator.mention if moderator else "автоматически")
+                        reason = get_role_reason(guild.id, "role_assignment.approved", "Заявка на роль: одобрена").format(moderator=moderator_display)
                         await user.add_roles(role, reason=reason)
                     except discord.Forbidden:
                         print(f"No permission to assign role {role.name}")

@@ -12,7 +12,7 @@ from utils.config_manager import load_config, is_moderator_or_admin, is_administ
 from utils.database_manager import PersonnelManager
 from utils.database_manager.position_manager import position_manager
 from utils.nickname_manager import nickname_manager
-from utils.message_manager import get_message, get_private_messages, get_message_with_params, get_ui_label, get_role_reason, get_role_assignment_message
+from utils.message_manager import get_message, get_private_messages, get_message_with_params, get_ui_label, get_role_reason, get_role_assignment_message, get_moderator_display_name
 from utils.message_service import MessageService
 from discord import ui
 import re
@@ -429,6 +429,9 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
     async def _assign_military_roles(self, guild, config, moderator):
         """Assign military roles and set nickname (same as button approval)"""
         try:
+            # Get moderator display name for audit reasons
+            moderator_display = await get_moderator_display_name(moderator)
+            
             # Get military roles from config
             role_ids = config.get('military_roles', [])
             
@@ -437,7 +440,7 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                 role = guild.get_role(role_id)
                 if role and role not in self.target_user.roles:
                     try:
-                        reason = get_role_reason(guild.id, "role_assignment.approved", "Заявка на роль: одобрена").format(moderator=moderator.mention)
+                        reason = get_role_reason(guild.id, "role_assignment.approved", "Заявка на роль: одобрена").format(moderator=moderator_display)
                         await self.target_user.add_roles(role, reason=reason)
                     except discord.Forbidden:
                         print(f"⚠️ RECRUITMENT: No permission to assign role {role.name}")

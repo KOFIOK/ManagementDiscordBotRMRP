@@ -6,7 +6,7 @@ Simple version: positions with Discord roles only
 import discord
 from typing import Optional, Dict, List, Any, Tuple
 from utils.postgresql_pool import get_db_cursor
-from utils.message_manager import get_role_reason
+from utils.message_manager import get_role_reason, get_moderator_display_name
 
 class PositionManager:
     """Simple position manager - just positions and roles"""
@@ -232,6 +232,9 @@ class PositionManager:
                                              new_position_id: Optional[int], moderator=None) -> bool:
         """Smart update - automatically detect current position roles and remove them (optimized)"""
         try:
+            # Get moderator display name for audit reasons
+            moderator_display = await get_moderator_display_name(moderator)
+            
             # Get position roles from cache (much faster than DB query)
             cache_data = self._get_position_roles_cached()
             all_position_roles = cache_data['role_to_position']  # {role_id: position_id}
@@ -261,7 +264,7 @@ class PositionManager:
             # Remove old position roles (if any)
             if roles_to_remove:
                 try:
-                    reason = get_role_reason(guild.id, "role_removal.position_change", "Смена должности: снята роль").format(moderator=moderator.mention if moderator else "система")
+                    reason = get_role_reason(guild.id, "role_removal.position_change", "Смена должности: снята роль").format(moderator=moderator_display)
                     await user.remove_roles(*roles_to_remove, reason=reason)
                     for role in roles_to_remove:
                         print(f"🔄 Removed position role: {role.name}")

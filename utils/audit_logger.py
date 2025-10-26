@@ -379,23 +379,23 @@ class PersonnelAuditLogger:
         moscow_time = datetime.now(moscow_tz)
         
         # Parse color (handle both hex string and int)
-        color_value = audit_config.get('color', self.AUDIT_COLOR)
+        color_value = audit_config.get('color', "#055000")
         if isinstance(color_value, str) and color_value.startswith('#'):
             color_value = int(color_value[1:], 16)
         elif isinstance(color_value, str):
             try:
                 color_value = int(color_value, 16)
             except ValueError:
-                color_value = self.AUDIT_COLOR
+                color_value = 0x055000
         
         embed = discord.Embed(
-            title=audit_config.get('title', self.AUDIT_TITLE),
+            title=audit_config.get('title', "Кадровый аудит"),
             color=color_value,
             timestamp=moscow_time
         )
         
         # Set thumbnail
-        thumbnail_url = audit_config.get('thumbnail', self.AUDIT_THUMBNAIL)
+        thumbnail_url = audit_config.get('thumbnail', "https://i.imgur.com/07MRSyl.png")
         if thumbnail_url:
             embed.set_thumbnail(url=thumbnail_url)
         

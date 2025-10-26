@@ -5,7 +5,7 @@ import discord
 from discord import ui
 from utils.config_manager import load_config, is_moderator_or_admin
 from utils.leave_request_storage import LeaveRequestStorage
-from utils.message_manager import get_leave_requests_message, get_private_messages
+from utils.message_manager import get_leave_requests_message, get_private_messages, get_message
 from utils.message_service import MessageService
 class LeaveRequestButton(ui.View):
     """Persistent button for submitting leave requests"""
@@ -114,7 +114,7 @@ class LeaveRequestApprovalView(ui.View):
             if (request["user_id"] == interaction.user.id and 
                 not interaction.user.guild_permissions.administrator):
                 embed = discord.Embed(
-                    title=get_leave_requests_message(interaction.guild.id, "templates.permissions.no_access").format(reason="рассматривать свою собственную заявку"),
+                    title=get_message(interaction.guild.id, "templates.permissions.no_access").format(reason="рассматривать свою собственную заявку"),
                     description="Модераторы не могут рассматривать собственные заявки.",
                     color=discord.Color.red()
                 )
@@ -143,7 +143,7 @@ class LeaveRequestApprovalView(ui.View):
                     )
                 
                 embed = discord.Embed(
-                    title=get_leave_requests_message(interaction.guild.id, "templates.status.completed").format(action="Заявка на отгул одобрена"),
+                    title=f"{get_leave_requests_message(interaction.guild.id, 'templates.status.completed')} Заявка на отгул одобрена",
                     description=f"Заявка пользователя {request['name']} была одобрена.",
                     color=discord.Color.green()
                 )
@@ -206,7 +206,7 @@ class LeaveRequestApprovalView(ui.View):
             if (request["user_id"] == interaction.user.id and 
                 not interaction.user.guild_permissions.administrator):
                 embed = discord.Embed(
-                    title=get_leave_requests_message(interaction.guild.id, "templates.permissions.no_access").format(reason="отклонять свою собственную заявку"),
+                    title=get_message(interaction.guild.id, "templates.permissions.no_access").format(reason="отклонять свою собственную заявку"),
                     description="Модераторы не могут рассматривать собственные заявки.",
                     color=discord.Color.red()
                 )
@@ -267,7 +267,7 @@ class LeaveRequestApprovalView(ui.View):
                 }.get(request["status"], request["status"])
                 
                 embed = discord.Embed(
-                    title=get_leave_requests_message(interaction.guild.id, "templates.permissions.no_access").format(reason="Удалять заявку может только её автор или администратор"),
+                    title=get_message(interaction.guild.id, "templates.permissions.no_access").format(reason="Удалять заявку может только её автор или администратор"),
                     description=f"Заявка уже была рассмотрена ({status_text}). Удалить можно только заявки, ожидающие рассмотрения.",
                     color=discord.Color.red()
                 )

@@ -277,7 +277,7 @@ class SuppliesManager:
             if object_key in active_timers:
                 del active_timers[object_key]
                 self._save_data(data)
-                print(get_supplies_message(0, "templates.status.completed").format(action=f"Таймер для {object_key} отменен"))
+                print(f"{get_supplies_message(0, 'templates.status.completed')} Таймер для {object_key} отменен")
                 return True
             else:
                 print(f"⚠️ Активный таймер для {object_key} не найден")
@@ -334,7 +334,7 @@ class SuppliesManager:
                 
                 active_timers[object_key]["notification_messages"][f"{message_type}_message_id"] = message_id
                 self._save_data(data)
-                print(get_supplies_message(0, "templates.status.completed").format(action=f"Сообщение {message_type} сохранено для {object_key} (ID: {message_id})"))
+                print(f"{get_supplies_message(0, 'templates.status.completed')} Сообщение {message_type} сохранено для {object_key} (ID: {message_id})")
             
         except Exception as e:
             print(get_supplies_message(0, "templates.errors.processing").format(object="сохранения ID сообщения", error=e))

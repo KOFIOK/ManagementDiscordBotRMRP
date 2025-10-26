@@ -48,7 +48,7 @@ templates:
     processing: "{templates.base.processing_prefix} Обрабатывается..."
     approved: "{templates.base.success_prefix} Одобрено"
     rejected: "{templates.base.error_prefix} Отказано"
-    completed: "{templates.base.success_prefix} {action} выполнено успешно"
+    completed: "{templates.base.success_prefix} Выполнено успешно"
     failed: "{templates.base.error_prefix} {action} не удалось"
 
   # Шаблоны сущностей
@@ -155,7 +155,7 @@ systems:
 
   department_applications:
     not_transfer: "{templates.errors.validation} Эта кнопка доступна только для заявлений на перевод"
-    transfer_permission_denied: "{templates.permissions.no_access} выдачи разрешения на перевод. Это действие доступно только модераторам"
+    transfer_permission_denied: "{templates.base.error_prefix} Доступ запрещен: выдачи разрешения на перевод. Это действие доступно только модераторам"
     transfer_already_permitted: "{templates.errors.already_exists} Разрешение уже было дано для этого перевода"
     transfer_permission_granted: "{templates.status.completed} Разрешение на перевод выдано! Ожидаем одобрения руководства нового подразделения"
     transfer_completed: "{templates.status.completed} Перевод пользователя выполнен! Роли подразделения и должности назначены автоматически"
@@ -464,11 +464,11 @@ private_messages:
 
   safe_documents:
     notification:
-      title: "ℹ️ Заявка на сейф документы"
+      title: "ℹ️ Заявка на сейф документов"
       description: |
         Ваша заявка на подачу в сейф документов была {status}.
 
-        **Статус:** {status_emoji} {status_text}
+        **Статус:** `{status_emoji} {status_text}`
       application_data: |
         **Имя Фамилия:** {name}
         **Статик:** {static}

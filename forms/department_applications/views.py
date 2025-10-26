@@ -312,7 +312,7 @@ class DepartmentApplicationView(ui.View):
             
             # If not admin and not moderator, show basic access denied message
             if not (is_admin or is_moderator):
-                error_msg = get_department_applications_message(interaction.guild.id, "transfer.error_no_permissions", "❌ У вас нет прав для выдачи разрешения на перевод. Это действие доступно только модераторам.")
+                error_msg = get_department_applications_message(interaction.guild.id, "transfer_permission_denied", "❌ У вас нет прав для выдачи разрешения на перевод. Это действие доступно только модераторам.")
                 await interaction.response.send_message(
                     error_msg,
                     ephemeral=True
@@ -481,8 +481,8 @@ class DepartmentApplicationView(ui.View):
                 # Send DM to user
                 try:
                     dm_embed = discord.Embed(
-                        title=get_private_messages(interaction.guild.id, 'private_messages.department_applications.transfer_approval.title'),
-                        description=get_private_messages(interaction.guild.id, 'private_messages.department_applications.transfer_approval.description').format(
+                        title=get_private_messages(interaction.guild.id, 'department_applications.transfer_approval.title'),
+                        description=get_private_messages(interaction.guild.id, 'department_applications.transfer_approval.description').format(
                             department_code=self.application_data['department_code']
                         ),
                         color=discord.Color.green(),
@@ -625,8 +625,8 @@ class DepartmentApplicationView(ui.View):
                 # Send DM to user
                 try:
                     dm_embed = discord.Embed(
-                        title=get_private_messages(interaction.guild.id, 'private_messages.department_applications.approval.title'),
-                        description=get_private_messages(interaction.guild.id, 'private_messages.department_applications.approval.description').format(
+                        title=get_private_messages(interaction.guild.id, 'department_applications.approval.title'),
+                        description=get_private_messages(interaction.guild.id, 'department_applications.approval.description').format(
                             department_code=self.application_data['department_code']
                         ),
                         color=discord.Color.green(),

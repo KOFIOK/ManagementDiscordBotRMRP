@@ -17,7 +17,7 @@ import discord
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any, Tuple
 from enum import Enum
-from utils.message_manager import get_audit_embed_field
+from utils.message_manager import get_audit_embed_field, get_audit_config, get_blacklist_config
 
 
 class AuditAction:
@@ -216,11 +216,6 @@ class PersonnelAuditLogger:
         )
     """
     
-    # Standard audit embed configuration
-    AUDIT_TITLE = "Кадровый аудит ВС РФ"
-    AUDIT_COLOR = 0x055000  # Green color from original template
-    AUDIT_THUMBNAIL = "https://i.imgur.com/07MRSyl.png"
-    
     def __init__(self):
         """Initialize audit logger"""
         pass
@@ -278,12 +273,16 @@ class PersonnelAuditLogger:
             if not moderator_display:
                 moderator_display = moderator.display_name
             
+            # Get audit configuration
+            audit_config = get_audit_config(guild.id)
+            
             # Create audit embed
             embed = await self._create_base_embed(
                 guild_id=guild.id,
                 action=action,
                 moderator_display=moderator_display,
-                personnel_data=personnel_data
+                personnel_data=personnel_data,
+                audit_config=audit_config
             )
             
             # Add conditional fields
@@ -361,7 +360,8 @@ class PersonnelAuditLogger:
         guild_id: int,
         action: str,
         moderator_display: str,
-        personnel_data: Dict[str, Any]
+        personnel_data: Dict[str, Any],
+        audit_config: Dict[str, Any]
     ) -> discord.Embed:
         """
         Create base audit embed with standard fields.
@@ -378,14 +378,26 @@ class PersonnelAuditLogger:
         moscow_tz = timezone(timedelta(hours=3))
         moscow_time = datetime.now(moscow_tz)
         
+        # Parse color (handle both hex string and int)
+        color_value = audit_config.get('color', self.AUDIT_COLOR)
+        if isinstance(color_value, str) and color_value.startswith('#'):
+            color_value = int(color_value[1:], 16)
+        elif isinstance(color_value, str):
+            try:
+                color_value = int(color_value, 16)
+            except ValueError:
+                color_value = self.AUDIT_COLOR
+        
         embed = discord.Embed(
-            title=self.AUDIT_TITLE,
-            color=self.AUDIT_COLOR,
+            title=audit_config.get('title', self.AUDIT_TITLE),
+            color=color_value,
             timestamp=moscow_time
         )
         
         # Set thumbnail
-        embed.set_thumbnail(url=self.AUDIT_THUMBNAIL)
+        thumbnail_url = audit_config.get('thumbnail', self.AUDIT_THUMBNAIL)
+        if thumbnail_url:
+            embed.set_thumbnail(url=thumbnail_url)
         
         # Standard fields
         embed.add_field(
@@ -638,50 +650,66 @@ class PersonnelAuditLogger:
                 # Continue anyway to send Discord notification
             
             # Create embed with fields (not description for better formatting)
+            blacklist_config = get_blacklist_config(guild.id)
+            
+            # Parse color
+            color_value = blacklist_config.get('color', 0xED4245)
+            if isinstance(color_value, str) and color_value.startswith('#'):
+                color_value = int(color_value[1:], 16)
+            elif isinstance(color_value, str):
+                try:
+                    color_value = int(color_value, 16)
+                except ValueError:
+                    color_value = 0xED4245
+            
             embed = discord.Embed(
-                title="📋 Новое дело",
-                color=0xED4245  # Red color
+                title=blacklist_config.get('title', "📋 Новое дело"),
+                color=color_value
             )
             
-            embed.set_thumbnail(url="https://i.imgur.com/07MRSyl.png")
+            # Set thumbnail
+            thumbnail_url = blacklist_config.get('thumbnail')
+            if thumbnail_url:
+                embed.set_thumbnail(url=thumbnail_url)
             
             # Field 1: Кто выдаёт
+            fields = blacklist_config.get('fields', {})
             embed.add_field(
-                name="**1. Кто выдаёт**",
+                name=fields.get('moderator', "**1. Кто выдаёт**"),
                 value=moderator_display,
                 inline=False
             )
             
             # Field 2: Кому
             embed.add_field(
-                name="**2. Кому**",
+                name=fields.get('target', "**2. Кому**"),
                 value=target_display,
                 inline=False
             )
             
             # Field 3: Причина
             embed.add_field(
-                name="**3. Причина**",
+                name=fields.get('reason', "**3. Причина**"),
                 value="Неустойка",
                 inline=False
             )
             
             # Fields 4-5: Даты (inline для двух столбцов)
             embed.add_field(
-                name="**4. Дата начала**",
+                name=fields.get('start_date', "**4. Дата начала**"),
                 value=start_date_str,
                 inline=True
             )
             
             embed.add_field(
-                name="**5. Дата окончания**",
+                name=fields.get('end_date', "**5. Дата окончания**"),
                 value=end_date_str,
                 inline=True
             )
             
             # Field 6: Доказательства
             embed.add_field(
-                name="**6. Доказательства**",
+                name=fields.get('evidence', "**6. Доказательства**"),
                 value=audit_message_url if audit_message_url else "Не указано",
                 inline=False
             )
@@ -989,20 +1017,62 @@ class PersonnelAuditLogger:
             end_date_str = end_date.strftime('%d.%m.%Y')
             timestamp_str = start_date.strftime('%d.%m.%Y %H:%M')
             
+            # Get blacklist configuration
+            blacklist_config = get_blacklist_config(guild.id)
+            
+            # Parse color
+            color_value = blacklist_config.get('color', 0xED4245)
+            if isinstance(color_value, str) and color_value.startswith('#'):
+                color_value = int(color_value[1:], 16)
+            elif isinstance(color_value, str):
+                try:
+                    color_value = int(color_value, 16)
+                except ValueError:
+                    color_value = 0xED4245
+            
             # Create embed
             embed = discord.Embed(
-                title="📋 Новое дело",
-                color=0xED4245  # Red color
+                title=blacklist_config.get('title', "📋 Новое дело"),
+                color=color_value
             )
             
-            embed.set_thumbnail(url="https://i.imgur.com/07MRSyl.png")
+            # Set thumbnail
+            thumbnail_url = blacklist_config.get('thumbnail')
+            if thumbnail_url:
+                embed.set_thumbnail(url=thumbnail_url)
             
-            embed.add_field(name="**1. Кто выдаёт**", value=moderator_display, inline=False)
-            embed.add_field(name="**2. Кому**", value=target_display, inline=False)
-            embed.add_field(name="**3. Причина**", value=reason, inline=False)
-            embed.add_field(name="**4. Дата начала**", value=start_date_str, inline=True)
-            embed.add_field(name="**5. Дата окончания**", value=end_date_str, inline=True)
-            embed.add_field(name="**6. Доказательства**", value=evidence_url if evidence_url else "Не указано", inline=False)
+            # Add fields using configuration
+            fields = blacklist_config.get('fields', {})
+            embed.add_field(
+                name=fields.get('moderator', "**1. Кто выдаёт**"), 
+                value=moderator_display, 
+                inline=False
+            )
+            embed.add_field(
+                name=fields.get('target', "**2. Кому**"), 
+                value=target_display, 
+                inline=False
+            )
+            embed.add_field(
+                name=fields.get('reason', "**3. Причина**"), 
+                value=reason, 
+                inline=False
+            )
+            embed.add_field(
+                name=fields.get('start_date', "**4. Дата начала**"), 
+                value=start_date_str, 
+                inline=True
+            )
+            embed.add_field(
+                name=fields.get('end_date', "**5. Дата окончания**"), 
+                value=end_date_str, 
+                inline=True
+            )
+            embed.add_field(
+                name=fields.get('evidence', "**6. Доказательства**"), 
+                value=evidence_url if evidence_url else "Не указано", 
+                inline=False
+            )
             
             embed.set_footer(text=timestamp_str)
             
@@ -1017,12 +1087,14 @@ class PersonnelAuditLogger:
             )
             
             success_message = (
-                f"✅ Пользователь **{personnel_data['name']}** успешно добавлен в чёрный список.\n\n"
-                f"**Детали:**\n"
-                f"• Причина: {reason}\n"
-                f"• Период: {start_date_str} - {end_date_str}\n"
-                f"• Добавил: {moderator.display_name}\n\n"
-                f"[Посмотреть запись в канале чёрного списка]({blacklist_message.jump_url})"
+                blacklist_config['success']['title'].format(name=personnel_data['name']) + "\n\n" +
+                blacklist_config['success']['details'].format(
+                    reason=reason,
+                    start_date=start_date_str,
+                    end_date=end_date_str,
+                    moderator=moderator.display_name
+                ) + "\n\n" +
+                blacklist_config['success']['view_link'].format(link=blacklist_message.jump_url)
             )
             
             print(f"✅ Manual blacklist successful for {personnel_data['name']}")

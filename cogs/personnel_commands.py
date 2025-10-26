@@ -610,7 +610,7 @@ class PersonnelCommands(commands.Cog):
                     try:
                         from utils.database_manager import rank_manager
                         role_success, role_message = await rank_manager.update_user_rank_roles(
-                            interaction.guild, сотрудник, old_rank, звание
+                            interaction.guild, сотрудник, old_rank, звание, change_type="promotion", moderator=interaction.user
                         )
                         if not role_success:
                             print(f"Warning: Failed to update Discord roles: {role_message}")
@@ -755,7 +755,7 @@ class PersonnelCommands(commands.Cog):
                     try:
                         from utils.database_manager import rank_manager
                         role_success, role_message = await rank_manager.update_user_rank_roles(
-                            interaction.guild, сотрудник, old_rank, звание
+                            interaction.guild, сотрудник, old_rank, звание, change_type="demotion", moderator=interaction.user
                         )
                         if not role_success:
                             print(f"Warning: Failed to update Discord roles: {role_message}")

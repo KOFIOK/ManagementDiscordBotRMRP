@@ -743,6 +743,51 @@ def get_audit_embed_field(guild_id: int, field_key: str, default: str = None) ->
     """
     return get_message(guild_id, f"audit.embed_fields.{field_key}", default)
 
+def get_audit_config(guild_id: int) -> Dict[str, Any]:
+    """
+    Get complete audit embed configuration for the guild.
+    
+    Args:
+        guild_id: Discord guild ID
+        
+    Returns:
+        Dict with audit configuration (title, color, thumbnail)
+    """
+    return {
+        'title': get_message(guild_id, 'audit.title', "Кадровый аудит ВС РФ"),
+        'color': get_message(guild_id, 'audit.color', "#055000"),
+        'thumbnail': get_message(guild_id, 'audit.thumbnail', "https://i.imgur.com/07MRSyl.png")
+    }
+
+def get_blacklist_config(guild_id: int) -> Dict[str, Any]:
+    """
+    Get complete blacklist embed configuration for the guild.
+    
+    Args:
+        guild_id: Discord guild ID
+        
+    Returns:
+        Dict with blacklist configuration
+    """
+    return {
+        'title': get_message(guild_id, 'blacklist.title', "📋 Новое дело"),
+        'color': get_message(guild_id, 'blacklist.color', "#ED4245"),
+        'thumbnail': get_message(guild_id, 'blacklist.thumbnail', "https://i.imgur.com/07MRSyl.png"),
+        'fields': {
+            'moderator': get_message(guild_id, 'blacklist.embed_fields.moderator', "**1. Кто выдаёт**"),
+            'target': get_message(guild_id, 'blacklist.embed_fields.target', "**2. Кому**"),
+            'reason': get_message(guild_id, 'blacklist.embed_fields.reason', "**3. Причина**"),
+            'start_date': get_message(guild_id, 'blacklist.embed_fields.start_date', "**4. Дата начала**"),
+            'end_date': get_message(guild_id, 'blacklist.embed_fields.end_date', "**5. Дата окончания**"),
+            'evidence': get_message(guild_id, 'blacklist.embed_fields.evidence', "**6. Доказательства**")
+        },
+        'success': {
+            'title': get_message(guild_id, 'blacklist.success.title', "✅ Пользователь **{name}** успешно добавлен в чёрный список."),
+            'details': get_message(guild_id, 'blacklist.success.details', "**Детали:**\n• Причина: {reason}\n• Период: {start_date} - {end_date}\n• Добавил: {moderator}"),
+            'view_link': get_message(guild_id, 'blacklist.success.view_link', "[Посмотреть запись в канале чёрного списка]({link})")
+        }
+    }
+
 
 # Initialize on import
 _ensure_messages_directory()

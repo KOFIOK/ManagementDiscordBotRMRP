@@ -8,7 +8,7 @@ import discord
 from discord import ui
 import asyncio
 from utils.config_manager import is_administrator, load_config, is_moderator_or_admin
-from utils.message_manager import get_private_messages
+from utils.message_manager import get_private_messages, get_role_reason
 from utils.message_service import MessageService
 # PostgreSQL integration with enhanced personnel management
 from utils.database_manager import personnel_manager
@@ -424,7 +424,7 @@ class RoleApplicationApprovalView(ui.View):
             return default_rank and rank == default_rank.lower()
         return False  # Never process personnel records for suppliers or civilians
     
-    async def _assign_roles(self, user, guild, config):
+    async def _assign_roles(self, user, guild, config, moderator):
         """Assign appropriate roles to user"""
         try:
             if self.application_data["type"] == "military":
@@ -448,7 +448,8 @@ class RoleApplicationApprovalView(ui.View):
                 role = guild.get_role(role_id)
                 if role and role not in user.roles:
                     try:
-                        await user.add_roles(role, reason="Одобрение заявки на роль")
+                        reason = get_role_reason(guild.id, "role_assignment.approved", "Заявка на роль: одобрена").format(moderator=moderator.mention if moderator else "автоматически")
+                        await user.add_roles(role, reason=reason)
                     except discord.Forbidden:
                         print(f"No permission to assign role {role.name}")
                     except Exception as e:
@@ -490,7 +491,7 @@ class RoleApplicationApprovalView(ui.View):
             )
             
             if new_nickname:
-                await user.edit(nick=new_nickname, reason="Одобрение заявки на роль военнослужащего")
+                await user.edit(nick=new_nickname, reason=get_role_reason(user.guild.id, "nickname_change.personnel_acceptance", "Приём в организацию: изменён никнейм").format(moderator="система"))
                 print(f"✅ NICKNAME MANAGER: Успешно установлен никнейм {user} -> {new_nickname}")
             else:
                 print(f"⚠️ NICKNAME MANAGER: Не удалось сгенерировать никнейм для {user}")
@@ -578,7 +579,7 @@ class RoleApplicationApprovalView(ui.View):
             # Then do all the processing
             try:
                 # Assign roles and update nickname if needed
-                await self._assign_roles(user, guild, config)
+                await self._assign_roles(user, guild, config, interaction.user)
             except Exception as e:
                 print(f"Warning: Error in role assignment: {e}")
                 # Continue processing even if role assignment fails
@@ -695,7 +696,7 @@ class RoleApplicationApprovalView(ui.View):
             # Then do all the other processing
             try:
                 # Assign roles and update nickname if needed
-                await self._assign_roles(user, guild, config)
+                await self._assign_roles(user, guild, config, None)
             except Exception as e:
                 print(f"Warning: Error in role assignment: {e}")
                 # Continue processing even if role assignment fails

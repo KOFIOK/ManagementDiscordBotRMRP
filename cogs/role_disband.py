@@ -9,6 +9,7 @@ from discord import app_commands
 from typing import List
 import asyncio
 from utils.config_manager import load_config, is_administrator
+from utils.message_manager import get_role_reason
 
 
 class RoleDisbandView(discord.ui.View):
@@ -142,7 +143,7 @@ class RoleDisbandView(discord.ui.View):
                     roles_to_remove.append(role)
             
             if roles_to_remove:
-                await user.remove_roles(*roles_to_remove, reason=f"Расформирование ролей администратором {self.admin_user}")
+                await user.remove_roles(*roles_to_remove, reason=get_role_reason(user.guild.id, "role_removal.administrative", "Административное снятие роли").format(moderator=self.admin_user.mention))
                 print(f"✅ Removed {len(roles_to_remove)} roles from {user.display_name}")
             
         except Exception as e:

@@ -1,6 +1,6 @@
 import discord
 from utils.config_manager import load_config
-from utils.message_manager import get_supplies_message, get_supplies_color
+from utils.message_manager import get_supplies_message, get_supplies_color, get_role_reason
 
 
 class SuppliesSubscriptionView(discord.ui.View):
@@ -61,7 +61,8 @@ class SuppliesSubscriptionView(discord.ui.View):
                         ephemeral=True
                     )
                 else:
-                    await user.add_roles(subscription_role, reason="Подписка на уведомления о поставках")
+                    reason = get_role_reason(interaction.guild.id, "supplies_subscription.enabled", "Подписка на поставки: включена").format(user=user.mention)
+                    await user.add_roles(subscription_role, reason=reason)
                     await interaction.response.send_message(
                         get_supplies_message(interaction.guild.id, "subscription.success_subscribed"),
                         ephemeral=True
@@ -74,7 +75,7 @@ class SuppliesSubscriptionView(discord.ui.View):
                         ephemeral=True
                     )
                 else:
-                    await user.remove_roles(subscription_role, reason="Отписка от уведомлений о поставках")
+                    await user.remove_roles(subscription_role, reason=get_role_reason(interaction.guild.id, "supplies_subscription.disabled", "Подписка на поставки: отключена").format(user=user.mention))
                     await interaction.response.send_message(
                         get_supplies_message(interaction.guild.id, "subscription.success_unsubscribed"),
                         ephemeral=True

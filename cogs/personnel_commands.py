@@ -13,6 +13,7 @@ from utils.database_manager import PersonnelManager
 from utils.nickname_manager import nickname_manager
 from utils.audit_logger import audit_logger, AuditAction
 from utils import get_safe_personnel_name
+from utils.message_manager import get_role_reason
 
 
 class PersonnelNameChangeModal(discord.ui.Modal, title="Изменение ФИО"):
@@ -113,7 +114,7 @@ class PersonnelNameChangeModal(discord.ui.Modal, title="Изменение ФИ�
                         
                         if new_nickname:
                             print(f"🔍 Обновляем никнейм Discord...")
-                            await self.target_member.edit(nick=new_nickname, reason="Изменение ФИО через модальное окно")
+                            await self.target_member.edit(nick=new_nickname, reason=get_role_reason(self.target_member.guild.id, "nickname_change.name_change", "Изменение ФИО: {old_name} → {new_name}").format(old_name=self.target_member.display_name, new_name=new_nickname, moderator=interaction.user.mention))
                             print(f"✅ MODAL NICKNAME: Обновлен никнейм {new_nickname}")
                     else:
                         print(f"🔍 Звание не извлечено, пропускаем обновление никнейма")
@@ -491,7 +492,7 @@ class PersonnelCommands(commands.Cog):
                     )
                     
                     if new_nickname:
-                        await сотрудник.edit(nick=new_nickname, reason=f"Команда аудита: {действие}")
+                        await сотрудник.edit(nick=new_nickname, reason=get_role_reason(сотрудник.guild.id, "nickname_change.personnel_acceptance", "Приём в организацию: изменён никнейм").format(moderator=interaction.user.mention))
                         print(f"✅ AUDIT NICKNAME: Установлен никнейм {new_nickname}")
                     
                 except Exception as nickname_error:
@@ -626,7 +627,7 @@ class PersonnelCommands(commands.Cog):
                     )
 
                     if new_nickname:
-                        await сотрудник.edit(nick=new_nickname, reason=f"Команда аудита: {действие}")
+                        await сотрудник.edit(nick=new_nickname, reason=get_role_reason(сотрудник.guild.id, "rank_change.promotion", "Повышение ранга: {old_rank} → {new_rank}").format(old_rank=old_rank, new_rank=звание, moderator=interaction.user.mention))
                         embed = discord.Embed(
                             title="✅ Повышен в звании",
                             description=f"{сотрудник.mention} успешно повышен до звания **{звание}**.\n\n"
@@ -771,7 +772,7 @@ class PersonnelCommands(commands.Cog):
                     )
 
                     if new_nickname:
-                        await сотрудник.edit(nick=new_nickname, reason=f"Команда аудита: {действие}")
+                        await сотрудник.edit(nick=new_nickname, reason=get_role_reason(сотрудник.guild.id, "rank_change.demotion", "Понижение ранга: {old_rank} → {new_rank}").format(old_rank=old_rank, new_rank=звание, moderator=interaction.user.mention))
                         embed = discord.Embed(
                             title="🔻 Разжалован в звании",
                             description=f"{сотрудник.mention} разжалован до звания **{звание}**.\n\n"
@@ -830,7 +831,7 @@ class PersonnelCommands(commands.Cog):
                     )
                     
                     if new_nickname:
-                        await сотрудник.edit(nick=new_nickname, reason=f"Команда аудита: {действие}")
+                        await сотрудник.edit(nick=new_nickname, reason=get_role_reason(сотрудник.guild.id, "nickname_change.department_transfer", "Перевод в подразделение: изменён никнейм").format(moderator=interaction.user.mention))
                         embed = discord.Embed(
                             title="✅ Переведён в подразделение",
                             description=f"{сотрудник.mention} успешно переведён в **{подразделение}**.\n\nНикнейм автоматически обновлён: `{new_nickname}`",

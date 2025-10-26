@@ -520,6 +520,41 @@ audit:
 
 # =============================================================================
 
+role_reasons:
+  # Причины назначения ролей в формате "Категория: статус / причина (@user)"
+  department_application:
+    approved: "Вступление в подразделение ({department_name}): одобрено ({moderator})"
+  
+  rank_change:
+    promotion: "Повышение ранга: {old_rank} → {new_rank} ({moderator})"
+    demotion: "Понижение ранга: {old_rank} → {new_rank} ({moderator})"
+    automatic: "Смена ранга: {old_rank} → {new_rank} (автоматически)"
+  
+  position_assignment:
+    assigned: "Назначение должности: {position} ({moderator})"
+  
+  supplies_subscription:
+    enabled: "Подписка на поставки: включена ({user})"
+    disabled: "Подписка на поставки: отключена ({user})"
+  
+  role_assignment:
+    approved: "Заявка на роль: одобрена ({moderator})"
+  
+  role_removal:
+    department_change: "Смена подразделения: снята роль ({moderator})"
+    position_change: "Смена должности: снята роль ({moderator})"
+    dismissal: "Увольнение: сняты роли ({moderator})"
+    administrative: "Административное снятие роли ({moderator})"
+  
+  nickname_change:
+    department_join: "Приём в подразделение: изменён никнейм ({moderator})"
+    department_transfer: "Перевод в подразделение: изменён никнейм ({moderator})"
+    dismissal: "Увольнение: изменён никнейм ({moderator})"
+    personnel_acceptance: "Приём в организацию: изменён никнейм ({moderator})"
+    name_change: "Изменение ФИО: {old_name} → {new_name} ({moderator})"
+
+# =============================================================================
+
 military:
   # Название организации
   faction_name: "Вооруженные Силы РФ"

@@ -16,7 +16,8 @@ from datetime import datetime
 from utils.config_manager import load_config, is_moderator_or_admin, can_moderate_user, get_dismissal_message_link
 from utils.message_manager import (
     get_message, get_embed_color, get_private_messages,
-    get_systems_message, get_ui_button, get_ui_status, get_military_term
+    get_systems_message, get_ui_button, get_ui_status, get_military_term,
+    get_role_reason
 )
 from utils.user_cache import get_cached_user_info
 from utils.nickname_manager import nickname_manager
@@ -464,7 +465,7 @@ class SimplifiedDismissalApprovalView(ui.View):
                 
                 if roles_to_remove:
                     try:
-                        await target_user.remove_roles(*roles_to_remove, reason="Рапорт на увольнение одобрен")
+                        await target_user.remove_roles(*roles_to_remove, reason=get_role_reason(interaction.guild.id, "role_removal.dismissal", "Увольнение: сняты роли").format(moderator=interaction.user.mention))
                         print(f"✅ Removed {len(roles_to_remove)} roles from {target_user.display_name}")
                     except Exception as e:
                         print(f"❌ Failed to remove roles: {e}")
@@ -485,12 +486,12 @@ class SimplifiedDismissalApprovalView(ui.View):
                     )
                     
                     if new_nickname:
-                        await target_user.edit(nick=new_nickname, reason="Рапорт на увольнение одобрен")
+                        await target_user.edit(nick=new_nickname, reason=get_role_reason(interaction.guild.id, "nickname_change.dismissal", "Увольнение: изменён никнейм").format(moderator=interaction.user.mention))
                         print(f"✅ NICKNAME MANAGER: Успешно установлен никнейм {target_user} -> {new_nickname}")
                     else:
                         # Fallback к старому методу
                         fallback_nickname = f"Уволен | {provided_name}"
-                        await target_user.edit(nick=fallback_nickname, reason="Рапорт на увольнение одобрен")
+                        await target_user.edit(nick=fallback_nickname, reason=get_role_reason(interaction.guild.id, "nickname_change.dismissal", "Увольнение: изменён никнейм").format(moderator=interaction.user.mention))
                         print(f"⚠️ NICKNAME FALLBACK: Использовали fallback никнейм: {fallback_nickname}")
                         
                 except Exception as e:

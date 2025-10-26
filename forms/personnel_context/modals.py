@@ -9,6 +9,7 @@ import re
 
 from .rank_utils import RankHierarchy
 from utils.config_manager import load_config, is_moderator_or_admin
+from utils.message_manager import get_role_reason
 
 
 async def send_audit_message(channel: discord.TextChannel, audit_data: dict, action_type: str = "default"):
@@ -169,14 +170,15 @@ class PromotionModal(ui.Modal, title="Повышение в звании"):
             if old_rank_role_id:
                 old_role = interaction.guild.get_role(old_rank_role_id)
                 if old_role and old_role in self.target_user.roles:
-                    await self.target_user.remove_roles(old_role, reason=f"Rank promotion by {interaction.user}")
+                    await self.target_user.remove_roles(old_role, reason=get_role_reason(interaction.guild.id, "rank_change.promotion", "Повышение ранга: {old_rank} → {new_rank}").format(old_rank=self.current_rank, new_rank=new_rank, moderator=interaction.user.mention))
             
             # Add new rank role
             new_rank_role_id = RankHierarchy.get_rank_role_id(new_rank)
             if new_rank_role_id:
                 new_role = interaction.guild.get_role(new_rank_role_id)
                 if new_role:
-                    await self.target_user.add_roles(new_role, reason=f"Rank promotion by {interaction.user}")
+                    reason = get_role_reason(interaction.guild.id, "rank_change.promotion", "Повышение ранга: {old_rank} → {new_rank}").format(old_rank=self.current_rank, new_rank=new_rank, moderator=interaction.user.mention)
+                    await self.target_user.add_roles(new_role, reason=reason)
             
             # TODO: Update PersonnelManager database with new rank
             try:
@@ -337,14 +339,15 @@ class DemotionModal(ui.Modal, title="Разжалование в звании"):
             if old_rank_role_id:
                 old_role = interaction.guild.get_role(old_rank_role_id)
                 if old_role and old_role in self.target_user.roles:
-                    await self.target_user.remove_roles(old_role, reason=f"Rank demotion by {interaction.user}")
+                    await self.target_user.remove_roles(old_role, reason=get_role_reason(interaction.guild.id, "rank_change.demotion", "Понижение ранга: {old_rank} → {new_rank}").format(old_rank=self.current_rank, new_rank=new_rank, moderator=interaction.user.mention))
             
             # Add new rank role
             new_rank_role_id = RankHierarchy.get_rank_role_id(new_rank)
             if new_rank_role_id:
                 new_role = interaction.guild.get_role(new_rank_role_id)
                 if new_role:
-                    await self.target_user.add_roles(new_role, reason=f"Rank demotion by {interaction.user}")
+                    reason = get_role_reason(interaction.guild.id, "rank_change.demotion", "Понижение ранга: {old_rank} → {new_rank}").format(old_rank=self.current_rank, new_rank=new_rank, moderator=interaction.user.mention)
+                    await self.target_user.add_roles(new_role, reason=reason)
             
             # TODO: Update PersonnelManager database with new rank
             try:

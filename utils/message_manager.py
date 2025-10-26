@@ -470,6 +470,13 @@ def get_role_assignment_message(guild_id: int, key_path: str, default: str = Non
     """
     return get_message(guild_id, f"systems.role_assignment.{key_path}", default)
 
+def get_role_reason(guild_id: int, key_path: str, default: str = None) -> str:
+    """
+    Get role assignment reason by dot-separated key path (e.g., 'department_application.approved')
+    Returns default if key not found
+    """
+    return get_message(guild_id, f"role_reasons.{key_path}", default)
+
 def get_safe_documents_message(guild_id: int, key_path: str, default: str = None) -> str:
     """
     Get safe documents message by dot-separated key path (e.g., 'approval.error_not_found')

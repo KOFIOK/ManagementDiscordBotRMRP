@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 
 from utils.config_manager import load_config
-from utils.message_manager import get_department_applications_message, get_private_messages, get_ui_button, get_military_term, get_ui_label
+from utils.message_manager import get_department_applications_message, get_private_messages, get_ui_button, get_military_term, get_ui_label, get_role_reason
 from utils.ping_manager import ping_manager
 from utils.nickname_manager import nickname_manager
 from utils import get_safe_personnel_name
@@ -938,7 +938,11 @@ class DepartmentApplicationView(ui.View):
             await self._remove_all_position_roles(target_user)
             
             # Step 3: Assign new department role
-            await target_user.add_roles(dept_role, reason=f"Approved department application by {interaction.user}")
+            # Get department name for the reason message
+            dept_info = ping_manager.get_department_info(dept_code)
+            dept_name = dept_info.get('name', dept_code) if dept_info else dept_code
+            reason = get_role_reason(interaction.guild.id, "department_application.approved", "Заявка в подразделение: одобрена").format(department_name=dept_name, moderator=interaction.user.mention)
+            await target_user.add_roles(dept_role, reason=reason)
             
             # Step 4: Assign assignable position roles for this department
             await self._assign_department_position_roles(target_user, dept_code, interaction.user)
@@ -973,7 +977,7 @@ class DepartmentApplicationView(ui.View):
             role = user.guild.get_role(role_id)
             if role and role in user.roles:
                 try:
-                    await user.remove_roles(role, reason="Department application approval - cleaning roles")
+                    await user.remove_roles(role, reason=get_role_reason(user.guild.id, "role_removal.department_change", "Смена подразделения: снята роль").format(moderator="система"))
                 except discord.Forbidden:
                     logger.warning(f"Could not remove department role {role.name} from {user} - insufficient permissions")
                 except Exception as e:
@@ -987,7 +991,7 @@ class DepartmentApplicationView(ui.View):
             role = user.guild.get_role(role_id)
             if role and role in user.roles:
                 try:
-                    await user.remove_roles(role, reason="Department application approval - cleaning position roles")
+                    await user.remove_roles(role, reason=get_role_reason(user.guild.id, "role_removal.position_change", "Смена должности: снята роль").format(moderator="система"))
                 except discord.Forbidden:
                     logger.warning(f"Could not remove position role {role.name} from {user} - insufficient permissions")
                 except Exception as e:
@@ -1017,7 +1021,8 @@ class DepartmentApplicationView(ui.View):
             logger.info(f"Attempting to assign role {role.name} (ID: {role_id}) to {user.display_name}")
             
             try:
-                await user.add_roles(role, reason=f"Department application approved - automatic position assignment by {moderator}")
+                reason = get_role_reason(user.guild.id, "position_assignment.assigned", "Назначение должности").format(position=role.name, moderator=moderator.mention)
+                await user.add_roles(role, reason=reason)
                 assigned_roles.append(role.name)
                 logger.info(f"Successfully assigned role {role.name} to {user.display_name}")
             except discord.Forbidden:
@@ -1074,7 +1079,7 @@ class DepartmentApplicationView(ui.View):
                 )
                 
                 if new_nickname:
-                    await user.edit(nick=new_nickname, reason=f"Department application approved - transfer to {dept_code}")
+                    await user.edit(nick=new_nickname, reason=get_role_reason(user.guild.id, "nickname_change.department_transfer", "Перевод в подразделение: изменён никнейм").format(moderator="система"))
                     print(f"✅ DEPT NICKNAME: Никнейм обновлён: {new_nickname}")
                 else:
                     # Fallback к улучшенному методу
@@ -1102,7 +1107,7 @@ class DepartmentApplicationView(ui.View):
                         )
                         
                         if new_nickname:
-                            await user.edit(nick=new_nickname, reason=f"Department application approved - hiring to {dept_code}")
+                            await user.edit(nick=new_nickname, reason=get_role_reason(user.guild.id, "nickname_change.department_join", "Приём в подразделение: изменён никнейм").format(moderator="система"))
                             print(f"✅ DEPT HIRING: Никнейм обновлён через handle_hiring: {new_nickname}")
                             return
                     
@@ -1180,7 +1185,7 @@ class DepartmentApplicationView(ui.View):
                     # В крайнем случае используем только аббревиатуру
                     new_nickname = abbreviation[:32]
             
-            await user.edit(nick=new_nickname, reason=f"Department application smart fallback - {dept_code}")
+            await user.edit(nick=new_nickname, reason=get_role_reason(user.guild.id, "nickname_change.department_join", "Приём в подразделение: изменён никнейм").format(moderator="система"))
             logger.info(f"Applied smart fallback nickname: {user} -> {new_nickname}")
             
         except discord.Forbidden:
@@ -1206,7 +1211,7 @@ class DepartmentApplicationView(ui.View):
             if len(fallback_nickname) > 32:
                 fallback_nickname = fallback_nickname[:32]
             
-            await user.edit(nick=fallback_nickname, reason=f"Department application fallback - {dept_code}")
+            await user.edit(nick=fallback_nickname, reason=get_role_reason(user.guild.id, "nickname_change.department_join", "Приём в подразделение: изменён никнейм").format(moderator="система"))
             logger.info(f"Applied fallback nickname: {user} -> {fallback_nickname}")
             
         except discord.Forbidden:

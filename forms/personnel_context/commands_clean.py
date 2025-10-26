@@ -2535,12 +2535,23 @@ class RankChangeView(ui.View):
                 from utils.database_manager import rank_manager
                 
                 # Update roles using RankManager (old_rank already obtained above)
+                # Determine change_type based on action_id
+                if action_id == 1:
+                    change_type = "promotion"
+                elif action_id == 2:
+                    change_type = "demotion"
+                elif action_id == 4:
+                    change_type = "restoration"
+                else:
+                    change_type = "automatic"  # fallback
+                
                 role_success, role_message = await rank_manager.update_user_rank_roles(
                     interaction.guild, 
                     self.target_user, 
                     old_rank, 
                     self.new_rank,
-                    interaction.user
+                    interaction.user,
+                    change_type=change_type
                 )
                 
                 if not role_success:

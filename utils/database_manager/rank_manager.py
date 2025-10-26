@@ -304,7 +304,7 @@ class RankManager:
             logger.error(f"Error getting previous rank for '{current_rank_name}': {e}")
             return None
     
-    async def update_user_rank_roles(self, guild, user, old_rank_name: str, new_rank_name: str, moderator=None) -> Tuple[bool, str]:
+    async def update_user_rank_roles(self, guild, user, old_rank_name: str, new_rank_name: str, moderator=None, change_type: str = None) -> Tuple[bool, str]:
         """
         Update Discord rank roles for user
         
@@ -329,14 +329,15 @@ class RankManager:
             moderator_display = await get_moderator_display_name(moderator)
             
             # Determine change type (promotion/demotion)
-            change_type = "automatic"  # Default
-            if old_rank_data and new_rank_data:
-                old_level = old_rank_data.get('level', 0)
-                new_level = new_rank_data.get('level', 0)
-                if new_level > old_level:
-                    change_type = "promotion"
-                elif new_level < old_level:
-                    change_type = "demotion"
+            if change_type is None:
+                change_type = "automatic"  # Default
+                if old_rank_data and new_rank_data:
+                    old_level = old_rank_data.get('level', 0)
+                    new_level = new_rank_data.get('level', 0)
+                    if new_level > old_level:
+                        change_type = "promotion"
+                    elif new_level < old_level:
+                        change_type = "demotion"
             
             # Remove old rank role
             if old_rank_data and old_rank_data.get('role_id'):

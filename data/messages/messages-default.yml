@@ -528,6 +528,7 @@ role_reasons:
   rank_change:
     promotion: "Повышение ранга: {old_rank} → {new_rank} ({moderator})"
     demotion: "Понижение ранга: {old_rank} → {new_rank} ({moderator})"
+    restoration: "Восстановление ранга: {old_rank} → {new_rank} ({moderator})"
     automatic: "Смена ранга: {old_rank} → {new_rank} (автоматически)"
   
   position_assignment:

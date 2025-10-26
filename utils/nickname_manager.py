@@ -849,7 +849,7 @@ class NicknameManager:
             new_nickname = self.build_service_nickname(subdivision_abbr, new_rank_abbr, first_name, last_name)
             logger.info(f"� RANK_CHANGE DEBUG: Построенный никнейм: '{new_nickname}'")
             
-            await member.edit(nick=new_nickname, reason=get_role_reason(member.guild.id, f"rank_change.{'promotion' if change_type == 'повышение' else 'demotion' if change_type == 'понижение' else 'automatic'}", "Смена ранга: {old_rank} → {new_rank}").format(old_rank="предыдущий", new_rank=new_rank_name, moderator="система"))
+            await member.edit(nick=new_nickname, reason=get_role_reason(member.guild.id, f"rank_change.{'promotion' if change_type == 'повышение' else 'demotion' if change_type == 'понижение' else 'restoration' if change_type == 'восстановление' else 'automatic'}", "Смена ранга: {old_rank} → {new_rank}").format(old_rank="предыдущий", new_rank=new_rank_name, moderator="система"))
             logger.info(f"✅ Никнейм при изменении звания ({change_type}): {member} -> {new_nickname}")
             
             return new_nickname

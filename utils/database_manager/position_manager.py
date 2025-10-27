@@ -448,37 +448,37 @@ class PositionManager:
         """
         Update user roles based on department change
 
-        DEPRECATED: Use UnifiedRoleManager.smart_scan_and_update_roles() instead
+        DEPRECATED: Use RoleUtils methods instead
         This method is kept for backward compatibility.
         """
         try:
             print(f"🔄 Updating department roles for {user.display_name}: {old_dept_key} → {dept_key}")
 
-            # Import unified role manager
-            from .unified_role_manager import unified_role_manager
+            # Import RoleUtils
+            from utils.role_utils import role_utils
 
-            # Get target department role IDs
-            target_role_ids = await self._get_department_role_ids_for_key(dept_key)
+            # Clear all department roles first
+            removed_roles = await role_utils.clear_all_department_roles(
+                user,
+                reason="role_removal.department_change"
+            )
 
-            # Use unified role manager
-            result = await unified_role_manager.smart_scan_and_update_roles(
-                guild=guild,
-                user=user,
-                role_type='department',
-                target_role_ids=target_role_ids,
-                reason_template="department_change"
+            # Assign new department role
+            assigned = await role_utils.assign_department_role(
+                user,
+                dept_key,
+                moderator=None  # No specific moderator for this operation
             )
 
             # Log results
-            if result['success']:
-                if result['added'] or result['removed']:
-                    print(f"✅ Department roles updated: +{len(result['added'])}, -{len(result['removed'])}")
-                else:
-                    print(f"ℹ️ No department role changes needed")
+            if assigned:
+                print(f"✅ Department role updated: {dept_key} assigned")
+                if removed_roles:
+                    print(f"🧹 Cleared {len(removed_roles)} old department roles")
             else:
-                print(f"❌ Failed to update department roles: {result.get('error', 'Unknown error')}")
+                print(f"❌ Failed to assign department role: {dept_key}")
 
-            return result['success']
+            return assigned
 
         except Exception as e:
             print(f"❌ Error in department role update: {e}")
@@ -502,10 +502,6 @@ class PositionManager:
 
         except Exception as e:
             print(f"❌ Error getting department role IDs: {e}")
-            return set()
-
-        except Exception as e:
-            print(f"❌ Error getting department role IDs for key '{dept_key}': {e}")
             return set()
 
 

@@ -14,6 +14,7 @@ from utils.database_manager.position_manager import position_manager
 from utils.nickname_manager import nickname_manager
 from utils.message_manager import get_message, get_private_messages, get_message_with_params, get_ui_label, get_role_reason, get_role_assignment_message, get_moderator_display_name
 from utils.message_service import MessageService
+from utils.role_utils import role_utils
 from discord import ui
 import re
 
@@ -427,25 +428,18 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
             return False
     
     async def _assign_military_roles(self, guild, config, moderator):
-        """Assign military roles and set nickname (same as button approval)"""
+        """Assign military roles and set nickname using RoleUtils"""
         try:
-            # Get moderator display name for audit reasons
-            moderator_display = await get_moderator_display_name(moderator)
-            
-            # Get military roles from config
-            role_ids = config.get('military_roles', [])
-            
-            # Assign roles
-            for role_id in role_ids:
-                role = guild.get_role(role_id)
-                if role and role not in self.target_user.roles:
-                    try:
-                        reason = get_role_reason(guild.id, "role_assignment.approved", "Заявка на роль: одобрена").format(moderator=moderator_display)
-                        await self.target_user.add_roles(role, reason=reason)
-                    except discord.Forbidden:
-                        print(f"⚠️ RECRUITMENT: No permission to assign role {role.name}")
-                    except Exception as e:
-                        print(f"❌ RECRUITMENT: Error assigning role {role.name}: {e}")
+            # Use RoleUtils to assign default recruit rank and military roles
+            recruit_assigned = await role_utils.assign_default_recruit_rank(self.target_user, moderator)
+            if not recruit_assigned:
+                print(f"❌ RECRUITMENT: Failed to assign recruit rank to {self.target_user}")
+                return
+
+            # Assign military roles using RoleUtils
+            military_assigned = await role_utils.assign_military_roles(self.target_user, moderator)
+            if military_assigned:
+                print(f"✅ RECRUITMENT: Assigned military roles to {self.target_user}")
             
             # Set military nickname
             await self._set_military_nickname()
@@ -886,31 +880,21 @@ class DismissalModal(ui.Modal, title="Увольнение"):
             return False
     
     async def _remove_military_roles_and_reset_nickname(self, guild, config, interaction):
-        """Remove all roles except excluded ones, then set dismissal nickname using nickname_manager"""
+        """Remove all military roles and reset nickname using RoleUtils"""
         try:
-            # Step 1: Remove ALL roles except excluded ones
-            excluded_role_ids = set(config.get('excluded_roles', []))
-            roles_to_remove = []
-            
-            for role in self.target_user.roles:
-                # Skip @everyone and excluded roles
-                if role.is_default() or role.id in excluded_role_ids:
-                    continue
-                roles_to_remove.append(role)
-            
-            # Remove all roles at once for better performance
-            if roles_to_remove:
-                try:
-                    await self.target_user.remove_roles(*roles_to_remove, reason=get_role_reason(guild.id, "role_removal.dismissal", "Увольнение: сняты роли").format(moderator=interaction.user.mention))
-                    print(f"✅ DISMISSAL: Removed {len(roles_to_remove)} roles from {self.target_user.display_name}")
-                except discord.Forbidden:
-                    print(f"⚠️ DISMISSAL: No permission to remove roles")
-                except Exception as e:
-                    print(f"❌ DISMISSAL: Error removing roles: {e}")
+            # Use RoleUtils to clear all roles (military, department, position, rank)
+            roles_cleared = await role_utils.clear_all_roles(
+                self.target_user,
+                reason="Увольнение: сняты все роли",
+                moderator=interaction.user
+            )
+
+            if roles_cleared:
+                print(f"✅ DISMISSAL: Cleared all roles from {self.target_user.display_name}: {', '.join(roles_cleared)}")
             else:
-                print(f"ℹ️ DISMISSAL: No roles to remove for {self.target_user.display_name}")
+                print(f"ℹ️ DISMISSAL: No roles to clear for {self.target_user.display_name}")
             
-            # Step 2: Set dismissal nickname using nickname_manager
+            # Set dismissal nickname using nickname_manager
             try:
                 dismissal_nickname = await nickname_manager.handle_dismissal(
                     member=self.target_user,
@@ -1492,13 +1476,24 @@ class PositionSelect(ui.Select):
                     except Exception as e:
                         print(f"⚠️ Could not determine old department key: {e}")
                 
-                await position_manager.smart_update_user_department_roles(
-                    self.target_user.guild,
-                    self.target_user,
-                    self.dept_key,
-                    old_dept_key
-                )
-                print("✅ DEPARTMENT CHANGE: Updated department roles")
+                # Update Discord roles using RoleUtils
+                try:
+                    # Clear old department roles
+                    await role_utils.clear_all_department_roles(
+                        self.target_user,
+                        reason="Смена подразделения"
+                    )
+
+                    # Assign new department role
+                    await role_utils.assign_department_role(
+                        self.target_user,
+                        self.dept_key,
+                        interaction.user
+                    )
+
+                    print("✅ DEPARTMENT CHANGE: Updated department roles")
+                except Exception as e:
+                    print(f"⚠️ Error updating department roles: {e}")
             except Exception as e:
                 print(f"⚠️ Error updating department roles: {e}")
             
@@ -1647,12 +1642,11 @@ class PositionSelect(ui.Select):
                 except Exception as e:
                     print(f"⚠️ Error sending position demotion audit notification: {e}")
                 
-                # Update Discord roles for position removal
+                # Update Discord roles using RoleUtils - remove position role
                 try:
-                    await position_manager.smart_update_user_position_roles(
-                        interaction.guild,
+                    await role_utils.clear_all_position_roles(
                         self.target_user,
-                        None  # Remove position role
+                        reason="Снятие должности"
                     )
                     print(f"✅ Removed position role for {self.target_user.display_name}")
                 except Exception as e:
@@ -2067,14 +2061,13 @@ class PositionOnlySelect(ui.Select):
                     datetime.now(timezone(timedelta(hours=3)))  # Moscow time
                 ))
                 
-                # Update Discord roles after position removal
+                # Update Discord roles using RoleUtils after position removal
                 if user_member:
                     try:
-                        # Remove all position roles using smart update
-                        await position_manager.smart_update_user_position_roles(
-                            user_member.guild,
+                        # Remove all position roles
+                        await role_utils.clear_all_position_roles(
                             user_member,
-                            None  # No new position
+                            reason="Снятие должности"
                         )
                         print(f"✅ Position role removed for {user_member.display_name}")
                     except Exception as role_error:
@@ -2336,16 +2329,31 @@ class PositionOnlySelect(ui.Select):
                     datetime.now(timezone(timedelta(hours=3)))  # Moscow time
                 ))
                 
-                # Update Discord roles for position change
+                # Update Discord roles using RoleUtils for position change
                 if user_member:
                     try:
-                        new_position_id = int(position_id) if position_id.isdigit() else None
-                        await position_manager.smart_update_user_position_roles(
-                            user_member.guild,
-                            user_member,
-                            new_position_id,
-                            moderator_member
-                        )
+                        # Get department code from subdivision name
+                        from utils.config_manager import load_config
+                        config = load_config()
+                        dept_code = None
+                        for code, dept_info in config.get('departments', {}).items():
+                            if dept_info.get('name') == self.subdivision_name:
+                                dept_code = code
+                                break
+
+                        if dept_code:
+                            # Clear old position roles and assign new ones
+                            await role_utils.clear_all_position_roles(
+                                user_member,
+                                reason="Смена должности"
+                            )
+                            await role_utils.assign_position_roles(
+                                user_member,
+                                dept_code,
+                                moderator_member
+                            )
+                        else:
+                            print(f"⚠️ Could not find department code for {self.subdivision_name}")
                     except Exception as e:
                         print(f"⚠️ Error updating position roles: {e}")
                 
@@ -2554,19 +2562,20 @@ class RankChangeView(ui.View):
                 else:
                     change_type = "automatic"  # fallback
                 
-                role_success, role_message = await rank_manager.update_user_rank_roles(
-                    interaction.guild, 
-                    self.target_user, 
-                    old_rank, 
-                    self.new_rank,
-                    interaction.user,
-                    change_type=change_type
-                )
-                
-                if not role_success:
-                    print(f"Warning: Failed to update Discord roles: {role_message}")
-                else:
-                    print(f"✅ Discord roles updated: {old_rank} -> {self.new_rank}")
+                # Update Discord roles using RoleUtils
+                try:
+                    rank_assigned = await role_utils.assign_rank_role(
+                        self.target_user,
+                        self.new_rank,
+                        interaction.user,
+                        reason=f"Изменение звания: {change_type}"
+                    )
+                    if not rank_assigned:
+                        print(f"Warning: Failed to assign rank role {self.new_rank}")
+                    else:
+                        print(f"✅ Discord roles updated: {old_rank} -> {self.new_rank}")
+                except Exception as role_error:
+                    print(f"Warning: Failed to update Discord roles: {role_error}")
                     
             except Exception as role_error:
                 print(f"Warning: Failed to update Discord roles: {role_error}")

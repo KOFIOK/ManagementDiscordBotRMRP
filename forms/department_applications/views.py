@@ -910,51 +910,49 @@ class DepartmentApplicationView(ui.View):
             logger.error(f"Error restoring original buttons: {e}")
     
     async def _process_approval(self, interaction: discord.Interaction, target_user: discord.Member) -> bool:
-        """Process application approval - assign roles and update nickname"""
+        """Process application approval - assign roles and update nickname using RoleUtils"""
         try:
+            from utils.role_utils import role_utils
+
             dept_code = self.application_data['department_code']
-            
-            # Get department role
-            dept_role_id = ping_manager.get_department_role_id(dept_code)
-            if not dept_role_id:
-                await interaction.followup.send(
-                    f"❌ Роль для подразделения {dept_code} не настроена.",
-                    ephemeral=True
-                )
-                return False
-            
-            dept_role = interaction.guild.get_role(dept_role_id)
-            if not dept_role:
-                await interaction.followup.send(
-                    f"❌ Роль подразделения {dept_code} не найдена.",
-                    ephemeral=True
-                )
-                return False
-            
+
+            print(f"🏛️ DEPT APPLICATION: Начинаем обработку для {target_user.display_name} в {dept_code}")
+
             # Step 1: Remove ALL department roles (regardless of transfer/join)
-            await self._remove_all_department_roles(target_user)
-            
+            removed_dept = await role_utils.clear_all_department_roles(
+                target_user,
+                reason="role_removal.department_change"
+            )
+
             # Step 2: Remove ALL position roles (regardless of transfer/join)
-            await self._remove_all_position_roles(target_user)
-            
-            # Step 3: Assign new department role
-            # Get department name for the reason message
-            dept_info = ping_manager.get_department_info(dept_code)
-            dept_name = dept_info.get('name', dept_code) if dept_info else dept_code
-            reason = get_role_reason(interaction.guild.id, "department_application.approved", "Заявка в подразделение: одобрена").format(department_name=dept_name, moderator=interaction.user.mention)
-            await target_user.add_roles(dept_role, reason=reason)
-            
-            # Step 4: Assign assignable position roles for this department
-            await self._assign_department_position_roles(target_user, dept_code, interaction.user)
-            
+            removed_pos = await role_utils.clear_all_position_roles(
+                target_user,
+                reason="role_removal.position_change"
+            )
+
+            if removed_dept:
+                print(f"🧹 Очищены роли подразделений: {', '.join(removed_dept)}")
+            if removed_pos:
+                print(f"🧹 Очищены роли должностей: {', '.join(removed_pos)}")
+
+            # Step 3: Assign new department role using RoleUtils
+            dept_assigned = await role_utils.assign_department_role(target_user, dept_code, interaction.user)
+            if not dept_assigned:
+                return False
+
+            # Step 4: Assign assignable position roles for this department using RoleUtils
+            assigned_pos = await role_utils.assign_position_roles(target_user, dept_code, interaction.user)
+            if assigned_pos:
+                print(f"✅ Назначены роли должностей: {', '.join(assigned_pos)}")
+
             # Step 5: Update nickname with department abbreviation
             await self._update_user_nickname(target_user, dept_code)
-            
+
             # Step 6: Process in database using PersonnelManager
             await self._process_database_operation(interaction, target_user, dept_code)
-            
+
             return True
-            
+
         except discord.Forbidden:
             await interaction.followup.send(
                 "❌ Боту не хватает прав для назначения роли или изменения никнейма.",
@@ -968,84 +966,6 @@ class DepartmentApplicationView(ui.View):
                 ephemeral=True
             )
             return False
-    
-    async def _remove_all_department_roles(self, user: discord.Member):
-        """Remove ALL department roles from user"""
-        all_dept_role_ids = ping_manager.get_all_department_role_ids()
-        
-        for role_id in all_dept_role_ids:
-            role = user.guild.get_role(role_id)
-            if role and role in user.roles:
-                try:
-                    await user.remove_roles(role, reason=get_role_reason(user.guild.id, "role_removal.department_change", "Смена подразделения: снята роль").format(moderator="система"))
-                except discord.Forbidden:
-                    logger.warning(f"Could not remove department role {role.name} from {user} - insufficient permissions")
-                except Exception as e:
-                    logger.error(f"Error removing department role {role.name} from {user}: {e}")
-    
-    async def _remove_all_position_roles(self, user: discord.Member):
-        """Remove ALL position roles from user"""
-        all_position_role_ids = ping_manager.get_all_position_role_ids()
-        
-        for role_id in all_position_role_ids:
-            role = user.guild.get_role(role_id)
-            if role and role in user.roles:
-                try:
-                    await user.remove_roles(role, reason=get_role_reason(user.guild.id, "role_removal.position_change", "Смена должности: снята роль").format(moderator="система"))
-                except discord.Forbidden:
-                    logger.warning(f"Could not remove position role {role.name} from {user} - insufficient permissions")
-                except Exception as e:
-                    logger.error(f"Error removing position role {role.name} from {user}: {e}")
-    
-    async def _assign_department_position_roles(self, user: discord.Member, dept_code: str, moderator: discord.Member):
-        """Assign assignable position roles for the department"""
-        # Get moderator display name for audit reasons
-        moderator_display = await get_moderator_display_name(moderator)
-        
-        assignable_role_ids = ping_manager.get_department_assignable_position_roles(dept_code)
-        
-        logger.info(f"Attempting to assign position roles for {dept_code} to {user.display_name}")
-        logger.info(f"Assignable role IDs: {assignable_role_ids}")
-        
-        if not assignable_role_ids:
-            logger.warning(f"No assignable position roles configured for department {dept_code}")
-            return
-        
-        assigned_roles = []
-        failed_roles = []
-        
-        for role_id in assignable_role_ids:
-            role = user.guild.get_role(role_id)
-            if not role:
-                logger.error(f"Role with ID {role_id} not found on server for department {dept_code}")
-                failed_roles.append(f"ID:{role_id}")
-                continue
-                
-            logger.info(f"Attempting to assign role {role.name} (ID: {role_id}) to {user.display_name}")
-            
-            try:
-                reason = get_role_reason(user.guild.id, "position_assignment.assigned", "Назначение должности").format(position=role.name, moderator=moderator_display)
-                await user.add_roles(role, reason=reason)
-                assigned_roles.append(role.name)
-                logger.info(f"Successfully assigned role {role.name} to {user.display_name}")
-            except discord.Forbidden:
-                logger.warning(f"Could not assign position role {role.name} to {user} - insufficient permissions")
-                failed_roles.append(role.name)
-            except Exception as e:
-                logger.error(f"Error assigning position role {role.name} to {user}: {e}")
-                failed_roles.append(role.name)
-        
-        # Log results
-        if assigned_roles:
-            logger.info(f"Assigned position roles to {user}: {', '.join(assigned_roles)}")
-        if failed_roles:
-            logger.warning(f"Failed to assign position roles to {user}: {', '.join(failed_roles)}")
-        
-        logger.info(f"Position role assignment complete for {user.display_name}: {len(assigned_roles)} assigned, {len(failed_roles)} failed")
-    
-    async def _remove_old_department_roles(self, user: discord.Member, new_dept_code: str):
-        """Legacy method - now calls the new comprehensive role removal"""
-        await self._remove_all_department_roles(user)
     
     async def _update_user_nickname(self, user: discord.Member, dept_code: str):
         """Update user nickname with department abbreviation using nickname_manager"""

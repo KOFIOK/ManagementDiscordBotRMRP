@@ -19,6 +19,7 @@ from utils.message_manager import (
     get_systems_message, get_ui_button, get_ui_status, get_military_term,
     get_role_reason
 )
+from utils.role_utils import role_utils
 from utils.user_cache import get_cached_user_info
 from utils.nickname_manager import nickname_manager
 
@@ -454,21 +455,18 @@ class SimplifiedDismissalApprovalView(ui.View):
                 except Exception as e:
                     print(f"❌ Error in PersonnelManager dismissal: {e}")
             
-            # 2. Remove Discord roles (if user still on server)
+            # 2. Remove Discord roles using RoleUtils (if user still on server)
             if not user_has_left_server:
-                excluded_roles_ids = config.get('excluded_roles', [])
-                roles_to_remove = []
-                
-                for role in target_user.roles:
-                    if not role.is_default() and role.id not in excluded_roles_ids:
-                        roles_to_remove.append(role)
-                
-                if roles_to_remove:
-                    try:
-                        await target_user.remove_roles(*roles_to_remove, reason=get_role_reason(interaction.guild.id, "role_removal.dismissal", "Увольнение: сняты роли").format(moderator=interaction.user.mention))
-                        print(f"✅ Removed {len(roles_to_remove)} roles from {target_user.display_name}")
-                    except Exception as e:
-                        print(f"❌ Failed to remove roles: {e}")
+                roles_cleared = await role_utils.clear_all_roles(
+                    target_user,
+                    reason="Увольнение: сняты все роли",
+                    moderator=interaction.user
+                )
+
+                if roles_cleared:
+                    print(f"✅ DISMISSAL: Cleared all roles from {target_user.display_name}: {', '.join(roles_cleared)}")
+                else:
+                    print(f"ℹ️ DISMISSAL: No roles to clear for {target_user.display_name}")
             
             # 3. Change nickname using nickname_manager (if user still on server)
             if not user_has_left_server:

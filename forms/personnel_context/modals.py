@@ -10,6 +10,7 @@ import re
 from .rank_utils import RankHierarchy
 from utils.config_manager import load_config, is_moderator_or_admin
 from utils.message_manager import get_role_reason
+from utils.role_utils import role_utils
 
 
 async def send_audit_message(channel: discord.TextChannel, audit_data: dict, action_type: str = "default"):
@@ -163,23 +164,22 @@ class PromotionModal(ui.Modal, title="Повышение в звании"):
             )
     
     async def _process_promotion(self, interaction: discord.Interaction, new_rank: str, action: str, user_data: dict) -> bool:
-        """Process the promotion - update roles and add to audit"""
+        """Process the promotion - update roles and add to audit using RoleUtils"""
         try:
-            # Remove old rank role
-            old_rank_role_id = RankHierarchy.get_rank_role_id(self.current_rank)
-            if old_rank_role_id:
-                old_role = interaction.guild.get_role(old_rank_role_id)
-                if old_role and old_role in self.target_user.roles:
-                    await self.target_user.remove_roles(old_role, reason=get_role_reason(interaction.guild.id, "rank_change.promotion", "Повышение ранга: {old_rank} → {new_rank}").format(old_rank=self.current_rank, new_rank=new_rank, moderator=interaction.user.mention))
-            
-            # Add new rank role
-            new_rank_role_id = RankHierarchy.get_rank_role_id(new_rank)
-            if new_rank_role_id:
-                new_role = interaction.guild.get_role(new_rank_role_id)
-                if new_role:
-                    reason = get_role_reason(interaction.guild.id, "rank_change.promotion", "Повышение ранга: {old_rank} → {new_rank}").format(old_rank=self.current_rank, new_rank=new_rank, moderator=interaction.user.mention)
-                    await self.target_user.add_roles(new_role, reason=reason)
-            
+            # Use RoleUtils to assign new rank role (this will clear old rank roles automatically)
+            rank_assigned = await role_utils.assign_rank_role(
+                self.target_user,
+                new_rank,
+                interaction.user,
+                reason=f"Повышение ранга: {self.current_rank} → {new_rank}"
+            )
+
+            if not rank_assigned:
+                print(f"❌ PROMOTION: Failed to assign rank role {new_rank} to {self.target_user}")
+                return False
+
+            print(f"✅ PROMOTION: Successfully assigned rank role {new_rank} to {self.target_user}")
+
             # TODO: Update PersonnelManager database with new rank
             try:
                 # For now, assume success
@@ -331,24 +331,23 @@ class DemotionModal(ui.Modal, title="Разжалование в звании"):
             )
     
     async def _process_demotion(self, interaction: discord.Interaction, new_rank: str, user_data: dict) -> bool:
-        """Process the demotion - update roles and add to audit"""
+        """Process the demotion - update roles and add to audit using RoleUtils"""
         # Same logic as promotion but with "Понижен в звании" action
         try:
-            # Remove old rank role
-            old_rank_role_id = RankHierarchy.get_rank_role_id(self.current_rank)
-            if old_rank_role_id:
-                old_role = interaction.guild.get_role(old_rank_role_id)
-                if old_role and old_role in self.target_user.roles:
-                    await self.target_user.remove_roles(old_role, reason=get_role_reason(interaction.guild.id, "rank_change.demotion", "Понижение ранга: {old_rank} → {new_rank}").format(old_rank=self.current_rank, new_rank=new_rank, moderator=interaction.user.mention))
-            
-            # Add new rank role
-            new_rank_role_id = RankHierarchy.get_rank_role_id(new_rank)
-            if new_rank_role_id:
-                new_role = interaction.guild.get_role(new_rank_role_id)
-                if new_role:
-                    reason = get_role_reason(interaction.guild.id, "rank_change.demotion", "Понижение ранга: {old_rank} → {new_rank}").format(old_rank=self.current_rank, new_rank=new_rank, moderator=interaction.user.mention)
-                    await self.target_user.add_roles(new_role, reason=reason)
-            
+            # Use RoleUtils to assign new rank role (this will clear old rank roles automatically)
+            rank_assigned = await role_utils.assign_rank_role(
+                self.target_user,
+                new_rank,
+                interaction.user,
+                reason=f"Понижение ранга: {self.current_rank} → {new_rank}"
+            )
+
+            if not rank_assigned:
+                print(f"❌ DEMOTION: Failed to assign rank role {new_rank} to {self.target_user}")
+                return False
+
+            print(f"✅ DEMOTION: Successfully assigned rank role {new_rank} to {self.target_user}")
+
             # TODO: Update PersonnelManager database with new rank
             try:
                 # For now, assume success

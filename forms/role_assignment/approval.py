@@ -426,13 +426,40 @@ class RoleApplicationApprovalView(ui.View):
         return False  # Never process personnel records for suppliers or civilians
     
     async def _assign_roles(self, user, guild, config, moderator):
-        """Assign appropriate roles to user"""
+        """Assign appropriate roles to user with proper cleanup"""
         try:
-            # Get moderator display name for audit reasons
-            moderator_display = await get_moderator_display_name(moderator)
+            from utils.role_utils import role_utils
+            
+            print(f"🎖️ ROLE ASSIGNMENT: Начинаем обработку ролей для {user.display_name} (тип: {self.application_data['type']})")
+            
+            # Шаг 1: Очистить роли подразделений и должностей (для чистоты)
+            # Базовые роли (военные/гражданские/поставщики) не должны иметь ролей подразделений
+            removed_dept = await role_utils.clear_all_department_roles(
+                user, 
+                reason="role_removal.role_assignment_cleanup"
+            )
+            removed_pos = await role_utils.clear_all_position_roles(
+                user, 
+                reason="role_removal.role_assignment_cleanup"
+            )
+            removed_ranks = await role_utils.clear_all_rank_roles(
+                user,
+                reason="role_removal.role_assignment_cleanup"
+            )
+            
+            if removed_dept:
+                print(f"🧹 Очищены роли подразделений: {', '.join(removed_dept)}")
+            if removed_pos:
+                print(f"🧹 Очищены роли должностей: {', '.join(removed_pos)}")
+            if removed_ranks:
+                print(f"🧹 Очищены роли рангов: {', '.join(removed_ranks)}")
+            
+            # Шаг 2: Назначить соответствующие роли в зависимости от типа
+            assigned_roles = []
             
             if self.application_data["type"] == "military":
-                role_ids = config.get('military_roles', [])
+                # Назначить военные роли
+                assigned_roles = await role_utils.assign_military_roles(user, self.application_data, moderator)
                 
                 # Set nickname for military recruits only
                 if self._should_change_nickname():
@@ -441,26 +468,22 @@ class RoleApplicationApprovalView(ui.View):
                     except Exception as e:
                         print(f"Warning: Could not set military nickname: {e}")
                         # Continue processing even if nickname change fails
+                        
             elif self.application_data["type"] == "supplier":
-                # Suppliers get their own roles
-                role_ids = config.get('supplier_roles', [])
+                # Назначить роли поставщика
+                assigned_roles = await role_utils.assign_supplier_roles(user, self.application_data, moderator)
+                
             else:  # civilian
-                role_ids = config.get('civilian_roles', [])
+                # Назначить роли госслужащего
+                assigned_roles = await role_utils.assign_civilian_roles(user, self.application_data, moderator)
             
-            # Add new roles only (do not remove existing roles)
-            for role_id in role_ids:
-                role = guild.get_role(role_id)
-                if role and role not in user.roles:
-                    try:
-                        reason = get_role_reason(guild.id, "role_assignment.approved", "Заявка на роль: одобрена").format(moderator=moderator_display)
-                        await user.add_roles(role, reason=reason)
-                    except discord.Forbidden:
-                        print(f"No permission to assign role {role.name}")
-                    except Exception as e:
-                        print(f"Error assigning role {role.name}: {e}")
+            if assigned_roles:
+                print(f"✅ Назначены роли: {', '.join(assigned_roles)}")
+            else:
+                print(f"⚠️ Не удалось назначить роли для типа {self.application_data['type']}")
                         
         except Exception as e:
-            print(f"Error in role assignment: {e}")
+            print(f"❌ Error in role assignment: {e}")
             raise  # Re-raise the exception to be caught by the caller
     
     async def _set_military_nickname(self, user):

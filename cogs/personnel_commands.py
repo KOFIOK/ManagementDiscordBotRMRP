@@ -12,6 +12,7 @@ from utils.config_manager import load_config, is_moderator_or_admin, is_administ
 from utils.database_manager import PersonnelManager
 from utils.nickname_manager import nickname_manager
 from utils.audit_logger import audit_logger, AuditAction
+from utils.role_utils import role_utils
 from utils import get_safe_personnel_name
 from utils.message_manager import get_role_reason
 
@@ -606,14 +607,16 @@ class PersonnelCommands(commands.Cog):
                     except Exception as audit_error:
                         print(f"Warning: Failed to send audit notification: {audit_error}")
 
-                    # Update Discord roles using rank_manager (same as in RankChangeView)
+                    # Update Discord roles using RoleUtils (unified role management)
                     try:
-                        from utils.database_manager import rank_manager
-                        role_success, role_message = await rank_manager.update_user_rank_roles(
-                            interaction.guild, сотрудник, old_rank, звание, change_type="promotion", moderator=interaction.user
+                        rank_assigned = await role_utils.assign_rank_role(
+                            сотрудник,
+                            звание,
+                            interaction.user,
+                            reason=f"Повышение ранга: {old_rank} → {звание}"
                         )
-                        if not role_success:
-                            print(f"Warning: Failed to update Discord roles: {role_message}")
+                        if not rank_assigned:
+                            print(f"Warning: Failed to assign rank role {звание} to {сотрудник}")
                         else:
                             print(f"✅ Discord roles updated: {old_rank} -> {звание}")
                     except Exception as role_error:
@@ -751,14 +754,16 @@ class PersonnelCommands(commands.Cog):
                     except Exception as audit_error:
                         print(f"Warning: Failed to send audit notification: {audit_error}")
 
-                    # Update Discord roles using rank_manager (same as in RankChangeView)
+                    # Update Discord roles using RoleUtils (unified role management)
                     try:
-                        from utils.database_manager import rank_manager
-                        role_success, role_message = await rank_manager.update_user_rank_roles(
-                            interaction.guild, сотрудник, old_rank, звание, change_type="demotion", moderator=interaction.user
+                        rank_assigned = await role_utils.assign_rank_role(
+                            сотрудник,
+                            звание,
+                            interaction.user,
+                            reason=f"Понижение ранга: {old_rank} → {звание}"
                         )
-                        if not role_success:
-                            print(f"Warning: Failed to update Discord roles: {role_message}")
+                        if not rank_assigned:
+                            print(f"Warning: Failed to assign rank role {звание} to {сотрудник}")
                         else:
                             print(f"✅ Discord roles updated: {old_rank} -> {звание}")
                     except Exception as role_error:

@@ -145,7 +145,7 @@ class AddDepartmentModal(ui.Modal):
 
     department_color = ui.TextInput(
         label="Цвет подразделения",
-        placeholder="#3498db"
+        placeholder="Красный, Blue, #FF0000 или ff0000"
     )
 
     role_id = ui.TextInput(
@@ -209,8 +209,8 @@ class AddDepartmentModal(ui.Modal):
                             title="❌ Ошибка",
                             description=(
                                 "Недопустимый цвет. Укажите:\n"
-                                "• Название цвета: Синий, Зелёный, Красный...\n"
-                                "• HEX код: #ffffff или ffffff"
+                                "• Название цвета: Синий, Красный, Blue, Red...\n"
+                                "• HEX код: #ffffff, #fff, ffffff или fff"
                             ),
                             color=discord.Color.red()
                         )
@@ -348,11 +348,19 @@ class EditDepartmentModal(ui.Modal):
             color_placeholder = f"#{color_value:06x}"
 
         emoji_placeholder = dept_data.get('emoji', '')
+        abbreviation_placeholder = dept_data.get('abbreviation', dept_id.lower())
         
         role_id = dept_data.get('role_id')
         role_placeholder = str(role_id) if role_id else ""
 
         # Создаем поля с placeholder и default значениями
+        self.department_abbreviation = ui.TextInput(
+            label="Аббревиатура подразделения",
+            placeholder=abbreviation_placeholder,
+            default=abbreviation_placeholder,
+            max_length=10
+        )
+
         self.department_name = ui.TextInput(
             label="Название подразделения",
             placeholder=name_placeholder,
@@ -380,6 +388,7 @@ class EditDepartmentModal(ui.Modal):
         super().__init__(title=f"✏️ Редактировать {dept_data.get('name', dept_id)}")
         
         # Добавляем поля в модальное окно
+        self.add_item(self.department_abbreviation)
         self.add_item(self.department_name)
         self.add_item(self.department_emoji)
         self.add_item(self.department_color)
@@ -452,6 +461,7 @@ class EditDepartmentModal(ui.Modal):
             # Обновление подразделения
             success = DepartmentManager.edit_department(
                 dept_id=self.dept_id,
+                abbreviation=self.department_abbreviation.value.strip() if self.department_abbreviation.value else None,
                 name=self.department_name.value.strip(),
                 emoji=self.department_emoji.value.strip() if self.department_emoji.value else None,
                 color=color_to_pass_to_manager, # Передаем название цвета
@@ -468,6 +478,7 @@ class EditDepartmentModal(ui.Modal):
                     name="📋 Новые значения:",
                     value=(
                         f"**ID:** {self.dept_id}\n"
+                        f"**Аббревиатура:** {self.department_abbreviation.value.strip() or self.dept_id.lower()}\n"
                         f"**Название:** {self.department_name.value.strip()}\n"
                         f"**Эмодзи:** {self.department_emoji.value.strip() or '🏛️'}\n"
                         f"**Цвет:** {display_color_name}\n" # Отображаем найденное название

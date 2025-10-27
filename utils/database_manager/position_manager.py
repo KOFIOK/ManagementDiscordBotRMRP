@@ -4,7 +4,7 @@ Simple version: positions with Discord roles only
 """
 
 import discord
-from typing import Optional, Dict, List, Any, Tuple
+from typing import Optional, Dict, List, Any, Tuple, Set
 from utils.postgresql_pool import get_db_cursor
 from utils.message_manager import get_role_reason, get_moderator_display_name
 
@@ -348,13 +348,30 @@ class PositionManager:
             bool: Success status
         """
         try:
-            from utils.database_manager import SubdivisionMapper
+            from utils.config_manager import load_config
+            from utils.postgresql_pool import get_db_cursor
             from datetime import datetime, timezone, timedelta
             import json
             
-            # Initialize subdivision mapper to get subdivision_id
-            subdivision_mapper = SubdivisionMapper()
-            subdivision_id = await subdivision_mapper.get_subdivision_id(dept_code)
+            # Get subdivision_id directly from config and DB
+            config = load_config()
+            dept_config = config.get('departments', {}).get(dept_code, {})
+            role_id = dept_config.get('role_id')
+            
+            if not role_id:
+                print(f"⚠️ No role_id found for department {dept_code}")
+                return False
+            
+            subdivision_id = None
+            try:
+                with get_db_cursor() as cursor:
+                    cursor.execute("SELECT id FROM subdivisions WHERE role_id = %s", (role_id,))
+                    result = cursor.fetchone()
+                    if result:
+                        subdivision_id = result['id']
+            except Exception as e:
+                print(f"⚠️ Error getting subdivision_id: {e}")
+                return False
             
             if not subdivision_id:
                 print(f"⚠️ Could not find subdivision_id for department {dept_code}")
@@ -431,76 +448,65 @@ class PositionManager:
         """
         Update user roles based on department change
 
-        Args:
-            guild: Discord guild
-            user: Discord user member
-            dept_key: Department config key (e.g., 'genshtab', 'УВП')
-            old_dept_key: Previous department config key (optional, will be auto-detected if not provided)
+        DEPRECATED: Use UnifiedRoleManager.smart_scan_and_update_roles() instead
+        This method is kept for backward compatibility.
         """
         try:
             print(f"🔄 Updating department roles for {user.display_name}: {old_dept_key} → {dept_key}")
 
-            # Import subdivision mapper to get department data from database
-            from .subdivision_mapper import SubdivisionMapper
-            mapper = SubdivisionMapper()
+            # Import unified role manager
+            from .unified_role_manager import unified_role_manager
 
-            role_changes = []
+            # Get target department role IDs
+            target_role_ids = await self._get_department_role_ids_for_key(dept_key)
 
-            # Get new department data from database using role_id from config
-            new_subdivision = await mapper.get_subdivision_by_config_key(dept_key)
-            if not new_subdivision:
-                print(f"❌ Could not find subdivision for dept_key '{dept_key}' in database")
-                return
+            # Use unified role manager
+            result = await unified_role_manager.smart_scan_and_update_roles(
+                guild=guild,
+                user=user,
+                role_type='department',
+                target_role_ids=target_role_ids,
+                reason_template="department_change"
+            )
 
-            print(f"✅ Found new subdivision: {new_subdivision['name']} ({new_subdivision['abbreviation']})")
-
-            # If old_dept_key not provided, try to detect it from user's Discord roles
-            if old_dept_key is None:
-                try:
-                    # Detect old department by checking user's Discord roles against database
-                    old_dept_key = await self._detect_user_department(user)
-                    if old_dept_key:
-                        print(f"✅ Auto-detected old department for {user.display_name}: {old_dept_key}")
-                    else:
-                        print(f"ℹ️ Could not auto-detect old department for {user.display_name} (no matching roles found)")
-                except Exception as e:
-                    print(f"⚠️ Could not auto-detect old department: {e}")
-
-            # Remove old department roles if old_dept_key is known
-            if old_dept_key and old_dept_key != dept_key:
-                old_subdivision = await mapper.get_subdivision_by_config_key(old_dept_key)
-                if old_subdivision and old_subdivision.get('role_id'):
-                    old_role = guild.get_role(old_subdivision['role_id'])
-                    if old_role and old_role in user.roles:
-                        try:
-                            await user.remove_roles(old_role, reason=get_role_reason(guild.id, "role_removal.department_change", "Смена подразделения: снята роль").format(moderator="система"))
-                            role_changes.append(f"Removed {old_role.name} (old dept)")
-                            print(f"✅ Removed old department role {old_role.name} from {user.display_name}")
-                        except Exception as e:
-                            print(f"⚠️ Failed to remove old role {old_role.name}: {e}")
-
-            # Add new department role if it exists
-            if new_subdivision.get('role_id'):
-                new_role = guild.get_role(new_subdivision['role_id'])
-                if new_role and new_role not in user.roles:
-                    try:
-                        await user.add_roles(new_role)
-                        role_changes.append(f"Added {new_role.name}")
-                        print(f"✅ Added new department role {new_role.name} to {user.display_name}")
-                    except Exception as e:
-                        print(f"⚠️ Failed to add new role {new_role.name}: {e}")
-                elif not new_role:
-                    print(f"⚠️ Department role with ID {new_subdivision['role_id']} not found in guild")
+            # Log results
+            if result['success']:
+                if result['added'] or result['removed']:
+                    print(f"✅ Department roles updated: +{len(result['added'])}, -{len(result['removed'])}")
                 else:
-                    print(f"ℹ️ User {user.display_name} already has department role {new_role.name}")
-
-            if role_changes:
-                print(f"📋 Department role changes for {user.display_name}: {', '.join(role_changes)}")
+                    print(f"ℹ️ No department role changes needed")
             else:
-                print(f"ℹ️ No department role changes needed for {user.display_name}")
+                print(f"❌ Failed to update department roles: {result.get('error', 'Unknown error')}")
+
+            return result['success']
 
         except Exception as e:
-            print(f"❌ Error updating department roles for {user.display_name}: {e}")
+            print(f"❌ Error in department role update: {e}")
+            return False
+
+    async def _get_department_role_ids_for_key(self, dept_key: str) -> Set[int]:
+        """Get department role IDs for a specific department key"""
+        try:
+            from utils.config_manager import load_config
+            from utils.postgresql_pool import get_db_cursor
+            
+            config = load_config()
+            dept_config = config.get('departments', {}).get(dept_key, {})
+            role_id = dept_config.get('role_id')
+            
+            if role_id:
+                return {role_id}
+            else:
+                print(f"⚠️ No role found for department key: {dept_key}")
+                return set()
+
+        except Exception as e:
+            print(f"❌ Error getting department role IDs: {e}")
+            return set()
+
+        except Exception as e:
+            print(f"❌ Error getting department role IDs for key '{dept_key}': {e}")
+            return set()
 
 
     async def _detect_user_department(self, user: discord.Member) -> Optional[str]:
@@ -517,28 +523,16 @@ class PositionManager:
             # Get user's role IDs for faster lookup
             user_role_ids = {role.id for role in user.roles}
 
-            # Import subdivision mapper to get database data
-            from .subdivision_mapper import SubdivisionMapper
-            mapper = SubdivisionMapper()
+            # Get all department role_ids from config
+            from utils.config_manager import load_config
+            config = load_config()
+            departments = config.get('departments', {})
 
-            # Get all subdivisions with role_id from database
-            from ..postgresql_pool import get_db_cursor
-            with get_db_cursor() as cursor:
-                cursor.execute("""
-                    SELECT abbreviation, role_id
-                    FROM subdivisions
-                    WHERE role_id IS NOT NULL;
-                """)
-                subdivisions = cursor.fetchall()
-
-            # Check each subdivision's role_id against user's roles
-            for sub in subdivisions:
-                role_id = sub['role_id']
+            # Check each department's role_id against user's roles
+            for dept_key, dept_config in departments.items():
+                role_id = dept_config.get('role_id')
                 if role_id and role_id in user_role_ids:
-                    # Return the config key (not abbreviation) for compatibility
-                    # Use the mapper's reverse mapping
-                    config_key = mapper.abbreviation_mapping.get(sub['abbreviation'], sub['abbreviation'])
-                    return config_key
+                    return dept_key
 
             return None
 

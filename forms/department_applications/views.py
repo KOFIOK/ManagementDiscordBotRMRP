@@ -1232,7 +1232,6 @@ class DepartmentApplicationView(ui.View):
             
             # Initialize managers
             pm = PersonnelManager()
-            subdivision_mapper = SubdivisionMapper()
             config = load_config()
             
             # Get department name from config

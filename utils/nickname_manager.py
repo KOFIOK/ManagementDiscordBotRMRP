@@ -23,7 +23,6 @@
 import re
 import logging
 from typing import Optional, Tuple, Dict, Any
-from utils.database_manager.subdivision_mapper import SubdivisionMapper  
 from utils.database_manager.rank_manager import rank_manager
 from utils.database_manager import personnel_manager
 from utils.config_manager import load_config
@@ -38,8 +37,6 @@ class NicknameManager:
     MAX_NICKNAME_LENGTH = 32
 
     def __init__(self):
-        self.subdivision_mapper = SubdivisionMapper()
-        
         # Загружаем конфигурацию
         self.config = load_config()
         
@@ -728,21 +725,40 @@ class NicknameManager:
                 first_name = personnel_data['first_name']
                 last_name = personnel_data['last_name']
             
-            # Получаем данные подразделения
-            subdivision_data = await self.subdivision_mapper.get_subdivision_full_data(subdivision_key)
-            if not subdivision_data or not subdivision_data.get('abbreviation'):
+            # Получаем данные подразделения напрямую из БД
+            subdivision_abbr = None
+            subdivision_name = None
+            try:
+                from utils.postgresql_pool import get_db_cursor
+                from utils.config_manager import load_config
+                
+                config = load_config()
+                dept_config = config.get('departments', {}).get(subdivision_key, {})
+                role_id = dept_config.get('role_id')
+                
+                if role_id:
+                    with get_db_cursor() as cursor:
+                        cursor.execute("""
+                            SELECT abbreviation, name FROM subdivisions WHERE role_id = %s
+                        """, (role_id,))
+                        result = cursor.fetchone()
+                        if result:
+                            subdivision_abbr = result['abbreviation']
+                            subdivision_name = result['name']
+            except Exception as e:
+                logger.warning(f"Не удалось получить данные подразделения из БД: {e}")
+            
+            if not subdivision_abbr:
                 logger.warning(f"Подразделение не найдено или нет аббревиатуры: {subdivision_key}")
                 # Используем ключ как fallback если нет аббревиатуры
                 subdivision_abbr = subdivision_key.upper() if subdivision_key else "ВА"
-            else:
-                # Получаем аббревиатуру подразделения из БД
-                subdivision_abbr = subdivision_data['abbreviation']
+                subdivision_name = subdivision_key
             
             # Если это должностной никнейм, сохраняем должность
             if parsed.get('format_type') == 'standard_position' and parsed.get('position'):
                 # Для должностных никнеймов меняем только подразделение
                 new_nickname = f"{subdivision_abbr} | {parsed['position']} | {first_name} {last_name}"
-                reason = f"Перевод в {subdivision_data.get('name', subdivision_key)} (должность сохранена)"
+                reason = f"Перевод в {subdivision_name or subdivision_key} (должность сохранена)"
             else:
                 # Обычная логика с рангом
                 # Получаем аббревиатуру звания

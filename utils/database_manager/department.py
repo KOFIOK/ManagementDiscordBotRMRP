@@ -320,3 +320,156 @@ class DepartmentOperations:
         except Exception as e:
             logger.error(f"get_personnel_data_for_audit failed: {e}")
             return None
+
+    @staticmethod
+    def add_subdivision_to_db(name: str, abbreviation: str, role_id: int) -> bool:
+        """
+        Add a new subdivision to the database
+
+        Args:
+            name: Subdivision name
+            abbreviation: Subdivision abbreviation
+            role_id: Discord role ID
+
+        Returns:
+            bool: Success status
+        """
+        try:
+            with get_db_cursor() as cursor:
+                # Check if subdivision with this role_id already exists
+                cursor.execute("SELECT id FROM subdivisions WHERE role_id = %s", (role_id,))
+                existing = cursor.fetchone()
+
+                if existing:
+                    logger.warning(f"Subdivision with role_id {role_id} already exists in DB")
+                    return False
+
+                # Get next available ID
+                cursor.execute("SELECT COALESCE(MAX(id), 0) + 1 as next_id FROM subdivisions")
+                next_id = cursor.fetchone()['next_id']
+
+                # Insert new subdivision
+                cursor.execute("""
+                    INSERT INTO subdivisions (id, name, abbreviation, role_id)
+                    VALUES (%s, %s, %s, %s)
+                """, (next_id, name, abbreviation[:10], role_id))  # Limit abbreviation to 10 chars
+
+                logger.info(f"Added subdivision to DB: {name} ({abbreviation}) with role_id {role_id}")
+                return True
+
+        except Exception as e:
+            logger.error(f"Error adding subdivision to database: {e}")
+            return False
+
+    @staticmethod
+    def delete_subdivision_from_db(role_id: int) -> bool:
+        """
+        Delete a subdivision from the database by role_id
+
+        Args:
+            role_id: Discord role ID
+
+        Returns:
+            bool: Success status
+        """
+        try:
+            with get_db_cursor() as cursor:
+                # Delete subdivision by role_id
+                cursor.execute("DELETE FROM subdivisions WHERE role_id = %s", (role_id,))
+                deleted_count = cursor.rowcount
+
+                if deleted_count > 0:
+                    logger.info(f"Deleted subdivision from DB: role_id {role_id} (deleted {deleted_count} rows)")
+                    return True
+                else:
+                    logger.warning(f"No subdivision found in DB with role_id {role_id}")
+                    return False
+
+        except Exception as e:
+            logger.error(f"Error deleting subdivision from database: {e}")
+            return False
+
+    @staticmethod
+    def update_subdivision_in_db(old_role_id: int, name: Optional[str] = None, new_role_id: Optional[int] = None, abbreviation: Optional[str] = None) -> bool:
+        """
+        Update a subdivision in the database
+
+        Args:
+            old_role_id: Current Discord role ID
+            name: New name (optional)
+            new_role_id: New Discord role ID (optional)
+            abbreviation: New abbreviation (optional)
+
+        Returns:
+            bool: Success status
+        """
+        try:
+            with get_db_cursor() as cursor:
+                # Check if record exists
+                cursor.execute("SELECT name FROM subdivisions WHERE role_id = %s", (old_role_id,))
+                existing = cursor.fetchone()
+
+                if not existing:
+                    logger.warning(f"No subdivision found in DB with role_id {old_role_id}")
+                    return False
+
+                old_name = existing['name']
+
+                # Prepare update
+                update_fields = []
+                update_values = []
+
+                if name is not None and name != old_name:
+                    update_fields.append("name = %s")
+                    update_values.append(name)
+
+                if new_role_id is not None and new_role_id != old_role_id:
+                    update_fields.append("role_id = %s")
+                    update_values.append(new_role_id)
+
+                if abbreviation is not None:
+                    update_fields.append("abbreviation = %s")
+                    update_values.append(abbreviation[:10])  # Limit to 10 chars
+
+                if not update_fields:
+                    logger.info(f"No fields to update for role_id {old_role_id}")
+                    return True
+
+                # Execute update
+                update_values.append(old_role_id)
+                query = f"""
+                    UPDATE subdivisions
+                    SET {', '.join(update_fields)}
+                    WHERE role_id = %s
+                """
+                cursor.execute(query, update_values)
+
+                rows_affected = cursor.rowcount
+                if rows_affected > 0:
+                    logger.info(f"Updated subdivision in DB: role_id {old_role_id} (rows affected: {rows_affected})")
+                    return True
+                else:
+                    logger.warning(f"No rows updated in DB for role_id {old_role_id}")
+                    return False
+
+        except Exception as e:
+            logger.error(f"Error updating subdivision in database: {e}")
+            return False
+
+    @staticmethod
+    def create_subdivision_if_needed(name: str, abbreviation: str, role_id: int) -> bool:
+        """
+        Create a new subdivision record if role_id is provided and doesn't exist
+
+        Args:
+            name: Subdivision name
+            abbreviation: Subdivision abbreviation
+            role_id: Discord role ID
+
+        Returns:
+            bool: Success status
+        """
+        if not role_id:
+            return True  # No role_id means no DB operation needed
+
+        return DepartmentOperations.add_subdivision_to_db(name, abbreviation, role_id)

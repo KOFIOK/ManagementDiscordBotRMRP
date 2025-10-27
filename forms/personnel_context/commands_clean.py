@@ -1358,18 +1358,37 @@ class PositionSelect(ui.Select):
             
             # Import required modules
             from utils.database_manager import PersonnelManager
-            from utils.database_manager.subdivision_mapper import SubdivisionMapper
             from utils.database_manager.position_manager import position_manager
             from utils.audit_logger import audit_logger, AuditAction
+            from utils.config_manager import load_config
+            from utils.postgresql_pool import get_db_cursor
             from datetime import datetime, timezone, timedelta
             import json
             
             # Initialize managers
             manager = PersonnelManager()
-            mapper = SubdivisionMapper()
             
-            # Get subdivision ID for new department
-            new_subdivision_id = await mapper.get_subdivision_id(self.dept_key)
+            # Get subdivision ID for new department directly from config and DB
+            config = load_config()
+            dept_config = config.get('departments', {}).get(self.dept_key, {})
+            role_id = dept_config.get('role_id')
+            
+            if not role_id:
+                return False, f"Подразделение '{self.dept_name}' не настроено (нет role_id)."
+            
+            # Get subdivision ID from database by role_id
+            new_subdivision_id = None
+            try:
+                with get_db_cursor() as cursor:
+                    cursor.execute("""
+                        SELECT id FROM subdivisions WHERE role_id = %s
+                    """, (role_id,))
+                    result = cursor.fetchone()
+                    if result:
+                        new_subdivision_id = result['id']
+            except Exception as e:
+                print(f"⚠️ Error getting subdivision ID: {e}")
+            
             if not new_subdivision_id:
                 return False, f"Подразделение '{self.dept_name}' не найдено в базе данных."
             
@@ -1451,35 +1470,25 @@ class PositionSelect(ui.Select):
                 old_dept_key = None
                 if current_subdivision:
                     try:
-                        # Get subdivision name/abbreviation from database
-                        subdivision_name = await manager._get_subdivision_name(current_subdivision)
-                        if subdivision_name:
-                            # Map subdivision name to config key
-                            from utils.database_manager.subdivision_mapper import SubdivisionMapper
-                            mapper = SubdivisionMapper()
+                        # Get department config key by subdivision_id
+                        with get_db_cursor() as cursor:
+                            # Get subdivision data
+                            cursor.execute("""
+                                SELECT name, abbreviation, role_id FROM subdivisions WHERE id = %s
+                            """, (current_subdivision,))
+                            sub_result = cursor.fetchone()
                             
-                            # First try direct mapping of full names
-                            name_to_config_mapping = {
-                                "Управление Военной Полиции": "УВП",
-                                "Силы Специальных Операций": "ССО", 
-                                "Рота Охраны и Обеспечения": "РОиО",
-                                "Военный Комиссариат": "ВК",
-                                "Медицинская Рота": "МР",
-                                "Военная Академия": "ВА",
-                                "Временно Без Подразделения": "ВБП",
-                                "Генеральный Штаб": "genshtab"
-                            }
-                            
-                            old_dept_key = name_to_config_mapping.get(subdivision_name)
-                            
-                            # If not found, try abbreviation mapping
-                            if not old_dept_key:
-                                for config_key, db_abbrev in mapper.config_to_db_mapping.items():
-                                    if db_abbrev == subdivision_name:
-                                        old_dept_key = config_key
+                            if sub_result:
+                                subdivision_name = sub_result['name']
+                                role_id = sub_result['role_id']
+                                
+                                # Find config key by role_id
+                                for dept_key, dept_config in config.get('departments', {}).items():
+                                    if dept_config.get('role_id') == role_id:
+                                        old_dept_key = dept_key
                                         break
-                            
-                            print(f"ℹ️ Determined old department: '{subdivision_name}' → '{old_dept_key}'")
+                                
+                                print(f"ℹ️ Determined old department: '{subdivision_name}' (role_id={role_id}) → '{old_dept_key}'")
                     except Exception as e:
                         print(f"⚠️ Could not determine old department key: {e}")
                 

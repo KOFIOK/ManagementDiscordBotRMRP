@@ -10,26 +10,24 @@ from .base import BaseSettingsView, BaseSettingsModal
 
 class RankRoleModal(BaseSettingsModal):
     """Modal for adding/editing rank roles"""
-    
+
     def __init__(self, edit_rank=None):
         self.edit_rank = edit_rank
         title = f"Редактировать звание: {edit_rank}" if edit_rank else "Добавить звание"
         super().__init__(title=title)
-        
-        config = load_config()
-        rank_roles = config.get('rank_roles', {})
-        
-        # If editing, get current values
+
+        # Get current rank data from database instead of config
         current_role_id = ""
         current_rank_level = ""
-        if edit_rank and edit_rank in rank_roles:
-            rank_data = rank_roles[edit_rank]
-            if isinstance(rank_data, dict):
+        current_abbreviation = ""
+
+        if edit_rank:
+            # Get rank data from database
+            rank_data = rank_manager.get_rank_by_name(edit_rank)
+            if rank_data:
                 current_role_id = str(rank_data.get('role_id', ''))
                 current_rank_level = str(rank_data.get('rank_level', ''))
-            else:
-                # Old format - just role_id
-                current_role_id = str(rank_data)
+                current_abbreviation = str(rank_data.get('abbreviation', ''))
         
         self.rank_name = ui.TextInput(
             label="Название звания",
@@ -60,13 +58,24 @@ class RankRoleModal(BaseSettingsModal):
             default=current_rank_level
         )
         self.add_item(self.rank_level)
+
+        self.abbreviation = ui.TextInput(
+            label="Аббревиатура (необязательно)",
+            placeholder="Например: Р-й, К-н, Мл. Л-т",
+            min_length=0,
+            max_length=20,
+            required=False,
+            default=current_abbreviation
+        )
+        self.add_item(self.abbreviation)
     
     async def on_submit(self, interaction: discord.Interaction):
         try:
             rank_name = self.rank_name.value.strip()
             role_input = self.role_id.value.strip()
             rank_level_input = self.rank_level.value.strip()
-            
+            abbreviation = self.abbreviation.value.strip() if self.abbreviation.value else None
+
             # Parse and validate rank level
             try:
                 rank_level = int(rank_level_input)
@@ -84,7 +93,7 @@ class RankRoleModal(BaseSettingsModal):
                     "Ранг звания должен быть числом."
                 )
                 return
-            
+
             # Parse role ID
             role_id = self._parse_role_input(role_input, interaction.guild)
             if not role_id:
@@ -94,7 +103,7 @@ class RankRoleModal(BaseSettingsModal):
                     f"Не удалось распознать роль из '{role_input}'"
                 )
                 return
-            
+
             # Verify role exists
             role = interaction.guild.get_role(role_id)
             if not role:
@@ -104,66 +113,59 @@ class RankRoleModal(BaseSettingsModal):
                     f"Роль с ID {role_id} не найдена на сервере."
                 )
                 return
-            
-            # Check for duplicate ranks
-            config = load_config()
-            if 'rank_roles' not in config:
-                config['rank_roles'] = {}
-                
-            for existing_rank, existing_data in config['rank_roles'].items():
-                if existing_rank != self.edit_rank:  # Skip current rank when editing
-                    existing_rank_level = existing_data.get('rank_level', 0) if isinstance(existing_data, dict) else 0
-                    if existing_rank_level == rank_level:
+
+            # Check for duplicate rank levels in database
+            all_ranks = await rank_manager.get_all_active_ranks()
+            for existing_rank in all_ranks:
+                if existing_rank['name'] != self.edit_rank:  # Skip current rank when editing
+                    if existing_rank['rank_level'] == rank_level:
                         await self.send_error_message(
                             interaction,
                             "Дублирующийся ранг",
-                            f"Ранг {rank_level} уже используется для звания '{existing_rank}'. Выберите другой ранг."
+                            f"Ранг {rank_level} уже используется для звания '{existing_rank['name']}'. Выберите другой ранг."
                         )
                         return
-            
-            # If editing and name changed, remove old entry
-            if self.edit_rank and self.edit_rank != rank_name and self.edit_rank in config['rank_roles']:
-                del config['rank_roles'][self.edit_rank]
-            
-            # Save new format with rank hierarchy
-            config['rank_roles'][rank_name] = {
-                'role_id': role_id,
-                'rank_level': rank_level
-            }
-            save_config(config)
-            
-            # 🔥 NEW: Add rank to database automatically
-            try:
-                db_success, db_message = await rank_manager.add_rank_to_database(rank_name, role_id, rank_level)
-                db_status = "✅" if db_success else "⚠️"
-                db_info = f"\n**База данных:** {db_status} {db_message}"
-            except Exception as db_error:
-                db_info = f"\n**База данных:** ⚠️ Ошибка: {str(db_error)}"
-            
-            # Success message
-            action = "обновлено" if self.edit_rank else "добавлено"
-            embed = discord.Embed(
-                title="✅ Звание успешно настроено",
-                description=f"Звание **{rank_name}** {action}!",
-                color=discord.Color.green(),
-                timestamp=discord.utils.utcnow()
+
+            # Save to database
+            if self.edit_rank:
+                # Update existing rank
+                success, message = await rank_manager.update_rank_in_database(
+                    rank_name, role_id, rank_level, abbreviation
+                )
+            else:
+                # Add new rank
+                success, message = await rank_manager.add_rank_to_database(
+                    rank_name, role_id, rank_level
+                )
+                # Update abbreviation if provided
+                if success and abbreviation:
+                    await rank_manager.update_rank_in_database(
+                        rank_name, role_id, rank_level, abbreviation
+                    )
+
+            if not success:
+                await self.send_error_message(
+                    interaction,
+                    "Ошибка сохранения",
+                    message
+                )
+                return
+
+            await interaction.response.send_message(
+                f"✅ {message}",
+                ephemeral=True
             )
-            embed.add_field(
-                name="📋 Детали:",
-                value=f"**Звание:** {rank_name}\n**Роль:** {role.mention} (`{role_id}`)\n**Ранг:** {rank_level}{db_info}",
-                inline=False
-            )
-            
-            view = RankRolesConfigView()
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-            
+
         except Exception as e:
+            print(f"Error in RankRoleModal.on_submit: {e}")
+            import traceback
+            traceback.print_exc()
             await self.send_error_message(
                 interaction,
-                "Ошибка сохранения",
-                f"Произошла ошибка при сохранении звания: {e}"
+                "Ошибка",
+                "Произошла непредвиденная ошибка при сохранении звания."
             )
-    
+
     def _parse_role_input(self, role_input: str, guild: discord.Guild = None) -> int:
         """Parse role input and extract role ID.
 
@@ -303,37 +305,30 @@ class RankRoleDeleteConfirmModal(BaseSettingsModal):
                     f"Введенное название не соответствует '{self.rank_name}'"
                 )
                 return
-            
-            # Remove from config
-            config = load_config()
-            if 'rank_roles' in config and self.rank_name in config['rank_roles']:
-                del config['rank_roles'][self.rank_name]
-                save_config(config)
-                
-                # 🔥 NEW: Remove rank from database automatically
-                try:
-                    db_success, db_message = await rank_manager.remove_rank_from_database(self.rank_name)
-                    db_status = "✅" if db_success else "⚠️"
-                    db_info = f"\n**База данных:** {db_status} {db_message}"
-                except Exception as db_error:
-                    db_info = f"\n**База данных:** ⚠️ Ошибка: {str(db_error)}"
-                
+
+            # Remove Discord role association from database
+            success, message = await rank_manager.delete_rank_from_database(self.rank_name)
+
+            if success:
                 embed = discord.Embed(
-                    title="✅ Звание удалено",
-                    description=f"Звание **{self.rank_name}** успешно удалено из конфигурации.{db_info}",
+                    title="✅ Discord роль звания удалена",
+                    description=f"Discord роль звания **{self.rank_name}** успешно удалена из базы данных.\n\n"
+                               f"**Примечание:** Название звания сохранено в истории для целостности данных.",
                     color=discord.Color.green(),
                     timestamp=discord.utils.utcnow()
                 )
-                
-                view = RankRolesConfigView()
+
+                # Refresh the view with updated data
+                all_ranks = await rank_manager.get_all_active_ranks()
+                view = RankRolesConfigView(all_ranks)
                 await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
             else:
                 await self.send_error_message(
                     interaction,
-                    "Звание не найдено",
-                    f"Звание '{self.rank_name}' не найдено в конфигурации."
+                    "Ошибка удаления",
+                    message
                 )
-                
+
         except Exception as e:
             await self.send_error_message(
                 interaction,
@@ -344,12 +339,19 @@ class RankRoleDeleteConfirmModal(BaseSettingsModal):
 
 class RankRolesSelect(ui.Select):
     """Select menu for managing rank roles"""
-    
-    def __init__(self):
-        try:
-            config = load_config()
-            rank_roles = config.get('rank_roles', {})
-            
+
+    def __init__(self, ranks_data=None):
+        # If ranks_data not provided, create placeholder options
+        if ranks_data is None:
+            options = [
+                discord.SelectOption(
+                    label="Загрузка...",
+                    description="Получение данных из базы данных",
+                    emoji="⏳",
+                    value="loading"
+                )
+            ]
+        else:
             options = [
                 discord.SelectOption(
                     label="Добавить звание",
@@ -358,10 +360,11 @@ class RankRolesSelect(ui.Select):
                     value="add_rank"
                 )
             ]
-            
-            # Add existing ranks for editing/deletion
-            for rank_name in sorted(rank_roles.keys()):
+
+            # Add existing ranks for editing
+            for rank_data in sorted(ranks_data, key=lambda x: x['rank_level']):
                 if len(options) < 25:  # Discord limit
+                    rank_name = rank_data['name']
                     options.append(
                         discord.SelectOption(
                             label=f"{rank_name}",
@@ -370,34 +373,16 @@ class RankRolesSelect(ui.Select):
                             value=f"edit_{rank_name}"
                         )
                     )
-            
-            super().__init__(
-                placeholder="Выберите действие...",
-                min_values=1,
-                max_values=1,
-                options=options,
-                custom_id="rank_roles_select"
-            )
-        except Exception as e:
-            print(f"❌ Error in RankRolesSelect.__init__: {e}")
-            import traceback
-            traceback.print_exc()
-            # Fallback options
-            options = [
-                discord.SelectOption(
-                    label="❌ Ошибка загрузки",
-                    description="Произошла ошибка при загрузке настроек",
-                    emoji="❌",
-                    value="error"
-                )
-            ]
-            super().__init__(
-                placeholder="Ошибка загрузки...",
-                min_values=1,
-                max_values=1,
-                options=options,
-                custom_id="rank_roles_select"
-            )
+
+        super().__init__(
+            placeholder="Выберите действие...",
+            min_values=1,
+            max_values=1,
+            options=options,
+            custom_id="rank_roles_select"
+        )
+
+        self.ranks_data = ranks_data
     
     async def callback(self, interaction: discord.Interaction):
         try:
@@ -429,35 +414,44 @@ class RankRolesSelect(ui.Select):
 
 class RankRoleDeleteSelect(ui.Select):
     """Select menu for deleting rank roles"""
-    
-    def __init__(self):
-        config = load_config()
-        rank_roles = config.get('rank_roles', {})
-        
-        options = []
-        
-        # Add existing ranks for deletion
-        for rank_name in sorted(rank_roles.keys()):
-            if len(options) < 25:  # Discord limit
+
+    def __init__(self, ranks_data=None):
+        # If ranks_data not provided, create placeholder options
+        if ranks_data is None:
+            options = [
+                discord.SelectOption(
+                    label="Загрузка...",
+                    description="Получение данных из базы данных",
+                    emoji="⏳",
+                    value="loading"
+                )
+            ]
+        else:
+            options = []
+
+            # Add existing ranks for deletion
+            for rank_data in sorted(ranks_data, key=lambda x: x['rank_level']):
+                if len(options) < 25:  # Discord limit
+                    rank_name = rank_data['name']
+                    options.append(
+                        discord.SelectOption(
+                            label=f"{rank_name}",
+                            description=f"Удалить Discord роль у звания {rank_name}",
+                            emoji="🗑️",
+                            value=rank_name
+                        )
+                    )
+
+            if not options:
                 options.append(
                     discord.SelectOption(
-                        label=f"{rank_name}",
-                        description=f"Удалить звание {rank_name}",
-                        emoji="🗑️",
-                        value=rank_name
+                        label="Нет званий для удаления",
+                        description="Сначала добавьте звания",
+                        emoji="❌",
+                        value="none"
                     )
                 )
-        
-        if not options:
-            options.append(
-                discord.SelectOption(
-                    label="Нет званий для удаления",
-                    description="Сначала добавьте звания",
-                    emoji="❌",
-                    value="none"
-                )
-            )
-        
+
         super().__init__(
             placeholder="Выберите звание для удаления...",
             min_values=1,
@@ -465,6 +459,8 @@ class RankRoleDeleteSelect(ui.Select):
             options=options,
             custom_id="rank_roles_delete_select"
         )
+
+        self.ranks_data = ranks_data
     
     async def callback(self, interaction: discord.Interaction):
         selected_rank = self.values[0]
@@ -484,86 +480,61 @@ class RankRoleDeleteSelect(ui.Select):
 
 class RankRolesConfigView(BaseSettingsView):
     """Main view for rank roles configuration"""
-    
-    def __init__(self):
+
+    def __init__(self, ranks_data=None):
         super().__init__()
-        self.add_item(RankRolesSelect())
-        self.add_item(RankRoleDeleteSelect())
+        self.add_item(RankRolesSelect(ranks_data))
+        self.add_item(RankRoleDeleteSelect(ranks_data))
     
-    @ui.button(label="🔄 Синхронизировать с БД", style=discord.ButtonStyle.secondary, row=2)
-    async def sync_database(self, interaction: discord.Interaction, button: ui.Button):
-        """Sync ranks from database to config (load data from PostgreSQL)"""
+    @ui.button(label="� Инициализировать по умолчанию", style=discord.ButtonStyle.secondary, row=2)
+    async def initialize_defaults(self, interaction: discord.Interaction, button: ui.Button):
+        """Initialize default ranks in database"""
         try:
             await interaction.response.defer(ephemeral=True)
-            
-            # Perform synchronization FROM database TO config
-            success, message = await rank_manager.sync_database_to_config()
-            
-            if success:
-                embed = discord.Embed(
-                    title="✅ Синхронизация завершена",
-                    description=message,
-                    color=discord.Color.green(),
-                    timestamp=discord.utils.utcnow()
-                )
-                embed.add_field(
-                    name="📋 Что было сделано:",
-                    value="Данные загружены из PostgreSQL в кэш бота",
-                    inline=False
-                )
-            else:
-                embed = discord.Embed(
-                    title="⚠️ Ошибка синхронизации",
-                    description=message,
-                    color=discord.Color.orange(),
-                    timestamp=discord.utils.utcnow()
-                )
-            
-            await interaction.followup.send(embed=embed, ephemeral=True)
-            
-        except Exception as e:
-            error_embed = discord.Embed(
-                title="❌ Ошибка",
-                description=f"Произошла ошибка при синхронизации: {str(e)}",
-                color=discord.Color.red()
+
+            # Default ranks data
+            default_ranks = [
+                ("Рядовой", 1246114675574313021, 1, "Р-й"),
+                ("Ефрейтор", 1246114674638983270, 2, "Еф-р"),
+                ("Мл. Сержант", 1261982952275972187, 3, "Мл. С-т"),
+                ("Сержант", 1246114673997123595, 4, "С-т"),
+                ("Ст. Сержант", 1246114672352952403, 5, "Ст. С-т"),
+                ("Старшина", 1246114604958879754, 6, "Ст-на"),
+                ("Прапорщик", 1246114604329865327, 7, "Пр-щ"),
+                ("Ст. Прапорщик", 1251045305793773648, 8, "Ст. Пр-щ"),
+                ("Мл. Лейтенант", 1251045263062335590, 9, "Мл. Л-т"),
+                ("Лейтенант", 1246115365746901094, 10, "Л-т"),
+                ("Ст. Лейтенант", 1246114469340250214, 11, "Ст. Л-т"),
+                ("Капитан", 1246114469336322169, 12, "К-н"),
+                ("Майор", 1246114042821607424, 13, None),
+                ("Подполковник", 1246114038744875090, 14, None),
+                ("Полковник", 1246113825791672431, 15, None),
+            ]
+
+            added_count = 0
+            for rank_name, role_id, rank_level, abbreviation in default_ranks:
+                success, _ = await rank_manager.add_rank_to_database(rank_name, role_id, rank_level)
+                if success and abbreviation:
+                    await rank_manager.update_rank_in_database(rank_name, role_id, rank_level, abbreviation)
+                if success:
+                    added_count += 1
+
+            embed = discord.Embed(
+                title="✅ Инициализация завершена",
+                description=f"Добавлено {added_count} стандартных званий в базу данных",
+                color=discord.Color.green(),
+                timestamp=discord.utils.utcnow()
             )
-            await interaction.followup.send(embed=error_embed, ephemeral=True)
-    
-    @ui.button(label="📤 Отправить в БД", style=discord.ButtonStyle.secondary, row=3)
-    async def push_to_database(self, interaction: discord.Interaction, button: ui.Button):
-        """Push ranks from config to database"""
-        try:
-            await interaction.response.defer(ephemeral=True)
-            
-            # Perform synchronization FROM config TO database
-            success, message = await rank_manager.sync_config_to_database()
-            
-            if success:
-                embed = discord.Embed(
-                    title="✅ Отправка завершена",
-                    description=message,
-                    color=discord.Color.blue(),
-                    timestamp=discord.utils.utcnow()
-                )
-                embed.add_field(
-                    name="📋 Что было сделано:",
-                    value="Данные из кэша бота отправлены в PostgreSQL",
-                    inline=False
-                )
-            else:
-                embed = discord.Embed(
-                    title="⚠️ Ошибка отправки",
-                    description=message,
-                    color=discord.Color.orange(),
-                    timestamp=discord.utils.utcnow()
-                )
-            
-            await interaction.followup.send(embed=embed, ephemeral=True)
-            
+
+            # Refresh the view with updated data
+            all_ranks = await rank_manager.get_all_active_ranks()
+            view = RankRolesConfigView(all_ranks)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+
         except Exception as e:
             error_embed = discord.Embed(
                 title="❌ Ошибка",
-                description=f"Произошла ошибка при отправке в БД: {str(e)}",
+                description=f"Произошла ошибка при инициализации: {str(e)}",
                 color=discord.Color.red()
             )
             await interaction.followup.send(embed=error_embed, ephemeral=True)
@@ -572,57 +543,34 @@ class RankRolesConfigView(BaseSettingsView):
 async def show_rank_roles_config(interaction: discord.Interaction):
     """Show rank roles configuration interface"""
     try:
-        config = load_config()
-        rank_roles = config.get('rank_roles', {})
-        sync_key_role_id = config.get('rank_sync_key_role')
-        
+        # Get ranks from database instead of config
+        all_ranks = await rank_manager.get_all_active_ranks()
+
         embed = discord.Embed(
             title="🎖️ Настройка ролей званий",
-            description="Управление связыванием званий с ролями на сервере.",
+            description="Управление связыванием званий с ролями на сервере.\n**Источник данных: PostgreSQL база данных**",
             color=discord.Color.gold(),
             timestamp=discord.utils.utcnow()
         )
-        
-        # Show key role
-        if sync_key_role_id:
-            key_role = interaction.guild.get_role(sync_key_role_id)
-            if key_role:
-                embed.add_field(
-                    name="🔑 Ключевая роль:",
-                    value=f"{key_role.mention} - только участники с этой ролью проверяются системой",
-                    inline=False
-                )
-            else:
-                embed.add_field(
-                    name="🔑 Ключевая роль:",
-                    value=f"❌ Роль не найдена (ID: {sync_key_role_id})",
-                    inline=False
-                )
-        else:
-            embed.add_field(
-                name="⚠️ Ключевая роль не настроена",
-                value="Система будет проверять всех участников сервера (не рекомендуется для больших серверов)",
-                inline=False
-            )
-        
-        if rank_roles:
+
+        if all_ranks:
             ranks_list = []
-            for rank_name, rank_data in sorted(rank_roles.items()):
-                # Handle both old format (direct role_id) and new format (dict with role_id)
-                if isinstance(rank_data, dict):
-                    role_id = rank_data.get('role_id')
-                else:
-                    role_id = rank_data
-                
+            for rank_data in sorted(all_ranks, key=lambda x: x['rank_level']):
+                rank_name = rank_data['name']
+                role_id = rank_data['role_id']
+                rank_level = rank_data['rank_level']
+                abbreviation = rank_data.get('abbreviation', '')
+
                 if role_id:
                     role = interaction.guild.get_role(int(role_id))
                     if role:
-                        ranks_list.append(f"• **{rank_name}** → {role.mention}")
+                        abbr_text = f" ({abbreviation})" if abbreviation else ""
+                        ranks_list.append(f"• **{rank_name}**{abbr_text} → {role.mention} (уровень {rank_level})")
                     else:
-                        ranks_list.append(f"• **{rank_name}** → `{role_id}` ❌ (роль не найдена)")
+                        ranks_list.append(f"• **{rank_name}** → `{role_id}` ❌ (роль не найдена, уровень {rank_level})")
                 else:
-                    ranks_list.append(f"• **{rank_name}** → ❌ (role_id не найден)")
-            
+                    ranks_list.append(f"• **{rank_name}** → ❌ (role_id не найден, уровень {rank_level})")
+
             embed.add_field(
                 name="📋 Текущие звания:",
                 value="\n".join(ranks_list) if ranks_list else "Нет настроенных званий",
@@ -634,15 +582,14 @@ async def show_rank_roles_config(interaction: discord.Interaction):
                 value="Добавьте первое звание, используя кнопку ниже.",
                 inline=False
             )
-        
+
         embed.add_field(
             name="🔧 Доступные действия:",
             value=(
                 "• **Добавить звание** - связать новое звание с ролью\n"
                 "• **Редактировать звание** - изменить существующее звание\n"
-                "• **Удалить звание** - удалить звание из конфигурации\n"
-                "• **🔄 Синхронизировать с БД** - загрузить данные из PostgreSQL\n"
-                "• **📤 Отправить в БД** - сохранить текущие данные в PostgreSQL"
+                "• **Удалить звание** - удалить Discord роль у звания\n"
+                "• **Инициализировать по умолчанию** - загрузить стандартные звания"
             ),
             inline=False
         )
@@ -658,7 +605,7 @@ async def show_rank_roles_config(interaction: discord.Interaction):
             inline=False
         )
         
-        view = RankRolesConfigView()
+        view = RankRolesConfigView(all_ranks)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     
     except Exception as e:

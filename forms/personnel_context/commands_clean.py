@@ -2797,7 +2797,7 @@ class GeneralEditView(ui.View):
     async def edit_rank(self, interaction: discord.Interaction, button: ui.Button):
         """Handle rank editing"""
         try:
-            from forms.personnel_context.rank_utils import RankHierarchy
+            # from forms.personnel_context.rank_utils import RankHierarchy
             from utils.config_manager import is_administrator
             from utils.postgresql_pool import get_db_cursor
             
@@ -2961,7 +2961,8 @@ async def quick_promote(interaction: discord.Interaction, user: discord.Member):
             return
         
         # Get next rank
-        next_rank = RankHierarchy.get_next_rank(current_rank)
+        from utils.database_manager import rank_manager
+        next_rank = await rank_manager.get_next_rank(current_rank)
         if not next_rank:
             await interaction.response.send_message(
                 f"❌ **{user.display_name}** уже имеет максимальный ранг: **{current_rank}**",

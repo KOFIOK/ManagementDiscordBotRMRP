@@ -30,6 +30,9 @@ class Rank(Base):
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(100), unique=True, nullable=False)
+    role_id = Column(BigInteger, nullable=True)  # Discord role ID
+    rank_level = Column(Integer, nullable=False)  # Hierarchy level
+    abbreviation = Column(String(50), nullable=True)  # Rank abbreviation
     
     # Relationship to employees
     employees = relationship("Employee", back_populates="rank")

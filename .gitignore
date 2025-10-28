@@ -98,6 +98,7 @@ data/config.json
 data/backups/
 data/exports/
 data/leave_requests.json
+data/messages/backups/
 data/supplies_timers.json
 
 # Other

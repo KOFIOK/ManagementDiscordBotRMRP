@@ -89,18 +89,18 @@ async def on_ready():
         config = load_config()
         print('✅ Configuration loaded successfully')
         
-        # Initialize default rank roles if not present
-        from forms.settings.rank_roles import initialize_default_ranks
-        if initialize_default_ranks():
-            print('✅ Default rank roles initialized')
+        # Rank roles are now initialized manually through the settings interface
+        # from forms.settings.rank_roles import initialize_default_ranks
+        # if initialize_default_ranks():
+        #     print('✅ Default rank roles initialized')
         
-        # Migrate old rank data to hierarchical format
-        from forms.personnel_context.rank_utils import migrate_old_rank_format
-        migrated = migrate_old_rank_format()
-        if migrated:
-            print('✅ Migrated old rank data to hierarchical format')
-        else:
-            print('ℹ️ No old rank data to migrate or already migrated')
+        # Rank data migration is no longer needed (working directly with database)
+        # from forms.personnel_context.rank_utils import migrate_old_rank_format
+        # migrated = migrate_old_rank_format()
+        # if migrated:
+        #     print('✅ Migrated old rank data to hierarchical format')
+        # else:
+        #     print('ℹ️ No old rank data to migrate or already migrated')
         
         print(f'Dismissal channel: {config.get("dismissal_channel", "Not set")}')
         print(f'Audit channel: {config.get("audit_channel", "Not set")}')

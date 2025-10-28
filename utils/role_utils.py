@@ -450,9 +450,23 @@ class RoleUtils:
             bool: Успешно ли назначен ранг
         """
         try:
-            from utils.database_manager.rank_manager import rank_manager
-
-            default_rank = rank_manager.get_default_recruit_rank_sync()
+            from utils.database_manager.rank_manager import RankManager
+            from utils.config_manager import load_config
+            
+            rank_manager = RankManager()
+            config = load_config()
+            
+            # Check if default recruit rank is configured
+            default_rank_id = config.get('default_recruit_rank_id')
+            if default_rank_id:
+                default_rank = await rank_manager.get_rank_by_id(default_rank_id)
+                if default_rank:
+                    return await RoleUtils.assign_rank_role(user, default_rank, moderator)
+                else:
+                    print(f"⚠️ Настроенное начальное звание с ID {default_rank_id} не найдено, используем первое из базы данных")
+            
+            # Fallback to first rank in database
+            default_rank = await rank_manager.get_first_rank()
             if not default_rank:
                 print(f"❌ Не найден начальный ранг новобранца")
                 return False

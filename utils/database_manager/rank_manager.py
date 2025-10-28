@@ -112,92 +112,7 @@ class RankManager:
             logger.error(error_msg)
             return False, error_msg
     
-    async def sync_database_to_config(self) -> Tuple[bool, str]:
-        """
-        Synchronize all ranks from PostgreSQL database to config.json
-        
-        Returns:
-            Tuple[bool, str]: (success, message)
-        """
-        try:
-            # Get all active ranks from database
-            with get_db_cursor() as cursor:
-                cursor.execute("""
-                    SELECT name, role_id, rank_level
-                    FROM ranks 
-                    WHERE role_id IS NOT NULL
-                    ORDER BY rank_level;
-                """)
-                
-                db_ranks = cursor.fetchall()
-            
-            if not db_ranks:
-                return True, "Нет активных рангов в базе данных для синхронизации"
-            
-            # Load current config
-            config = load_config()
-            
-            # Update rank_roles from database
-            config['rank_roles'] = {}
-            synced_count = 0
-            
-            for rank_row in db_ranks:
-                rank_name = rank_row['name']
-                role_id = rank_row['role_id']
-                rank_level = rank_row['rank_level']
-                
-                config['rank_roles'][rank_name] = {
-                    'role_id': role_id,
-                    'rank_level': rank_level
-                }
-                synced_count += 1
-                logger.info(f"Synced from DB to config: {rank_name} -> role_id: {role_id}, level: {rank_level}")
-            
-            # Save updated config
-            save_config(config)
-            
-            message = f"Загружено {synced_count} рангов из базы данных в конфигурацию"
-            logger.info(message)
-            return True, message
-            
-        except Exception as e:
-            error_msg = f"Ошибка при загрузке рангов из БД: {str(e)}"
-            logger.error(error_msg)
-            return False, error_msg
 
-    async def sync_config_to_database(self) -> Tuple[bool, str]:
-        """
-        Synchronize all ranks from config.json to database
-        
-        Returns:
-            Tuple[bool, str]: (success, message)
-        """
-        try:
-            config = load_config()
-            rank_roles = config.get('rank_roles', {})
-            
-            if not rank_roles:
-                return True, "Нет рангов в конфигурации для синхронизации"
-            
-            synced_count = 0
-            for rank_name, rank_data in rank_roles.items():
-                if isinstance(rank_data, dict):
-                    role_id = rank_data.get('role_id')
-                    rank_level = rank_data.get('rank_level')
-                    
-                    if role_id and rank_level:
-                        success, _ = await self.add_rank_to_database(rank_name, role_id, rank_level)
-                        if success:
-                            synced_count += 1
-            
-            message = f"Синхронизировано {synced_count} рангов из конфигурации в БД"
-            logger.info(message)
-            return True, message
-            
-        except Exception as e:
-            error_msg = f"Ошибка при синхронизации рангов: {str(e)}"
-            logger.error(error_msg)
-            return False, error_msg
     
     async def get_all_active_ranks(self) -> List[Dict[str, Any]]:
         """
@@ -406,6 +321,75 @@ class RankManager:
         except Exception as e:
             logger.error(f"Ошибка получения ранга {rank_name}: {str(e)}")
             return None
+    
+    async def get_rank_by_id(self, rank_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Get rank information by ID from database
+        
+        Args:
+            rank_id (int): ID of the rank to get
+            
+        Returns:
+            Optional[Dict[str, Any]]: Rank data or None if not found
+        """
+        try:
+            with get_db_cursor() as cursor:
+                cursor.execute("""
+                    SELECT id, name, role_id, rank_level, abbreviation
+                    FROM ranks 
+                    WHERE id = %s AND role_id IS NOT NULL;
+                """, (rank_id,))
+                
+                result = cursor.fetchone()
+                
+                if result:
+                    return {
+                        'id': result['id'],
+                        'name': result['name'],
+                        'role_id': result['role_id'],
+                        'rank_level': result['rank_level'],
+                        'abbreviation': result.get('abbreviation', result['name'][:3].upper())
+                    }
+                    
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error getting rank by ID '{rank_id}': {e}")
+            return None
+    
+    async def get_first_rank(self) -> Optional[Dict[str, Any]]:
+        """
+        Get the first rank from database (lowest rank level)
+        
+        Returns:
+            Optional[Dict[str, Any]]: First rank data or None if not found
+        """
+        try:
+            with get_db_cursor() as cursor:
+                cursor.execute("""
+                    SELECT id, name, role_id, rank_level, abbreviation
+                    FROM ranks 
+                    WHERE role_id IS NOT NULL
+                    ORDER BY rank_level ASC
+                    LIMIT 1;
+                """)
+                
+                result = cursor.fetchone()
+                
+                if result:
+                    return {
+                        'id': result['id'],
+                        'name': result['name'],
+                        'role_id': result['role_id'],
+                        'rank_level': result['rank_level'],
+                        'abbreviation': result.get('abbreviation', result['name'][:3].upper())
+                    }
+                    
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error getting first rank: {e}")
+            return None
 
     async def get_default_recruit_rank(self) -> Optional[str]:
         """
@@ -442,6 +426,81 @@ class RankManager:
         except Exception as e:
             logger.error(f"Ошибка в синхронном получении начального звания: {str(e)}")
             return None
+
+    async def update_rank_in_database(self, rank_name: str, new_role_id: int, new_rank_level: int, new_abbreviation: str = None) -> Tuple[bool, str]:
+        """
+        Update existing rank in database
+
+        Args:
+            rank_name: Name of the rank to update
+            new_role_id: New Discord role ID
+            new_rank_level: New rank hierarchy level
+            new_abbreviation: New rank abbreviation (optional)
+
+        Returns:
+            Tuple[bool, str]: (success, message)
+        """
+        try:
+            with get_db_cursor() as cursor:
+                # Check if rank exists
+                cursor.execute("SELECT id FROM ranks WHERE name = %s;", (rank_name,))
+                existing_rank = cursor.fetchone()
+
+                if not existing_rank:
+                    return False, f"Ранг '{rank_name}' не найден в базе данных"
+
+                # Update rank
+                update_query = """
+                    UPDATE ranks
+                    SET role_id = %s, rank_level = %s, abbreviation = %s
+                    WHERE name = %s;
+                """
+                cursor.execute(update_query, (new_role_id, new_rank_level, new_abbreviation, rank_name))
+
+                message = f"Ранг '{rank_name}' обновлен в базе данных"
+                logger.info(f"Updated rank in DB: {rank_name} -> role_id: {new_role_id}, level: {new_rank_level}, abbr: {new_abbreviation}")
+                return True, message
+
+        except Exception as e:
+            logger.error(f"Error updating rank '{rank_name}': {e}")
+            return False, f"Ошибка при обновлении ранга: {e}"
+
+    async def delete_rank_from_database(self, rank_name: str) -> Tuple[bool, str]:
+        """
+        Delete rank from database (only removes Discord role association, keeps name for history)
+
+        Args:
+            rank_name: Name of the rank to delete
+
+        Returns:
+            Tuple[bool, str]: (success, message)
+        """
+        try:
+            with get_db_cursor() as cursor:
+                # Check if rank exists
+                cursor.execute("SELECT id, role_id FROM ranks WHERE name = %s;", (rank_name,))
+                existing_rank = cursor.fetchone()
+
+                if not existing_rank:
+                    return False, f"Ранг '{rank_name}' не найден в базе данных"
+
+                if existing_rank['role_id'] is None:
+                    return False, f"Ранг '{rank_name}' уже не имеет Discord роли"
+
+                # Remove role association (don't delete the rank completely to preserve history)
+                cursor.execute("""
+                    UPDATE ranks
+                    SET role_id = NULL, abbreviation = NULL
+                    WHERE name = %s;
+                """, (rank_name,))
+
+                message = f"Discord роль ранга '{rank_name}' удалена из базы данных"
+                logger.info(f"Removed Discord role from rank: {rank_name}")
+                return True, message
+
+        except Exception as e:
+            logger.error(f"Error deleting rank '{rank_name}': {e}")
+            return False, f"Ошибка при удалении ранга: {e}"
 
 
 # Global instance

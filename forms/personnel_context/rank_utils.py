@@ -285,8 +285,8 @@ def get_user_position_from_db(user_id: int) -> Optional[Dict]:
         Dict with position info or None if no position
     """
     try:
-        from utils.database_manager.position_manager import position_manager
-        return position_manager.get_user_position_from_db(user_id)
+        from utils.database_manager.position_service import position_service
+        return position_service.get_user_position_from_db(user_id)
     except Exception as e:
         print(f"❌ Error getting user position from database: {e}")
         return None

@@ -1232,8 +1232,8 @@ class DepartmentApplicationView(ui.View):
                     if role:
                         assigned_position_names.append(role.name)
                         # Update position_subdivision_id in database
-                        from utils.database_manager.position_manager import position_manager
-                        await position_manager.update_position_subdivision_by_role_id(
+                        from utils.database_manager.position_service import position_service
+                        await position_service.update_position_subdivision_by_role_id(
                             target_user.id, role_id, dept_code, interaction.user.id
                         )
                 

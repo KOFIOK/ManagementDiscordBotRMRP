@@ -44,7 +44,7 @@ class MainSettingsSelect(ui.Select):
             ),
             discord.SelectOption(
                 label="Роли должностей",
-                description="Настроить связывание должностей с ролями на сервере",
+                description="Иерархическая настройка должностей по подразделениям",
                 emoji="📋",
                 value="position_roles"
             ),
@@ -193,13 +193,14 @@ class MainSettingsSelect(ui.Select):
         await show_rank_roles_config(interaction)
 
     async def show_position_roles_config(self, interaction: discord.Interaction):
-        """Show interface for managing position roles"""
-        from .position_roles import PositionSettingsView, create_position_settings_embed
-        
-        view = PositionSettingsView()
-        await view.update_position_options(interaction.guild)
-        embed = await create_position_settings_embed()
-        
+        """Show interface for managing position roles with hierarchical navigation"""
+        from .positions import PositionNavigationView
+        from .positions.navigation import create_main_navigation_embed
+
+        view = PositionNavigationView()
+        await view.update_subdivision_options(interaction.guild)
+        embed = await create_main_navigation_embed()
+
         await interaction.response.edit_message(embed=embed, view=view)
 
     async def show_warehouse_settings_menu(self, interaction: discord.Interaction):

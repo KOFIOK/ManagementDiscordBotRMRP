@@ -9,7 +9,7 @@ import discord
 from typing import List, Set, Optional, Tuple
 from utils.message_manager import get_role_reason
 from utils.ping_manager import ping_manager
-from utils.database_manager import rank_manager, position_manager
+from utils.database_manager import rank_manager, position_service
 from utils.config_manager import load_config
 
 
@@ -171,6 +171,98 @@ class RoleUtils:
                 print(f"❌ Ошибка при назначении роли {role.name} пользователю {user}: {e}")
 
         return assigned_roles
+
+    @staticmethod
+    async def smart_update_user_position_roles(guild: discord.Guild, user: discord.Member, 
+                                             new_position_id: Optional[int], moderator=None) -> bool:
+        """
+        Умное обновление ролей должностей - автоматически определить текущие роли и заменить их
+        
+        Args:
+            guild: Discord сервер
+            user: Discord пользователь
+            new_position_id: ID новой должности (None для снятия всех ролей должностей)
+            moderator: Модератор, выполнивший действие
+            
+        Returns:
+            bool: Успешно ли выполнено
+        """
+        try:
+            # Получить отображаемое имя модератора
+            from utils.message_manager import get_moderator_display_name
+            moderator_display = await get_moderator_display_name(moderator)
+            
+            # Получить данные о ролях из position_service
+            cache_data = position_service.get_position_roles_cache()
+            all_position_roles = cache_data['role_to_position']  # {role_id: position_id}
+            position_to_role = cache_data['position_to_role']    # {position_id: role_id}
+            
+            # Получить ID новой роли из кэша
+            new_role_id = None
+            if new_position_id and new_position_id in position_to_role:
+                new_role_id = position_to_role[new_position_id]
+            elif new_position_id:
+                print(f"⚠️ Должность {new_position_id} не найдена в кэше")
+            
+            # Найти текущие роли должностей у пользователя
+            roles_to_remove = []
+            
+            for role in user.roles:
+                if role.id in all_position_roles:
+                    # Удалить только если это не новая роль, которую мы добавляем
+                    if role.id != new_role_id:
+                        roles_to_remove.append(role)
+                    else:
+                        print(f"🔍 Сохраняем роль (уже назначена): {role.name}")
+            
+            # Пакетные операции с ролями для лучшей производительности
+            role_changes = []
+            
+            # Удалить старые роли должностей
+            if roles_to_remove:
+                try:
+                    reason = get_role_reason(guild.id, "role_removal.position_change", "Смена должности: снята роль").format(moderator=moderator_display)
+                    await user.remove_roles(*roles_to_remove, reason=reason)
+                    for role in roles_to_remove:
+                        print(f"🔄 Удалена роль должности: {role.name}")
+                        role_changes.append(f"-{role.name}")
+                except Exception as e:
+                    print(f"⚠️ Ошибка при удалении ролей: {e}")
+            
+            # Добавить новую роль должности
+            if new_position_id and new_role_id:
+                # Проверить, есть ли уже эта роль
+                has_new_role = any(role.id == new_role_id for role in user.roles)
+                
+                if not has_new_role:
+                    new_role = guild.get_role(new_role_id)
+                    if new_role:
+                        try:
+                            # Получить название должности из базы данных
+                            position_data = position_service.get_position_by_id(new_position_id)
+                            position_name = position_data['name'] if position_data else f"Должность ID {new_position_id}"
+                            
+                            reason = get_role_reason(guild.id, "position_assignment.assigned", "Назначение должности").format(position=position_name)
+                            await user.add_roles(new_role, reason=reason)
+                            role_changes.append(f"+{position_name}")
+                        except Exception as e:
+                            print(f"⚠️ Ошибка при добавлении роли: {e}")
+                    else:
+                        print(f"⚠️ Роль с ID {new_role_id} не найдена на сервере")
+                else:
+                    print(f"ℹ️ У пользователя уже есть целевая роль")
+            
+            # Итог
+            if role_changes:
+                print(f"📋 Изменения ролей: {', '.join(role_changes)}")
+            else:
+                print(f"ℹ️ Изменения ролей не требуются для {user.display_name}")
+            
+            return True
+            
+        except Exception as e:
+            print(f"❌ Ошибка в умном обновлении ролей должностей: {e}")
+            return False
 
     @staticmethod
     async def assign_military_roles(user: discord.Member, application_data: dict, moderator: discord.Member) -> List[str]:

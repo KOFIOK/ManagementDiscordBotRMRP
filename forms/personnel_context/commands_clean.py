@@ -10,7 +10,7 @@ import traceback
 
 from utils.config_manager import load_config, is_moderator_or_admin, is_administrator, can_moderate_user
 from utils.database_manager import PersonnelManager
-from utils.database_manager.position_manager import position_manager
+from utils.database_manager.position_service import position_service
 from utils.nickname_manager import nickname_manager
 from utils.message_manager import get_message, get_private_messages, get_message_with_params, get_ui_label, get_role_reason, get_role_assignment_message, get_moderator_display_name
 from utils.message_service import MessageService
@@ -1329,8 +1329,10 @@ class PositionSelect(ui.Select):
                 if user_member:
                     try:
                         new_position_id = int(position_id) if position_id.isdigit() else None
-                        await position_manager.smart_update_user_position_roles(
+                        from utils.role_utils import role_utils
+                        await role_utils.smart_update_user_position_roles(
                             user_member.guild,
+                            user_member,
                             new_position_id,
                             moderator_member
                         )
@@ -1354,7 +1356,7 @@ class PositionSelect(ui.Select):
             
             # Import required modules
             from utils.database_manager import PersonnelManager
-            from utils.database_manager.position_manager import position_manager
+            from utils.database_manager.position_service import position_service
             from utils.audit_logger import audit_logger, AuditAction
             from utils.config_manager import load_config
             from utils.postgresql_pool import get_db_cursor

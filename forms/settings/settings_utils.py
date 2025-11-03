@@ -2,6 +2,9 @@
 Utility functions for settings forms
 """
 import discord
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from utils.config_manager import load_config
 
 

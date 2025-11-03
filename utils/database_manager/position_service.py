@@ -7,7 +7,6 @@ import discord
 from typing import Optional, Dict, Any, List, Tuple, Set
 from utils.postgresql_pool import get_db_cursor
 from utils.message_manager import get_role_reason, get_moderator_display_name
-from utils.database_manager.position_validator import PositionValidator
 
 class PositionService:
     """New position service with proper database schema integration"""
@@ -161,7 +160,7 @@ class PositionService:
             Tuple[bool, str]: (success, message)
         """
         # Validate position name
-        is_valid, error_msg = PositionValidator.validate_position_name(position_name)
+        is_valid, error_msg = self.validate_position_name(position_name)
         if not is_valid:
             return False, error_msg
 
@@ -243,7 +242,7 @@ class PositionService:
 
                 # Validate role if provided and guild available
                 if role_id and guild:
-                    is_valid, role_name_or_error = PositionValidator.validate_discord_role(role_id, guild)
+                    is_valid, role_name_or_error = self.validate_discord_role(role_id, guild)
                     if not is_valid:
                         return False, role_name_or_error
 
@@ -270,24 +269,30 @@ class PositionService:
         except Exception as e:
             return False, f"Ошибка: {e}"
 
-    def remove_position(self, position_id: int) -> Tuple[bool, str]:
+    def remove_position(self, position_id: int, force: bool = False) -> Tuple[bool, str]:
         """
-        Remove position and all its links (with dependency checks)
+        Remove position and all its links
 
         Args:
             position_id: Position ID to remove
+            force: If True, allow removal even with active employees (will clear their position assignments)
 
         Returns:
             Tuple[bool, str]: (success, message)
         """
         # Check dependencies
-        dependencies = PositionValidator.check_position_dependencies(position_id)
+        dependencies = self.check_position_dependencies(position_id)
 
-        if dependencies['has_dependencies']:
+        warning_message = ""
+        if dependencies['active_employees'] > 0:
+            warning_message = f"⚠️ Внимание: {dependencies['active_employees']} активных сотрудников имеют эту должность. Их назначения будут очищены.\n\n"
+
+        if dependencies['has_dependencies'] and not force:
             return False, (
-                f"Невозможно удалить должность. Она используется:\n"
+                f"{warning_message}Невозможно удалить должность. Она используется:\n"
                 f"• {dependencies['active_employees']} активных сотрудников\n"
-                f"• {dependencies['subdivisions']} подразделений"
+                f"• {dependencies['subdivisions']} подразделений\n\n"
+                f"Используйте force=True для принудительного удаления."
             )
 
         try:
@@ -301,6 +306,21 @@ class PositionService:
 
                 position_name = position['name']
 
+                # If there are active employees, clear their position assignments
+                if dependencies['active_employees'] > 0:
+                    # Find all position_subdivision_ids for this position
+                    cursor.execute("SELECT id FROM position_subdivision WHERE position_id = %s", (position_id,))
+                    ps_ids = [row['id'] for row in cursor.fetchall()]
+
+                    if ps_ids:
+                        # Clear position assignments for employees
+                        placeholders = ','.join(['%s'] * len(ps_ids))
+                        cursor.execute(
+                            f"UPDATE employees SET position_subdivision_id = NULL WHERE position_subdivision_id IN ({placeholders})",
+                            ps_ids
+                        )
+                        print(f"🧹 Cleared position assignments for {dependencies['active_employees']} employees")
+
                 # Remove from position_subdivision first (FK constraint)
                 cursor.execute("DELETE FROM position_subdivision WHERE position_id = %s", (position_id,))
 
@@ -311,6 +331,9 @@ class PositionService:
                 self.invalidate_roles_cache()
 
                 message = f"Должность '{position_name}' удалена"
+                if dependencies['active_employees'] > 0:
+                    message += f" (очищены назначения {dependencies['active_employees']} сотрудников)"
+
                 print(f"✅ {message}")
                 return True, message
 
@@ -329,7 +352,7 @@ class PositionService:
             Tuple[bool, str]: (success, message)
         """
         # Validate new name
-        is_valid, error_msg = PositionValidator.validate_position_name(new_name, position_id)
+        is_valid, error_msg = self.validate_position_name(new_name, position_id)
         if not is_valid:
             return False, error_msg
 
@@ -629,6 +652,129 @@ class PositionService:
             dict: Cache data with role_to_position and position_to_role mappings
         """
         return self._get_position_roles_cached()
+
+    # Validation methods (moved from PositionValidator)
+    def validate_position_name(self, name: str, exclude_id: Optional[int] = None) -> Tuple[bool, str]:
+        """
+        Validate position name uniqueness
+
+        Args:
+            name: Position name to validate
+            exclude_id: Position ID to exclude from check (for updates)
+
+        Returns:
+            Tuple[bool, str]: (is_valid, error_message)
+        """
+        if not name or not name.strip():
+            return False, "Название должности не может быть пустым"
+
+        name = name.strip()
+
+        if len(name) > 200:
+            return False, "Название должности не может превышать 200 символов"
+
+        try:
+            with get_db_cursor() as cursor:
+                if exclude_id:
+                    cursor.execute(
+                        "SELECT id FROM positions WHERE name = %s AND id != %s",
+                        (name, exclude_id)
+                    )
+                else:
+                    cursor.execute("SELECT id FROM positions WHERE name = %s", (name,))
+
+                existing = cursor.fetchone()
+                if existing:
+                    return False, f"Должность с названием '{name}' уже существует"
+
+                return True, ""
+
+        except Exception as e:
+            return False, f"Ошибка валидации: {e}"
+
+    def check_position_dependencies(self, position_id: int) -> Dict[str, Any]:
+        """
+        Check position dependencies before deletion
+
+        Args:
+            position_id: Position ID to check
+
+        Returns:
+            Dict with dependency information
+        """
+        try:
+            with get_db_cursor() as cursor:
+                dependencies = {
+                    'active_employees': 0,
+                    'subdivisions': 0,
+                    'has_dependencies': False
+                }
+
+                # Check active employees with this position
+                cursor.execute("""
+                    SELECT COUNT(*) as count
+                    FROM employees e
+                    JOIN position_subdivision ps ON e.position_subdivision_id = ps.id
+                    WHERE ps.position_id = %s
+                """, (position_id,))
+
+                result = cursor.fetchone()
+                dependencies['active_employees'] = result['count'] if result else 0
+
+                # Check subdivisions using this position
+                cursor.execute("""
+                    SELECT COUNT(DISTINCT subdivision_id) as count
+                    FROM position_subdivision
+                    WHERE position_id = %s
+                """, (position_id,))
+
+                result = cursor.fetchone()
+                dependencies['subdivisions'] = result['count'] if result else 0
+
+                # Determine if has dependencies
+                dependencies['has_dependencies'] = (
+                    dependencies['active_employees'] > 0 or
+                    dependencies['subdivisions'] > 0
+                )
+
+                return dependencies
+
+        except Exception as e:
+            print(f"❌ Error checking dependencies: {e}")
+            return {
+                'active_employees': 0,
+                'subdivisions': 0,
+                'has_dependencies': False,
+                'error': str(e)
+            }
+
+    def validate_discord_role(self, role_id: int, guild) -> Tuple[bool, str]:
+        """
+        Validate Discord role exists and is accessible
+
+        Args:
+            role_id: Discord role ID
+            guild: Discord guild object
+
+        Returns:
+            Tuple[bool, str]: (is_valid, role_name_or_error)
+        """
+        try:
+            if not guild:
+                return False, "Сервер не найден"
+
+            role = guild.get_role(role_id)
+            if not role:
+                return False, "Роль не найдена на сервере"
+
+            # Check if bot can manage this role
+            if role.position >= guild.me.top_role.position:
+                return False, "Бот не может управлять этой ролью (роль выше роли бота)"
+
+            return True, role.name
+
+        except Exception as e:
+            return False, f"Ошибка валидации роли: {e}"
 
 # Global instance
 position_service = PositionService()

@@ -8,7 +8,6 @@ from .management import PositionManagementView
 from .search import PositionSearchView
 from .detailed_management import PositionDetailedView
 from .ui_components import create_position_embed, create_paginated_embed
-from utils.database_manager.position_validator import PositionValidator
 
 __all__ = [
     'PositionNavigationView',
@@ -16,6 +15,5 @@ __all__ = [
     'PositionSearchView',
     'PositionDetailedView',
     'create_position_embed',
-    'create_paginated_embed',
-    'PositionValidator'
+    'create_paginated_embed'
 ]

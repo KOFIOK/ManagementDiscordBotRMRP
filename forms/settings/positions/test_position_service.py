@@ -25,14 +25,12 @@ def test_position_service():
         print(f"✅ get_all_positions_with_subdivisions() returned {len(all_positions)} positions")
 
         # Test validation
-        from utils.database_manager.position_validator import PositionValidator
-
         # Test valid name
-        is_valid, msg = PositionValidator.validate_position_name("Тестовая должность")
+        is_valid, msg = position_service.validate_position_name("Тестовая должность")
         print(f"✅ Name validation: {is_valid} - {msg}")
 
         # Test invalid name (empty)
-        is_valid, msg = PositionValidator.validate_position_name("")
+        is_valid, msg = position_service.validate_position_name("")
         print(f"✅ Empty name validation: {not is_valid} - {msg}")
 
         print("✅ PositionService tests completed successfully!")

@@ -20,13 +20,13 @@ class PositionDetailedView(ui.View):
         self.subdivision_id = subdivision_id
         self.subdivision_data = subdivision_data
 
-    @ui.button(label="🎭 Назначить роль", style=discord.ButtonStyle.primary, emoji="🎭")
+    @ui.button(label="Назначить роль", style=discord.ButtonStyle.primary, emoji="🎭")
     async def assign_role(self, interaction: discord.Interaction, button: ui.Button):
         """Assign Discord role"""
         modal = AssignRoleModal(self.position_id, self.position_data)
         await interaction.response.send_modal(modal)
 
-    @ui.button(label="🗑️ Удалить роль", style=discord.ButtonStyle.danger, emoji="🗑️")
+    @ui.button(label="Удалить роль", style=discord.ButtonStyle.danger, emoji="🗑️")
     async def remove_role(self, interaction: discord.Interaction, button: ui.Button):
         """Remove Discord role"""
         success, message = position_service.update_position_role(
@@ -44,19 +44,19 @@ class PositionDetailedView(ui.View):
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @ui.button(label="✏️ Редактировать", style=discord.ButtonStyle.secondary, emoji="✏️")
+    @ui.button(label="Редактировать", style=discord.ButtonStyle.secondary, emoji="✏️")
     async def edit_position(self, interaction: discord.Interaction, button: ui.Button):
         """Edit position details"""
         modal = EditPositionModal(self.position_id, self.position_data)
         await interaction.response.send_modal(modal)
 
-    @ui.button(label="❌ Удалить должность", style=discord.ButtonStyle.danger, emoji="❌")
+    @ui.button(label="Удалить должность", style=discord.ButtonStyle.danger, emoji="❌")
     async def delete_position(self, interaction: discord.Interaction, button: ui.Button):
         """Delete position"""
         modal = DeletePositionModal(self.position_id, self.position_data)
         await interaction.response.send_modal(modal)
 
-    @ui.button(label="⬅️ Назад", style=discord.ButtonStyle.secondary, emoji="⬅️")
+    @ui.button(label="Назад", style=discord.ButtonStyle.secondary, emoji="◀️")
     async def back(self, interaction: discord.Interaction, button: ui.Button):
         """Go back to position list"""
         from .management import PositionManagementView
@@ -167,7 +167,7 @@ class DeletePositionModal(ui.Modal):
             await interaction.response.send_message("❌ Неверное подтверждение.", ephemeral=True)
             return
 
-        success, message = position_service.remove_position(self.position_id)
+        success, message = position_service.remove_position(self.position_id, force=True)
 
         color = discord.Color.green() if success else discord.Color.red()
         emoji = "✅" if success else "❌"

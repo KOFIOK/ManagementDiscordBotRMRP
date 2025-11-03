@@ -8,6 +8,7 @@ from discord import ui
 from typing import Optional, Dict, Any, List
 from utils.database_manager.position_service import position_service
 from .ui_components import create_position_embed, create_paginated_embed, create_navigation_buttons
+from .navigation import create_main_navigation_embed
 
 class PositionManagementView(ui.View):
     """Manage positions for a specific subdivision with pagination"""
@@ -123,29 +124,29 @@ class PositionManagementView(ui.View):
 
         await interaction.response.edit_message(embed=embed, view=view)
 
-    @ui.button(label="➕ Должность", style=discord.ButtonStyle.success, emoji="📋")
+    @ui.button(label="Добавить должность", style=discord.ButtonStyle.success, emoji="📋")
     async def add_position(self, interaction: discord.Interaction, button: ui.Button):
         """Add new position"""
         modal = AddPositionModal(self.subdivision_id, self.subdivision_data)
         await interaction.response.send_modal(modal)
 
-    @ui.button(label="⬅️ Подразделения", style=discord.ButtonStyle.secondary, emoji="⬅️")
+    @ui.button(label="К подразделениям", style=discord.ButtonStyle.secondary, emoji="◀️")
     async def back_to_subdivisions(self, interaction: discord.Interaction, button: ui.Button):
         """Go back to subdivision selection"""
         from .navigation import PositionNavigationView
         view = PositionNavigationView()
         await view.update_subdivision_options(interaction.guild)
-        embed = await create_main_navigation_embed()
+        embed = create_main_navigation_embed()
         await interaction.response.edit_message(embed=embed, view=view)
 
-    @ui.button(label="🔄 Обновить", style=discord.ButtonStyle.secondary, emoji="🔄")
+    @ui.button(label="Обновить", style=discord.ButtonStyle.secondary, emoji="🔄")
     async def refresh(self, interaction: discord.Interaction, button: ui.Button):
         """Refresh the view"""
         await self.update_position_options(interaction.guild)
-        embed = await create_position_list_embed(self.subdivision_data, self.current_page)
+        embed = create_position_list_embed(self.subdivision_data, self.current_page)
         await interaction.response.edit_message(embed=embed, view=self)
 
-async def create_position_list_embed(subdivision_data: Dict[str, Any], page: int) -> discord.Embed:
+def create_position_list_embed(subdivision_data: Dict[str, Any], page: int) -> discord.Embed:
     """Create embed for position list"""
     embed = create_position_embed(
         title=f"📋 Должности: {subdivision_data.get('name')}",
@@ -153,11 +154,6 @@ async def create_position_list_embed(subdivision_data: Dict[str, Any], page: int
     )
 
     return embed
-
-async def create_main_navigation_embed():
-    """Import from navigation module"""
-    from .navigation import create_main_navigation_embed
-    return await create_main_navigation_embed()
 
 class AddPositionModal(ui.Modal):
     """Add new position modal"""
@@ -174,19 +170,65 @@ class AddPositionModal(ui.Modal):
             max_length=200
         )
 
+        self.role_input = ui.TextInput(
+            label="Discord роль (ID или упоминание)",
+            placeholder="Введите ID роли или @роль (необязательно)",
+            required=False,
+            max_length=50
+        )
+
         self.add_item(self.name_input)
+        self.add_item(self.role_input)
 
     async def on_submit(self, interaction: discord.Interaction):
         """Handle submission"""
         position_name = self.name_input.value.strip()
+        role_input = self.role_input.value.strip() if self.role_input.value else None
 
         if not position_name:
             await interaction.response.send_message("❌ Название должности не может быть пустым.", ephemeral=True)
             return
 
+        # Parse role ID from input
+        role_id = None
+        if role_input:
+            try:
+                # Try to extract role ID from mention or direct ID
+                if role_input.startswith('<@&') and role_input.endswith('>'):
+                    role_id = int(role_input[3:-1])
+                elif role_input.isdigit():
+                    role_id = int(role_input)
+                else:
+                    # Try to find role by name
+                    role = discord.utils.get(interaction.guild.roles, name=role_input)
+                    if role:
+                        role_id = role.id
+                    else:
+                        await interaction.response.send_message(
+                            f"❌ Роль '{role_input}' не найдена. Укажите ID роли или @роль.",
+                            ephemeral=True
+                        )
+                        return
+
+                # Validate role exists
+                role = interaction.guild.get_role(role_id)
+                if not role:
+                    await interaction.response.send_message(
+                        f"❌ Роль с ID {role_id} не найдена на сервере.",
+                        ephemeral=True
+                    )
+                    return
+
+            except ValueError:
+                await interaction.response.send_message(
+                    "❌ Неверный формат ID роли. Укажите число или @роль.",
+                    ephemeral=True
+                )
+                return
+
         # Use new position service
         success, message = position_service.add_position_to_subdivision(
-            position_name, self.subdivision_id
+            position_name, self.subdivision_id, role_id
         )
 
         color = discord.Color.green() if success else discord.Color.red()

@@ -140,13 +140,13 @@ class PositionNavigationView(ui.View):
 
         await interaction.response.edit_message(embed=embed, view=view)
 
-    @ui.button(label="➕ Подразделение", style=discord.ButtonStyle.success, emoji="🏢")
+    @ui.button(label="Добавить подразделение", style=discord.ButtonStyle.success, emoji="🏛️")
     async def add_subdivision(self, interaction: discord.Interaction, button: ui.Button):
         """Add new subdivision"""
         # This will open department management
         await interaction.response.send_message("ℹ️ Управление подразделениями доступно в настройках департаментов.", ephemeral=True)
 
-    @ui.button(label="🔍 Поиск", style=discord.ButtonStyle.primary, emoji="🔍")
+    @ui.button(label="Поиск", style=discord.ButtonStyle.primary, emoji="🔍")
     async def search_positions(self, interaction: discord.Interaction, button: ui.Button):
         """Open search interface"""
         from .search import PositionSearchView
@@ -157,14 +157,14 @@ class PositionNavigationView(ui.View):
         )
         await interaction.response.edit_message(embed=embed, view=view)
 
-    @ui.button(label="🔄 Обновить", style=discord.ButtonStyle.secondary, emoji="🔄")
+    @ui.button(label="Обновить", style=discord.ButtonStyle.secondary, emoji="🔄")
     async def refresh(self, interaction: discord.Interaction, button: ui.Button):
         """Refresh the view"""
         await self.update_subdivision_options(interaction.guild)
-        embed = await create_main_navigation_embed()
+        embed = create_main_navigation_embed()
         await interaction.response.edit_message(embed=embed, view=self)
 
-async def create_main_navigation_embed() -> discord.Embed:
+def create_main_navigation_embed() -> discord.Embed:
     """Create main navigation embed"""
     embed = create_position_embed(
         title="⚙️ Управление должностями",

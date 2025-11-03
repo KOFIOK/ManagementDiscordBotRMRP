@@ -83,6 +83,7 @@ class MainSettingsSelect(ui.Select):
         )
     
     async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer()
         selected_option = self.values[0]
         
         if selected_option == "channels":
@@ -138,7 +139,7 @@ class MainSettingsSelect(ui.Select):
         )
         
         view = ChannelsConfigView()
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
     
     async def show_ping_settings_menu(self, interaction: discord.Interaction):
         """Show modern ping settings configuration menu"""
@@ -185,7 +186,7 @@ class MainSettingsSelect(ui.Select):
             inline=False
         )        
         view = ExcludedRolesView()
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
     async def show_rank_roles_config(self, interaction: discord.Interaction):
         """Show interface for managing rank roles"""
@@ -194,14 +195,23 @@ class MainSettingsSelect(ui.Select):
 
     async def show_position_roles_config(self, interaction: discord.Interaction):
         """Show interface for managing position roles with hierarchical navigation"""
-        from .positions import PositionNavigationView
-        from .positions.navigation import create_main_navigation_embed
+        try:
+            from .positions import PositionNavigationView
+            from .positions.navigation import create_main_navigation_embed
 
-        view = PositionNavigationView()
-        await view.update_subdivision_options(interaction.guild)
-        embed = await create_main_navigation_embed()
+            view = PositionNavigationView()
+            await view.update_subdivision_options(interaction.guild)
+            embed = create_main_navigation_embed()
 
-        await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        except Exception as e:
+            print(f"❌ Error in show_position_roles_config: {e}")
+            import traceback
+            traceback.print_exc()
+            try:
+                await interaction.followup.send(f"❌ Ошибка открытия настроек должностей: {str(e)}", ephemeral=True)
+            except Exception as e2:
+                print(f"❌ Failed to send error message: {e2}")
 
     async def show_warehouse_settings_menu(self, interaction: discord.Interaction):
         """Show warehouse settings configuration menu"""
@@ -236,7 +246,7 @@ class MainSettingsSelect(ui.Select):
         )
         
         view = WarehouseSettingsView()
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
     async def show_supplies_settings_menu(self, interaction: discord.Interaction):
         """Show supplies settings menu"""
@@ -244,7 +254,7 @@ class MainSettingsSelect(ui.Select):
             from .supplies import SuppliesSettingsView
             view = SuppliesSettingsView()
             embed = view.create_embed()
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
             
         except Exception as e:
             print(f"❌ Error in show_supplies_settings_menu: {e}")
@@ -296,7 +306,7 @@ class MainSettingsSelect(ui.Select):
                 inline=False
             )
             
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
             
         except Exception as e:
             print(f"❌ Error in show_commands_settings_menu: {e}")
@@ -360,7 +370,7 @@ class MainSettingsSelect(ui.Select):
         )
         
         view = DepartmentsManagementView()
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
     
     async def show_nickname_settings_menu(self, interaction: discord.Interaction):
         """Show nickname auto-replacement settings menu"""

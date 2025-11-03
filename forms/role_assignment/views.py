@@ -6,7 +6,7 @@ import discord
 from discord import ui
 from .modals import MilitaryApplicationModal, CivilianApplicationModal, SupplierApplicationModal
 from utils.config_manager import load_config
-from utils.message_manager import get_role_assignment_message, get_military_term
+from utils.message_manager import get_role_assignment_message, get_military_term, get_message_with_params
 
 
 class RoleAssignmentView(ui.View):
@@ -92,7 +92,7 @@ class RoleAssignmentView(ui.View):
             end_date_str = blacklist_info['end_date'].strftime('%d.%m.%Y') if blacklist_info['end_date'] else 'Бессрочно'
             
             await interaction.response.send_message(
-                f"{get_role_assignment_message(interaction.guild.id, 'application.error_banned_from_service', '❌ **Вам запрещен приём на службу**')}\n\n"
+                f"{get_message_with_params(interaction.guild.id, 'systems.role_assignment.banned_from_service', '❌ **Вам запрещен приём в организацию**')}\n\n"
                 f"📋 **Вы находитесь в Чёрном списке ВС РФ**\n"
                 f"> **Причина:** {blacklist_info['reason']}\n"
                 f"> **Период:** {start_date_str} - {end_date_str}\n\n"

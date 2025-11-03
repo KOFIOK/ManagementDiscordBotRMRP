@@ -171,19 +171,9 @@ def handle_context_errors(func):
         except Exception as e:
             print(f"❌ Error in {func.__name__}: {e}")
             traceback.print_exc()
-            try:
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(
-                        "❌ Произошла ошибка при выполнении команды.",
-                        ephemeral=True
-                    )
-                else:
-                    await interaction.followup.send(
-                        "❌ Произошла ошибка при выполнении команды.",
-                        ephemeral=True
-                    )
-            except:
-                pass
+            # Don't try to respond if interaction is already done or invalid
+            # Just log the error - the user will see the modal or message from the main function
+            pass
     return wrapper
 
 
@@ -592,6 +582,16 @@ class DismissalModal(ui.Modal, title="Увольнение"):
             required=True
         )
         self.add_item(self.reason_input)
+        
+        self.blacklist_check_input = ui.TextInput(
+            label="Автоматическая проверка ЧС",
+            placeholder="+ или -, если хотите проверять на неустойку",
+            default="+",
+            min_length=1,
+            max_length=1,
+            required=True
+        )
+        self.add_item(self.blacklist_check_input)
     
     async def on_submit(self, interaction: discord.Interaction):
         """Process dismissal submission using PersonnelManager"""
@@ -916,6 +916,11 @@ class DismissalModal(ui.Modal, title="Увольнение"):
 @handle_context_errors
 async def dismiss_user(interaction: discord.Interaction, user: discord.User):
     """Context menu command to dismiss user using PersonnelManager"""
+    # Prevent double-clicks and invalid interactions
+    if interaction.response.is_done():
+        print(f"⚠️ Dismiss command ignored for {user.display_name} - interaction already responded")
+        return
+        
     # Check permissions
     config = load_config()
     if not is_moderator_or_admin(interaction.user, config):
@@ -967,8 +972,15 @@ async def dismiss_user(interaction: discord.Interaction, user: discord.User):
     
     # Open dismissal modal
     modal = DismissalModal(target_user, interaction.guild.id)
-    await interaction.response.send_modal(modal)
-    print(f"✅ Dismissal modal sent for {target_user.display_name}")
+    try:
+        await interaction.response.send_modal(modal)
+        print(f"✅ Dismissal modal sent for {target_user.display_name}")
+    except discord.errors.HTTPException as e:
+        if e.code == 40060:  # Interaction has already been acknowledged
+            print(f"⚠️ Dismissal modal already sent for {target_user.display_name} (interaction already acknowledged)")
+        else:
+            print(f"❌ Error sending dismissal modal: {e}")
+            raise
 
 
 class DepartmentActionView(ui.View):
@@ -2918,6 +2930,11 @@ class GeneralEditView(ui.View):
 @handle_context_errors
 async def quick_promote(interaction: discord.Interaction, user: discord.Member):
     """Context menu command to quickly promote user by +1 rank"""
+    # Prevent double-clicks and invalid interactions
+    if interaction.response.is_done():
+        print(f"⚠️ Quick promote command ignored for {user.display_name} - interaction already responded")
+        return
+        
     # Check permissions
     config = load_config()
     if not is_moderator_or_admin(interaction.user, config):
@@ -2989,6 +3006,11 @@ async def quick_promote(interaction: discord.Interaction, user: discord.Member):
 @handle_context_errors
 async def general_edit(interaction: discord.Interaction, user: discord.Member):
     """Context menu command for general editing (rank, department, position)"""
+    # Prevent double-clicks and invalid interactions
+    if interaction.response.is_done():
+        print(f"⚠️ General edit command ignored for {user.display_name} - interaction already responded")
+        return
+        
     # Check permissions
     config = load_config()
     if not is_moderator_or_admin(interaction.user, config):

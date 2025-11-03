@@ -6,9 +6,9 @@ Role Utilities
 """
 
 import discord
-from typing import List, Set, Optional
+from typing import List, Set, Optional, Tuple
 from utils.message_manager import get_role_reason
-from utils import ping_manager
+from utils.ping_manager import ping_manager
 from utils.database_manager import rank_manager, position_manager
 from utils.config_manager import load_config
 
@@ -220,7 +220,9 @@ class RoleUtils:
         # Назначить ранг из заявки
         rank_name = application_data.get('rank')
         if rank_name:
-            rank_assigned = await RoleUtils.assign_rank_role(user, rank_name, moderator)
+            from utils.message_manager import get_role_reason
+            reason = get_role_reason(user.guild.id, "role_assignment.approved", "Заявка на роль: одобрена").format(moderator=moderator.display_name)
+            rank_assigned = await RoleUtils.assign_rank_role(user, rank_name, moderator, reason=reason)
             if rank_assigned:
                 # Найдем название роли ранга для добавления в список
                 from utils.database_manager.rank_manager import rank_manager
@@ -366,6 +368,60 @@ class RoleUtils:
         return removed_roles
 
     @staticmethod
+    async def clear_all_roles(user: discord.Member, reason: str = "role_removal.dismissal", moderator: discord.Member = None) -> List[str]:
+        """
+        Удалить ВСЕ роли у пользователя (для увольнения)
+
+        Args:
+            user: Discord пользователь
+            reason: Причина для аудита
+            moderator: Модератор, выполняющий действие
+
+        Returns:
+            List[str]: Список удаленных ролей
+        """
+        removed_roles = []
+
+        try:
+            # Удалить роли подразделений
+            dept_roles = await RoleUtils.clear_all_department_roles(user, reason)
+            removed_roles.extend(dept_roles)
+
+            # Удалить роли должностей
+            pos_roles = await RoleUtils.clear_all_position_roles(user, reason)
+            removed_roles.extend(pos_roles)
+
+            # Удалить роли рангов
+            rank_roles = await RoleUtils.clear_all_rank_roles(user, reason)
+            removed_roles.extend(rank_roles)
+
+            # Удалить остальные роли (кроме @everyone)
+            for role in user.roles:
+                if role != user.guild.default_role:  # Не удалять @everyone
+                    try:
+                        audit_reason = get_role_reason(
+                            user.guild.id,
+                            reason,
+                            "Полное снятие ролей при увольнении"
+                        )
+                        if moderator:
+                            audit_reason = audit_reason.format(moderator=moderator.display_name)
+                        else:
+                            audit_reason = audit_reason.format(moderator="система")
+
+                        await user.remove_roles(role, reason=audit_reason)
+                        removed_roles.append(role.name)
+                    except discord.Forbidden:
+                        print(f"⚠️ Нет прав для удаления роли {role.name} у {user}")
+                    except Exception as e:
+                        print(f"❌ Ошибка при удалении роли {role.name} у {user}: {e}")
+
+        except Exception as e:
+            print(f"❌ Ошибка при полном снятии ролей у {user}: {e}")
+
+        return removed_roles
+
+    @staticmethod
     def _get_all_rank_role_ids() -> Set[int]:
         """
         Получить все role IDs рангов из базы данных
@@ -374,10 +430,9 @@ class RoleUtils:
             Set[int]: Множество ID ролей рангов
         """
         try:
-            from .database_manager.rank_manager import rank_manager
-            # Получить все ранги из базы данных
+            from utils.postgresql_pool import get_db_cursor
             role_ids = set()
-            with rank_manager._get_db_cursor() as cursor:
+            with get_db_cursor() as cursor:
                 cursor.execute("SELECT role_id FROM ranks WHERE role_id IS NOT NULL")
                 results = cursor.fetchall()
                 for row in results:
@@ -388,7 +443,7 @@ class RoleUtils:
             return set()
 
     @staticmethod
-    async def assign_rank_role(user: discord.Member, rank_name: str, moderator: discord.Member) -> bool:
+    async def assign_rank_role(user: discord.Member, rank_name: str, moderator: discord.Member, reason: str = None) -> bool:
         """
         Назначить роль ранга пользователю
 
@@ -396,6 +451,7 @@ class RoleUtils:
             user: Discord пользователь
             rank_name: Название ранга
             moderator: Модератор, выполняющий действие
+            reason: Причина назначения роли (опционально)
 
         Returns:
             bool: Успешно ли назначена роль
@@ -423,13 +479,13 @@ class RoleUtils:
             await RoleUtils.clear_all_rank_roles(user, reason="role_removal.rank_change")
 
             # Назначить новую роль ранга
-            reason = get_role_reason(
+            audit_reason = get_role_reason(
                 user.guild.id,
                 "role_assignment.rank",
                 f"Назначение ранга: {rank_name}"
             ).format(moderator=moderator.display_name)
 
-            await user.add_roles(role, reason=reason)
+            await user.add_roles(role, reason=audit_reason)
             print(f"✅ Назначена роль ранга {role.name} ({rank_name}) пользователю {user}")
             return True
 
@@ -452,30 +508,112 @@ class RoleUtils:
         try:
             from utils.database_manager.rank_manager import RankManager
             from utils.config_manager import load_config
-            
+
             rank_manager = RankManager()
             config = load_config()
-            
+
             # Check if default recruit rank is configured
             default_rank_id = config.get('default_recruit_rank_id')
             if default_rank_id:
                 default_rank = await rank_manager.get_rank_by_id(default_rank_id)
                 if default_rank:
-                    return await RoleUtils.assign_rank_role(user, default_rank, moderator)
+                    return await RoleUtils.assign_rank_role(user, default_rank['name'], moderator)
                 else:
                     print(f"⚠️ Настроенное начальное звание с ID {default_rank_id} не найдено, используем первое из базы данных")
-            
+
             # Fallback to first rank in database
             default_rank = await rank_manager.get_first_rank()
             if not default_rank:
                 print(f"❌ Не найден начальный ранг новобранца")
                 return False
 
-            return await RoleUtils.assign_rank_role(user, default_rank, moderator)
+            return await RoleUtils.assign_rank_role(user, default_rank['name'], moderator)
 
         except Exception as e:
             print(f"❌ Ошибка при назначении начального ранга пользователю {user}: {e}")
             return False
+
+    @staticmethod
+    async def update_user_rank(user: discord.Member, old_rank_name: str, new_rank_name: str, moderator: discord.Member, change_type: str = None) -> Tuple[bool, str]:
+        """
+        Обновить ранг пользователя (смена с одного ранга на другой)
+
+        Args:
+            user: Discord пользователь
+            old_rank_name: Название старого ранга
+            new_rank_name: Название нового ранга
+            moderator: Модератор, выполняющий действие
+            change_type: Тип изменения ('promotion', 'demotion', 'transfer')
+
+        Returns:
+            Tuple[bool, str]: (успешно, сообщение)
+        """
+        try:
+            from utils.database_manager.rank_manager import rank_manager
+
+            # Получить данные рангов из базы данных
+            old_rank_data = rank_manager.get_rank_by_name(old_rank_name) if old_rank_name else None
+            new_rank_data = rank_manager.get_rank_by_name(new_rank_name)
+
+            if not new_rank_data:
+                return False, f"Новый ранг '{new_rank_name}' не найден в базе данных"
+
+            # Определить тип изменения
+            if change_type is None:
+                change_type = "automatic"
+                if old_rank_data and new_rank_data:
+                    old_level = old_rank_data.get('rank_level', 0)
+                    new_level = new_rank_data.get('rank_level', 0)
+                    if new_level > old_level:
+                        change_type = "promotion"
+                    elif new_level < old_level:
+                        change_type = "demotion"
+                    else:
+                        change_type = "transfer"
+
+            moderator_display = moderator.display_name
+
+            # Удалить старую роль ранга
+            if old_rank_data and old_rank_data.get('role_id'):
+                old_role = user.guild.get_role(old_rank_data['role_id'])
+                if old_role and old_role in user.roles:
+                    reason = get_role_reason(
+                        user.guild.id,
+                        f"rank_change.{change_type}",
+                        f"Смена ранга: {old_rank_name} → {new_rank_name}"
+                    ).format(moderator=moderator_display)
+                    await user.remove_roles(old_role, reason=reason)
+                    print(f"✅ Удалена старая роль ранга {old_role.name} у {user.display_name}")
+                else:
+                    print(f"⚠️ Старая роль ранга не найдена или не назначена: role_id={old_rank_data.get('role_id')}")
+            else:
+                print(f"⚠️ Нет данных о старом ранге для удаления: {old_rank_name}")
+
+            # Назначить новую роль ранга
+            if new_rank_data.get('role_id'):
+                new_role = user.guild.get_role(new_rank_data['role_id'])
+                if new_role and new_role not in user.roles:
+                    reason = get_role_reason(
+                        user.guild.id,
+                        f"rank_change.{change_type}",
+                        f"Смена ранга: {old_rank_name or 'нет'} → {new_rank_name}"
+                    ).format(moderator=moderator_display)
+                    await user.add_roles(new_role, reason=reason)
+                    print(f"✅ Назначена новая роль ранга {new_role.name} пользователю {user.display_name}")
+
+                    return True, f"Ранг обновлен: {old_rank_name or 'нет'} → {new_rank_name}"
+                elif new_role:
+                    print(f"⚠️ Новая роль ранга уже назначена: {new_role.name}")
+                    return True, f"Роль ранга уже назначена: {new_rank_name}"
+                else:
+                    return False, f"Роль для ранга '{new_rank_name}' не найдена на сервере (ID: {new_rank_data['role_id']})"
+            else:
+                return False, f"У ранга '{new_rank_name}' не настроена Discord роль"
+
+        except Exception as e:
+            error_msg = f"Ошибка обновления ранга: {str(e)}"
+            print(error_msg)
+            return False, error_msg
 
 
 # Глобальный экземпляр

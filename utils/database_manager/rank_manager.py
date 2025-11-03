@@ -2,7 +2,8 @@
 Rank Management System for PostgreSQL Integration
 
 This module provides functionality for managing ranks with automatic synchronization
-between config.json and the PostgreSQL ranks table.
+between config.json and the PostgreSQL ranks table. Provides database operations
+for rank CRUD, hierarchy management, and rank data retrieval.
 """
 
 import logging
@@ -15,7 +16,12 @@ logger = logging.getLogger(__name__)
 
 
 class RankManager:
-    """Advanced rank management with PostgreSQL integration"""
+    """Advanced rank management with PostgreSQL integration
+    
+    Provides database operations for rank management including CRUD operations,
+    hierarchy management, and rank data retrieval. Does not handle Discord
+    role assignments - use role_utils.py for that functionality.
+    """
     
     def __init__(self):
         logger.info("RankManager инициализирован")
@@ -218,75 +224,6 @@ class RankManager:
         except Exception as e:
             logger.error(f"Error getting previous rank for '{current_rank_name}': {e}")
             return None
-    
-    async def update_user_rank_roles(self, guild, user, old_rank_name: str, new_rank_name: str, moderator=None, change_type: str = None) -> Tuple[bool, str]:
-        """
-        Update Discord rank roles for user
-        
-        Args:
-            guild: Discord guild
-            user: Discord user/member
-            old_rank_name: Previous rank name
-            new_rank_name: New rank name
-            
-        Returns:
-            Tuple[bool, str]: (success, message)
-        """
-        try:
-            # Get rank data from database
-            old_rank_data = self.get_rank_by_name(old_rank_name) if old_rank_name else None
-            new_rank_data = self.get_rank_by_name(new_rank_name)
-            
-            if not new_rank_data:
-                return False, f"Новый ранг '{new_rank_name}' не найден в БД"
-            
-            # Get moderator display name for audit reasons
-            moderator_display = await get_moderator_display_name(moderator)
-            
-            # Determine change type (promotion/demotion)
-            if change_type is None:
-                change_type = "automatic"  # Default
-                if old_rank_data and new_rank_data:
-                    old_level = old_rank_data.get('level', 0)
-                    new_level = new_rank_data.get('level', 0)
-                    if new_level > old_level:
-                        change_type = "promotion"
-                    elif new_level < old_level:
-                        change_type = "demotion"
-            
-            # Remove old rank role
-            if old_rank_data and old_rank_data.get('role_id'):
-                old_role = guild.get_role(old_rank_data['role_id'])
-                if old_role and old_role in user.roles:
-                    reason = get_role_reason(guild.id, f"rank_change.{change_type}", "Смена ранга: {old_rank} → {new_rank}").format(old_rank=old_rank_name, new_rank=new_rank_name, moderator=moderator_display)
-                    await user.remove_roles(old_role, reason=reason)
-                    logger.info(f"✅ Removed old rank role {old_role.name} from {user.display_name}")
-                else:
-                    logger.info(f"⚠️ Old role not found or not assigned: role_id={old_rank_data.get('role_id')}")
-            else:
-                logger.info(f"⚠️ No old rank data to remove: {old_rank_name}")
-            
-            # Add new rank role
-            if new_rank_data.get('role_id'):
-                new_role = guild.get_role(new_rank_data['role_id'])
-                if new_role and new_role not in user.roles:
-                    reason = get_role_reason(guild.id, f"rank_change.{change_type}", "Смена ранга: {old_rank} → {new_rank}").format(old_rank=old_rank_name or "нет", new_rank=new_rank_name, moderator=moderator_display)
-                    await user.add_roles(new_role, reason=reason)
-                    logger.info(f"✅ Added new rank role {new_role.name} to {user.display_name}")
-                    
-                    return True, f"Роли обновлены: {old_rank_name} -> {new_rank_name}"
-                elif new_role:
-                    logger.info(f"⚠️ New role already assigned: {new_role.name}")
-                    return True, f"Роль уже назначена: {new_rank_name}"
-                else:
-                    return False, f"Роль для ранга '{new_rank_name}' не найдена на сервере (ID: {new_rank_data['role_id']})"
-            else:
-                return False, f"У ранга '{new_rank_name}' не настроена роль"
-                
-        except Exception as e:
-            error_msg = f"Ошибка обновления ролей: {str(e)}"
-            logger.error(error_msg)
-            return False, error_msg
 
     def get_rank_by_name(self, rank_name: str) -> Optional[Dict[str, Any]]:
         """
@@ -421,8 +358,18 @@ class RankManager:
         Use only when async is not possible
         """
         try:
-            import asyncio
-            return asyncio.run(self.get_default_recruit_rank())
+            with get_db_cursor() as cursor:
+                cursor.execute("""
+                    SELECT name
+                    FROM ranks
+                    WHERE role_id IS NOT NULL
+                    ORDER BY rank_level ASC
+                    LIMIT 1;
+                """)
+
+                result = cursor.fetchone()
+                return result['name'] if result else None
+
         except Exception as e:
             logger.error(f"Ошибка в синхронном получении начального звания: {str(e)}")
             return None

@@ -314,7 +314,7 @@ async def on_ready():
         from forms.department_applications import register_static_views
         print("   ✅ Views imported successfully")
         
-        print("   � Registering static views...")
+        print("   🔧 Registering static views...")
         if register_static_views(bot):
             print("   ✅ Static views registered successfully")
         else:

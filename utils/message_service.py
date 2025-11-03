@@ -248,8 +248,8 @@ class MessageService:
             bool: True if DM was sent successfully
         """
         try:
-            title = MessageService.get_private_template(guild_id, 'private_messages.role_assignment.approval.title', '✅ Заявка одобрена!')
-            description = MessageService.get_private_template(guild_id, 'private_messages.role_assignment.approval.description', '').format(role_type=role_type)
+            title = MessageService.get_private_template(guild_id, 'role_assignment.approval.title', '✅ Заявка одобрена!')
+            description = MessageService.get_private_template(guild_id, 'role_assignment.approval.description', '').format(role_type=role_type)
 
             return await MessageService.send_dm(
                 user=user,

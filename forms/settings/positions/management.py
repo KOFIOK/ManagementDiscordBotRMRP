@@ -6,7 +6,7 @@ Position Management View
 import discord
 from discord import ui
 from typing import Optional, Dict, Any, List
-from utils.database_manager import position_service
+from utils.database_manager.position_service import position_service
 from .ui_components import create_position_embed, create_paginated_embed, create_navigation_buttons
 
 class PositionManagementView(ui.View):

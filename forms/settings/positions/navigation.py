@@ -96,10 +96,11 @@ class PositionNavigationView(ui.View):
     def _get_position_count_for_subdivision(self, subdivision_id: int) -> int:
         """Get position count for subdivision"""
         try:
-            # This will be implemented in the position service
-            # For now, return placeholder
-            return 0
-        except Exception:
+            from utils.database_manager.position_service import position_service
+            positions = position_service.get_positions_for_subdivision(subdivision_id)
+            return len(positions) if positions else 0
+        except Exception as e:
+            print(f"❌ Error getting position count for subdivision {subdivision_id}: {e}")
             return 0
 
     @ui.select(
@@ -128,6 +129,9 @@ class PositionNavigationView(ui.View):
         # Navigate to position list for this subdivision
         from .management import PositionManagementView
         view = PositionManagementView(subdivision_id, subdivision_data, page=1)
+        
+        # Initialize the view with position options
+        await view.update_position_options(interaction.guild)
 
         embed = create_position_embed(
             title=f"📋 Должности: {subdivision_data.get('name')}",

@@ -7,7 +7,7 @@ import discord
 from typing import Optional, Dict, Any, List, Tuple, Set
 from utils.postgresql_pool import get_db_cursor
 from utils.message_manager import get_role_reason, get_moderator_display_name
-from forms.settings.positions.validation import PositionValidator
+from utils.database_manager.position_validator import PositionValidator
 
 class PositionService:
     """New position service with proper database schema integration"""

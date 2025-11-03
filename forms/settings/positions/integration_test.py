@@ -26,7 +26,7 @@ def test_position_management_integration():
         from forms.settings.positions.search import PositionSearchView
         from forms.settings.positions.detailed_management import PositionDetailedView
         from forms.settings.positions.ui_components import create_position_embed, create_paginated_embed
-        from forms.settings.positions.validation import PositionValidator
+        from utils.database_manager.position_validator import PositionValidator
         from utils.database_manager import position_service
 
         print("✅ All modules imported successfully")

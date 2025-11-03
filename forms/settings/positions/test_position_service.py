@@ -25,7 +25,7 @@ def test_position_service():
         print(f"✅ get_all_positions_with_subdivisions() returned {len(all_positions)} positions")
 
         # Test validation
-        from forms.settings.positions.validation import PositionValidator
+        from utils.database_manager.position_validator import PositionValidator
 
         # Test valid name
         is_valid, msg = PositionValidator.validate_position_name("Тестовая должность")

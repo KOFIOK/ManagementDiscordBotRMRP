@@ -19,7 +19,7 @@ def test_imports():
         print("✅ UI components imported successfully")
 
         # Test validation
-        from forms.settings.positions.validation import PositionValidator
+        from utils.database_manager.position_validator import PositionValidator
         print("✅ Validation module imported successfully")
 
         # Test navigation (will have import errors for now)

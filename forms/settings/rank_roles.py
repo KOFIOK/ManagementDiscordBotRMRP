@@ -606,7 +606,7 @@ async def show_rank_roles_config(interaction: discord.Interaction):
         )
         
         view = RankRolesConfigView(all_ranks)
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
     
     except Exception as e:
         print(f"❌ Error in show_rank_roles_config: {e}")
@@ -619,7 +619,7 @@ async def show_rank_roles_config(interaction: discord.Interaction):
             color=discord.Color.red()
         )
         try:
-            await interaction.response.send_message(embed=error_embed, ephemeral=True)
+            await interaction.followup.send(embed=error_embed, ephemeral=True)
         except:
             await interaction.followup.send(embed=error_embed, ephemeral=True)
 def initialize_default_ranks():

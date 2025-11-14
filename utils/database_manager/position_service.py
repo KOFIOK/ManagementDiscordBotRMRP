@@ -379,6 +379,162 @@ class PositionService:
         except Exception as e:
             return False, f"Ошибка при изменении названия: {e}"
 
+    def update_position_role(self, position_id: int, role_id: Optional[int], guild=None) -> Tuple[bool, str]:
+        """
+        Update position Discord role
+
+        Args:
+            position_id: Position ID
+            role_id: New Discord role ID (None to remove)
+            guild: Discord guild for validation
+
+        Returns:
+            Tuple[bool, str]: (success, message)
+        """
+        try:
+            # Validate role if provided and guild available
+            if role_id and guild:
+                is_valid, role_name_or_error = self.validate_discord_role(role_id, guild)
+                if not is_valid:
+                    return False, f"Недопустимая роль: {role_name_or_error}"
+
+            with get_db_cursor() as cursor:
+                # Get current role
+                cursor.execute("SELECT role_id, name FROM positions WHERE id = %s", (position_id,))
+                position = cursor.fetchone()
+
+                if not position:
+                    return False, "Должность не найдена"
+
+                old_role_id = position['role_id']
+                position_name = position['name']
+
+                # Update role
+                cursor.execute("UPDATE positions SET role_id = %s WHERE id = %s", (role_id, position_id))
+
+                self.invalidate_cache()
+                self.invalidate_roles_cache()
+
+                if role_id:
+                    if old_role_id:
+                        message = f"Роль должности '{position_name}' изменена"
+                    else:
+                        message = f"Роль назначена должности '{position_name}'"
+                else:
+                    message = f"Роль удалена у должности '{position_name}'"
+
+                return True, message
+
+        except Exception as e:
+            return False, f"Ошибка при изменении роли: {e}"
+
+    def update_position_subdivision(self, position_id: int, new_subdivision_id: int) -> Tuple[bool, str]:
+        """
+        Update position subdivision assignment
+
+        Args:
+            position_id: Position ID
+            new_subdivision_id: New subdivision ID
+
+        Returns:
+            Tuple[bool, str]: (success, message)
+        """
+        try:
+            # Validate new subdivision exists
+            if not self._subdivision_exists(new_subdivision_id):
+                return False, "Новое подразделение не найдено"
+
+            with get_db_cursor() as cursor:
+                # Get current subdivision
+                cursor.execute("""
+                    SELECT s.name as current_subdivision, p.name as position_name
+                    FROM position_subdivision ps
+                    JOIN subdivisions s ON ps.subdivision_id = s.id
+                    JOIN positions p ON ps.position_id = p.id
+                    WHERE ps.position_id = %s
+                    LIMIT 1
+                """, (position_id,))
+
+                current = cursor.fetchone()
+                if not current:
+                    return False, "Должность не найдена или не привязана к подразделению"
+
+                current_subdivision_name = current['current_subdivision']
+                position_name = current['position_name']
+
+                # Get new subdivision name
+                cursor.execute("SELECT name FROM subdivisions WHERE id = %s", (new_subdivision_id,))
+                new_subdivision = cursor.fetchone()
+                if not new_subdivision:
+                    return False, "Новое подразделение не найдено"
+
+                new_subdivision_name = new_subdivision['name']
+
+                # Update subdivision assignment
+                cursor.execute(
+                    "UPDATE position_subdivision SET subdivision_id = %s WHERE position_id = %s",
+                    (new_subdivision_id, position_id)
+                )
+
+                self.invalidate_cache()
+
+                message = f"Должность '{position_name}' перемещена из '{current_subdivision_name}' в '{new_subdivision_name}'"
+                return True, message
+
+        except Exception as e:
+            return False, f"Ошибка при изменении подразделения: {e}"
+
+    def update_position(self, position_id: int, name: Optional[str] = None,
+                       role_id: Optional[int] = None, subdivision_id: Optional[int] = None) -> Tuple[bool, str]:
+        """
+        Update position with multiple fields
+
+        Args:
+            position_id: Position ID
+            name: New position name (optional)
+            role_id: New Discord role ID (optional)
+            subdivision_id: New subdivision ID (optional)
+
+        Returns:
+            Tuple[bool, str]: (success, message)
+        """
+        try:
+            changes = []
+            success_messages = []
+
+            # Update name if provided
+            if name is not None:
+                name_success, name_message = self.update_position_name(position_id, name)
+                if not name_success:
+                    return False, name_message
+                success_messages.append(name_message)
+                changes.append("название")
+
+            # Update role if provided
+            if role_id is not None:
+                role_success, role_message = self.update_position_role(position_id, role_id)
+                if not role_success:
+                    return False, role_message
+                success_messages.append(role_message)
+                changes.append("роль")
+
+            # Update subdivision if provided
+            if subdivision_id is not None:
+                sub_success, sub_message = self.update_position_subdivision(position_id, subdivision_id)
+                if not sub_success:
+                    return False, sub_message
+                success_messages.append(sub_message)
+                changes.append("подразделение")
+
+            if not changes:
+                return False, "Не указано никаких изменений"
+
+            message = f"Должность обновлена ({', '.join(changes)})"
+            return True, message
+
+        except Exception as e:
+            return False, f"Ошибка при обновлении должности: {e}"
+
     def _subdivision_exists(self, subdivision_id: int) -> bool:
         """Check if subdivision exists"""
         try:

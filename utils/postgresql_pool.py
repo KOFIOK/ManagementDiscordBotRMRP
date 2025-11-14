@@ -16,8 +16,8 @@ from typing import Optional, Dict, Any
 import logging
 from dotenv import load_dotenv
 
-# Загружаем переменные окружения
-load_dotenv()
+# Загружаем переменные окружения с явной кодировкой UTF-8
+load_dotenv(encoding='utf-8')
 
 logger = logging.getLogger(__name__)
 
@@ -32,12 +32,20 @@ class PostgreSQLConnectionPool:
             min_connections: Минимальное количество соединений в пуле
             max_connections: Максимальное количество соединений в пуле
         """
+        # Получаем параметры подключения с явной обработкой кодировки
+        password = os.getenv('POSTGRES_PASSWORD', 'simplepassword')
+        
+        # Если пароль содержит специальные символы, кодируем его корректно
+        if isinstance(password, bytes):
+            password = password.decode('utf-8', errors='ignore')
+        
         self.conn_params = {
             'host': os.getenv('POSTGRES_HOST', '127.0.0.1'),
             'port': int(os.getenv('POSTGRES_PORT', '5432')),
             'database': os.getenv('POSTGRES_DB', 'postgres'),
             'user': os.getenv('POSTGRES_USER', 'postgres'),
-            'password': os.getenv('POSTGRES_PASSWORD', 'simplepassword')
+            'password': password,
+            'client_encoding': 'UTF8'
         }
         
         self.min_connections = min_connections

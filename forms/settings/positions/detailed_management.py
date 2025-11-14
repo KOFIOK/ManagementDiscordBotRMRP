@@ -96,92 +96,138 @@ class EditPositionModal(ui.Modal):
 
     async def on_submit(self, interaction: discord.Interaction):
         """Handle submission"""
-        position_name = self.name_input.value.strip()
-        role_input = self.role_input.value.strip() if self.role_input.value else None
-        subdivision_abbr = self.subdivision_input.value.strip().lower() if self.subdivision_input.value else None
+        try:
+            print(f"🔍 EditPositionModal.on_submit called for position {self.position_id}")
+            
+            position_name = self.name_input.value.strip()
+            role_input = self.role_input.value.strip() if self.role_input.value else None
+            subdivision_abbr = self.subdivision_input.value.strip().lower() if self.subdivision_input.value else None
 
-        if not position_name:
-            await interaction.response.send_message("❌ Название должности не может быть пустым.", ephemeral=True)
-            return
+            print(f"📝 Input values: name={position_name}, role={role_input}, subdivision={subdivision_abbr}")
 
-        # Parse role ID from input
-        role_id = None
-        if role_input:
-            try:
-                # Try to extract role ID from mention or direct ID
-                if role_input.startswith('<@&') and role_input.endswith('>'):
-                    role_id = int(role_input[3:-1])
-                elif role_input.isdigit():
-                    role_id = int(role_input)
-                else:
-                    # Try to find role by name
-                    role = discord.utils.get(interaction.guild.roles, name=role_input)
-                    if role:
-                        role_id = role.id
+            if not position_name:
+                await interaction.response.send_message("❌ Название должности не может быть пустым.", ephemeral=True)
+                return
+
+            # Parse role ID from input
+            role_id = None
+            if role_input and role_input != str(self.position_data.get('role_id', '')):
+                # Only process if role input changed
+                try:
+                    # Try to extract role ID from mention or direct ID
+                    if role_input.startswith('<@&') and role_input.endswith('>'):
+                        role_id = int(role_input[3:-1])
+                    elif role_input.isdigit():
+                        role_id = int(role_input)
                     else:
+                        # Try to find role by name
+                        role = discord.utils.get(interaction.guild.roles, name=role_input)
+                        if role:
+                            role_id = role.id
+                        else:
+                            await interaction.response.send_message(
+                                f"❌ Роль '{role_input}' не найдена. Укажите ID роли или @роль.",
+                                ephemeral=True
+                            )
+                            return
+
+                    # Validate role exists
+                    role = interaction.guild.get_role(role_id)
+                    if not role:
                         await interaction.response.send_message(
-                            f"❌ Роль '{role_input}' не найдена. Укажите ID роли или @роль.",
+                            f"❌ Роль с ID {role_id} не найдена на сервере.",
                             ephemeral=True
                         )
                         return
+                    
+                    print(f"✅ Role parsed: {role_id} ({role.name})")
 
-                # Validate role exists
-                role = interaction.guild.get_role(role_id)
-                if not role:
+                except ValueError:
                     await interaction.response.send_message(
-                        f"❌ Роль с ID {role_id} не найдена на сервере.",
+                        "❌ Неверный формат ID роли. Укажите число или @роль.",
                         ephemeral=True
                     )
                     return
 
-            except ValueError:
-                await interaction.response.send_message(
-                    "❌ Неверный формат ID роли. Укажите число или @роль.",
-                    ephemeral=True
-                )
-                return
-
-        # Handle subdivision change
-        new_subdivision_id = None
-        if subdivision_abbr:
-            # Find subdivision by abbreviation (case insensitive)
-            try:
-                with get_db_cursor() as cursor:
-                    cursor.execute(
-                        "SELECT id FROM subdivisions WHERE LOWER(abbreviation) = %s",
-                        (subdivision_abbr,)
-                    )
-                    result = cursor.fetchone()
-                    if result:
-                        new_subdivision_id = result['id']
-                    else:
-                        await interaction.response.send_message(
-                            f"❌ Подразделение с abbreviation '{subdivision_abbr}' не найдено.",
-                            ephemeral=True
+            # Handle subdivision change
+            new_subdivision_id = None
+            if subdivision_abbr:
+                # Find subdivision by abbreviation (case insensitive)
+                try:
+                    print(f"🔍 Searching for subdivision with abbreviation: {subdivision_abbr}")
+                    with get_db_cursor() as cursor:
+                        cursor.execute(
+                            "SELECT id FROM subdivisions WHERE LOWER(abbreviation) = %s",
+                            (subdivision_abbr,)
                         )
-                        return
-            except Exception as e:
+                        result = cursor.fetchone()
+                        if result:
+                            new_subdivision_id = result['id']
+                            print(f"✅ Found subdivision: {new_subdivision_id}")
+                        else:
+                            await interaction.response.send_message(
+                                f"❌ Подразделение с abbreviation '{subdivision_abbr}' не найдено.",
+                                ephemeral=True
+                            )
+                            return
+                except Exception as e:
+                    print(f"❌ Database error when searching subdivision: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    await interaction.response.send_message(
+                        f"❌ Ошибка при поиске подразделения: {e}",
+                        ephemeral=True
+                    )
+                    return
+
+            # Prepare update parameters
+            update_name = position_name if position_name != self.position_data.get('name') else None
+            update_role = role_id  # Can be None if not changed
+            update_subdivision = new_subdivision_id  # Can be None if not changed
+
+            print(f"📊 Update parameters: name={update_name}, role={update_role}, subdivision={update_subdivision}")
+
+            # Check if anything changed
+            if update_name is None and update_role is None and update_subdivision is None:
                 await interaction.response.send_message(
-                    f"❌ Ошибка при поиске подразделения: {e}",
+                    "ℹ️ Никаких изменений не обнаружено.",
                     ephemeral=True
                 )
                 return
 
-        # Update position
-        success, message = position_service.update_position(
-            self.position_id, position_name, role_id, new_subdivision_id
-        )
+            # Update position
+            print(f"🔄 Calling position_service.update_position...")
+            success, message = position_service.update_position(
+                self.position_id, update_name, update_role, update_subdivision
+            )
 
-        color = discord.Color.green() if success else discord.Color.red()
-        emoji = "✅" if success else "❌"
+            print(f"📋 Update result: success={success}, message={message}")
 
-        embed = discord.Embed(
-            title=f"{emoji} {'Должность обновлена' if success else 'Ошибка'}",
-            description=message,
-            color=color
-        )
+            color = discord.Color.green() if success else discord.Color.red()
+            emoji = "✅" if success else "❌"
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+            embed = discord.Embed(
+                title=f"{emoji} {'Должность обновлена' if success else 'Ошибка'}",
+                description=message,
+                color=color
+            )
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            print(f"❌ Critical error in EditPositionModal.on_submit: {e}")
+            import traceback
+            traceback.print_exc()
+            try:
+                await interaction.response.send_message(
+                    f"❌ Критическая ошибка: {e}",
+                    ephemeral=True
+                )
+            except:
+                await interaction.followup.send(
+                    f"❌ Критическая ошибка: {e}",
+                    ephemeral=True
+                )
 
 class DeletePositionModal(ui.Modal):
     """Delete position confirmation modal"""

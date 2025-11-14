@@ -87,7 +87,7 @@ async def show_ping_settings_overview(interaction: discord.Interaction):
     )
     
     view = ModernPingSettingsView()
-    await interaction.response.edit_message(embed=embed, view=view)
+    await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
 
 class ModernPingSettingsView(BaseSettingsView):

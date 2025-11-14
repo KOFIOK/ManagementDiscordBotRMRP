@@ -710,7 +710,7 @@ async def show_nickname_settings_overview(interaction: discord.Interaction):
     )
     
     view = NicknameSettingsView()
-    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+    await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
 
 # ============================================================================

@@ -1147,7 +1147,7 @@ class PersonnelAuditLogger:
                 f"• Снял с чёрного списка: {moderator.display_name}"
             )
             
-            logger.info("Blacklist removal successful for discord_id=%s by {moderator.display_name}", discord_id)
+            logger.info(f"Blacklist removal successful for discord_id=%s by {moderator.display_name}", discord_id)
             return True, success_message
             
         except Exception as e:

@@ -86,7 +86,7 @@ async def restore_warehouse_request_views(channel):
                         logger.error("Ошибка при восстановлении view для сообщения {message.id}: %s", e)
         
         if restored_count > 0:
-            logger.info("Восстановлено %s warehouse views в канале {channel.name}", restored_count)
+            logger.info(f"Восстановлено %s warehouse views в канале {channel.name}", restored_count)
         
     except Exception as e:
         logger.warning("Ошибка при восстановлении warehouse views: %s", e)

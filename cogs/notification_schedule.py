@@ -75,7 +75,7 @@ class NotificationScheduleCommands(commands.Cog):
             await interaction.response.send_message(embed=embed, ephemeral=True)
             
             # Log the change
-            logger.info("Время уведомлений изменено на %s МСК пользователем {interaction.user}", time_str)
+            logger.info(f"Время уведомлений изменено на %s МСК пользователем {interaction.user}", time_str)
             
         except Exception as e:
             await interaction.response.send_message(
@@ -273,7 +273,7 @@ class NotificationScheduleCommands(commands.Cog):
                 ephemeral=True
             )
             
-            logger.info("Тестовое уведомление отправлено для %s пользователем {interaction.user}", department)
+            logger.info(f"Тестовое уведомление отправлено для %s пользователем {interaction.user}", department)
             
         except Exception as e:
             await interaction.response.send_message(

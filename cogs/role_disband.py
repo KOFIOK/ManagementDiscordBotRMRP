@@ -148,7 +148,7 @@ class RoleDisbandView(discord.ui.View):
             
             if roles_to_remove:
                 await user.remove_roles(*roles_to_remove, reason=get_role_reason(user.guild.id, "role_removal.administrative", "Административное снятие роли").format(moderator=self.admin_user.mention))
-                logger.info("Removed {len(roles_to_remove)} roles from {user.display_name}")
+                logger.info(f"Removed {len(roles_to_remove)} roles from {user.display_name}")
             
         except Exception as e:
             logger.warning("Failed to remove roles from {user.display_name}: %s", e)

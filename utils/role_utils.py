@@ -258,7 +258,7 @@ class RoleUtils:
             
             # Итог
             if role_changes:
-                logger.info("Изменения ролей: {', '.join(role_changes)}")
+                logger.info(f"Изменения ролей: {', '.join(role_changes)}")
             else:
                 logger.info(f" Изменения ролей не требуются для {user.display_name}")
             

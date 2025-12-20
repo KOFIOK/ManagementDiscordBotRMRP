@@ -932,9 +932,9 @@ class DepartmentApplicationModerationView(discord.ui.View):
             )
 
             if removed_dept:
-                logger.info("Очищены роли подразделений: {', '.join(removed_dept)}")
+                logger.info(f"Очищены роли подразделений: {', '.join(removed_dept)}")
             if removed_pos:
-                logger.info("Очищены роли должностей: {', '.join(removed_pos)}")
+                logger.info(f"Очищены роли должностей: {', '.join(removed_pos)}")
 
             # Step 3: Assign new department role using RoleUtils
             dept_assigned = await role_utils.assign_department_role(target_user, dept_code, interaction.user)
@@ -944,7 +944,7 @@ class DepartmentApplicationModerationView(discord.ui.View):
             # Step 4: Assign assignable position roles for this department using RoleUtils
             assigned_pos = await role_utils.assign_position_roles(target_user, dept_code, interaction.user)
             if assigned_pos:
-                logger.info("Назначены роли должностей: {', '.join(assigned_pos)}")
+                logger.info(f"Назначены роли должностей: {', '.join(assigned_pos)}")
 
             # Step 5: Update nickname with department abbreviation
             await self._update_user_nickname(target_user, dept_code)
@@ -1012,7 +1012,7 @@ class DepartmentApplicationModerationView(discord.ui.View):
             
             else:
                 # Приём в подразделение (новобранец)
-                logger.info("DEPT APPLICATION: Приём в %s {user.display_name}", dept_code)
+                logger.info(f"DEPT APPLICATION: Приём в %s {user.display_name}", dept_code)
                 
                 # Для новобранцев попробуем handle_hiring, если не получится - smart fallback
                 try:

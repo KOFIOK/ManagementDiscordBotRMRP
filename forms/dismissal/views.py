@@ -468,7 +468,7 @@ class SimplifiedDismissalApprovalView(ui.View):
                 )
 
                 if roles_cleared:
-                    logger.info("DISMISSAL: Cleared all roles from {target_user.display_name}: {', '.join(roles_cleared)}")
+                    logger.info(f"DISMISSAL: Cleared all roles from {target_user.display_name}: {', '.join(roles_cleared)}")
                 else:
                     logger.info(f" DISMISSAL: No roles to clear for {target_user.display_name}")
             
@@ -1117,7 +1117,7 @@ class AutomaticDismissalApprovalView(ui.View):
             
         except Exception as e:
             logger.warning("Error processing automatic dismissal approval: %s", e)
-            logger.info("Traceback: {traceback.format_exc()}")
+            logger.info(f"Traceback: {traceback.format_exc()}")
             try:
                 await interaction.followup.send(
                     f" Произошла ошибка при обработке одобрения: {str(e)[:100]}...",
@@ -1324,7 +1324,7 @@ class AutomaticDismissalApprovalView(ui.View):
 
         except Exception as e:
             logger.warning("Error finalizing automatic approval: %s", e)
-            logger.info("Traceback: {traceback.format_exc()}")
+            logger.info(f"Traceback: {traceback.format_exc()}")
             try:
                 await interaction.followup.send(
                     f" Произошла ошибка при финализации одобрения: {str(e)[:100]}...",

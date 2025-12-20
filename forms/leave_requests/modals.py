@@ -130,7 +130,7 @@ class LeaveRequestModal(ui.Modal):
               
               if user_info:
                   department = user_info.get('department', 'Неизвестно')
-                  logger.info("LEAVE REQUEST: Получено подразделение из PostgreSQL: '%s' для пользователя {interaction.user.id}", department)
+                  logger.info(f"LEAVE REQUEST: Получено подразделение из PostgreSQL: '%s' для пользователя {interaction.user.id}", department)
               else:
                   logger.info(f" LEAVE REQUEST: Пользователь {interaction.user.id} не найден в PostgreSQL, используем fallback")
                   # Fallback to DepartmentManager if user not in PostgreSQL

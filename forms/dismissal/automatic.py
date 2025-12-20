@@ -31,7 +31,7 @@ async def create_automatic_dismissal_report(guild, member, target_role_name="Ð¡Ð
             
         channel = guild.get_channel(dismissal_channel_id)
         if not channel:
-            logger.info("Dismissal channel %s not found, skipping automatic report for {member.name}", dismissal_channel_id)
+            logger.info(f"Dismissal channel %s not found, skipping automatic report for {member.name}", dismissal_channel_id)
             return False
         
         # Try to get user data from personnel database first using PersonnelManager

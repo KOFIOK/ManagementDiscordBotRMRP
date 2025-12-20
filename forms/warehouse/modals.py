@@ -789,7 +789,7 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
         # Получение подразделения из PostgreSQL (только для отображения в embed)
         try:
             department = await get_user_department_fast(interaction.user.id)
-            logger.info("DEPT: Получено подразделение '%s' для пользователя {interaction.user.id}", department)
+            logger.info(f"DEPT: Получено подразделение '%s' для пользователя {interaction.user.id}", department)
         except Exception as e:
             logger.error("DEPT FALLBACK: Ошибка получения подразделения: %s", e)
             department = "Не определено"
@@ -855,7 +855,7 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
         # Получение подразделения из PostgreSQL (только для отображения в embed)
         try:
             department = await get_user_department_fast(interaction.user.id)
-            logger.info("DEPT: Получено подразделение '%s' для пользователя {interaction.user.id}", department)
+            logger.info(f"DEPT: Получено подразделение '%s' для пользователя {interaction.user.id}", department)
         except Exception as e:
             logger.error("DEPT FALLBACK: Ошибка получения подразделения: %s", e)
             department = "Не определено"

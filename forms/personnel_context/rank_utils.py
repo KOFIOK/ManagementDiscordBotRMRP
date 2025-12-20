@@ -91,7 +91,7 @@ class RankHierarchy:
         
         if current_rank not in rank_roles:
             logger.warning("RANK ERROR: Rank '%s' not found in rank_roles", current_rank)
-            logger.info("Available ranks: {list(rank_roles.keys())}")
+            logger.info(f"Available ranks: {list(rank_roles.keys())}")
             return None
         
         try:
@@ -116,7 +116,7 @@ class RankHierarchy:
         
         if current_rank not in rank_roles:
             logger.warning("RANK ERROR: Rank '%s' not found in rank_roles", current_rank)
-            logger.info("Available ranks: {list(rank_roles.keys())}")
+            logger.info(f"Available ranks: {list(rank_roles.keys())}")
             return None
             
         try:

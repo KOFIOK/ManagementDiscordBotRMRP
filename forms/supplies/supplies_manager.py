@@ -440,7 +440,7 @@ class SuppliesManager:
                                 try:
                                     await message.delete()
                                     deleted_count += 1
-                                    logger.info("Удалено старое сообщение для %s: {message.id}", object_name)
+                                    logger.info(f"Удалено старое сообщение для %s: {message.id}", object_name)
                                     break  # Переходим к следующему сообщению
                                 except (discord.NotFound, discord.HTTPException) as e:
                                     logger.info("Не удалось удалить сообщение {message.id}: %s", e)

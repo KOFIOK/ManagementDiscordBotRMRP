@@ -179,10 +179,10 @@ class PromotionModal(ui.Modal, title="Повышение в звании"):
             )
 
             if not rank_assigned:
-                logger.error("PROMOTION: Failed to assign rank role %s to {self.target_user}", new_rank)
+                logger.error(f"PROMOTION: Failed to assign rank role %s to {self.target_user}", new_rank)
                 return False
 
-            logger.info("PROMOTION: Successfully assigned rank role %s to {self.target_user}", new_rank)
+            logger.info(f"PROMOTION: Successfully assigned rank role %s to {self.target_user}", new_rank)
 
             # TODO: Update PersonnelManager database with new rank
             try:
@@ -347,10 +347,10 @@ class DemotionModal(ui.Modal, title="Разжалование в звании"):
             )
 
             if not rank_assigned:
-                logger.error("DEMOTION: Failed to assign rank role %s to {self.target_user}", new_rank)
+                logger.error(f"DEMOTION: Failed to assign rank role %s to {self.target_user}", new_rank)
                 return False
 
-            logger.info("DEMOTION: Successfully assigned rank role %s to {self.target_user}", new_rank)
+            logger.info(f"DEMOTION: Successfully assigned rank role %s to {self.target_user}", new_rank)
 
             # TODO: Update PersonnelManager database with new rank
             try:

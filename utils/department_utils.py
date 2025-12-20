@@ -38,7 +38,7 @@ async def restore_department_application_messages(bot):
                 logger.warning(f"Channel {channel_id} for {dept_code} not found")
                 continue
             
-            logger.info("Processing department %s in channel {channel.name}", dept_code)
+            logger.info(f"Processing department %s in channel {channel.name}", dept_code)
             
             # Сначала пытаемся восстановить существующее закрепленное сообщение
             pinned_restored = await restore_department_pinned_message(channel, dept_code, manager, bot)
@@ -59,7 +59,7 @@ async def restore_department_application_messages(bot):
                     else:
                         logger.info("Found message for %s but could not restore view", dept_code)
                 else:
-                    logger.info("Creating new message for %s in {channel.name}", dept_code)
+                    logger.info(f"Creating new message for %s in {channel.name}", dept_code)
                     try:
                         success = await manager.setup_department_channel(dept_code, channel)
                         if success:
@@ -225,11 +225,11 @@ async def try_pin_existing_message(channel: discord.TextChannel, dept_code: str,
                         try:
                             await message.pin()
                             logger.info("Pinned existing message for %s (ID: {message.id})", dept_code)
-                        logger.info(f"✅ Pinned existing message for {dept_code} (ID: {message.id})")
+                            logger.info(f"✅ Pinned existing message for {dept_code} (ID: {message.id})")
                         except discord.Forbidden:
-                        logger.warning(f"⚠️ Could not pin message for {dept_code} - insufficient permissions")
+                            logger.warning(f"⚠️ Could not pin message for {dept_code} - insufficient permissions")
                         except discord.HTTPException as e:
-                        logger.warning(f"⚠️ Could not pin message for {dept_code}: {e}")
+                            logger.warning(f"⚠️ Could not pin message for {dept_code}: {e}")
                     
                     logger.info(f"✅ Restored and updated existing message for {dept_code} by ID (ID: {message.id})")
                     logger.info("Restored existing message for %s from config (ID: {message.id})", dept_code)

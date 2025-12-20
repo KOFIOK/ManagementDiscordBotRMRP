@@ -8,6 +8,10 @@ from discord import ui
 from typing import Dict, Any
 from utils.database_manager import position_service
 from utils.postgresql_pool import get_db_cursor
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 class PositionDetailedView(ui.View):
     """Detailed management for individual position"""
@@ -44,7 +48,7 @@ class PositionDetailedView(ui.View):
         modal = EditPositionModal(self.position_id, self.position_data)
         await interaction.response.send_modal(modal)
 
-    @ui.button(label="Удалить должность", style=discord.ButtonStyle.danger, emoji="❌")
+    @ui.button(label="Удалить должность", style=discord.ButtonStyle.danger, emoji="🗑️")
     async def delete_position(self, interaction: discord.Interaction, button: ui.Button):
         """Delete position"""
         modal = DeletePositionModal(self.position_id, self.position_data)
@@ -76,7 +80,7 @@ class EditPositionModal(ui.Modal):
         )
 
         self.role_input = ui.TextInput(
-            label="Discord роль (ID или упоминание)",
+            label="🎖️ Discord роль (ID или упоминание)",
             placeholder="Введите ID роли или @роль (необязательно)",
             required=False,
             max_length=50,
@@ -97,13 +101,13 @@ class EditPositionModal(ui.Modal):
     async def on_submit(self, interaction: discord.Interaction):
         """Handle submission"""
         try:
-            print(f"🔍 EditPositionModal.on_submit called for position {self.position_id}")
+            logger.info(f" EditPositionModal.on_submit called for position {self.position_id}")
             
             position_name = self.name_input.value.strip()
             role_input = self.role_input.value.strip() if self.role_input.value else None
             subdivision_abbr = self.subdivision_input.value.strip().lower() if self.subdivision_input.value else None
 
-            print(f"📝 Input values: name={position_name}, role={role_input}, subdivision={subdivision_abbr}")
+            logger.info("Input values: name=%s, role=%s, subdivision=%s", position_name, role_input, subdivision_abbr)
 
             if not position_name:
                 await interaction.response.send_message("❌ Название должности не может быть пустым.", ephemeral=True)
@@ -140,7 +144,7 @@ class EditPositionModal(ui.Modal):
                         )
                         return
                     
-                    print(f"✅ Role parsed: {role_id} ({role.name})")
+                    logger.info("Role parsed: %s ({role.name})", role_id)
 
                 except ValueError:
                     await interaction.response.send_message(
@@ -154,7 +158,7 @@ class EditPositionModal(ui.Modal):
             if subdivision_abbr:
                 # Find subdivision by abbreviation (case insensitive)
                 try:
-                    print(f"🔍 Searching for subdivision with abbreviation: {subdivision_abbr}")
+                    logger.info("Searching for subdivision with abbreviation: %s", subdivision_abbr)
                     with get_db_cursor() as cursor:
                         cursor.execute(
                             "SELECT id FROM subdivisions WHERE LOWER(abbreviation) = %s",
@@ -163,7 +167,7 @@ class EditPositionModal(ui.Modal):
                         result = cursor.fetchone()
                         if result:
                             new_subdivision_id = result['id']
-                            print(f"✅ Found subdivision: {new_subdivision_id}")
+                            logger.info("Found subdivision: %s", new_subdivision_id)
                         else:
                             await interaction.response.send_message(
                                 f"❌ Подразделение с abbreviation '{subdivision_abbr}' не найдено.",
@@ -171,7 +175,7 @@ class EditPositionModal(ui.Modal):
                             )
                             return
                 except Exception as e:
-                    print(f"❌ Database error when searching subdivision: {e}")
+                    logger.warning("Database error when searching subdivision: %s", e)
                     import traceback
                     traceback.print_exc()
                     await interaction.response.send_message(
@@ -185,7 +189,7 @@ class EditPositionModal(ui.Modal):
             update_role = role_id  # Can be None if not changed
             update_subdivision = new_subdivision_id  # Can be None if not changed
 
-            print(f"📊 Update parameters: name={update_name}, role={update_role}, subdivision={update_subdivision}")
+            logger.info("Update parameters: name=%s, role=%s, subdivision=%s", update_name, update_role, update_subdivision)
 
             # Check if anything changed
             if update_name is None and update_role is None and update_subdivision is None:
@@ -196,12 +200,12 @@ class EditPositionModal(ui.Modal):
                 return
 
             # Update position
-            print(f"🔄 Calling position_service.update_position...")
+            logger.info("Calling position_service.update_position...")
             success, message = position_service.update_position(
                 self.position_id, update_name, update_role, update_subdivision
             )
 
-            print(f"📋 Update result: success={success}, message={message}")
+            logger.info("Update result: success=%s, message=%s", success, message)
 
             color = discord.Color.green() if success else discord.Color.red()
             emoji = "✅" if success else "❌"
@@ -215,7 +219,7 @@ class EditPositionModal(ui.Modal):
             await interaction.response.send_message(embed=embed, ephemeral=True)
             
         except Exception as e:
-            print(f"❌ Critical error in EditPositionModal.on_submit: {e}")
+            logger.warning("Critical error in EditPositionModal.on_submit: %s", e)
             import traceback
             traceback.print_exc()
             try:
@@ -225,7 +229,7 @@ class EditPositionModal(ui.Modal):
                 )
             except:
                 await interaction.followup.send(
-                    f"❌ Критическая ошибка: {e}",
+                    f" Критическая ошибка: {e}",
                     ephemeral=True
                 )
 

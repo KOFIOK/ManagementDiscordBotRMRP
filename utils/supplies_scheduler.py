@@ -4,6 +4,10 @@ from datetime import datetime, timedelta
 from typing import Optional
 from utils.config_manager import load_config
 from forms.supplies.supplies_manager import SuppliesManager
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class SuppliesScheduler:
@@ -18,12 +22,12 @@ class SuppliesScheduler:
     def start(self):
         """Запускает планировщик"""
         if self.is_running:
-            print("⚠️ Планировщик поставок уже запущен")
+            logger.info("Планировщик поставок уже запущен")
             return
         
         self.is_running = True
         self.task = asyncio.create_task(self._scheduler_loop())
-        print("🚚 Планировщик поставок запущен")
+        logger.info("Планировщик поставок запущен")
     
     def stop(self):
         """Останавливает планировщик"""
@@ -33,7 +37,7 @@ class SuppliesScheduler:
         self.is_running = False
         if self.task:
             self.task.cancel()
-        print("🛑 Планировщик поставок остановлен")
+        logger.info("Планировщик поставок остановлен")
     
     async def _scheduler_loop(self):
         """Основной цикл планировщика (проверка каждые 15 секунд для лучшего обновления)"""
@@ -44,7 +48,7 @@ class SuppliesScheduler:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                print(f"❌ Ошибка в планировщике поставок: {e}")
+                logger.warning("Ошибка в планировщике поставок: %s", e)
                 await asyncio.sleep(15)
     
     async def _check_timers(self):
@@ -60,13 +64,13 @@ class SuppliesScheduler:
             
             if not notification_channel_id:
                 if active_timers:  # Логируем только если есть таймеры
-                    print("⚠️ Канал уведомлений не настроен")
+                    logger.info("Канал уведомлений не настроен")
                 return
             
             notification_channel = self.bot.get_channel(notification_channel_id)
             if not notification_channel:
                 if active_timers:  # Логируем только если есть таймеры
-                    print(f"❌ Канал уведомлений не найден: {notification_channel_id}")
+                    logger.info("Канал уведомлений не найден: %s", notification_channel_id)
                 return
             
             current_time = datetime.now()
@@ -127,7 +131,7 @@ class SuppliesScheduler:
             await self._update_notification_messages(notification_channel)
                     
         except Exception as e:
-            print(f"❌ Ошибка при проверке таймеров поставок: {e}")
+            logger.warning("Ошибка при проверке таймеров поставок: %s", e)
     
     async def _update_control_message(self):
         """Обновляет сообщение управления поставками"""
@@ -137,9 +141,9 @@ class SuppliesScheduler:
             if restore_manager:
                 await restore_manager.update_control_message_timers()
             else:
-                print("❌ Менеджер восстановления не найден")
+                logger.warning("Менеджер восстановления не найден")
         except Exception as e:
-            print(f"❌ Ошибка обновления сообщения управления: {e}")
+            logger.warning("Ошибка обновления сообщения управления: %s", e)
 
     async def _update_notification_messages(self, notification_channel):
         """Обновляет сообщения в канале оповещений с актуальным временем"""
@@ -147,7 +151,7 @@ class SuppliesScheduler:
             if notification_channel:
                 await self.supplies_manager.update_notification_messages(notification_channel)
         except Exception as e:
-            print(f"❌ Ошибка обновления сообщений оповещений: {e}")
+            logger.warning("Ошибка обновления сообщений оповещений: %s", e)
     
     async def _send_ready_notification(self, channel: discord.TextChannel, object_key: str, 
                                      timer_info: dict, subscription_role_id: Optional[int]):
@@ -184,10 +188,10 @@ class SuppliesScheduler:
                 embed=embed
             )
             
-            print(f"✅ Отправлено уведомление о готовности: {object_name}")
+            logger.info("Отправлено уведомление о готовности: %s", object_name)
             
         except Exception as e:
-            print(f"❌ Ошибка отправки уведомления о готовности для {object_key}: {e}")
+            logger.warning("Ошибка отправки уведомления о готовности для %s: %s", object_key, e)
     
     async def _send_warning_notification(self, channel: discord.TextChannel, object_key: str,
                                        timer_info: dict, subscription_role_id: Optional[int],
@@ -226,10 +230,10 @@ class SuppliesScheduler:
             # Сохраняем ID сообщения с предупреждением
             await self.supplies_manager.save_notification_message(object_key, message.id, 'warning')
             
-            print(f"⚠️ Отправлено предупреждение для {object_name}: {minutes_left} минут")
+            logger.warning("Отправлено предупреждение для %s: %s минут", object_name, minutes_left)
             
         except Exception as e:
-            print(f"❌ Ошибка отправки предупреждения для {object_key}: {e}")
+            logger.warning("Ошибка отправки предупреждения для %s: %s", object_key, e)
     
     async def _mark_warning_sent(self, object_key: str):
         """Отмечает, что предупреждение для объекта было отправлено"""
@@ -240,7 +244,7 @@ class SuppliesScheduler:
                 self.supplies_manager._save_data(data)
                 
         except Exception as e:
-            print(f"❌ Ошибка при отметке отправленного предупреждения для {object_key}: {e}")
+            logger.warning("Ошибка при отметке отправленного предупреждения для %s: %s", object_key, e)
 
     async def _update_warning_messages(self, channel):
         """Обновляет сообщения предупреждений в канале оповещений"""
@@ -248,7 +252,7 @@ class SuppliesScheduler:
             if channel:
                 await self.supplies_manager.update_warning_messages(channel)
         except Exception as e:
-            print(f"❌ Ошибка обновления сообщений предупреждений: {e}")
+            logger.warning("Ошибка обновления сообщений предупреждений: %s", e)
 
 
 # Глобальная переменная для планировщика
@@ -263,7 +267,7 @@ def initialize_supplies_scheduler(bot) -> SuppliesScheduler:
         supplies_scheduler = SuppliesScheduler(bot)
         return supplies_scheduler
     except Exception as e:
-        print(f"❌ Ошибка инициализации планировщика поставок: {e}")
+        logger.warning("Ошибка инициализации планировщика поставок: %s", e)
         return None
 
 

@@ -5,6 +5,10 @@ Integration Test for Position Management System
 
 import sys
 import os
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 # Add current directory and parent directories to path for imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -17,7 +21,7 @@ sys.path.insert(0, current_dir)
 
 def test_position_management_integration():
     """Test the complete position management workflow"""
-    print("🧪 Testing position management integration...")
+    logger.info("Testing position management integration...")
 
     try:
         # Test imports
@@ -29,59 +33,59 @@ def test_position_management_integration():
         from utils.database_manager import position_service
         from utils.database_manager import position_service
 
-        print("✅ All modules imported successfully")
+        logger.info("All modules imported successfully")
 
         # Test PositionService methods
-        print("\n🔍 Testing PositionService...")
+        logger.info("\n Testing PositionService...")
 
         # Test getting positions for subdivision (should work even if empty)
         positions = position_service.get_positions_for_subdivision(1)  # Test subdivision ID
-        print(f"✅ get_positions_for_subdivision returned: {len(positions)} positions")
+        logger.info("get_positions_for_subdivision returned: {len(positions)} positions")
 
         # Test getting all positions with subdivisions
         all_positions = position_service.get_all_positions_with_subdivisions()
-        print(f"✅ get_all_positions_with_subdivisions returned: {len(all_positions)} positions")
+        logger.info("get_all_positions_with_subdivisions returned: {len(all_positions)} positions")
 
         # Test validation
-        print("\n🔍 Testing PositionValidator...")
+        logger.info("\n Testing PositionValidator...")
         is_valid, message = position_service.validate_position_name("Test Position")
-        print(f"✅ Position name validation: {is_valid} - {message}")
+        logger.info("Position name validation: %s - %s", is_valid, message)
 
         is_valid, message = position_service.validate_position_name("")
-        print(f"✅ Empty name validation: {not is_valid} - {message}")
+        logger.info("Empty name validation: %s - %s", not is_valid, message)
 
         # Test UI components
-        print("\n🔍 Testing UI components...")
+        logger.info("\n Testing UI components...")
         embed = create_position_embed("Test Title", "Test Description")
-        print(f"✅ create_position_embed works: {embed.title}")
+        logger.info(f" create_position_embed works: {embed.title}")
 
         paginated_embed = create_paginated_embed("Test", [], 1, 1)
-        print(f"✅ create_paginated_embed works: {paginated_embed.title}")
+        logger.info(f" create_paginated_embed works: {paginated_embed.title}")
 
         # Test view instantiation (without Discord context)
-        print("\n🔍 Testing view instantiation...")
+        logger.info("\n Testing view instantiation...")
         nav_view = PositionNavigationView()
-        print("✅ PositionNavigationView instantiated")
+        logger.info("PositionNavigationView instantiated")
 
         # Test management view with mock data
         mock_subdivision = {"id": 1, "name": "Test Subdivision", "abbreviation": "TS"}
         mgmt_view = PositionManagementView(1, mock_subdivision)
-        print("✅ PositionManagementView instantiated")
+        logger.info("PositionManagementView instantiated")
 
         # Test search view
         search_view = PositionSearchView()
-        print("✅ PositionSearchView instantiated")
+        logger.info("PositionSearchView instantiated")
 
         # Test detailed view with mock data
         mock_position = {"id": 1, "name": "Test Position", "role_id": None}
         detailed_view = PositionDetailedView(1, mock_position, 1, mock_subdivision)
-        print("✅ PositionDetailedView instantiated")
+        logger.info("PositionDetailedView instantiated")
 
-        print("\n🎉 All integration tests passed!")
+        logger.info("\n All integration tests passed!")
         return True
 
     except Exception as e:
-        print(f"❌ Integration test failed: {e}")
+        logger.warning("Integration test failed: %s", e)
         import traceback
         traceback.print_exc()
         return False

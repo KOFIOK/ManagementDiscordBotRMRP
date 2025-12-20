@@ -7,6 +7,10 @@ import re
 import discord
 from datetime import datetime
 from utils.warehouse_manager import WarehouseManager
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 from .cart import (
     WarehouseRequestItem, WarehouseRequestCart, get_user_cart, 
     clear_user_cart_safe, get_user_cart_message, set_user_cart_message
@@ -85,7 +89,7 @@ class WarehouseRequestModal(discord.ui.Modal):
             user_data = await get_cached_user_info(user_id)
             return cls(category, item_name, warehouse_manager, user_data=user_data)
         except Exception as e:
-            print(f"❌ Error loading user data for warehouse modal: {e}")
+            logger.error("Error loading user data for warehouse modal: %s", e)
             # Fallback to empty modal
             return cls(category, item_name, warehouse_manager)
 
@@ -144,22 +148,22 @@ class WarehouseRequestModal(discord.ui.Modal):
                 position = self.user_data.get('position', 'Не назначено')
                 rank = self.user_data.get('rank', 'Не назначено') 
                 department = self.user_data.get('department', 'Не определено')
-                print(f"🔄 WAREHOUSE MODAL: Используем сохраненные данные - должность='{position}', звание='{rank}', подразделение='{department}'")
+                logger.info("WAREHOUSE MODAL: Используем сохраненные данные - должность='%s', звание='%s', подразделение='%s'", position, rank, department)
             else:
                 # Если данных нет, попробуем получить из кэша/БД
-                print(f"⚠️ WAREHOUSE MODAL: Нет сохраненных данных, запрашиваем из кэша/БД")
+                logger.info("WAREHOUSE MODAL: Нет сохраненных данных, запрашиваем из кэша/БД")
                 from utils.user_cache import get_cached_user_info
                 fresh_data = await get_cached_user_info(interaction.user.id)
                 if fresh_data:
                     position = fresh_data.get('position', 'Не назначено')
                     rank = fresh_data.get('rank', 'Не назначено')
                     department = fresh_data.get('department', 'Не определено')
-                    print(f"✅ WAREHOUSE MODAL: Получены свежие данные - должность='{position}', звание='{rank}', подразделение='{department}'")
+                    logger.info("WAREHOUSE MODAL: Получены свежие данные - должность='%s', звание='%s', подразделение='%s'", position, rank, department)
                 else:
                     position = 'Не назначено'
                     rank = 'Не назначено'
                     department = 'Не определено'
-                    print(f"❌ WAREHOUSE MODAL: Не удалось получить данные пользователя, используем значения по умолчанию")
+                    logger.info("WAREHOUSE MODAL: Не удалось получить данные пользователя, используем значения по умолчанию")
             
             # Получаем текущее состояние корзины для проверки лимитов
             cart = get_user_cart(interaction.user.id)
@@ -212,7 +216,7 @@ class WarehouseRequestModal(discord.ui.Modal):
             await self._show_cart(interaction, cart, validation_message, is_first_item=is_first_item, loading_message=loading_message)
             
         except Exception as e:
-            print(f"❌ Ошибка в WarehouseRequestModal.on_submit: {e}")
+            logger.error("Ошибка в WarehouseRequestModal.on_submit: %s", e)
             error_embed = discord.Embed(
                 title="❌ Ошибка",
                 description="Произошла ошибка при обработке запроса.",
@@ -240,7 +244,7 @@ class WarehouseRequestModal(discord.ui.Modal):
             elif "уменьшено" in validation_message:
                 field_name = "⚠️ Внимание"
             else:
-                field_name = "ℹ️ Информация"
+                field_name = "⚠️ Внимание"
             embed.add_field(name=field_name, value=validation_message, inline=False)
         
         # Добавляем специальное поле для первого предмета
@@ -371,17 +375,17 @@ class WarehouseQuantityModal(discord.ui.Modal):
                 user_static = last_item.user_static
                 position = last_item.position
                 rank = last_item.rank
-                print(f"🔄 WAREHOUSE MODAL: Используем данные из корзины - должность='{position}', звание='{rank}'")
+                logger.info("WAREHOUSE MODAL: Используем данные из корзины - должность='%s', звание='%s'", position, rank)
             elif self.user_data:
                 # Используем сохраненные данные из модального окна
                 user_name = self.user_data.get('full_name', '')
                 user_static = self.user_data.get('static', '')
                 position = self.user_data.get('position', 'Не назначено')
                 rank = self.user_data.get('rank', 'Не назначено')
-                print(f"🔄 WAREHOUSE MODAL: Используем сохраненные данные - должность='{position}', звание='{rank}'")
+                logger.info("WAREHOUSE MODAL: Используем сохраненные данные - должность='%s', звание='%s'", position, rank)
             else:
                 # Последний вариант - запрос из кэша/БД
-                print(f"⚠️ WAREHOUSE MODAL: Корзина пуста и нет сохраненных данных, запрашиваем из кэша/БД")
+                logger.info("WAREHOUSE MODAL: Корзина пуста и нет сохраненных данных, запрашиваем из кэша/БД")
                 from utils.user_cache import get_cached_user_info
                 fresh_data = await get_cached_user_info(interaction.user.id)
                 if fresh_data:
@@ -389,13 +393,13 @@ class WarehouseQuantityModal(discord.ui.Modal):
                     user_static = fresh_data.get('static', '')
                     position = fresh_data.get('position', 'Не назначено')
                     rank = fresh_data.get('rank', 'Не назначено')
-                    print(f"✅ WAREHOUSE MODAL: Получены свежие данные - должность='{position}', звание='{rank}'")
+                    logger.info("WAREHOUSE MODAL: Получены свежие данные - должность='%s', звание='%s'", position, rank)
                 else:
                     user_name = ''
                     user_static = ''
                     position = 'Не назначено'
                     rank = 'Не назначено'
-                    print(f"❌ WAREHOUSE MODAL: Не удалось получить данные пользователя, используем значения по умолчанию")
+                    logger.info("WAREHOUSE MODAL: Не удалось получить данные пользователя, используем значения по умолчанию")
                   # Валидация количества с учетом ограничений пользователя
             category_key = self._get_category_key(self.category)
             is_valid, corrected_quantity, validation_msg = self.warehouse_manager.validate_item_request(
@@ -443,7 +447,7 @@ class WarehouseQuantityModal(discord.ui.Modal):
             await self._show_cart_ultra_fast(interaction, cart, validation_message, is_first_item=is_first_item, loading_message=loading_message)
             
         except Exception as e:
-            print(f"❌ Ошибка в WarehouseQuantityModal.on_submit: {e}")
+            logger.error("Ошибка в WarehouseQuantityModal.on_submit: %s", e)
             error_embed = discord.Embed(
                 title="❌ Ошибка",
                 description="Произошла ошибка при обработке запроса.",
@@ -472,7 +476,7 @@ class WarehouseQuantityModal(discord.ui.Modal):
                 elif "уменьшено" in validation_message:
                     field_name = "⚠️ Внимание"
                 else:
-                    field_name = "ℹ️ Информация"
+                    field_name = "⚠️ Внимание"
                 embed.add_field(name=field_name, value=validation_message, inline=False)
             
             # Добавляем специальное поле для первого предмета
@@ -517,7 +521,7 @@ class WarehouseQuantityModal(discord.ui.Modal):
             set_user_cart_message(interaction.user.id, cart_message)
             
         except Exception as e:
-            print(f"❌ Ошибка в _show_cart_ultra_fast: {e}")
+            logger.error("Ошибка в _show_cart_ultra_fast: %s", e)
 
     def _get_category_key(self, category: str) -> str:
         """Получить ключ категории"""
@@ -574,7 +578,7 @@ class RemoveItemByNumberModal(discord.ui.Modal):
             
             if success:
                 success_embed = discord.Embed(
-                    title="✅ Предмет удален",
+                    title="🗑️ Предмет удален",
                     description=f"Удален: **{removed_item.item_name}** × {removed_item.quantity}",
                     color=discord.Color.green()
                 )
@@ -591,7 +595,7 @@ class RemoveItemByNumberModal(discord.ui.Modal):
                 await interaction.followup.send(embed=error_embed, ephemeral=True)
                 
         except Exception as e:
-            print(f"❌ Ошибка при удалении предмета по номеру: {e}")
+            logger.error("Ошибка при удалении предмета по номеру: %s", e)
             error_embed = discord.Embed(
                 title="❌ Ошибка",
                 description="Произошла ошибка при удалении предмета",
@@ -626,7 +630,7 @@ class RemoveItemByNumberModal(discord.ui.Modal):
                 await cart_message.edit(embed=updated_embed, view=view)
                 
         except Exception as e:
-            print(f"❌ Ошибка при обновлении отображения корзины: {e}")
+            logger.error("Ошибка при обновлении отображения корзины: %s", e)
 
 
 class WarehouseFinalDetailsModal(discord.ui.Modal):
@@ -677,7 +681,7 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
             # Проверяем, что корзина не пуста
             if self.cart.is_empty():
                 error_embed = discord.Embed(
-                    title="❌ Корзина пуста",
+                    title="❌ Ошибка валидации",
                     description="Корзина пуста! Добавьте предметы перед отправкой.",
                     color=discord.Color.red()
                 )
@@ -724,7 +728,7 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
             await self._process_warehouse_request_background(interaction, name, static)
             
         except Exception as e:
-            print(f"❌ Ошибка в WarehouseFinalDetailsModal.on_submit: {e}")
+            logger.error("Ошибка в WarehouseFinalDetailsModal.on_submit: %s", e)
             error_embed = discord.Embed(
                 title="❌ Ошибка",
                 description="Произошла ошибка при отправке заявки",
@@ -750,7 +754,7 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
             await self._update_cart_after_submission(interaction)
             
         except Exception as e:
-            print(f"❌ Ошибка при фоновой обработке заявки: {e}")
+            logger.error("Ошибка при фоновой обработке заявки: %s", e)
             error_embed = discord.Embed(
                 title="❌ Ошибка отправки",
                 description="Произошла ошибка при отправке заявки на склад",
@@ -785,9 +789,9 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
         # Получение подразделения из PostgreSQL (только для отображения в embed)
         try:
             department = await get_user_department_fast(interaction.user.id)
-            print(f"🏢 DEPT: Получено подразделение '{department}' для пользователя {interaction.user.id}")
+            logger.info("DEPT: Получено подразделение '%s' для пользователя {interaction.user.id}", department)
         except Exception as e:
-            print(f"⚠️ DEPT FALLBACK: Ошибка получения подразделения: {e}")
+            logger.error("DEPT FALLBACK: Ошибка получения подразделения: %s", e)
             department = "Не определено"
         
         embed = discord.Embed(
@@ -851,9 +855,9 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
         # Получение подразделения из PostgreSQL (только для отображения в embed)
         try:
             department = await get_user_department_fast(interaction.user.id)
-            print(f"🏢 DEPT: Получено подразделение '{department}' для пользователя {interaction.user.id}")
+            logger.info("DEPT: Получено подразделение '%s' для пользователя {interaction.user.id}", department)
         except Exception as e:
-            print(f"⚠️ DEPT FALLBACK: Ошибка получения подразделения: {e}")
+            logger.error("DEPT FALLBACK: Ошибка получения подразделения: %s", e)
             department = "Не определено"
         
         embed = discord.Embed(
@@ -935,7 +939,7 @@ class WarehouseFinalDetailsModal(discord.ui.Modal):
                 await interaction.edit_original_response(embed=success_embed)
             
         except Exception as e:
-            print(f"❌ Ошибка при обновлении корзины после отправки: {e}")
+            logger.error("Ошибка при обновлении корзины после отправки: %s", e)
             # В случае ошибки просто показываем успех через основной ответ
             try:
                 success_embed = discord.Embed(
@@ -1034,17 +1038,17 @@ class WarehouseCustomItemModal(discord.ui.Modal):
                 user_static = last_item.user_static
                 position = last_item.position
                 rank = last_item.rank
-                print(f"🔄 WAREHOUSE CUSTOM MODAL: Используем данные из корзины - должность='{position}', звание='{rank}'")
+                logger.info("WAREHOUSE CUSTOM MODAL: Используем данные из корзины - должность='%s', звание='%s'", position, rank)
             elif self.user_data:
                 # Используем сохраненные данные из модального окна
                 user_name = self.user_data.get('full_name', '')
                 user_static = self.user_data.get('static', '')
                 position = self.user_data.get('position', 'Не назначено')
                 rank = self.user_data.get('rank', 'Не назначено')
-                print(f"🔄 WAREHOUSE CUSTOM MODAL: Используем сохраненные данные - должность='{position}', звание='{rank}'")
+                logger.info("WAREHOUSE CUSTOM MODAL: Используем сохраненные данные - должность='%s', звание='%s'", position, rank)
             else:
                 # Последний вариант - запрос из кэша/БД
-                print(f"⚠️ WAREHOUSE CUSTOM MODAL: Корзина пуста и нет сохраненных данных, запрашиваем из кэша/БД")
+                logger.info("WAREHOUSE CUSTOM MODAL: Корзина пуста и нет сохраненных данных, запрашиваем из кэша/БД")
                 from utils.user_cache import get_cached_user_info
                 fresh_data = await get_cached_user_info(interaction.user.id)
                 if fresh_data:
@@ -1052,13 +1056,13 @@ class WarehouseCustomItemModal(discord.ui.Modal):
                     user_static = fresh_data.get('static', '')
                     position = fresh_data.get('position', 'Не назначено')
                     rank = fresh_data.get('rank', 'Не назначено')
-                    print(f"✅ WAREHOUSE CUSTOM MODAL: Получены свежие данные - должность='{position}', звание='{rank}'")
+                    logger.info("WAREHOUSE CUSTOM MODAL: Получены свежие данные - должность='%s', звание='%s'", position, rank)
                 else:
                     user_name = ''
                     user_static = ''
                     position = 'Не назначено'
                     rank = 'Не назначено'
-                    print(f"❌ WAREHOUSE CUSTOM MODAL: Не удалось получить данные пользователя, используем значения по умолчанию")
+                    logger.info("WAREHOUSE CUSTOM MODAL: Не удалось получить данные пользователя, используем значения по умолчанию")
             
             # Валидация с учетом корзины
             category_key = self._get_category_key(self.category)
@@ -1107,7 +1111,7 @@ class WarehouseCustomItemModal(discord.ui.Modal):
             await self._show_cart_ultra_fast(interaction, cart, validation_message, is_first_item=is_first_item, loading_message=loading_message)
             
         except Exception as e:
-            print(f"❌ Ошибка в WarehouseCustomItemModal.on_submit: {e}")
+            logger.error("Ошибка в WarehouseCustomItemModal.on_submit: %s", e)
             error_embed = discord.Embed(
                 title="❌ Ошибка",
                 description="Произошла ошибка при обработке запроса",
@@ -1120,7 +1124,7 @@ class WarehouseCustomItemModal(discord.ui.Modal):
         """Быстрое отображение корзины для кастомных предметов"""
         try:
             embed = discord.Embed(
-                title="📦 Ваша заявка на склад",
+                title="📝 Ваша заявка на склад",
                 description=cart.get_summary(),
                 color=discord.Color.blue(),
                 timestamp=datetime.now()
@@ -1129,11 +1133,11 @@ class WarehouseCustomItemModal(discord.ui.Modal):
             if validation_message:
                 # Определяем цвет и иконку в зависимости от типа сообщения
                 if "Превышен лимит" in validation_message:
-                    field_name = "🚫 Лимит исчерпан"
+                    field_name = "ℹ️ Информация"
                 elif "уменьшено" in validation_message:
                     field_name = "⚠️ Внимание"
                 else:
-                    field_name = "ℹ️ Информация"
+                    field_name = "⚠️ Внимание"
                 embed.add_field(name=field_name, value=validation_message, inline=False)
             
             # Добавляем специальное поле для первого предмета
@@ -1145,7 +1149,7 @@ class WarehouseCustomItemModal(discord.ui.Modal):
                 )
             
             embed.add_field(
-                name="📊 Статистика",
+                name="Выберите действие ниже или продолжите выбор снаряжения из закреплённого сообщения",
                 value=f"Предметов в корзине: **{len(cart.items)}**\nОбщее количество: **{cart.get_total_items()}**",
                 inline=False
             )
@@ -1178,7 +1182,7 @@ class WarehouseCustomItemModal(discord.ui.Modal):
             set_user_cart_message(interaction.user.id, cart_message)
             
         except Exception as e:
-            print(f"❌ Ошибка в _show_cart_ultra_fast: {e}")
+            logger.error("Ошибка в _show_cart_ultra_fast: %s", e)
 
     def _get_category_key(self, category: str) -> str:
         """Получить ключ категории"""

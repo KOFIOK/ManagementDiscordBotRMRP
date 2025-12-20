@@ -8,13 +8,18 @@ from discord.ext import commands
 from typing import Dict, List, Optional, Any
 from utils.config_manager import load_config, save_config
 from utils.message_manager import get_settings_message
+from .base import SectionSettingsView
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
-class WarehouseSettingsView(discord.ui.View):
+class WarehouseSettingsView(SectionSettingsView):
     """Главное меню настроек склада"""
     
     def __init__(self):
-        super().__init__(timeout=300)
+        super().__init__(title="📦 Настройки склада", description="Управление системой запросов и выдачи складского имущества", timeout=300)
     
     @discord.ui.button(label="Каналы склада", style=discord.ButtonStyle.primary, emoji="📦")
     async def channels_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -28,12 +33,12 @@ class WarehouseSettingsView(discord.ui.View):
         modal = WarehouseCooldownModal()
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="Режим лимитов", style=discord.ButtonStyle.secondary, emoji="🎯")
+    @discord.ui.button(label="Режим лимитов", style=discord.ButtonStyle.secondary, emoji="🎛️")
     async def limits_mode_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Настройка режима лимитов"""
         view = WarehouseLimitsModeView()
         await view.show_settings(interaction)
-    
+
     @discord.ui.button(label="Лимиты должностей", style=discord.ButtonStyle.secondary, emoji="💼")
     async def position_limits_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Настройка лимитов по должностям"""
@@ -45,6 +50,12 @@ class WarehouseSettingsView(discord.ui.View):
         """Настройка лимитов по званиям"""
         view = WarehouseRankLimitsView()
         await view.show_settings(interaction)
+
+    @discord.ui.button(label="Общие лимиты", style=discord.ButtonStyle.secondary, emoji="📊")
+    async def general_limits_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Настройка общих лимитов (правило 4.20)"""
+        modal = WarehouseGeneralLimitsModal()
+        await interaction.response.send_modal(modal)
 
 
 class WarehouseChannelsView(discord.ui.View):
@@ -58,7 +69,7 @@ class WarehouseChannelsView(discord.ui.View):
         config = load_config()
         
         embed = discord.Embed(
-            title="📦 Настройка каналов склада",
+            title="📂 Настройка каналов склада",
             description="Управление каналами системы складского учёта",
             color=discord.Color.blue()
         )
@@ -71,7 +82,7 @@ class WarehouseChannelsView(discord.ui.View):
             request_text = "❌ Не настроен"
         
         embed.add_field(
-            name="📦 Канал запросов:",
+            name="📂 Канал запросов:",
             value=request_text,
             inline=False
         )
@@ -85,7 +96,7 @@ class WarehouseChannelsView(discord.ui.View):
             submission_text = "📦 Используется канал запросов"
         
         embed.add_field(
-            name="📤 Канал отправки заявок:",
+            name="📂 Канал отправки заявок:",
             value=submission_text,
             inline=False
         )
@@ -99,7 +110,7 @@ class WarehouseChannelsView(discord.ui.View):
             audit_text = "❌ Не настроен"
         
         embed.add_field(
-            name="📊 Канал аудита:",
+            name="📂 Канал аудита:",
             value=audit_text,
             inline=False
         )
@@ -118,12 +129,12 @@ class WarehouseChannelsView(discord.ui.View):
             
             curators_text = ", ".join(curator_mentions[:3])  # Показываем первых 3
             if len(curator_mentions) > 3:
-                curators_text += f" и еще {len(curator_mentions) - 3}"
+                curators_text += f"и еще {len(curator_mentions) - 3}"
         else:
             curators_text = "❌ Не настроены"
         
         embed.add_field(
-            name="👑 Кураторы аудита:",
+            name="📦 Канал запросов:",
             value=curators_text,
             inline=False
         )
@@ -138,7 +149,7 @@ class WarehouseChannelsButtonsView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=300)
     
-    @discord.ui.button(label="📦 Канал запросов", style=discord.ButtonStyle.green)
+    @discord.ui.button(label="📂 Канал запросов", style=discord.ButtonStyle.green)
     async def set_request_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = WarehouseChannelModal("warehouse_request_channel", "Канал запросов склада")
         await interaction.response.send_modal(modal)
@@ -148,7 +159,7 @@ class WarehouseChannelsButtonsView(discord.ui.View):
         modal = WarehouseChannelModal("warehouse_submission_channel", "Канал отправки заявок")
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="📊 Канал аудита", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="📂 Канал аудита", style=discord.ButtonStyle.secondary)
     async def set_audit_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = WarehouseChannelModal("warehouse_audit_channel", "Канал аудита склада")
         await interaction.response.send_modal(modal)
@@ -168,7 +179,7 @@ class WarehouseChannelModal(discord.ui.Modal):
         self.config_key = config_key
         
         self.channel_input = discord.ui.TextInput(
-            label="ID или упоминание канала",
+            label="🆔 ID или упоминание канала",
             placeholder="#канал-склада или 1234567890123456789",
             max_length=100,
             required=True
@@ -201,7 +212,7 @@ class WarehouseChannelModal(discord.ui.Modal):
                     await send_warehouse_message(channel)
                     message = get_settings_message(interaction.guild.id, "warehouse.success_request_channel_set", "✅ Канал запросов настроен: {0}\n📌 Закрепленное сообщение склада добавлено!").format(channel.mention)
                 except Exception as e:
-                    print(f"Ошибка создания сообщения склада: {e}")
+                    logger.error("Ошибка создания сообщения склада: %s", e)
                     message = get_settings_message(interaction.guild.id, "warehouse.success_request_channel_set_error", "✅ Канал запросов настроен: {0}\n❗ Ошибка при добавлении закрепленного сообщения: {1}").format(channel.mention, str(e))
             elif self.config_key == "warehouse_submission_channel":
                 message = get_settings_message(interaction.guild.id, "warehouse.success_submission_channel_set", "✅ Канал отправки заявок настроен: {0}\n📤 Все заявки склада будут отправляться в этот канал!").format(channel.mention)
@@ -269,9 +280,96 @@ class WarehouseCooldownModal(discord.ui.Modal):
             )
             
         except Exception as e:
-            print(f"Ошибка в WarehouseCooldownModal: {e}")
+            logger.error("Ошибка в WarehouseCooldownModal: %s", e)
             await interaction.response.send_message(
                 f"❌ Ошибка при установке кулдауна: {str(e)}", ephemeral=True
+            )
+
+
+class WarehouseGeneralLimitsModal(discord.ui.Modal):
+    """Модальное окно для настройки общих лимитов (правило 4.20)"""
+
+    def __init__(self):
+        super().__init__(title="📊 Настройка общих лимитов (4.20)")
+
+        config = load_config()
+        limits = config.get('warehouse_general_limits', {
+            'weapons_max': 3,
+            'materials_max': 2000,
+            'armor_max': 20,
+            'medkits_max': 25,
+            'other_max': 15
+        })
+
+        self.weapons_max = discord.ui.TextInput(
+            label="Оружие (ед.)",
+            placeholder="Например: 3",
+            default=str(limits.get('weapons_max', 3)),
+            required=True,
+            max_length=6
+        )
+        self.add_item(self.weapons_max)
+
+        self.materials_max = discord.ui.TextInput(
+            label="Материалы",
+            placeholder="Например: 2000",
+            default=str(limits.get('materials_max', 2000)),
+            required=True,
+            max_length=8
+        )
+        self.add_item(self.materials_max)
+
+        self.armor_max = discord.ui.TextInput(
+            label="Бронежилеты (ед.)",
+            placeholder="Например: 20",
+            default=str(limits.get('armor_max', 20)),
+            required=True,
+            max_length=6
+        )
+        self.add_item(self.armor_max)
+
+        self.medkits_max = discord.ui.TextInput(
+            label="Аптечки (ед.)",
+            placeholder="Например: 25",
+            default=str(limits.get('medkits_max', 25)),
+            required=True,
+            max_length=6
+        )
+        self.add_item(self.medkits_max)
+
+        self.other_max = discord.ui.TextInput(
+            label="Прочее (ед.)",
+            placeholder="Например: 15",
+            default=str(limits.get('other_max', 15)),
+            required=True,
+            max_length=6
+        )
+        self.add_item(self.other_max)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            def parse_int(value: str, default: int) -> int:
+                try:
+                    return int(value.strip())
+                except Exception:
+                    return default
+
+            config = load_config()
+            config['warehouse_general_limits'] = {
+                'weapons_max': parse_int(self.weapons_max.value, 3),
+                'materials_max': parse_int(self.materials_max.value, 2000),
+                'armor_max': parse_int(self.armor_max.value, 20),
+                'medkits_max': parse_int(self.medkits_max.value, 25),
+                'other_max': parse_int(self.other_max.value, 15)
+            }
+            save_config(config)
+
+            await interaction.response.send_message(
+                "✅ Общие лимиты (правило 4.20) обновлены", ephemeral=True
+            )
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Ошибка при обновлении общих лимитов: {e}", ephemeral=True
             )
 
 
@@ -290,7 +388,7 @@ class WarehouseLimitsModeView(discord.ui.View):
         })
         
         embed = discord.Embed(
-            title="🎯 Режим лимитов склада",
+            title="📦 Режим лимитов склада",
             description="Настройка применения лимитов по должностям и/или званиям",
             color=discord.Color.gold()
         )
@@ -299,13 +397,13 @@ class WarehouseLimitsModeView(discord.ui.View):
         rank_status = "🟢 Включен" if limits_mode.get('ranks_enabled', False) else "🔴 Отключен"
         
         embed.add_field(
-            name="💼 Лимиты по должностям:",
+            name="📤 Канал отправки заявок:",
             value=pos_status,
             inline=True
         )
         
         embed.add_field(
-            name="🎖️ Лимиты по званиям:",
+            name="📤 Канал отправки заявок:",
             value=rank_status,
             inline=True
         )
@@ -341,7 +439,7 @@ class WarehouseLimitsModeButtonsView(discord.ui.View):
         
         status = "включены" if limits_mode['positions_enabled'] else "отключены"
         await interaction.response.send_message(
-            f"✅ Лимиты по должностям {status}", ephemeral=True
+            f" Лимиты по должностям {status}", ephemeral=True
         )
     
     @discord.ui.button(label="🎖️ Звания", style=discord.ButtonStyle.secondary)
@@ -358,7 +456,7 @@ class WarehouseLimitsModeButtonsView(discord.ui.View):
         
         status = "включены" if limits_mode['ranks_enabled'] else "отключены"
         await interaction.response.send_message(
-            f"✅ Лимиты по званиям {status}", ephemeral=True
+            f" Лимиты по званиям {status}", ephemeral=True
         )
 
 
@@ -374,7 +472,7 @@ class WarehousePositionLimitsView(discord.ui.View):
         position_limits = config.get('warehouse_limits_positions', {})
         
         embed = discord.Embed(
-            title="💼 Лимиты по должностям",
+            title="📦 Настройка каналов склада",
             description="Настройка лимитов складского имущества для должностей",
             color=discord.Color.blue()
         )
@@ -412,14 +510,14 @@ class WarehousePositionLimitsButtonsView(discord.ui.View):
         modal = WarehouseAddPositionModal()
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="📝 Изменить лимиты", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="📊 Канал аудита", style=discord.ButtonStyle.secondary)
     async def edit_position(self, interaction: discord.Interaction, button: discord.ui.Button):
         config = load_config()
         positions = list(config.get('warehouse_limits_positions', {}).keys())
         
         if not positions:
             await interaction.response.send_message(
-                "❌ Нет настроенных должностей для редактирования.", ephemeral=True
+                " Нет настроенных должностей для редактирования.", ephemeral=True
             )
             return
         
@@ -435,7 +533,7 @@ class WarehousePositionLimitsButtonsView(discord.ui.View):
         
         if not positions:
             await interaction.response.send_message(
-                "❌ Нет настроенных должностей для удаления.", ephemeral=True
+                " Нет настроенных должностей для удаления.", ephemeral=True
             )
             return
         
@@ -634,19 +732,19 @@ class WarehouseEditPositionModal(discord.ui.Modal):
             
             await interaction.response.send_message(
                 f"✅ Лимиты для должности **{self.position_name}** обновлены:\n"
-                f"🔫 Оружие: {weapon_limit}\n"
-                f"🛡️ Броня: {armor_limit}\n"
-                f"💊 Аптечки: {medkit_limit}",
+                f" Оружие: {weapon_limit}\n"
+                f" Броня: {armor_limit}\n"
+                f" Аптечки: {medkit_limit}",
                 ephemeral=True
             )
             
         except ValueError:
             await interaction.response.send_message(
-                "❌ Лимиты должны быть числами!", ephemeral=True
+                " Лимиты должны быть числами!", ephemeral=True
             )
         except Exception as e:
             await interaction.response.send_message(
-                f"❌ Ошибка: {str(e)}", ephemeral=True
+                f" Ошибка: {str(e)}", ephemeral=True
             )
 
 
@@ -662,7 +760,7 @@ class WarehouseRankLimitsView(discord.ui.View):
         rank_limits = config.get('warehouse_limits_ranks', {})
         
         embed = discord.Embed(
-            title="🎖️ Лимиты по званиям",
+            title="📦 Настройка каналов склада",
             description="Настройка лимитов складского имущества для званий",
             color=discord.Color.purple()
         )
@@ -700,14 +798,14 @@ class WarehouseRankLimitsButtonsView(discord.ui.View):
         modal = WarehouseAddRankModal()
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="📝 Изменить лимиты", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="📊 Канал аудита", style=discord.ButtonStyle.secondary)
     async def edit_rank(self, interaction: discord.Interaction, button: discord.ui.Button):
         config = load_config()
         ranks = list(config.get('warehouse_limits_ranks', {}).keys())
         
         if not ranks:
             await interaction.response.send_message(
-                "❌ Нет настроенных званий для редактирования.", ephemeral=True
+                " Нет настроенных званий для редактирования.", ephemeral=True
             )
             return
         
@@ -723,7 +821,7 @@ class WarehouseRankLimitsButtonsView(discord.ui.View):
         
         if not ranks:
             await interaction.response.send_message(
-                "❌ Нет настроенных званий для удаления.", ephemeral=True
+                " Нет настроенных званий для удаления.", ephemeral=True
             )
             return
         
@@ -798,19 +896,19 @@ class WarehouseAddRankModal(discord.ui.Modal):
             
             await interaction.response.send_message(
                 f"✅ Лимиты для звания **{rank}** добавлены:\n"
-                f"🔫 Оружие: {weapon_limit}\n"
-                f"🛡️ Броня: {armor_limit}\n"
-                f"💊 Аптечки: {medkit_limit}",
+                f" Оружие: {weapon_limit}\n"
+                f" Броня: {armor_limit}\n"
+                f" Аптечки: {medkit_limit}",
                 ephemeral=True
             )
             
         except ValueError:
             await interaction.response.send_message(
-                "❌ Лимиты должны быть числами!", ephemeral=True
+                " Лимиты должны быть числами!", ephemeral=True
             )
         except Exception as e:
             await interaction.response.send_message(
-                f"❌ Ошибка: {str(e)}", ephemeral=True
+                f" Ошибка: {str(e)}", ephemeral=True
             )
 
 
@@ -922,19 +1020,19 @@ class WarehouseEditRankModal(discord.ui.Modal):
             
             await interaction.response.send_message(
                 f"✅ Лимиты для звания **{self.rank_name}** обновлены:\n"
-                f"🔫 Оружие: {weapon_limit}\n"
-                f"🛡️ Броня: {armor_limit}\n"
-                f"💊 Аптечки: {medkit_limit}",
+                f" Оружие: {weapon_limit}\n"
+                f" Броня: {armor_limit}\n"
+                f" Аптечки: {medkit_limit}",
                 ephemeral=True
             )
             
         except ValueError:
             await interaction.response.send_message(
-                "❌ Лимиты должны быть числами!", ephemeral=True
+                " Лимиты должны быть числами!", ephemeral=True
             )
         except Exception as e:
             await interaction.response.send_message(
-                f"❌ Ошибка: {str(e)}", ephemeral=True
+                f" Ошибка: {str(e)}", ephemeral=True
             )
 
 
@@ -1052,7 +1150,7 @@ class WarehouseAuditCuratorsModal(discord.ui.Modal):
             )
             
         except Exception as e:
-            print(f"❌ Ошибка при настройке кураторов аудита: {e}")
+            logger.warning("Ошибка при настройке кураторов аудита: %s", e)
             await interaction.followup.send(
                 "❌ Произошла ошибка при сохранении настроек!", ephemeral=True
             )

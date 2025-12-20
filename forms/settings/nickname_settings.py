@@ -4,7 +4,7 @@ Nickname auto-replacement settings configuration
 import discord
 from discord import ui
 from utils.config_manager import load_config, save_config
-from .base import BaseSettingsView
+from .base import BaseSettingsView, SectionSettingsView
 from utils.department_manager import DepartmentManager
 
 
@@ -22,11 +22,11 @@ class NicknameBaseView(BaseSettingsView):
         await interaction.response.send_message(embed=embed, view=self, ephemeral=True)
 
 
-class NicknameSettingsView(NicknameBaseView):
+class NicknameSettingsView(SectionSettingsView):
     """Main nickname settings interface"""
     
     def __init__(self):
-        super().__init__()
+        super().__init__(title="🏷️ Настройки автозамены никнеймов", description="Настройка автоматической замены никнеймов при кадровых операциях", timeout=300)
         self.add_item(NicknameSettingsSelect())
 
 
@@ -62,7 +62,7 @@ class NicknameSettingsSelect(ui.Select):
             discord.SelectOption(
                 label="Форматы никнеймов",
                 description="Настройка поддержки различных форматов никнеймов",
-                emoji="🎨",
+                emoji="🔠",
                 value="format_settings"
             )
             #discord.SelectOption(
@@ -104,7 +104,7 @@ class NicknameSettingsSelect(ui.Select):
         global_enabled = nickname_settings.get('enabled', True)
         
         embed = discord.Embed(
-            title="🌐 Глобальные настройки автозамены",
+            title="⚙️ Глобальные настройки автозамены",
             description="Основные параметры автоматической замены никнеймов.",
             color=discord.Color.blue(),
             timestamp=discord.utils.utcnow()
@@ -225,7 +225,7 @@ class NicknameSettingsSelect(ui.Select):
         format_support = nickname_settings.get('format_support', {})
         
         embed = discord.Embed(
-            title="🎨 Форматы никнеймов",
+            title="📋 Форматы никнеймов",
             description="Настройка поддержки различных форматов никнеймов.",
             color=discord.Color.blue(),
             timestamp=discord.utils.utcnow()
@@ -250,7 +250,7 @@ class NicknameSettingsSelect(ui.Select):
         )
         
         embed.add_field(
-            name="ℹ️ Описание форматов:",
+            name="📋 Описание форматов:",
             value=(
                 "• **С подгруппами** - поддержка квадратных скобок [ПГ], [АТ]\n"
                 "• **Должностные с подгруппами** - должности + подгруппы\n"
@@ -317,7 +317,7 @@ class NicknameSettingsSelect(ui.Select):
         )
         
         embed.add_field(
-            name="🔧 Настройка:",
+            name="⚙️ Настройка:",
             value=(
                 "Выберите шаблон для редактирования. Вы сможете:\n"
                 "• Изменить структуру полей\n"
@@ -392,7 +392,7 @@ class GlobalToggleButton(ui.Button):
         status_text = "включена" if new_state else "отключена"
         
         embed = discord.Embed(
-            title="✅ Настройки обновлены",
+            title="⚙️ Настройки обновлены",
             description=f"Автозамена никнеймов {status_text}.",
             color=discord.Color.green(),
             timestamp=discord.utils.utcnow()
@@ -600,7 +600,7 @@ class DepartmentToggleButton(ui.Button):
         status_text = "включена" if new_state else "отключена"
         
         embed = discord.Embed(
-            title="✅ Настройки обновлены",
+            title="⚙️ Настройки обновлены",
             description=f"Автозамена никнеймов для {self.dept_name} {status_text}.",
             color=discord.Color.green(),
             timestamp=discord.utils.utcnow()
@@ -653,7 +653,7 @@ class ModuleToggleButton(ui.Button):
         status_text = "включена" if new_state else "отключена"
         
         embed = discord.Embed(
-            title="✅ Настройки обновлены",
+            title="⚙️ Настройки обновлены",
             description=f"Автозамена никнеймов для операций {self.module_name.lower()} {status_text}.",
             color=discord.Color.green(),
             timestamp=discord.utils.utcnow()
@@ -805,7 +805,7 @@ class FormatSettingsSelect(ui.Select):
         status_text = "включена" if new_state else "отключена"
         
         embed = discord.Embed(
-            title="✅ Настройки обновлены",
+            title="⚙️ Настройки обновлены",
             description=f"Поддержка формата '{format_name}' {status_text}.",
             color=discord.Color.green(),
             timestamp=discord.utils.utcnow()
@@ -916,7 +916,7 @@ class PositionsManagementSelect(ui.Select):
         save_config(config)
         
         embed = discord.Embed(
-            title="✅ Список сброшен",
+            title="📋 Список сброшен",
             description=f"Список должностей восстановлен к умолчаниям ({len(default_positions)} позиций).",
             color=discord.Color.green(),
             timestamp=discord.utils.utcnow()
@@ -974,7 +974,7 @@ class AddPositionModal(ui.Modal):
         save_config(config)
         
         embed = discord.Embed(
-            title="✅ Должность добавлена",
+            title="💼 Должность добавлена",
             description=f"Должность `{new_position}` добавлена в список.",
             color=discord.Color.green(),
             timestamp=discord.utils.utcnow()
@@ -1030,7 +1030,7 @@ class RemovePositionSelect(ui.Select):
             save_config(config)
             
             embed = discord.Embed(
-                title="✅ Должность удалена",
+                title="🗑️ Должность удалена",
                 description=f"Должность `{position_to_remove}` удалена из списка.",
                 color=discord.Color.green(),
                 timestamp=discord.utils.utcnow()
@@ -1072,22 +1072,22 @@ class TemplateEditorSelect(ui.Select):
             'standard_with_subgroup': {
                 'name': 'Формат с подгруппами',
                 'description': 'ПОДР[ПГ] | РАНГ | Имя Фамилия',
-                'emoji': '🔗'
+                'emoji': '📝'
             },
             'positional': {
                 'name': 'Должностной формат', 
                 'description': 'ПОДР | ДОЛЖНОСТЬ | Имя Фамилия',
-                'emoji': '📋'
+                'emoji': '🔗'
             },
             'simple': {
                 'name': 'Простой формат',
                 'description': 'Имя Фамилия',
-                'emoji': '👤'
+                'emoji': '📋'
             },
             'dismissed': {
                 'name': 'Формат увольнения',
                 'description': 'Уволен | Имя Фамилия', 
-                'emoji': '📤'
+                'emoji': '👤'
             }
         }
         
@@ -1193,7 +1193,7 @@ class TemplateEditorSelect(ui.Select):
         )
         
         embed.add_field(
-            name="📝 Пример формата:",
+            name="📋 Пример формата:",
             value=f"`{template_config['example']}`",
             inline=False
         )

@@ -16,19 +16,19 @@ class RoleAssignmentChannelView(BaseSettingsView):
         modal = ChannelSelectionModal("role_assignment")
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="🪖 Роли военнослужащих", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="🏷️ Роли военнослужащих", style=discord.ButtonStyle.primary)
     async def set_military_roles(self, interaction: discord.Interaction, button: discord.ui.Button):
         from .role_config import SetMultipleRolesModal
         modal = SetMultipleRolesModal("military_roles", "🪖 Настройка ролей военнослужащих", "Укажите роли для военнослужащих (через запятую)")
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="📦 Роли доступа к поставкам", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="🏷️ Роли доступа к поставкам", style=discord.ButtonStyle.secondary)
     async def set_supplier_roles(self, interaction: discord.Interaction, button: discord.ui.Button):
         from .role_config import SetMultipleRolesModal
         modal = SetMultipleRolesModal("supplier_roles", "📦 Настройка ролей доступа к поставкам", "Укажите роли для доступа к поставкам (через запятую)")
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="👤 Роли гражданских", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="🏷️ Роли гражданских", style=discord.ButtonStyle.secondary)
     async def set_civilian_roles(self, interaction: discord.Interaction, button: discord.ui.Button):
         from .role_config import SetMultipleRolesModal
         modal = SetMultipleRolesModal("civilian_roles", "👤 Настройка ролей гражданских", "Укажите роли для гражданских (через запятую)")
@@ -64,7 +64,7 @@ class RolePingConfigView(BaseSettingsView):
         helper = ConfigDisplayHelper()
         
         embed.add_field(
-            name="🪖 Пинг-роли для военных заявок:",
+            name="📣 Пинг-роли для военных заявок:",
             value=helper.format_roles_list(config, 'military_role_assignment_ping_roles', interaction.guild),
             inline=False
         )
@@ -76,7 +76,7 @@ class RolePingConfigView(BaseSettingsView):
         )
         
         embed.add_field(
-            name="👤 Пинг-роли для гражданских заявок:",
+            name="📣 Пинг-роли для гражданских заявок:",
             value=helper.format_roles_list(config, 'civilian_role_assignment_ping_roles', interaction.guild),
             inline=False
         )
@@ -94,19 +94,19 @@ class RolePingConfigView(BaseSettingsView):
 class RolePingButtonsView(BaseSettingsView):
     """Buttons for ping role configuration"""
     
-    @discord.ui.button(label="📜 Пинг военных", style=discord.ButtonStyle.green)
+    @discord.ui.button(label="📣 Пинг военных", style=discord.ButtonStyle.green)
     async def set_military_ping(self, interaction: discord.Interaction, button: discord.ui.Button):
         from .role_config import SetMultipleRolesModal
         modal = SetMultipleRolesModal("military_role_assignment_ping_roles", "🪖 Пинг-роли для военных", "Укажите роли для уведомлений о военных заявках")
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="📦 Пинг доступа к поставкам", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="📣 Пинг доступа к поставкам", style=discord.ButtonStyle.secondary)
     async def set_supplier_ping(self, interaction: discord.Interaction, button: discord.ui.Button):
         from .role_config import SetMultipleRolesModal
         modal = SetMultipleRolesModal("supplier_role_assignment_ping_roles", "📦 Пинг-роли для доступа к поставкам", "Укажите роли для уведомлений о заявках доступа к поставкам")
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="👨‍⚕️ Пинг госслужащих", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="‍⚕️ Пинг госслужащих", style=discord.ButtonStyle.secondary)
     async def set_civilian_ping(self, interaction: discord.Interaction, button: discord.ui.Button):
         from .role_config import SetMultipleRolesModal
         modal = SetMultipleRolesModal("civilian_role_assignment_ping_roles", "👤 Пинг-роли для гражданских", "Укажите роли для уведомлений о гражданских заявках")
@@ -121,7 +121,7 @@ class DefaultRankSelectionModal(BaseSettingsModal):
         super().__init__(title="🎖️ Настройка начального звания")
     
     role_id_input = ui.TextInput(
-        label="ID роли Discord",
+        label="🆔 ID роли Discord",
         placeholder="Например: 1380977870767132702. Оставьте пустым для сброса",
         style=discord.TextStyle.short,
         required=False,
@@ -154,7 +154,7 @@ class DefaultRankSelectionModal(BaseSettingsModal):
             except ValueError:
                 embed = discord.Embed(
                     title="❌ Ошибка",
-                    description="ID роли должен быть числом.",
+                    description="🆔 ID роли должен быть числом.",
                     color=discord.Color.red()
                 )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -252,24 +252,24 @@ async def show_role_assignment_config(interaction: discord.Interaction):
     
     # Show current roles
     embed.add_field(
-        name="🪖 Роли военнослужащих:",
+        name="🏷️ Роли военнослужащих:",
         value=helper.format_roles_info(config, 'military_roles', interaction.guild),
         inline=True
     )
     embed.add_field(
-        name="📦 Роли доступа к поставкам:",
+        name="🏷️ Роли доступа к поставкам:",
         value=helper.format_roles_info(config, 'supplier_roles', interaction.guild),
         inline=True
     )
     embed.add_field(
-        name="👤 Роли гражданских:",
+        name="🏷️ Роли гражданских:",
         value=helper.format_roles_info(config, 'civilian_roles', interaction.guild),
         inline=True
     )
     
     # Show ping roles
     embed.add_field(
-        name="📢 Пинг роли:",
+        name="📣 Пинг роли:",
         value=(
             f"🪖 Военные: {helper.format_roles_list(config, 'military_role_assignment_ping_roles', interaction.guild)}\n"
             f"📦 Доступ к поставкам: {helper.format_roles_list(config, 'supplier_role_assignment_ping_roles', interaction.guild)}\n"
@@ -302,7 +302,7 @@ async def show_role_assignment_config(interaction: discord.Interaction):
     )
     
     embed.add_field(
-        name="ℹ️ Доступные действия:",
+        name="📋 Доступные действия:",
         value=(
             "• **Настроить канал** - установить канал для получения ролей\n"
             "• **Настроить роли** - настроить роли для военных, доступа к поставкам и госслужащих\n"

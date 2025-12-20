@@ -15,11 +15,12 @@ from contextlib import contextmanager
 from typing import Optional, Dict, Any
 import logging
 from dotenv import load_dotenv
+from utils.logging_setup import get_logger
 
 # Загружаем переменные окружения с явной кодировкой UTF-8
 load_dotenv(encoding='utf-8')
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 class PostgreSQLConnectionPool:
     """Пул соединений PostgreSQL с мониторингом производительности"""
@@ -77,7 +78,7 @@ class PostgreSQLConnectionPool:
             )
             self._stats['total_connections_created'] = self.min_connections
             logger.info(f"PostgreSQL pool создан: {self.min_connections}-{self.max_connections} соединений")
-            print(f"PostgreSQL connection pool инициализирован ({self.min_connections}-{self.max_connections})")
+            logger.info("PostgreSQL connection pool инициализирован ({self.min_connections}-{self.max_connections})")
             
         except Exception as e:
             logger.error(f"Ошибка создания пула соединений: {e}")
@@ -180,33 +181,36 @@ class PostgreSQLConnectionPool:
     def print_pool_stats(self):
         """Вывести статистику пула в консоль"""
         stats = self.get_pool_stats()
-        
-        print("\nСТАТИСТИКА POSTGRESQL CONNECTION POOL")
-        print("=" * 55)
-        print(f"Конфигурация пула:")
-        print(f"   • Диапазон соединений: {stats['pool_config']['min_connections']}-{stats['pool_config']['max_connections']}")
-        print(f"   • Активные соединения: {stats['pool_config']['active_connections']}")
-        print(f"   • Использование пула: {stats['pool_config']['pool_usage_percent']}%")
-        
-        print(f"\n⚡ Производительность:")
-        print(f"   • Всего запросов: {stats['performance']['total_queries']}")
-        print(f"   • Среднее время запроса: {stats['performance']['average_query_time']}ms")
-        print(f"   • Медленных запросов: {stats['performance']['slow_queries']} ({stats['performance']['slow_query_rate']}%)")
-        
-        print(f"\n🎯 Эффективность пула:")
-        print(f"   • Попадания в пул: {stats['pool_efficiency']['pool_hits']}")
-        print(f"   • Промахи пула: {stats['pool_efficiency']['pool_misses']}")
-        print(f"   • Hit Rate: {stats['pool_efficiency']['hit_rate']}%")
-        
-        print(f"\nОшибки:")
-        print(f"   • Всего ошибок: {stats['errors']['total_errors']} ({stats['errors']['error_rate']}%)")
-        print("=" * 55)
+        stats_block = (
+            "\nСТАТИСТИКА POSTGRESQL CONNECTION POOL\n"
+            + "=" * 55 + "\n"
+            " Конфигурация пула:\n"
+            f"   • Диапазон соединений: {stats['pool_config']['min_connections']}-{stats['pool_config']['max_connections']}\n"
+            f"   • Активные соединения: {stats['pool_config']['active_connections']}\n"
+            f"   • Использование пула: {stats['pool_config']['pool_usage_percent']}%\n\n"
+            "⚡ Производительность:\n"
+            f"   • Всего запросов: {stats['performance']['total_queries']}\n"
+            f"   • Среднее время запроса: {stats['performance']['average_query_time']}ms\n"
+            f"   • Медленных запросов: {stats['performance']['slow_queries']} ({stats['performance']['slow_query_rate']}%)\n\n"
+            " Эффективность пула:\n"
+            f"   • Попадания в пул: {stats['pool_efficiency']['pool_hits']}\n"
+            f"   • Промахи пула: {stats['pool_efficiency']['pool_misses']}\n"
+            f"   • Hit Rate: {stats['pool_efficiency']['hit_rate']}%\n\n"
+            "Ошибки:\n"
+            f"   • Всего ошибок: {stats['errors']['total_errors']} ({stats['errors']['error_rate']}%)\n"
+            + "=" * 55
+        )
+
+        if stats['errors']['total_errors'] > 0:
+            logger.warning(stats_block)
+        else:
+            logger.info(stats_block)
     
     def close_pool(self):
         """Закрыть пул соединений"""
         if self._pool:
             self._pool.closeall()
-            print("🔒 PostgreSQL connection pool закрыт")
+            print(" PostgreSQL connection pool закрыт")
             logger.info("PostgreSQL connection pool closed")
 
 # Глобальный экземпляр пула соединений

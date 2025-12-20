@@ -6,8 +6,9 @@ from typing import Dict, List, Optional, Tuple
 from utils.config_manager import load_config, save_config
 from utils.postgresql_pool import get_db_cursor
 import logging
+from utils.logging_setup import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 class DepartmentManager:
     """Централизованное управление подразделениями"""
@@ -520,4 +521,3 @@ class DepartmentManager:
             safe_data['color'] = color if isinstance(color, int) else 0x3498db
 
         return safe_data
-

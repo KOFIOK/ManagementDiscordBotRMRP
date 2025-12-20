@@ -12,11 +12,12 @@ from utils.message_manager import get_department_applications_message, get_priva
 from utils.ping_manager import ping_manager
 from utils.nickname_manager import nickname_manager
 from utils import get_safe_personnel_name
+from utils.logging_setup import get_logger
 # Импорты для работы с PostgreSQL будут добавлены по мере необходимости
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
-class DepartmentApplicationView(ui.View):
+class DepartmentApplicationModerationView(discord.ui.View):
     """View with moderation buttons for department applications"""
     
     def __init__(self, application_data: Dict[str, Any]):
@@ -258,7 +259,7 @@ class DepartmentApplicationView(ui.View):
         # Reject button (always enabled until fully approved)
         if not (state['approved'] and state['permission_given']):
             reject_btn = ui.Button(
-                label="❌ Отклонить",
+                label="🗑️ Отклонить",
                 style=discord.ButtonStyle.red,
                 custom_id="dept_app_reject_static",
                 row=0
@@ -557,7 +558,7 @@ class DepartmentApplicationView(ui.View):
                 # Restore original buttons on error
                 await self._restore_original_buttons(interaction)
                 await interaction.followup.send(
-                    "❌ Пользователь не найден на сервере.",
+                    " Пользователь не найден на сервере.",
                     ephemeral=True
                 )
                 return
@@ -644,7 +645,7 @@ class DepartmentApplicationView(ui.View):
             # Restore original buttons on error
             await self._restore_original_buttons(interaction)
             await interaction.followup.send(
-                "❌ Произошла ошибка при одобрении заявления.",
+                " Произошла ошибка при одобрении заявления.",
                 ephemeral=True
             )
 
@@ -662,7 +663,7 @@ class DepartmentApplicationView(ui.View):
             # Check if already approved
             if current_state['approved']:
                 await interaction.response.send_message(
-                    "❌ Этот перевод уже был одобрен.",
+                    " Этот перевод уже был одобрен.",
                     ephemeral=True
                 )
                 return
@@ -695,7 +696,7 @@ class DepartmentApplicationView(ui.View):
         except Exception as e:
             logger.error(f"Error handling transfer approval: {e}")
             await interaction.followup.send(
-                "❌ Произошла ошибка при одобрении перевода.",
+                " Произошла ошибка при одобрении перевода.",
                 ephemeral=True
             )
 
@@ -720,7 +721,7 @@ class DepartmentApplicationView(ui.View):
         except Exception as e:
             logger.error(f"Error rejecting department application: {e}")
             await interaction.response.send_message(
-                "❌ Произошла ошибка при отклонении заявления.",
+                " Произошла ошибка при отклонении заявления.",
                 ephemeral=True
             )
     
@@ -766,7 +767,7 @@ class DepartmentApplicationView(ui.View):
         except Exception as e:
             logger.error(f"Error deleting department application: {e}")
             await interaction.followup.send(
-                "❌ Произошла ошибка при удалении заявления.",
+                " Произошла ошибка при удалении заявления.",
                 ephemeral=True
             )
     
@@ -916,7 +917,7 @@ class DepartmentApplicationView(ui.View):
 
             dept_code = self.application_data['department_code']
 
-            print(f"🏛️ DEPT APPLICATION: Начинаем обработку для {target_user.display_name} в {dept_code}")
+            logger.info("DEPT APPLICATION: Начинаем обработку для {target_user.display_name} в %s", dept_code)
 
             # Step 1: Remove ALL department roles (regardless of transfer/join)
             removed_dept = await role_utils.clear_all_department_roles(
@@ -931,9 +932,9 @@ class DepartmentApplicationView(ui.View):
             )
 
             if removed_dept:
-                print(f"🧹 Очищены роли подразделений: {', '.join(removed_dept)}")
+                logger.info("Очищены роли подразделений: {', '.join(removed_dept)}")
             if removed_pos:
-                print(f"🧹 Очищены роли должностей: {', '.join(removed_pos)}")
+                logger.info("Очищены роли должностей: {', '.join(removed_pos)}")
 
             # Step 3: Assign new department role using RoleUtils
             dept_assigned = await role_utils.assign_department_role(target_user, dept_code, interaction.user)
@@ -943,7 +944,7 @@ class DepartmentApplicationView(ui.View):
             # Step 4: Assign assignable position roles for this department using RoleUtils
             assigned_pos = await role_utils.assign_position_roles(target_user, dept_code, interaction.user)
             if assigned_pos:
-                print(f"✅ Назначены роли должностей: {', '.join(assigned_pos)}")
+                logger.info("Назначены роли должностей: {', '.join(assigned_pos)}")
 
             # Step 5: Update nickname with department abbreviation
             await self._update_user_nickname(target_user, dept_code)
@@ -962,7 +963,7 @@ class DepartmentApplicationView(ui.View):
         except Exception as e:
             logger.error(f"Error processing application approval: {e}")
             await interaction.followup.send(
-                "❌ Произошла ошибка при обработке заявления.",
+                " Произошла ошибка при обработке заявления.",
                 ephemeral=True
             )
             return False
@@ -972,7 +973,7 @@ class DepartmentApplicationView(ui.View):
         try:
             # Проверяем настройки автозамены никнеймов
             if not self._should_update_nickname_for_dept(dept_code):
-                print(f"🚫 DEPT NICKNAME: Автозамена отключена для {dept_code}")
+                logger.info("DEPT NICKNAME: Автозамена отключена для %s", dept_code)
                 return
             
             # Определяем тип операции
@@ -984,12 +985,12 @@ class DepartmentApplicationView(ui.View):
                 pm = PersonnelManager()
                 personnel_data = await pm.get_personnel_summary(user.id)
             except Exception as e:
-                print(f"⚠️ Не удалось получить данные из БД: {e}")
+                logger.info("Не удалось получить данные из БД: %s", e)
                 personnel_data = None
             
             if application_type == 'transfer' or personnel_data:
                 # Перевод в подразделение (есть данные в БД)
-                print(f"🎆 DEPT APPLICATION: Перевод {user.display_name} в {dept_code}")
+                logger.info("DEPT APPLICATION: Перевод {user.display_name} в %s", dept_code)
                 
                 current_rank = personnel_data.get('rank', 'Рядовой') if personnel_data else 'Рядовой'
                 
@@ -1003,15 +1004,15 @@ class DepartmentApplicationView(ui.View):
                 
                 if new_nickname:
                     await user.edit(nick=new_nickname, reason=get_role_reason(user.guild.id, "nickname_change.department_transfer", "Перевод в подразделение: изменён никнейм").format(moderator="система"))
-                    print(f"✅ DEPT NICKNAME: Никнейм обновлён: {new_nickname}")
+                    logger.info("DEPT NICKNAME: Никнейм обновлён: %s", new_nickname)
                 else:
                     # Fallback к улучшенному методу
                     await self._update_nickname_smart_fallback(user, dept_code)
-                    print(f"⚠️ DEPT FALLBACK: Использовали smart fallback метод")
+                    logger.info("DEPT FALLBACK: Использовали smart fallback метод")
             
             else:
                 # Приём в подразделение (новобранец)
-                print(f"🎆 DEPT APPLICATION: Приём в {dept_code} {user.display_name}")
+                logger.info("DEPT APPLICATION: Приём в %s {user.display_name}", dept_code)
                 
                 # Для новобранцев попробуем handle_hiring, если не получится - smart fallback
                 try:
@@ -1031,15 +1032,15 @@ class DepartmentApplicationView(ui.View):
                         
                         if new_nickname:
                             await user.edit(nick=new_nickname, reason=get_role_reason(user.guild.id, "nickname_change.department_join", "Приём в подразделение: изменён никнейм").format(moderator="система"))
-                            print(f"✅ DEPT HIRING: Никнейм обновлён через handle_hiring: {new_nickname}")
+                            logger.info("DEPT HIRING: Никнейм обновлён через handle_hiring: %s", new_nickname)
                             return
                     
                 except Exception as e:
-                    print(f"⚠️ handle_hiring не сработал: {e}")
+                    logger.info("handle_hiring не сработал: %s", e)
                 
                 # Если handle_hiring не сработал, используем smart fallback
                 await self._update_nickname_smart_fallback(user, dept_code)
-                print(f"✅ DEPT JOIN: Никнейм обновлён для новобранца через smart fallback")
+                logger.info("DEPT JOIN: Никнейм обновлён для новобранца через smart fallback")
                 
         except discord.Forbidden:
             logger.warning(f"Could not update nickname for {user} - insufficient permissions")
@@ -1301,7 +1302,7 @@ class DepartmentApplicationView(ui.View):
             any(role_id in user_role_ids for role_id in administrators.get('roles', []))
         )
 
-        print(f"DEBUG: Является ли пользователь администратором: {is_admin}")
+        logger.info("DEBUG: Является ли пользователь администратором: %s", is_admin)
 
         if is_admin:
             return True
@@ -1311,7 +1312,7 @@ class DepartmentApplicationView(ui.View):
             interaction.user.id in moderators.get('users', []) or
             any(role_id in user_role_ids for role_id in moderators.get('roles', []))
         )
-        print(f"DEBUG: Является ли пользователь модератором: {is_moderator}")
+        logger.info("DEBUG: Является ли пользователь модератором: %s", is_moderator)
         if not is_moderator:
             return False
 
@@ -1324,7 +1325,7 @@ class DepartmentApplicationView(ui.View):
             return await self._eck_moderator_permissions(interaction)
         
         first_line_role_ids = role_lines[0]
-        print(f"DEBUG: Требуемые роли из первой строки сообщения (ID): {first_line_role_ids}")
+        logger.info("DEBUG: Требуемые роли из первой строки сообщения (ID): %s", first_line_role_ids)
 
         # Check if moderator has at least one role from first line
         has_required_role = any(role_id in user_role_ids for role_id in first_line_role_ids)
@@ -1437,11 +1438,11 @@ class DepartmentApplicationView(ui.View):
             
             if valid_roles:
                 role_names = [role.name for role in valid_roles]
-                return f"❌ Вы не можете одобрить это заявление.\n\n" \
+                return f" Вы не можете одобрить это заявление.\n\n" \
                        f"**Для одобрения требуется одна из ролей:**\n" \
                        f"• {chr(10).join(f'`{name}`' for name in role_names)}"
         
-        return "❌ У вас нет прав для одобрения этого заявления."
+        return " У вас нет прав для одобрения этого заявления."
     
     def _get_reject_permission_error_message(self, interaction: discord.Interaction) -> str:
         """Get error message for reject permission denial"""
@@ -1458,11 +1459,11 @@ class DepartmentApplicationView(ui.View):
             
             if valid_roles:
                 role_names = [role.name for role in valid_roles]
-                return f"❌ Вы не можете отклонить это заявление.\n\n" \
+                return f" Вы не можете отклонить это заявление.\n\n" \
                        f"**Для отклонения требуется одна из ролей:**\n" \
                        f"• {chr(10).join(f'`{name}`' for name in role_names)}"
         
-        return "❌ У вас нет прав для отклонения этого заявления."
+        return " У вас нет прав для отклонения этого заявления."
     
     def _get_permission_error_message(self, interaction: discord.Interaction) -> str:
         """Get error message for permission denial"""
@@ -1522,7 +1523,7 @@ class RejectionReasonModal(ui.Modal):
             
             # Add rejection reason
             embed.add_field(
-                name="📝 Причина отклонения",
+                name="📋 Причина отклонения",
                 value=self.reason.value,
                 inline=False
             )
@@ -1542,7 +1543,7 @@ class RejectionReasonModal(ui.Modal):
             _clear_user_cache(self.application_data['user_id'])
             
             rejected_button = ui.Button(
-                label="❌ Отклонено",
+                label="🗑️ Отклонено",
                 style=discord.ButtonStyle.red,
                 disabled=True
             )
@@ -1579,7 +1580,7 @@ class RejectionReasonModal(ui.Modal):
         except Exception as e:
             logger.error(f"Error processing application rejection: {e}")
             await interaction.followup.send(
-                "❌ Произошла ошибка при отклонении заявления.",
+                " Произошла ошибка при отклонении заявления.",
                 ephemeral=True
             )
 
@@ -1599,6 +1600,14 @@ class ConfirmDeletionView(ui.View):
     async def cancel(self, interaction: discord.Interaction, button: ui.Button):
         self.confirmed = False
         self.stop()
+
+
+# Совместимость: историческое имя DepartmentApplicationView
+class DepartmentApplicationView(DepartmentApplicationModerationView):
+    """Alias для старого имени view заявок в подразделения."""
+
+    def __init__(self, application_data: Dict[str, Any]):
+        super().__init__(application_data)
 
 class DepartmentSelectView(ui.View):
     """Button view for choosing department application type"""
@@ -1676,7 +1685,7 @@ class DepartmentSelectView(ui.View):
                 )
             except discord.InteractionResponded:
                 await interaction.followup.send(
-                    "❌ Произошла ошибка. Попробуйте еще раз.",
+                    " Произошла ошибка. Попробуйте еще раз.",
                     ephemeral=True
                 )
 

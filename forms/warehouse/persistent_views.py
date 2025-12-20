@@ -4,6 +4,10 @@ Persistent Views для кнопок модерации заявок склад�
 
 import discord
 from typing import TYPE_CHECKING
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from .status import WarehouseStatusView, DeletionConfirmView, RejectionReasonModal
@@ -46,63 +50,8 @@ class WarehousePersistentRequestView(discord.ui.View):
             
             await interaction.response.edit_message(content="", embed=embed, view=status_view)
             
-            # 📋 АВТОМАТИЧЕСКОЕ СОЗДАНИЕ ЗАПИСИ АУДИТА
-            try:
-                from forms.warehouse.audit import create_automatic_audit_from_approval
-                
-                # Извлекаем информацию из embed'а заявки
-                recipient_id = None
-                items_list = []
-                
-                # Ищем ID получателя в footer
-                if embed.footer and embed.footer.text and "ID пользователя:" in embed.footer.text:
-                    try:
-                        recipient_id = int(embed.footer.text.split("ID пользователя:")[-1].strip())
-                    except (ValueError, IndexError):
-                        pass
-                
-                # Извлекаем предметы из description
-                if embed.description:
-                    # Ищем строки с предметами (обычно содержат × или x)
-                    for line in embed.description.split('\n'):
-                        if '×' in line or 'x' in line:
-                            items_list.append(line.strip())
-                
-                # Если не нашли предметы в description, ищем в полях
-                if not items_list:
-                    for field in embed.fields:
-                        if any(keyword in field.name.lower() for keyword in ['предмет', 'запрос', 'заявка']):
-                            if field.value:
-                                for line in field.value.split('\n'):
-                                    if '×' in line or 'x' in line:
-                                        items_list.append(line.strip())
-                
-                items_text = '\n'.join(items_list) if items_list else "Предметы не указаны"
-                request_url = interaction.message.jump_url
-                
-                # Создаем запись аудита, если получатель найден
-                if recipient_id:
-                    recipient = interaction.guild.get_member(recipient_id)
-                    if recipient:
-                        await create_automatic_audit_from_approval(
-                            interaction.guild,
-                            interaction.user,  # модератор
-                            recipient,         # получатель
-                            items_text,        # предметы
-                            request_url        # ссылка на заявку
-                        )
-                        print(f"📋 AUTO AUDIT: Создана запись аудита для выдачи {recipient.display_name}")
-                    else:
-                        print(f"⚠️ AUTO AUDIT: Получатель с ID {recipient_id} не найден на сервере")
-                else:
-                    print(f"⚠️ AUTO AUDIT: Не удалось извлечь ID получателя из заявки")
-                    
-            except Exception as audit_error:
-                print(f"❌ AUTO AUDIT: Ошибка при создании автоматического аудита: {audit_error}")
-                # Не прерываем основной процесс одобрения из-за ошибки аудита
-            
         except Exception as e:
-            print(f"Ошибка при одобрении запроса склада: {e}")
+            logger.error("Ошибка при одобрении запроса склада: %s", e)
             await interaction.response.send_message(
                 "❌ Произошла ошибка при обработке запроса.", ephemeral=True
             )
@@ -116,7 +65,7 @@ class WarehousePersistentRequestView(discord.ui.View):
             config = load_config()
             if not is_moderator_or_admin(interaction.user, config):
                 await interaction.response.send_message(
-                    "❌ У вас нет прав для выполнения этого действия!", ephemeral=True
+                    " У вас нет прав для выполнения этого действия!", ephemeral=True
                 )
                 return
 
@@ -126,9 +75,9 @@ class WarehousePersistentRequestView(discord.ui.View):
             await interaction.response.send_modal(rejection_modal)
             
         except Exception as e:
-            print(f"Ошибка при отклонении запроса склада: {e}")
+            logger.error("Ошибка при отклонении запроса склада: %s", e)
             await interaction.response.send_message(
-                "❌ Произошла ошибка при обработке запроса.", ephemeral=True
+                " Произошла ошибка при обработке запроса.", ephemeral=True
             )
 
     @discord.ui.button(label="🗑️ Удалить запрос", style=discord.ButtonStyle.secondary, custom_id="warehouse_delete", row=1)
@@ -151,9 +100,9 @@ class WarehousePersistentRequestView(discord.ui.View):
             await interaction.response.send_message(embed=embed, view=confirm_view, ephemeral=True)
             
         except Exception as e:
-            print(f"Ошибка при попытке удаления запроса склада: {e}")
+            logger.error("Ошибка при попытке удаления запроса склада: %s", e)
             await interaction.response.send_message(
-                "❌ Произошла ошибка при обработке запроса.", ephemeral=True
+                " Произошла ошибка при обработке запроса.", ephemeral=True
             )
 
     @discord.ui.button(label="📝 Редактировать", style=discord.ButtonStyle.secondary, custom_id="warehouse_edit", row=1)
@@ -189,9 +138,9 @@ class WarehousePersistentRequestView(discord.ui.View):
             )
             
         except Exception as e:
-            print(f"Ошибка при попытке редактирования заявки: {e}")
+            logger.error("Ошибка при попытке редактирования заявки: %s", e)
             await interaction.response.send_message(
-                "❌ Произошла ошибка при обработке запроса.", ephemeral=True
+                " Произошла ошибка при обработке запроса.", ephemeral=True
             )
     
     async def _check_delete_permissions(self, interaction: discord.Interaction) -> bool:
@@ -225,7 +174,7 @@ class WarehousePersistentRequestView(discord.ui.View):
             return False
             
         except Exception as e:
-            print(f"Ошибка при проверке прав на удаление: {e}")
+            logger.error("Ошибка при проверке прав на удаление: %s", e)
             await interaction.response.send_message(
                 "❌ Произошла ошибка при проверке прав доступа.", ephemeral=True
             )
@@ -247,7 +196,7 @@ class WarehousePersistentMultiRequestView(discord.ui.View):
             config = load_config()
             if not is_moderator_or_admin(interaction.user, config):
                 await interaction.response.send_message(
-                    "❌ У вас нет прав для выполнения этого действия!", ephemeral=True
+                    " У вас нет прав для выполнения этого действия!", ephemeral=True
                 )
                 return
 
@@ -268,62 +217,8 @@ class WarehousePersistentMultiRequestView(discord.ui.View):
             
             await interaction.response.edit_message(content="", embed=embed, view=status_view)
             
-            # 📋 АВТОМАТИЧЕСКОЕ СОЗДАНИЕ ЗАПИСИ АУДИТА для множественного запроса
-            try:
-                from forms.warehouse.audit import create_automatic_audit_from_approval
-                
-                # Извлекаем информацию из embed'а заявки
-                recipient_id = None
-                items_list = []
-                
-                # Ищем ID получателя в footer
-                if embed.footer and embed.footer.text and "ID пользователя:" in embed.footer.text:
-                    try:
-                        recipient_id = int(embed.footer.text.split("ID пользователя:")[-1].strip())
-                    except (ValueError, IndexError):
-                        pass
-                
-                # Извлекаем предметы из description (для множественных запросов)
-                if embed.description:
-                    for line in embed.description.split('\n'):
-                        if '×' in line or 'x' in line:
-                            items_list.append(line.strip())
-                
-                # Также проверяем поля embed'а
-                if not items_list:
-                    for field in embed.fields:
-                        if any(keyword in field.name.lower() for keyword in ['предмет', 'запрос', 'заявка']):
-                            if field.value:
-                                for line in field.value.split('\n'):
-                                    if '×' in line or 'x' in line:
-                                        items_list.append(line.strip())
-                
-                items_text = '\n'.join(items_list) if items_list else "Множественный запрос - предметы не указаны"
-                request_url = interaction.message.jump_url
-                
-                # Создаем запись аудита, если получатель найден
-                if recipient_id:
-                    recipient = interaction.guild.get_member(recipient_id)
-                    if recipient:
-                        await create_automatic_audit_from_approval(
-                            interaction.guild,
-                            interaction.user,  # модератор
-                            recipient,         # получатель
-                            items_text,        # предметы
-                            request_url        # ссылка на заявку
-                        )
-                        print(f"📋 AUTO AUDIT: Создана запись аудита для множественной выдачи {recipient.display_name}")
-                    else:
-                        print(f"⚠️ AUTO AUDIT: Получатель с ID {recipient_id} не найден на сервере")
-                else:
-                    print(f"⚠️ AUTO AUDIT: Не удалось извлечь ID получателя из множественной заявки")
-                    
-            except Exception as audit_error:
-                print(f"❌ AUTO AUDIT: Ошибка при создании автоматического аудита: {audit_error}")
-                # Не прерываем основной процесс одобрения из-за ошибки аудита
-            
         except Exception as e:
-            print(f"Ошибка при одобрении множественного запроса: {e}")
+            logger.error("Ошибка при одобрении множественного запроса: %s", e)
             await interaction.response.send_message(
                 "❌ Произошла ошибка при обработке запроса!", ephemeral=True
             )
@@ -337,7 +232,7 @@ class WarehousePersistentMultiRequestView(discord.ui.View):
             config = load_config()
             if not is_moderator_or_admin(interaction.user, config):
                 await interaction.response.send_message(
-                    "❌ У вас нет прав для выполнения этого действия!", ephemeral=True
+                    " У вас нет прав для выполнения этого действия!", ephemeral=True
                 )
                 return
 
@@ -347,9 +242,9 @@ class WarehousePersistentMultiRequestView(discord.ui.View):
             await interaction.response.send_modal(rejection_modal)
             
         except Exception as e:
-            print(f"Ошибка при отклонении множественной заявки: {e}")
+            logger.error("Ошибка при отклонении множественной заявки: %s", e)
             await interaction.response.send_message(
-                "❌ Произошла ошибка при обработке запроса.", ephemeral=True
+                " Произошла ошибка при обработке запроса.", ephemeral=True
             )
 
     @discord.ui.button(label="🗑️ Удалить запрос", style=discord.ButtonStyle.secondary, custom_id="warehouse_multi_delete", row=1)
@@ -363,7 +258,7 @@ class WarehousePersistentMultiRequestView(discord.ui.View):
             
             # Показываем ephemeral сообщение с кнопкой подтверждения
             embed = discord.Embed(
-                title="⚠️ Подтверждение удаления",
+                title="🗑️ Подтверждение удаления",
                 description="Вы действительно хотите удалить этот запрос склада?\n\n**Это действие необратимо!**",
                 color=discord.Color.orange()
             )
@@ -372,9 +267,9 @@ class WarehousePersistentMultiRequestView(discord.ui.View):
             confirm_view = DeletionConfirmView(interaction.message)
             await interaction.response.send_message(embed=embed, view=confirm_view, ephemeral=True)
         except Exception as e:
-            print(f"Ошибка при попытке удаления множественной заявки: {e}")
+            logger.error("Ошибка при попытке удаления множественной заявки: %s", e)
             await interaction.response.send_message(
-                "❌ Произошла ошибка при обработке запроса.", ephemeral=True
+                " Произошла ошибка при обработке запроса.", ephemeral=True
             )
 
     @discord.ui.button(label="📝 Редактировать", style=discord.ButtonStyle.secondary, custom_id="warehouse_multi_edit", row=1)
@@ -386,7 +281,7 @@ class WarehousePersistentMultiRequestView(discord.ui.View):
             config = load_config()
             if not is_moderator_or_admin(interaction.user, config):
                 await interaction.response.send_message(
-                    "❌ У вас нет прав для редактирования заявок!", ephemeral=True
+                    " У вас нет прав для редактирования заявок!", ephemeral=True
                 )
                 return
             
@@ -394,9 +289,9 @@ class WarehousePersistentMultiRequestView(discord.ui.View):
             embed = interaction.message.embeds[0]
             embed_text = str(embed.to_dict())
             
-            if "✅ Одобрено" in embed_text or "❌ Отклонено" in embed_text:
+            if " Одобрено" in embed_text or " Отклонено" in embed_text:
                 await interaction.response.send_message(
-                    "❌ Нельзя редактировать уже обработанную заявку!", ephemeral=True
+                    " Нельзя редактировать уже обработанную заявку!", ephemeral=True
                 )
                 return
             
@@ -404,15 +299,15 @@ class WarehousePersistentMultiRequestView(discord.ui.View):
             from .edit import WarehouseEditSelectView
             view = WarehouseEditSelectView(interaction.message)
             await interaction.response.send_message(
-                "📝 Выберите предмет для редактирования:",
+                " Выберите предмет для редактирования:",
                 view=view,
                 ephemeral=True
             )
             
         except Exception as e:
-            print(f"Ошибка при попытке редактирования множественной заявки: {e}")
+            logger.error("Ошибка при попытке редактирования множественной заявки: %s", e)
             await interaction.response.send_message(
-                "❌ Произошла ошибка при обработке запроса.", ephemeral=True
+                " Произошла ошибка при обработке запроса.", ephemeral=True
             )
     
     async def _check_delete_permissions(self, interaction: discord.Interaction) -> bool:
@@ -439,15 +334,15 @@ class WarehousePersistentMultiRequestView(discord.ui.View):
             
             # Если ни одно условие не выполнено - отказываем в доступе
             await interaction.response.send_message(
-                "❌ У вас нет прав для удаления этого запроса!\n"
+                " У вас нет прав для удаления этого запроса!\n"
                 "Удалить запрос может только его автор или администратор.",
                 ephemeral=True
             )
             return False
             
         except Exception as e:
-            print(f"Ошибка при проверке прав на удаление: {e}")
+            logger.error("Ошибка при проверке прав на удаление: %s", e)
             await interaction.response.send_message(
-                "❌ Произошла ошибка при проверке прав доступа.", ephemeral=True
+                " Произошла ошибка при проверке прав доступа.", ephemeral=True
             )
             return False

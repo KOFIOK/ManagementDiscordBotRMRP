@@ -42,7 +42,7 @@ class PositionSearchView(ui.View):
         modal = SearchByNameModal()
         await interaction.response.send_modal(modal)
 
-    @ui.button(label="По роли", style=discord.ButtonStyle.primary, emoji="🎭")
+    @ui.button(label="По роли", style=discord.ButtonStyle.primary, emoji="🏷️")
     async def search_by_role(self, interaction: discord.Interaction, button: ui.Button):
         """
         Search by Discord role
@@ -128,7 +128,7 @@ class SearchByRoleModal(ui.Modal):
         super().__init__(title="Поиск по Discord роли")
 
         self.role_input = ui.TextInput(
-            label="Discord роль",
+            label="🎖️ Discord роль",
             placeholder="ID роли или @роль...",
             required=True,
             max_length=50

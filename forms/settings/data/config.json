@@ -73,9 +73,9 @@
         "users": [],
         "roles": []
     },
-    "warehouse_request_channel": null,
-    "warehouse_audit_channel": null,
-    "warehouse_submission_channel": null,
+    "warehouse_request_channel": 1385238151609585764,
+    "warehouse_audit_channel": 1385238191610662912,
+    "warehouse_submission_channel": 1386763537023504456,
     "warehouse_cooldown_hours": 6,
     "warehouse_limits_mode": {
         "positions_enabled": true,

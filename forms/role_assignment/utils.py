@@ -7,6 +7,10 @@ import re
 from .views import RoleAssignmentView
 from .base import create_approval_view
 from utils.config_manager import save_role_assignment_message_id
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 async def send_role_assignment_message(channel):
@@ -26,20 +30,20 @@ async def send_role_assignment_message(channel):
                     await message.edit(view=view)
                     # Save the message ID for welcome system
                     save_role_assignment_message_id(message.id)
-                    print(f"Updated existing pinned role assignment message {message.id}")
+                    logger.info(f"Updated existing pinned role assignment message {message.id}")
                     return
                 except Exception as e:
-                    print(f"Error updating pinned role assignment message: {e}")
+                    logger.error("Error updating pinned role assignment message: %s", e)
                     # If update fails, unpin and delete old message, create new one
                     try:
                         await message.unpin()
                         await message.delete()
-                        print(f"Removed old pinned role assignment message {message.id}")
+                        logger.info(f"Removed old pinned role assignment message {message.id}")
                     except:
                         pass
                     break
     except Exception as e:
-        print(f"Error checking pinned messages for role assignment: {e}")
+        logger.error("Error checking pinned messages for role assignment: %s", e)
     
     # Create new message if none exists or old one couldn't be updated
     embed = discord.Embed(
@@ -73,7 +77,7 @@ async def send_role_assignment_message(channel):
     )
     
     embed.add_field(
-        name="👨‍⚕️ Другая фракция", 
+        name="‍⚕️ Другая фракция", 
         value=(
             "> • Хотите получить роли другой гос. фракции\n"
         ),
@@ -93,9 +97,9 @@ async def send_role_assignment_message(channel):
     # Pin the new message for easy access
     try:
         await message.pin()
-        print(f"Pinned new role assignment message {message.id}")
+        logger.info(f"Pinned new role assignment message {message.id}")
     except Exception as e:
-        print(f"Error pinning role assignment message: {e}")
+        logger.error("Error pinning role assignment message: %s", e)
 
 
 async def restore_role_assignment_views(bot, channel):
@@ -114,12 +118,12 @@ async def restore_role_assignment_views(bot, channel):
                     await message.edit(view=view)
                     # Save the message ID for welcome system
                     save_role_assignment_message_id(message.id)
-                    print(f"Restored role assignment view for pinned message {message.id}")
+                    logger.info(f"Restored role assignment view for pinned message {message.id}")
                     return  # Found and restored pinned message
                 except discord.NotFound:
                     continue
                 except Exception as e:
-                    print(f"Error restoring view for pinned message {message.id}: {e}")
+                    logger.error("Error restoring view for pinned message {message.id}: %s", e)
         
         # If no pinned message found, check recent history as fallback
         async for message in channel.history(limit=50):
@@ -133,14 +137,14 @@ async def restore_role_assignment_views(bot, channel):
                 view = RoleAssignmentView()
                 try:
                     await message.edit(view=view)
-                    print(f"Restored role assignment view for message {message.id}")
+                    logger.info(f"Restored role assignment view for message {message.id}")
                 except discord.NotFound:
                     continue
                 except Exception as e:
-                    print(f"Error restoring view for message {message.id}: {e}")
+                    logger.error("Error restoring view for message {message.id}: %s", e)
                     
     except Exception as e:
-        print(f"Error restoring role assignment views: {e}")
+        logger.error("Error restoring role assignment views: %s", e)
 
 
 async def restore_approval_views(bot, channel):
@@ -182,15 +186,15 @@ async def restore_approval_views(bot, channel):
                                     application_data["user_mention"] = user_mention
                             elif field.name == "📝 Имя Фамилия":
                                 application_data["name"] = field.value
-                            elif field.name == "🔢 Статик":
+                            elif field.name == "🏛️ Фракция, звание, должность":
                                 application_data["static"] = field.value
-                            elif field.name == "🎖️ Звание":
+                            elif field.name == "🎯 Цель получения роли":
                                 application_data["rank"] = field.value
                             elif field.name == "🏛️ Фракция, звание, должность":
                                 application_data["faction"] = field.value
                             elif field.name == "🎯 Цель получения роли":
                                 application_data["purpose"] = field.value
-                            elif field.name == "🔗 Доказательства":
+                            elif field.name == "🔢 Статик":
                                 # Extract URL from markdown link [Ссылка](url)
                                 url_match = re.search(r'\[.*?\]\((.*?)\)', field.value)
                                 if url_match:
@@ -203,12 +207,12 @@ async def restore_approval_views(bot, channel):
                             # Create and add the approval view using factory function
                             view = create_approval_view(application_data)
                             await message.edit(view=view)
-                            print(f"Restored approval view for {application_data['type']} application message {message.id}")
+                            logger.info(f"Restored approval view for {application_data['type']} application message {message.id}")
                         else:
-                            print(f"Missing required data for application message {message.id}: {application_data}")
+                            logger.debug("Недостаточно данных для сообщения %s: %s", message.id, application_data)
                         
                     except Exception as e:
-                        print(f"Error parsing application data from message {message.id}: {e}")
+                        logger.error("Ошибка разбора данных заявки из сообщения %s: %s", message.id, e)
                         continue
                         
                 # For already processed applications, just skip them (don't restore views)
@@ -217,4 +221,4 @@ async def restore_approval_views(bot, channel):
                     continue
                     
     except Exception as e:
-        print(f"Error restoring approval views: {e}")
+        logger.error("Error restoring approval views: %s", e)

@@ -7,6 +7,10 @@ from typing import Dict, Any, List
 from utils.message_manager import get_message, get_private_messages, get_faction_name
 from utils.database_manager.rank_manager import rank_manager
 from utils.message_constants import MessageColors, MessageEmojis
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 class MessageService:
     """
@@ -47,7 +51,7 @@ class MessageService:
                 if hasattr(interaction, 'followup'):
                     interaction.followup.send(**kwargs)
                 else:
-                    print(f"❌ MessageService: Cannot send followup - no followup available")
+                    logger.info("MessageService: Cannot send followup - no followup available")
                     return False
             else:
                 # Interaction not responded yet, use response
@@ -55,7 +59,7 @@ class MessageService:
 
             return True
         except Exception as e:
-            print(f"❌ MessageService.send_response error: {e}")
+            logger.error("MessageService.send_response error: %s", e)
             return False
 
     @staticmethod
@@ -226,10 +230,10 @@ class MessageService:
             await user.send(embed=embed)
             return True
         except discord.Forbidden:
-            print(f"⚠️ MessageService: Cannot send DM to {user} - DMs disabled")
+            logger.info("MessageService: Cannot send DM to %s - DMs disabled", user)
             return False
         except Exception as e:
-            print(f"❌ MessageService.send_dm error for {user}: {e}")
+            logger.error("MessageService.send_dm error for %s: %s", user, e)
             return False
 
     @staticmethod
@@ -258,7 +262,7 @@ class MessageService:
                 color=MessageColors.SUCCESS
             )
         except Exception as e:
-            print(f"❌ MessageService.send_approval_dm error for {user}: {e}")
+            logger.error("MessageService.send_approval_dm error for %s: %s", user, e)
             return False
 
     @staticmethod
@@ -293,7 +297,7 @@ class MessageService:
                 color=MessageColors.ERROR
             )
         except Exception as e:
-            print(f"❌ MessageService.send_rejection_dm error for {user}: {e}")
+            logger.error("MessageService.send_rejection_dm error for %s: %s", user, e)
             return False
 
     @staticmethod
@@ -390,14 +394,14 @@ class MessageService:
 
             # Send both embeds
             await member.send(embeds=[embed, embed_ticket])
-            print(f"✅ Sent welcome message to {member.display_name} ({member.id})")
+            logger.info("Sent welcome message to {member.display_name} ({member.id})")
             return True
 
         except discord.Forbidden:
-            print(f"⚠️ MessageService: Cannot send welcome DM to {member.display_name} - DMs disabled")
+            logger.info(f" MessageService: Cannot send welcome DM to {member.display_name} - DMs disabled")
             return False
         except Exception as e:
-            print(f"❌ MessageService.send_welcome_dm error for {member}: {e}")
+            logger.error("MessageService.send_welcome_dm error for %s: %s", member, e)
             return False
 
     @staticmethod
@@ -452,7 +456,7 @@ class MessageService:
                 color=MessageColors.SUCCESS
             )
         except Exception as e:
-            print(f"❌ MessageService.send_recruitment_dm error for {user}: {e}")
+            logger.error("MessageService.send_recruitment_dm error for %s: %s", user, e)
             return False
 
     @staticmethod
@@ -497,7 +501,7 @@ class MessageService:
                 color=MessageColors.WARNING
             )
         except Exception as e:
-            print(f"❌ MessageService.send_dismissal_dm error for {user}: {e}")
+            logger.error("MessageService.send_dismissal_dm error for %s: %s", user, e)
             return False
 
     @staticmethod
@@ -546,5 +550,5 @@ class MessageService:
                 color=MessageColors.SUCCESS
             )
         except Exception as e:
-            print(f"❌ MessageService.send_leave_approval_dm error for {user}: {e}")
+            logger.error("MessageService.send_leave_approval_dm error for %s: %s", user, e)
             return False

@@ -22,6 +22,10 @@ from utils.message_manager import (
 from utils.role_utils import role_utils
 from utils.user_cache import get_cached_user_info
 from utils.nickname_manager import nickname_manager
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 # Constants for UI elements and messages
@@ -115,7 +119,7 @@ class SimplifiedDismissalApprovalView(ui.View):
             # Check moderator hierarchy - can this moderator approve this user's dismissal?
             if not can_moderate_user(interaction.user, target_user, config):
                 await interaction.response.send_message(
-                    get_systems_message(interaction.guild.id, "dismissal", "errors.hierarchy_violation", "❌ Вы не можете одобрить увольнение этого пользователя из-за иерархии модераторов.").format(action="одобрить"),
+                    get_systems_message(interaction.guild.id, "dismissal", "errors.hierarchy_violation", " Вы не можете одобрить увольнение этого пользователя из-за иерархии модераторов.").format(action="одобрить"),
                     ephemeral=True
                 )
                 return
@@ -134,7 +138,7 @@ class SimplifiedDismissalApprovalView(ui.View):
                         return
                         
                 except Exception as e:
-                    print(f"❌ Error checking personnel status: {e}")
+                    logger.warning("Error checking personnel status: %s", e)
                     await interaction.response.send_message(
                         get_systems_message(interaction.guild.id, "dismissal", "errors.database_error", "❌ Ошибка проверки статуса пользователя в базе данных."),
                         ephemeral=True
@@ -211,14 +215,14 @@ class SimplifiedDismissalApprovalView(ui.View):
                         dm_embed.add_field(name=get_private_messages(interaction.guild.id, 'private_messages.dismissal.fields.dismissed_by'), value=interaction.user.display_name, inline=False)
                         
                         await target_user.send(embed=dm_embed)
-                        print(f"✅ DISMISSAL: DM sent to {target_user.display_name}")
+                        logger.info(f" DISMISSAL: DM sent to {target_user.display_name}")
                     except discord.Forbidden:
-                        print(f"⚠️ DISMISSAL: Could not send DM to {target_user.display_name} (DMs disabled)")
+                        logger.info("DISMISSAL: Could not send DM to {target_user.display_name} (DMs disabled)")
                     except Exception as dm_error:
-                        print(f"⚠️ DISMISSAL: Failed to send DM: {dm_error}")
+                        logger.warning("DISMISSAL: Failed to send DM: %s", dm_error)
             
         except Exception as e:
-            print(f"❌ Error in simplified dismissal approval: {e}")
+            logger.warning("Error in simplified dismissal approval: %s", e)
             try:
                 await interaction.followup.send(
                     get_systems_message(interaction.guild.id, "dismissal", "errors.processing_error", "❌ Произошла ошибка при обработке увольнения."),
@@ -259,7 +263,7 @@ class SimplifiedDismissalApprovalView(ui.View):
             # Check moderator hierarchy - can this moderator reject this user's dismissal?
             if not can_moderate_user(interaction.user, target_user, config):
                 await interaction.response.send_message(
-                    get_systems_message(interaction.guild.id, "dismissal", "errors.hierarchy_violation", "❌ Вы не можете отклонить увольнение этого пользователя из-за иерархии модераторов.").format(action="отклонить"),
+                    get_systems_message(interaction.guild.id, "dismissal", "errors.hierarchy_violation", " Вы не можете отклонить увольнение этого пользователя из-за иерархии модераторов.").format(action="отклонить"),
                     ephemeral=True
                 )
                 return
@@ -273,7 +277,7 @@ class SimplifiedDismissalApprovalView(ui.View):
             await interaction.response.send_modal(rejection_modal)
             
         except Exception as e:
-            print(f"❌ Error in simplified dismissal rejection: {e}")
+            logger.warning("Error in simplified dismissal rejection: %s", e)
             try:
                 await interaction.response.send_message(
                     get_systems_message(interaction.guild.id, "dismissal", "errors.processing_error", "❌ Произошла ошибка при отказе."),
@@ -339,20 +343,20 @@ class SimplifiedDismissalApprovalView(ui.View):
                         )
 
                         await target_user_member.send(embed=dm_embed)
-                        print(f"❌ DISMISSAL REJECTION: DM sent to {target_user_member.display_name}")
+                        logger.info(f" DISMISSAL REJECTION: DM sent to {target_user_member.display_name}")
                     except discord.Forbidden:
-                        print(f"⚠️ DISMISSAL REJECTION: Could not send DM to {target_user_member.display_name} (DMs disabled)")
+                        logger.info("DISMISSAL REJECTION: Could not send DM to {target_user_member.display_name} (DMs disabled)")
                     except Exception as dm_error:
-                        print(f"⚠️ DISMISSAL REJECTION: Failed to send DM: {dm_error}")
+                        logger.warning("DISMISSAL REJECTION: Failed to send DM: %s", dm_error)
             
             # Логирование
             if is_automatic:
-                print(f"🤖 AUTO-REJECT: {target_user.display_name} ({target_user.id}) - {reason}")
+                logger.info("AUTO-REJECT: {target_user.display_name} ({target_user.id}) - %s", reason)
             else:
-                print(f"❌ MANUAL REJECT: {target_user.display_name} ({target_user.id}) by {interaction.user.display_name} - {reason}")
+                logger.info("MANUAL REJECT: {target_user.display_name} ({target_user.id}) by {interaction.user.display_name} - %s", reason)
                         
         except Exception as e:
-            print(f"❌ Error in finalize_rejection_universal: {e}")
+            logger.warning("Error in finalize_rejection_universal: %s", e)
             await interaction.followup.send(
                 "❌ Ошибка при обработке отклонения заявки.",
                 ephemeral=True
@@ -405,7 +409,7 @@ class SimplifiedDismissalApprovalView(ui.View):
             await interaction.message.delete()
             
         except Exception as e:
-            print(f"❌ Error in dismissal deletion: {e}")
+            logger.warning("Error in dismissal deletion: %s", e)
             try:
                 await interaction.response.send_message(
                     "❌ Произошла ошибка при удалении.",
@@ -439,21 +443,21 @@ class SimplifiedDismissalApprovalView(ui.View):
                     )
                     
                     if not success:
-                        print(f"⚠️ PersonnelManager dismissal failed: {message}")
+                        logger.error("PersonnelManager dismissal failed: %s", message)
                         await interaction.followup.send(
                             f"⚠️ **Внимание:** {message}",
                             ephemeral=True
                         )
                     else:
-                        print(f"✅ PersonnelManager dismissal successful: {message}")
+                        logger.info("PersonnelManager dismissal successful: %s", message)
                         
                         # Invalidate user cache after successful dismissal
                         from utils.user_cache import invalidate_user_cache
                         invalidate_user_cache(target_user.id)
-                        print(f"🗑️ CACHE INVALIDATE: User cache cleared for dismissed user {target_user.id}")
+                        logger.info(f"CACHE INVALIDATE: User cache cleared for dismissed user {target_user.id}")
                         
                 except Exception as e:
-                    print(f"❌ Error in PersonnelManager dismissal: {e}")
+                    logger.warning("Error in PersonnelManager dismissal: %s", e)
             
             # 2. Remove Discord roles using RoleUtils (if user still on server)
             if not user_has_left_server:
@@ -464,9 +468,9 @@ class SimplifiedDismissalApprovalView(ui.View):
                 )
 
                 if roles_cleared:
-                    print(f"✅ DISMISSAL: Cleared all roles from {target_user.display_name}: {', '.join(roles_cleared)}")
+                    logger.info("DISMISSAL: Cleared all roles from {target_user.display_name}: {', '.join(roles_cleared)}")
                 else:
-                    print(f"ℹ️ DISMISSAL: No roles to clear for {target_user.display_name}")
+                    logger.info(f" DISMISSAL: No roles to clear for {target_user.display_name}")
             
             # 3. Change nickname using nickname_manager (if user still on server)
             if not user_has_left_server:
@@ -474,7 +478,7 @@ class SimplifiedDismissalApprovalView(ui.View):
                     reason = form_data.get('reason', 'Уволен')
                     provided_name = form_data.get('name', target_user.display_name)
                     
-                    print(f"🎆 NICKNAME INTEGRATION: Увольнение {target_user.display_name} -> {provided_name} (причина: {reason})")
+                    logger.info("NICKNAME INTEGRATION: Увольнение {target_user.display_name} -> %s (причина: %s)", provided_name, reason)
                     
                     # Используем nickname_manager для автоматической обработки никнейма
                     new_nickname = await nickname_manager.handle_dismissal(
@@ -485,15 +489,15 @@ class SimplifiedDismissalApprovalView(ui.View):
                     
                     if new_nickname:
                         await target_user.edit(nick=new_nickname, reason=get_role_reason(interaction.guild.id, "nickname_change.dismissal", "Увольнение: изменён никнейм").format(moderator=interaction.user.mention))
-                        print(f"✅ NICKNAME MANAGER: Успешно установлен никнейм {target_user} -> {new_nickname}")
+                        logger.info("NICKNAME MANAGER: Успешно установлен никнейм %s -> %s", target_user, new_nickname)
                     else:
                         # Fallback к старому методу
                         fallback_nickname = f"Уволен | {provided_name}"
                         await target_user.edit(nick=fallback_nickname, reason=get_role_reason(interaction.guild.id, "nickname_change.dismissal", "Увольнение: изменён никнейм").format(moderator=interaction.user.mention))
-                        print(f"⚠️ NICKNAME FALLBACK: Использовали fallback никнейм: {fallback_nickname}")
+                        logger.info("NICKNAME FALLBACK: Использовали fallback никнейм: %s", fallback_nickname)
                         
                 except Exception as e:
-                    print(f"❌ Failed to change nickname: {e}")
+                    logger.warning("Failed to change nickname: %s", e)
             
             # 4. Send audit notification and get URL for blacklist evidence
             audit_message_url = await self._send_audit_notification(interaction, target_user, form_data, config)
@@ -508,7 +512,7 @@ class SimplifiedDismissalApprovalView(ui.View):
             return True
             
         except Exception as e:
-            print(f"❌ Error in simplified dismissal processing: {e}")
+            logger.warning("Error in simplified dismissal processing: %s", e)
             return False
     
     async def _send_audit_notification(self, interaction, target_user, form_data, config):
@@ -560,18 +564,18 @@ class SimplifiedDismissalApprovalView(ui.View):
                         )
                         
                         if was_blacklisted:
-                            print(f"✅ Auto-blacklist triggered for {personnel_data.get('name')}")
+                            logger.info(f" Auto-blacklist triggered for {personnel_data.get('name')}")
                     else:
-                        print(f"⚠️ Personnel not found in DB for auto-blacklist check: {target_user.id}")
+                        logger.info(f" Personnel not found in DB for auto-blacklist check: {target_user.id}")
                         
             except Exception as blacklist_error:
-                print(f"⚠️ Error in auto-blacklist check: {blacklist_error}")
+                logger.warning("Error in auto-blacklist check: %s", blacklist_error)
                 # Don't fail the whole dismissal if blacklist check fails
             
             return audit_message_url
             
         except Exception as e:
-            print(f"❌ Error sending audit notification: {e}")
+            logger.warning("Error sending audit notification: %s", e)
             return None
 
 class DeletionConfirmationView(ui.View):
@@ -657,7 +661,7 @@ class AutomaticDismissalApprovalView(ui.View):
                 # Check moderator hierarchy
                 if not can_moderate_user(interaction.user, target_user, config):
                     await interaction.response.send_message(
-                        get_systems_message(interaction.guild.id, "dismissal", "errors.hierarchy_violation", "❌ Вы не можете одобрить увольнение этого пользователя из-за иерархии модераторов.").format(action="одобрить"),
+                        get_systems_message(interaction.guild.id, "dismissal", "errors.hierarchy_violation", " Вы не можете одобрить увольнение этого пользователя из-за иерархии модераторов.").format(action="одобрить"),
                         ephemeral=True
                     )
                     return
@@ -676,7 +680,7 @@ class AutomaticDismissalApprovalView(ui.View):
                             return
                             
                     except Exception as e:
-                        print(f"❌ Error checking personnel status: {e}")
+                        logger.warning("Error checking personnel status: %s", e)
                         await interaction.response.send_message(
                             get_systems_message(interaction.guild.id, "dismissal", "errors.database_error", "❌ Ошибка проверки статуса пользователя в базе данных."),
                             ephemeral=True
@@ -717,17 +721,17 @@ class AutomaticDismissalApprovalView(ui.View):
             await self._process_automatic_dismissal_approval(interaction, target_user, config)
             
         except Exception as e:
-            print(f"Error in automatic dismissal approval: {e}")
+            logger.error("Error in automatic dismissal approval: %s", e)
             # Try followup first, then response as fallback
             try:
                 await interaction.followup.send(
-                    "❌ Произошла ошибка при одобрении автоматического рапорта.",
+                    " Произошла ошибка при одобрении автоматического рапорта.",
                     ephemeral=True
                 )
             except:
                 try:
                     await interaction.response.send_message(
-                        "❌ Произошла ошибка при одобрении автоматического рапорта.",
+                        " Произошла ошибка при одобрении автоматического рапорта.",
                         ephemeral=True
                     )
                 except:
@@ -754,7 +758,7 @@ class AutomaticDismissalApprovalView(ui.View):
                 # Check moderator hierarchy
                 if not can_moderate_user(interaction.user, target_user, config):
                     await interaction.response.send_message(
-                        get_systems_message(interaction.guild.id, "dismissal", "errors.hierarchy_violation", "❌ Вы не можете отклонить увольнение этого пользователя из-за иерархии модераторов.").format(action="отклонить"),
+                        get_systems_message(interaction.guild.id, "dismissal", "errors.hierarchy_violation", " Вы не можете отклонить увольнение этого пользователя из-за иерархии модераторов.").format(action="отклонить"),
                         ephemeral=True
                     )
                     return
@@ -765,11 +769,11 @@ class AutomaticDismissalApprovalView(ui.View):
             await interaction.response.send_modal(modal)
             
         except Exception as e:
-            print(f"Error in automatic dismissal rejection: {e}")
+            logger.error("Error in automatic dismissal rejection: %s", e)
             # Try response as fallback
             try:
                 await interaction.response.send_message(
-                    "❌ Произошла ошибка при отклонении автоматического рапорта.",
+                    " Произошла ошибка при отклонении автоматического рапорта.",
                     ephemeral=True
                 )
             except:
@@ -808,17 +812,17 @@ class AutomaticDismissalApprovalView(ui.View):
             await interaction.response.send_modal(modal)
             
         except Exception as e:
-            print(f"Error in automatic dismissal edit: {e}")
+            logger.error("Error in automatic dismissal edit: %s", e)
             # Try followup first, then response as fallback
             try:
                 await interaction.followup.send(
-                    "❌ Произошла ошибка при редактировании автоматического рапорта.",
+                    " Произошла ошибка при редактировании автоматического рапорта.",
                     ephemeral=True
                 )
             except:
                 try:
                     await interaction.response.send_message(
-                        "❌ Произошла ошибка при редактировании автоматического рапорта.",
+                        " Произошла ошибка при редактировании автоматического рапорта.",
                         ephemeral=True
                     )
                 except:
@@ -926,7 +930,7 @@ class AutomaticDismissalApprovalView(ui.View):
             return None
             
         except Exception as e:
-            print(f"Error extracting target user: {e}")
+            logger.error("Error extracting target user: %s", e)
             return None
     
     def _extract_current_data_from_embed(self, interaction):
@@ -947,7 +951,7 @@ class AutomaticDismissalApprovalView(ui.View):
             
             return data            
         except Exception as e:
-            print(f"Error extracting current data: {e}")
+            logger.error("Error extracting current data: %s", e)
             return {}
     
     async def _check_delete_permissions(self, interaction: discord.Interaction) -> bool:
@@ -999,14 +1003,14 @@ class AutomaticDismissalApprovalView(ui.View):
                 await interaction.response.send_message(error_message, ephemeral=True)
         except Exception:
             # If we can't send the error message, at least log it
-            print(f"Error in deletion process: {error}")
+            logger.error("Error in deletion process: %s", error)
             import traceback
             traceback.print_exc()
     
     async def _process_automatic_dismissal_approval(self, interaction, target_user, config):
         """Process automatic dismissal approval (similar to standard approval but simplified)"""
         try:
-            print(f"🚀 Starting automatic dismissal approval for {target_user.display_name} (ID: {target_user.id})")
+            logger.info("Starting automatic dismissal approval for {target_user.display_name} (ID: {target_user.id})")
             
             # Processing state already shown by caller, no need to defer again
             
@@ -1026,7 +1030,7 @@ class AutomaticDismissalApprovalView(ui.View):
                 elif field.name == "Причина увольнения":
                     form_data['reason'] = field.value
             
-            print(f"📋 Extracted form data: {form_data}")
+            logger.info("Extracted form data: %s", form_data)
             
             # Process standard dismissal approval
             current_time = discord.utils.utcnow()
@@ -1042,7 +1046,7 @@ class AutomaticDismissalApprovalView(ui.View):
             # Always try to get position from PersonnelManager, regardless of server status
             try:
                 # Try to get user info from PersonnelManager by Discord ID with timeout
-                print(f"🔍 Attempting to get user info from PersonnelManager...")
+                logger.info("Attempting to get user info from PersonnelManager...")
                 from utils.database_manager import PersonnelManager
                 pm = PersonnelManager()
                 
@@ -1051,7 +1055,7 @@ class AutomaticDismissalApprovalView(ui.View):
                 user_info = await asyncio.wait_for(pm.get_personnel_summary(target_user.id), timeout=10.0)
                 
                 if user_info:
-                    print(f"✅ Found user in PersonnelManager: {user_info}")
+                    logger.info("Found user in PersonnelManager: %s", user_info)
                     # Get position if available
                     if user_info.get('position'):
                         user_position_for_audit = user_info.get('position')
@@ -1063,7 +1067,7 @@ class AutomaticDismissalApprovalView(ui.View):
                         if user_unit_for_audit == get_dismissal_message(interaction.guild.id, 'defaults.unknown_value') and user_info.get('department'):
                             user_unit_for_audit = user_info.get('department')
                     
-                    print(f"Got user info from PersonnelManager: rank={user_rank_for_audit}, department={user_unit_for_audit}, position={user_position_for_audit}")
+                    logger.info("Got user info from PersonnelManager: rank=%s, department=%s, position=%s", user_rank_for_audit, user_unit_for_audit, user_position_for_audit)
                     
                     # Also update form_data with the complete info from PersonnelManager if available
                     if not form_data.get('name') and user_info.get('first_name') and user_info.get('last_name'):
@@ -1071,15 +1075,15 @@ class AutomaticDismissalApprovalView(ui.View):
                     if not form_data.get('static') and user_info.get('static'):
                         form_data['static'] = user_info['static']
                 else:
-                    print(f"⚠️ User not found in PersonnelManager")
+                    logger.info("User not found in PersonnelManager")
             except asyncio.TimeoutError:
-                print(f"⚠️ PersonnelManager query timed out after 10 seconds")
+                logger.info("PersonnelManager query timed out after 10 seconds")
                 await interaction.followup.send(
                     "⚠️ Ошибка: Запрос к базе данных превысил время ожидания. Процесс продолжается...",
                     ephemeral=True
                 )
             except Exception as e:
-                print(f"❌ Error getting user info from PersonnelManager: {e}")
+                logger.warning("Error getting user info from PersonnelManager: %s", e)
                 await interaction.followup.send(
                     f"⚠️ Ошибка при обращении к базе данных: {e}",
                     ephemeral=True
@@ -1100,23 +1104,23 @@ class AutomaticDismissalApprovalView(ui.View):
                         role_unit = dept_manager.get_user_department_name(target_user)
                         if role_unit != get_dismissal_message(interaction.guild.id, 'defaults.unknown_value'):
                             user_unit_for_audit = role_unit
-                    print(f"Fallback to roles: rank={user_rank_for_audit}, department={user_unit_for_audit}")
+                    logger.info("Fallback to roles: rank=%s, department=%s", user_rank_for_audit, user_unit_for_audit)
                 except Exception as e:
-                    print(f"Error getting data from roles: {e}")            
+                    logger.error("Error getting data from roles: %s", e)            
             # Process dismissal with automatic approval logic
-            print(f"🚀 Proceeding to finalize automatic approval...")
+            logger.info("Proceeding to finalize automatic approval...")
             await self._finalize_automatic_approval(
                 interaction, target_user, form_data, user_rank_for_audit, 
                 user_unit_for_audit, current_time, config, user_position_for_audit
             )
-            print(f"✅ Automatic dismissal approval completed successfully for {target_user.display_name}")
+            logger.info(f" Automatic dismissal approval completed successfully for {target_user.display_name}")
             
         except Exception as e:
-            print(f"❌ Error processing automatic dismissal approval: {e}")
-            print(f"❌ Traceback: {traceback.format_exc()}")
+            logger.warning("Error processing automatic dismissal approval: %s", e)
+            logger.info("Traceback: {traceback.format_exc()}")
             try:
                 await interaction.followup.send(
-                    f"❌ Произошла ошибка при обработке одобрения: {str(e)[:100]}...",
+                    f" Произошла ошибка при обработке одобрения: {str(e)[:100]}...",
                     ephemeral=True
                 )
             except:
@@ -1127,11 +1131,11 @@ class AutomaticDismissalApprovalView(ui.View):
                                          current_time, config, user_position_for_audit=""):
         """Finalize automatic dismissal approval"""
         try:
-            print(f"🔄 Starting finalization for {target_user.display_name}")
+            logger.info(f" Starting finalization for {target_user.display_name}")
             
             # Remove user from personnel database using PersonnelManager
             try:
-                print(f"📋 Processing personnel database removal...")
+                logger.info("Processing personnel database removal...")
                 user_id = getattr(target_user, 'id', None)
                 if user_id:
                     from utils.database_manager import PersonnelManager
@@ -1144,7 +1148,7 @@ class AutomaticDismissalApprovalView(ui.View):
                         'name': form_data.get('name', target_user.display_name)
                     }
                     
-                    print(f"📋 Calling process_personnel_dismissal with data: {dismissal_data}")
+                    logger.info("Calling process_personnel_dismissal with data: %s", dismissal_data)
                     
                     # Add timeout to prevent hanging
                     import asyncio
@@ -1158,10 +1162,10 @@ class AutomaticDismissalApprovalView(ui.View):
                         timeout=15.0
                     )
                     
-                    print(f"📋 Personnel database operation result: success={registry_success}, message={registry_message}")
+                    logger.info("Personnel database operation result: success=%s, message=%s", registry_success, registry_message)
                     
                     if not registry_success:
-                        print(f"⚠️ Could not remove user from personnel registry: {registry_message}")
+                        logger.info("Could not remove user from personnel registry: %s", registry_message)
                         # Send error notification to moderator
                         try:
                             await interaction.followup.send(
@@ -1171,16 +1175,16 @@ class AutomaticDismissalApprovalView(ui.View):
                         except:
                             pass  # If followup fails, continue silently
                     else:
-                        print(f"✅ Personnel database updated: {registry_message}")
+                        logger.info("Personnel database updated: %s", registry_message)
                         
                         # Invalidate user cache after successful dismissal
                         from utils.user_cache import invalidate_user_cache
                         invalidate_user_cache(user_id)
-                        print(f"🗑️ CACHE INVALIDATE: User cache cleared for dismissed user {user_id}")
+                        logger.info("CACHE INVALIDATE: User cache cleared for dismissed user %s", user_id)
                 else:
-                    print(f"⚠️ Could not get user ID for {target_user.display_name}")
+                    logger.info(f" Could not get user ID for {target_user.display_name}")
             except asyncio.TimeoutError:
-                print(f"⚠️ Personnel database operation timed out after 15 seconds")
+                logger.info("Personnel database operation timed out after 15 seconds")
                 try:
                     await interaction.followup.send(
                         "⚠️ **Внимание:** Операция с базой данных превысила время ожидания. Увольнение продолжается...",
@@ -1189,7 +1193,7 @@ class AutomaticDismissalApprovalView(ui.View):
                 except:
                     pass
             except Exception as e:
-                print(f"❌ Error updating personnel database: {e}")
+                logger.warning("Error updating personnel database: %s", e)
                 # Send error notification to moderator
                 try:
                     await interaction.followup.send(
@@ -1200,7 +1204,7 @@ class AutomaticDismissalApprovalView(ui.View):
                     pass  # If followup fails, continue silently
             
             # Send notification to audit channel
-            print(f"📢 Starting audit notification process...")
+            logger.info("Starting audit notification process...")
             audit_message_url = None
             try:
                 from utils.audit_logger import audit_logger, AuditAction
@@ -1216,7 +1220,7 @@ class AutomaticDismissalApprovalView(ui.View):
                     'reason': form_data.get('reason', '')
                 }
                 
-                print(f"📢 Sending audit notification with data: {personnel_data}")
+                logger.info("Sending audit notification with data: %s", personnel_data)
                 
                 # Send audit notification with timeout
                 audit_message_url = await asyncio.wait_for(
@@ -1231,10 +1235,10 @@ class AutomaticDismissalApprovalView(ui.View):
                     timeout=10.0
                 )
                 
-                print(f"📢 Audit notification sent successfully: {audit_message_url}")
+                logger.info("Audit notification sent successfully: %s", audit_message_url)
                 
                 # Get personnel_id for auto-blacklist check
-                print(f"🔍 Checking for auto-blacklist...")
+                logger.info("Checking for auto-blacklist...")
                 try:
                     with get_db_cursor() as cursor:
                         cursor.execute(
@@ -1245,7 +1249,7 @@ class AutomaticDismissalApprovalView(ui.View):
                         
                         if result:
                             personnel_id = result['id']
-                            print(f"🔍 Found personnel_id {personnel_id}, checking auto-blacklist...")
+                            logger.info("Found personnel_id %s, checking auto-blacklist...", personnel_id)
                             
                             # Check and send auto-blacklist if needed (with audit URL as evidence)
                             was_blacklisted = await asyncio.wait_for(
@@ -1262,20 +1266,20 @@ class AutomaticDismissalApprovalView(ui.View):
                             )
                             
                             if was_blacklisted:
-                                print(f"✅ Auto-blacklist triggered for {personnel_data.get('name')}")
+                                logger.info(f" Auto-blacklist triggered for {personnel_data.get('name')}")
                             else:
-                                print(f"ℹ️ No auto-blacklist triggered for {personnel_data.get('name')}")
+                                logger.info(f" No auto-blacklist triggered for {personnel_data.get('name')}")
                         else:
-                            print(f"⚠️ Personnel not found in DB for auto-blacklist check: {target_user.id}")
+                            logger.info(f" Personnel not found in DB for auto-blacklist check: {target_user.id}")
                             
                 except asyncio.TimeoutError:
-                    print(f"⚠️ Auto-blacklist check timed out")
+                    logger.info("Auto-blacklist check timed out")
                 except Exception as blacklist_error:
-                    print(f"⚠️ Error in auto-blacklist check: {blacklist_error}")
+                    logger.warning("Error in auto-blacklist check: %s", blacklist_error)
                     # Don't fail the whole dismissal if blacklist check fails
                 
             except asyncio.TimeoutError:
-                print(f"⚠️ Audit notification timed out after 10 seconds")
+                logger.info("Audit notification timed out after 10 seconds")
                 try:
                     await interaction.followup.send(
                         "⚠️ **Внимание:** Отправка аудит уведомления превысила время ожидания.",
@@ -1284,7 +1288,7 @@ class AutomaticDismissalApprovalView(ui.View):
                 except:
                     pass
             except Exception as e:
-                print(f"❌ Error sending audit notification: {e}")
+                logger.warning("Error sending audit notification: %s", e)
                 try:
                     await interaction.followup.send(
                         f"⚠️ **Внимание:** Ошибка при отправке аудит уведомления: {str(e)[:100]}...",
@@ -1294,7 +1298,7 @@ class AutomaticDismissalApprovalView(ui.View):
                     pass
             
             # Update embed to show approval
-            print(f"🎨 Updating UI to show approval status...")
+            logger.info("Updating UI to show approval status...")
             embed = interaction.message.embeds[0]
             embed.color = get_dismissal_embed_color(interaction.guild.id, 'success')
             
@@ -1314,16 +1318,16 @@ class AutomaticDismissalApprovalView(ui.View):
             approved_view.add_item(approved_button)
             
             # Update message with approved state
-            print(f"🎨 Sending final UI update...")
+            logger.info("Sending final UI update...")
             await interaction.edit_original_response(content='', embed=embed, view=approved_view)
-            print(f"✅ UI updated successfully - automatic dismissal completed!")
+            logger.info("UI updated successfully - automatic dismissal completed!")
 
         except Exception as e:
-            print(f"❌ Error finalizing automatic approval: {e}")
-            print(f"❌ Traceback: {traceback.format_exc()}")
+            logger.warning("Error finalizing automatic approval: %s", e)
+            logger.info("Traceback: {traceback.format_exc()}")
             try:
                 await interaction.followup.send(
-                    f"❌ Произошла ошибка при финализации одобрения: {str(e)[:100]}...",
+                    f" Произошла ошибка при финализации одобрения: {str(e)[:100]}...",
                     ephemeral=True
                 )
             except:
@@ -1347,7 +1351,7 @@ class AutomaticDismissalApprovalView(ui.View):
             
             # Add rejection status field
             embed.add_field(
-                name="❌ Обработано",
+                name="✅ Обработано",
                 value=f"**Отклонено:** {interaction.user.mention}\n**Время:** {discord.utils.format_dt(discord.utils.utcnow(), 'F')}\n**Причина:** {rejection_reason}",
                 inline=False
             )
@@ -1364,5 +1368,4 @@ class AutomaticDismissalApprovalView(ui.View):
             await original_message.edit(embed=embed, view=rejected_view)
             
         except Exception as e:
-            print(f"Error finalizing automatic rejection: {e}")
-
+            logger.error("Error finalizing automatic rejection: %s", e)

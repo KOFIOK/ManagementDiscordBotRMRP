@@ -8,6 +8,10 @@ from datetime import datetime, timedelta
 import pytz
 from typing import List, Optional
 import asyncio
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class LeaveRequestStorage:
@@ -206,7 +210,7 @@ class LeaveRequestStorage:
         cleaned_data = {today: data.get(today, {})}
         cls._save_data(cleaned_data)
         
-        print(f"🧹 Leave requests data cleaned up. Kept data for {today}")
+        logger.info("Leave requests data cleaned up. Kept data for %s", today)
     
     @classmethod
     async def start_daily_cleanup_task(cls):
@@ -219,7 +223,7 @@ class LeaveRequestStorage:
                           timedelta(days=1)
                 seconds_until_midnight = (tomorrow - now).total_seconds()
                 
-                print(f"⏰ Leave requests cleanup scheduled in {int(seconds_until_midnight/3600)}h {int((seconds_until_midnight%3600)/60)}m")
+                logger.info("⏰ Leave requests cleanup scheduled in {int(seconds_until_midnight/3600)}h {int((seconds_until_midnight%3600)/60)}m")
                 
                 # Wait until midnight
                 await asyncio.sleep(seconds_until_midnight)
@@ -231,6 +235,6 @@ class LeaveRequestStorage:
                 await asyncio.sleep(60)
                 
             except Exception as e:
-                print(f"❌ Error in leave requests cleanup task: {e}")
+                logger.warning("Error in leave requests cleanup task: %s", e)
                 # Wait 1 hour before retrying
                 await asyncio.sleep(3600)

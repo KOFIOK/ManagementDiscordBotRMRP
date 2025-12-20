@@ -10,6 +10,10 @@ from typing import Dict, Optional, Tuple, Any, List
 import re
 from .config_manager import load_config
 from .message_manager import get_warehouse_message
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 class WarehouseManager:
     def __init__(self):
@@ -18,7 +22,7 @@ class WarehouseManager:
         # Категории предметов склада
         self.item_categories = {
             "Оружие": {
-                "emoji": "🔫",
+                "emoji": "📦",
                 "key": "оружие",
                 "items": [
                     "АК-74М", "Кольт М16", "Кольт 416 Канада", "ФН СКАР-Т", 
@@ -34,14 +38,14 @@ class WarehouseManager:
                 ]
             },
             "Медикаменты": {
-                "emoji": "💊",
+                "emoji": "🔫",
                 "key": "медикаменты", 
                 "items": [
                     "Армейская аптечка", "Обезболивающее", "Дефибриллятор", "Алкотестер"
                 ]
             },
             "Другое": {
-                "emoji": "📦",
+                "emoji": "💊",
                 "key": "другое",
                 "items": [
                     "Материалы", "Патроны", "Бодикамеры", "Прочее"
@@ -52,6 +56,17 @@ class WarehouseManager:
             "Кольт М16", "Кольт 416 Канада", "ФН СКАР-Т", 
             "Штейр АУГ-А3", "Таурус Бешеный бык"
         ]
+
+    def get_general_limits(self) -> Dict[str, int]:
+        """Получить общие лимиты склада из конфигурации (rule 4.20)."""
+        cfg = load_config()
+        return cfg.get('warehouse_general_limits', {
+            'weapons_max': 3,
+            'materials_max': 2000,
+            'armor_max': 20,
+            'medkits_max': 25,
+            'other_max': 15,
+        })
 
     def get_warehouse_channels(self) -> Tuple[Optional[int], Optional[int]]:
         """Получить каналы склада из конфигурации"""
@@ -71,7 +86,7 @@ class WarehouseManager:
         
         fallback_channel = config.get("warehouse_request_channel")
         if fallback_channel:
-            print("⚠️ warehouse_submission_channel не настроен, используется warehouse_request_channel как fallback")
+            logger.info("warehouse_submission_channel не настроен, используется warehouse_request_channel как fallback")
         
         return fallback_channel
 
@@ -160,7 +175,7 @@ class WarehouseManager:
                             status = "rejected"
                             break
                 
-                print(f"📋 COOLDOWN CHECK: Найдена заявка со статусом '{status}'")
+                logger.info("COOLDOWN CHECK: Найдена заявка со статусом '%s'", status)
                 
                 # Если заявка отклонена - кулдаун не применяется
                 if status == "rejected":
@@ -176,20 +191,20 @@ class WarehouseManager:
                 
                 if time_since < timedelta(hours=cooldown_hours):
                     next_time_moscow = message_time_moscow + timedelta(hours=cooldown_hours)
-                    print(f"❌ COOLDOWN CHECK: Кулдаун активен! Следующий запрос: {next_time_moscow.strftime('%Y-%m-%d %H:%M:%S')} МСК")
+                    logger.info(f" COOLDOWN CHECK: Кулдаун активен! Следующий запрос: {next_time_moscow.strftime('%Y-%m-%d %H:%M:%S')} МСК")
                     return False, next_time_moscow
             
         except asyncio.TimeoutError:
-            print(f"⚠️ COOLDOWN CHECK: Таймаут при проверке истории сообщений (5 сек)")
+            logger.info("COOLDOWN CHECK: Таймаут при проверке истории сообщений (5 сек)")
             # При таймауте разрешаем запрос (лучше разрешить, чем заблокировать)
             return True, None
         except Exception as e:
-            print(f"❌ COOLDOWN CHECK: Ошибка при проверке: {e}")
+            logger.error("COOLDOWN CHECK: Ошибка при проверке: %s", e)
             # При ошибке разрешаем запрос
             return True, None
         
         if not found_message:
-            print(f"✅ COOLDOWN CHECK: Предыдущих заявок не найдено, можно делать запрос")
+            logger.info("COOLDOWN CHECK: Предыдущих заявок не найдено, можно делать запрос")
         
         return True, None
 
@@ -216,14 +231,14 @@ class WarehouseManager:
                     if "429" in str(e) or "Quota exceeded" in str(e):
                         # Rate limiting - ждем и повторяем
                         wait_time = 2 ** attempt  # Exponential backoff
-                        print(f"⏳ RATE LIMIT в get_user_info: ждем {wait_time}s, попытка {attempt + 1}/{max_retries}")
+                        logger.info("⏳ RATE LIMIT в get_user_info: ждем %ss, попытка {attempt + 1}/%s", wait_time, max_retries)
                         await asyncio.sleep(wait_time)
                         if attempt == max_retries - 1:
-                            print(f"❌ Не удалось получить данные пользователя после {max_retries} попыток")
+                            logger.info("Не удалось получить данные пользователя после %s попыток", max_retries)
                             user_data = None
                     else:
                         # Другая ошибка - прекращаем попытки
-                        print(f"❌ Ошибка получения данных пользователя: {e}")
+                        logger.error("Ошибка получения данных пользователя: %s", e)
                         user_data = None
                         break
             
@@ -234,20 +249,20 @@ class WarehouseManager:
                 department = user_data.get('department', '')
                 position = user_data.get('position', '')
                 
-                print(f"✅ WAREHOUSE USER INFO: {user.id} -> '{full_name}' | '{static}' | должность='{position}' | звание='{rank}' | подразделение='{department}'")
+                logger.info("WAREHOUSE USER INFO: {user.id} -> '%s' | '%s' | должность='%s' | звание='%s' | подразделение='%s'", full_name, static, position, rank, department)
                 
                 if full_name and static:
                     return full_name, static, position, rank
                 else:
-                    print(f"⚠️ WAREHOUSE USER INFO: Неполные данные - имя='{full_name}', статик='{static}'")
+                    logger.info("WAREHOUSE USER INFO: Неполные данные - имя='%s', статик='%s'", full_name, static)
                     # Возвращаем что есть, но предупреждаем
                     return full_name or 'Неизвестно', static or 'Не указан', position, rank
             else:
-                print(f"❌ WAREHOUSE USER INFO: Данные пользователя {user.id} не найдены в БД")
+                logger.info(f" WAREHOUSE USER INFO: Данные пользователя {user.id} не найдены в БД")
                 return 'Неизвестно', 'Не указан', 'Не указано', 'Не указано'
                 
         except Exception as e:
-            print(f"❌ WAREHOUSE USER INFO ERROR: {e}")
+            logger.error("WAREHOUSE USER INFO ERROR: %s", e)
             import traceback
             traceback.print_exc()
             return 'Неизвестно', 'Не указан', 'Не указано', 'Не указано'
@@ -294,6 +309,7 @@ class WarehouseManager:
         Возвращает (is_valid, corrected_quantity, message)
         """
         user_limits = self.get_user_limits(position, rank)
+        gl = self.get_general_limits()
         
         # Подсчитываем уже существующие предметы данного типа в корзине
         existing_quantity = 0
@@ -304,7 +320,8 @@ class WarehouseManager:
         
         # Специальная обработка для разных категорий
         if category_key == "оружие":
-            max_weapons = user_limits.get("оружие", 3)
+            # Эффективный лимит = минимум из персонального и общего
+            max_weapons = min(user_limits.get("оружие", 3), gl.get('weapons_max', 3))
             weapon_restrictions = user_limits.get("weapon_restrictions", [])
             
             # Проверка ограничений на тип оружия
@@ -323,7 +340,7 @@ class WarehouseManager:
                 return True, corrected_quantity, f"Количество уменьшено до максимально возможного: {corrected_quantity} (лимит: {max_weapons}, в корзине: {existing_quantity})"
             
         elif category_key == "бронежилеты":
-            max_armor = user_limits.get("бронежилеты", 15)
+            max_armor = min(user_limits.get("бронежилеты", 15), gl.get('armor_max', 20))
             
             # Проверка общего количества (существующие + новые)
             total_quantity = existing_quantity + quantity
@@ -337,7 +354,7 @@ class WarehouseManager:
                 
         elif category_key == "медикаменты":
             if item_name == "Армейская аптечка":
-                max_medkits = user_limits.get("аптечки", 20)
+                max_medkits = min(user_limits.get("аптечки", 20), gl.get('medkits_max', 25))
                 
                 # Проверка общего количества (существующие + новые)
                 total_quantity = existing_quantity + quantity
@@ -350,14 +367,23 @@ class WarehouseManager:
                 
         elif category_key == "другое":
             if item_name == "Материалы":
-                # Проверка общего количества материалов
+                # Проверка общего количества материалов по общим лимитам
                 total_quantity = existing_quantity + quantity
-                if total_quantity > 1000:
-                    # Корректируем количество с учетом уже имеющихся
-                    corrected_quantity = 1000 - existing_quantity
+                max_materials = gl.get('materials_max', 2000)
+                if total_quantity > max_materials:
+                    corrected_quantity = max_materials - existing_quantity
                     if corrected_quantity <= 0:
-                        return False, 0, f"❌ Превышен лимит материалов (1000). В корзине уже: {existing_quantity}"
-                    return True, corrected_quantity, f"Количество уменьшено до максимально возможного: {corrected_quantity} (лимит: 1000, в корзине: {existing_quantity})"
+                        return False, 0, f"❌ Превышен лимит материалов ({max_materials}). В корзине уже: {existing_quantity}"
+                    return True, corrected_quantity, f"Количество уменьшено до максимально возможного: {corrected_quantity} (лимит: {max_materials}, в корзине: {existing_quantity})"
+            else:
+                # Общий лимит для прочих предметов категории 'другое'
+                total_quantity = existing_quantity + quantity
+                max_other = gl.get('other_max', 15)
+                if total_quantity > max_other:
+                    corrected_quantity = max_other - existing_quantity
+                    if corrected_quantity <= 0:
+                        return False, 0, f"❌ Превышен лимит по категории 'Другое' ({max_other}). В корзине уже: {existing_quantity}"
+                    return True, corrected_quantity, f"Количество уменьшено до максимально возможного: {corrected_quantity} (лимит: {max_other}, в корзине: {existing_quantity})"
         
         return True, quantity, get_warehouse_message(guild_id, "cart.success_request_submitted", "✅ Запрос корректен")
 
@@ -478,17 +504,17 @@ class WarehouseManager:
             
             # Администраторы могут всегда обходить кулдаун
             if is_administrator(user, config):
-                print(f"🛡️ COOLDOWN BYPASS: Администратор {user.display_name} обходит кулдаун")
+                logger.info(f" COOLDOWN BYPASS: Администратор {user.display_name} обходит кулдаун")
                 return True
             
             # Модераторы могут всегда обходить кулдаун  
             elif is_moderator_or_admin(user, config):
-                print(f"👮 COOLDOWN BYPASS: Модератор {user.display_name} обходит кулдаун")
+                logger.info(f" COOLDOWN BYPASS: Модератор {user.display_name} обходит кулдаун")
                 return True
             
             return False
             
         except Exception as e:
-            print(f"❌ Ошибка при проверке прав bypass кулдауна: {e}")
+            logger.error("Ошибка при проверке прав bypass кулдауна: %s", e)
             # В случае ошибки - не даем bypass (безопасность)
             return False

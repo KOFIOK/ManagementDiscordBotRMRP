@@ -8,6 +8,10 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from datetime import datetime
 from dotenv import load_dotenv
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 # Загружаем переменные окружения
 load_dotenv()
@@ -25,14 +29,14 @@ def connect_to_database():
         )
         return conn
     except Exception as e:
-        print(f"❌ Connection failed: {e}")
+        logger.error(" Connection failed: %s", e)
         return None
 
 
 def test_database_structure():
     """Test and display database structure"""
-    print("🔍 Testing Database Structure")
-    print("=" * 50)
+    logger.info(" Testing Database Structure")
+    logger.info("=" * 50)
     
     conn = connect_to_database()
     if not conn:
@@ -61,27 +65,27 @@ def test_database_structure():
         for col_info in columns_info:
             if col_info['table_name'] != current_table:
                 current_table = col_info['table_name']
-                print(f"\n📋 Table: {current_table}")
+                logger.info("\n Table: %s", current_table)
                 
             nullable = "NULL" if col_info['is_nullable'] == 'YES' else "NOT NULL"
             default = f" DEFAULT {col_info['column_default']}" if col_info['column_default'] else ""
-            print(f"  - {col_info['column_name']}: {col_info['data_type']} {nullable}{default}")
+            logger.info("  - {col_info['column_name']}: {col_info['data_type']} %s%s", nullable, default)
         
         cursor.close()
         conn.close()
-        print("\n✅ Database structure analysis complete")
+        logger.info("\n Database structure analysis complete")
         return True
         
     except Exception as e:
-        print(f"❌ Structure test failed: {e}")
+        logger.error(" Structure test failed: %s", e)
         conn.close()
         return False
 
 
 def test_data_integrity():
     """Test data integrity and relationships"""
-    print("\n🔍 Testing Data Integrity")
-    print("=" * 50)
+    logger.info("\n Testing Data Integrity")
+    logger.info("=" * 50)
     
     conn = connect_to_database()
     if not conn:
@@ -93,14 +97,14 @@ def test_data_integrity():
         # Test record counts
         tables = ['personnel', 'positions', 'ranks', 'subdivisions', 'employees', 'history', 'blacklist', 'actions']
         
-        print("📊 Record counts:")
+        print(" Record counts:")
         for table in tables:
             cursor.execute(f"SELECT COUNT(*) as count FROM {table};")
             count = cursor.fetchone()['count']
-            print(f"  {table}: {count} records")
+            logger.info("  %s: %s records", table, count)
         
         # Test personnel data quality
-        print("\n👥 Personnel data quality:")
+        logger.info("\n Personnel data quality:")
         cursor.execute("""
             SELECT 
                 COUNT(*) as total,
@@ -111,11 +115,11 @@ def test_data_integrity():
             FROM personnel;
         """)
         quality = cursor.fetchone()
-        print(f"  Total records: {quality['total']}")
-        print(f"  With first name: {quality['with_first_name']}")
-        print(f"  With last name: {quality['with_last_name']}")
-        print(f"  With Discord ID: {quality['with_discord_id']}")
-        print(f"  Unique Discord IDs: {quality['unique_discord_ids']}")
+        logger.info(f"  Total records: {quality['total']}")
+        logger.info(f"  With first name: {quality['with_first_name']}")
+        logger.info(f"  With last name: {quality['with_last_name']}")
+        logger.info(f"  With Discord ID: {quality['with_discord_id']}")
+        logger.info(f"  Unique Discord IDs: {quality['unique_discord_ids']}")
         
         # Test for duplicates
         cursor.execute("""
@@ -128,26 +132,26 @@ def test_data_integrity():
         duplicates = cursor.fetchall()
         
         if duplicates:
-            print(f"  ⚠️ Found {len(duplicates)} duplicate Discord IDs:")
+            logger.info("   Found {len(duplicates)} duplicate Discord IDs:")
             for dup in duplicates[:5]:  # Show first 5
-                print(f"    Discord ID {dup['discord_id']}: {dup['count']} records")
+                logger.info(f"    Discord ID {dup['discord_id']}: {dup['count']} records")
         else:
-            print("  ✅ No duplicate Discord IDs found")
+            logger.info("   No duplicate Discord IDs found")
         
         cursor.close()
         conn.close()
         return True
         
     except Exception as e:
-        print(f"❌ Data integrity test failed: {e}")
+        logger.error(" Data integrity test failed: %s", e)
         conn.close()
         return False
 
 
 def test_personnel_operations():
     """Test typical personnel operations"""
-    print("\n🔍 Testing Personnel Operations")
-    print("=" * 50)
+    logger.info("\n Testing Personnel Operations")
+    logger.info("=" * 50)
     
     conn = connect_to_database()
     if not conn:
@@ -157,7 +161,7 @@ def test_personnel_operations():
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         
         # Test search by Discord ID
-        print("🔍 Testing search operations:")
+        print(" Testing search operations:")
         cursor.execute("""
             SELECT id, first_name, last_name, static, discord_id
             FROM personnel 
@@ -174,9 +178,9 @@ def test_personnel_operations():
             found_user = cursor.fetchone()
             
             if found_user:
-                print(f"  ✅ Successfully found user by Discord ID: {found_user['first_name']} {found_user['last_name']}")
+                logger.info(f"   Successfully found user by Discord ID: {found_user['first_name']} {found_user['last_name']}")
             else:
-                print(f"  ❌ Failed to find user by Discord ID")
+                logger.error("   Failed to find user by Discord ID")
         
         # Test search by name
         if sample_users:
@@ -186,10 +190,10 @@ def test_personnel_operations():
                 WHERE first_name ILIKE %s;
             """, (f"%{test_name}%",))
             name_matches = cursor.fetchone()['count']
-            print(f"  ✅ Found {name_matches} users with name containing '{test_name}'")
+            logger.info("   Found %s users with name containing '%s'", name_matches, test_name)
         
         # Test relationships with other tables
-        print("\n🔗 Testing table relationships:")
+        logger.info("\n Testing table relationships:")
         
         # Personnel -> Employees relationship
         cursor.execute("""
@@ -198,7 +202,7 @@ def test_personnel_operations():
             JOIN employees e ON p.discord_id = e.personnel_id;
         """)
         personnel_employee_links = cursor.fetchone()['count']
-        print(f"  Personnel <-> Employees: {personnel_employee_links} linked records")
+        logger.info("  Personnel <-> Employees: %s linked records", personnel_employee_links)
         
         # Employees -> Positions relationship
         cursor.execute("""
@@ -208,22 +212,22 @@ def test_personnel_operations():
             JOIN positions pos ON ps.position_id = pos.id;
         """)
         position_links = cursor.fetchone()['count']
-        print(f"  Employees <-> Positions: {position_links} linked records")
+        logger.info("  Employees <-> Positions: %s linked records", position_links)
         
         cursor.close()
         conn.close()
         return True
         
     except Exception as e:
-        print(f"❌ Personnel operations test failed: {e}")
+        logger.error(" Personnel operations test failed: %s", e)
         conn.close()
         return False
 
 
 def test_sample_queries():
     """Test sample queries that the bot might use"""
-    print("\n🔍 Testing Sample Bot Queries")
-    print("=" * 50)
+    logger.info("\n Testing Sample Bot Queries")
+    logger.info("=" * 50)
     
     conn = connect_to_database()
     if not conn:
@@ -233,7 +237,7 @@ def test_sample_queries():
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         
         # Query 1: Get user info by Discord ID (most common operation)
-        print("📋 Query 1: Get user by Discord ID")
+        print(" Query 1: Get user by Discord ID")
         cursor.execute("""
             SELECT 
                 p.id,
@@ -259,40 +263,40 @@ def test_sample_queries():
             position = user['position_name'] or 'No position'
             subdivision = user['subdivision_name'] or 'No subdivision'
             rank = user['rank_name'] or 'No rank'
-            print(f"  {user['first_name']} {user['last_name']} ({user['discord_id']})")
-            print(f"    Position: {position} | Subdivision: {subdivision} | Rank: {rank}")
+            logger.info("  {user['first_name']} {user['last_name']} ({user['discord_id']})")
+            logger.info("    Position: %s | Subdivision: %s | Rank: %s", position, subdivision, rank)
         
         # Query 2: Get all personnel for roster
-        print(f"\n📋 Query 2: Personnel roster count")
+        logger.info("\n Query 2: Personnel roster count")
         cursor.execute("SELECT COUNT(*) as total FROM personnel WHERE discord_id IS NOT NULL;")
         total_personnel = cursor.fetchone()['total']
-        print(f"  Total active personnel: {total_personnel}")
+        logger.info("  Total active personnel: %s", total_personnel)
         
         # Query 3: Check user permissions/roles
-        print(f"\n📋 Query 3: User activity history")
+        logger.info("\n Query 3: User activity history")
         cursor.execute("""
             SELECT COUNT(*) as history_entries
             FROM history 
             WHERE personnel_id IS NOT NULL;
         """)
         history_count = cursor.fetchone()['history_entries']
-        print(f"  Total history entries: {history_count}")
+        logger.info("  Total history entries: %s", history_count)
         
         cursor.close()
         conn.close()
         return True
         
     except Exception as e:
-        print(f"❌ Sample queries test failed: {e}")
+        logger.error(" Sample queries test failed: %s", e)
         conn.close()
         return False
 
 
 def main():
     """Run comprehensive database tests"""
-    print("🚀 Comprehensive PostgreSQL Database Test")
-    print("Testing existing database with 281 personnel records")
-    print("=" * 60)
+    logger.info(" Comprehensive PostgreSQL Database Test")
+    logger.info("Testing existing database with 281 personnel records")
+    logger.info("=" * 60)
     
     # Run all tests
     tests = [
@@ -304,28 +308,28 @@ def main():
     
     results = []
     for test_name, test_func in tests:
-        print(f"\n🔄 Running {test_name} test...")
+        print(f"\n Running {test_name} test...")
         result = test_func()
         results.append((test_name, result))
     
     # Summary
-    print("\n" + "=" * 60)
-    print("📊 Test Results Summary:")
+    logger.info("\n" + "=" * 60)
+    print(" Test Results Summary:")
     all_passed = True
     for test_name, result in results:
         status = "✅ PASS" if result else "❌ FAIL"
-        print(f"  {test_name}: {status}")
+        logger.info("  %s: %s", test_name, status)
         if not result:
             all_passed = False
     
     if all_passed:
-        print("\n🎉 All tests passed! Your existing database is fully functional!")
-        print("📋 Database contains:")
-        print("  • 281 personnel records")
-        print("  • Complete table structure with relationships")
-        print("  • Ready for Discord bot integration")
+        logger.info("\n All tests passed! Your existing database is fully functional!")
+        logger.info(" Database contains:")
+        logger.info("  • 281 personnel records")
+        logger.info("  • Complete table structure with relationships")
+        logger.info("  • Ready for Discord bot integration")
     else:
-        print("\n⚠️ Some tests failed. Check the output above for details.")
+        logger.error("\n Some tests failed. Check the output above for details.")
 
 
 if __name__ == "__main__":

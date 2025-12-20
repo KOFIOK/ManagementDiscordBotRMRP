@@ -5,6 +5,10 @@ from datetime import datetime, timedelta
 from typing import Dict, Optional, Any
 from utils.config_manager import load_config
 from utils.message_manager import get_supplies_message
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class SuppliesManager:
@@ -20,7 +24,7 @@ class SuppliesManager:
             "army": {
                 "object_7": {
                     "name": "Объект №7", 
-                    "emoji": "🏭"
+                    "emoji": "🛡"
                 },
                 "military_warehouses": {
                     "name": "Военные Склады",
@@ -34,19 +38,19 @@ class SuppliesManager:
             "medical": {
                 "gsmo": {
                     "name": "ГСМО",
-                    "emoji": "💉"
+                    "emoji": "🏥"
                 },
                 "zmh": {
                     "name": "ЗМХ",
-                    "emoji": "🧑‍⚕️"
+                    "emoji": "🩺"
                 },
                 "ms": {
                     "name": "МС", 
-                    "emoji": "😷"
+                    "emoji": "🚑"
                 },
                 "cms": {
                     "name": "ЦМС", 
-                    "emoji": "⚕️"
+                    "emoji": "⚕"
                 }
             },
             "gov": {
@@ -79,7 +83,7 @@ class SuppliesManager:
             with open(self.data_file, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except Exception as e:
-            print(get_supplies_message(0, "templates.errors.processing").format(object="загрузки данных поставок", error=e))
+            logger.error("%s", get_supplies_message(0, "templates.errors.processing").format(object="загрузки данных поставок", error=e))
             return {"active_timers": {}}
     
     def _save_data(self, data: Dict[str, Any]):
@@ -88,7 +92,7 @@ class SuppliesManager:
             with open(self.data_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            print(get_supplies_message(0, "templates.errors.processing").format(object="сохранения данных поставок", error=e))
+            logger.error("%s", get_supplies_message(0, "templates.errors.processing").format(object="сохранения данных поставок", error=e))
     
     def get_categories(self) -> Dict[str, Dict[str, Dict[str, str]]]:
         """Возвращает все категории с объектами"""
@@ -175,7 +179,7 @@ class SuppliesManager:
             return True
             
         except Exception as e:
-            print(f"❌ Ошибка в start_timer(): {e}")
+            logger.warning("Ошибка в start_timer(): %s", e)
             return False
     
     def is_timer_active(self, object_key: str) -> bool:
@@ -199,7 +203,7 @@ class SuppliesManager:
             return True
             
         except Exception as e:
-            print(get_supplies_message(0, "templates.errors.processing").format(object=f"проверки таймера для {object_key}", error=e))
+            logger.error("%s", get_supplies_message(0, "templates.errors.processing").format(object=f"проверки таймера для {object_key}", error=e))
             return False
     
     def get_remaining_time(self, object_key: str) -> str:
@@ -228,7 +232,7 @@ class SuppliesManager:
                 return f"{minutes}м"
                 
         except Exception as e:
-            print(get_supplies_message(0, "templates.errors.processing").format(object=f"получения оставшегося времени для {object_key}", error=e))
+            logger.error("%s", get_supplies_message(0, "templates.errors.processing").format(object=f"получения оставшегося времени для {object_key}", error=e))
             return "Ошибка"
     
     def get_active_timers(self) -> Dict[str, Any]:
@@ -255,7 +259,7 @@ class SuppliesManager:
             return active_timers
             
         except Exception as e:
-            print(get_supplies_message(0, "templates.errors.processing").format(object="получения активных таймеров", error=e))
+            logger.error("%s", get_supplies_message(0, "templates.errors.processing").format(object="получения активных таймеров", error=e))
             return {}
     
     async def cancel_timer_with_cleanup(self, object_key: str) -> bool:
@@ -277,14 +281,14 @@ class SuppliesManager:
             if object_key in active_timers:
                 del active_timers[object_key]
                 self._save_data(data)
-                print(f"{get_supplies_message(0, 'templates.status.completed')} Таймер для {object_key} отменен")
+                logger.info(f"{get_supplies_message(0, 'templates.status.completed')} Таймер для {object_key} отменен")
                 return True
             else:
-                print(f"⚠️ Активный таймер для {object_key} не найден")
+                logger.info("Активный таймер для %s не найден", object_key)
                 return False
                 
         except Exception as e:
-            print(get_supplies_message(0, "templates.errors.processing").format(object=f"отмены таймера для {object_key}", error=e))
+            logger.error("%s", get_supplies_message(0, "templates.errors.processing").format(object=f"отмены таймера для {object_key}", error=e))
             return False
     
     def get_timer_info(self, object_key: str) -> Optional[Dict[str, Any]]:
@@ -294,7 +298,7 @@ class SuppliesManager:
             active_timers = data.get("active_timers", {})
             return active_timers.get(object_key)
         except Exception as e:
-            print(get_supplies_message(0, "templates.errors.processing").format(object=f"получения информации о таймере для {object_key}", error=e))
+            logger.error("%s", get_supplies_message(0, "templates.errors.processing").format(object=f"получения информации о таймере для {object_key}", error=e))
             return None
     
     def get_expired_timers(self) -> Dict[str, Any]:
@@ -319,7 +323,7 @@ class SuppliesManager:
             return expired_timers
             
         except Exception as e:
-            print(get_supplies_message(0, "templates.errors.processing").format(object="получения истекших таймеров", error=e))
+            logger.error("%s", get_supplies_message(0, "templates.errors.processing").format(object="получения истекших таймеров", error=e))
             return {}
     
     async def save_notification_message(self, object_key: str, message_id: int, message_type: str):
@@ -334,10 +338,10 @@ class SuppliesManager:
                 
                 active_timers[object_key]["notification_messages"][f"{message_type}_message_id"] = message_id
                 self._save_data(data)
-                print(f"{get_supplies_message(0, 'templates.status.completed')} Сообщение {message_type} сохранено для {object_key} (ID: {message_id})")
+                logger.info(f"{get_supplies_message(0, 'templates.status.completed')} Сообщение {message_type} сохранено для {object_key} (ID: {message_id})")
             
         except Exception as e:
-            print(get_supplies_message(0, "templates.errors.processing").format(object="сохранения ID сообщения", error=e))
+            logger.error("%s", get_supplies_message(0, "templates.errors.processing").format(object="сохранения ID сообщения", error=e))
     
     async def clear_warning_messages(self, channel):
         """Удаляет все сообщения с предупреждениями (с пингами ролей)"""
@@ -353,11 +357,11 @@ class SuppliesManager:
                     try:
                         message = await channel.fetch_message(warning_message_id)
                         await message.delete()
-                        print(f"✅ Удалено сообщение с предупреждением для {object_key}")
+                        logger.warning("Удалено сообщение с предупреждением для %s", object_key)
                     except discord.NotFound:
                         pass
                     except Exception as e:
-                        print(f"❌ Ошибка удаления сообщения {warning_message_id}: {e}")
+                        logger.warning("Ошибка удаления сообщения %s: %s", warning_message_id, e)
                     
                     # Очищаем ID
                     notification_messages["warning_message_id"] = None
@@ -365,7 +369,7 @@ class SuppliesManager:
             self._save_data(data)
             
         except Exception as e:
-            print(f"❌ Ошибка очистки предупреждающих сообщений: {e}")
+            logger.warning("Ошибка очистки предупреждающих сообщений: %s", e)
     
     async def clear_start_message(self, object_key: str, channel):
         """Удаляет стартовое сообщение объекта"""
@@ -381,23 +385,23 @@ class SuppliesManager:
                     try:
                         message = await channel.fetch_message(start_message_id)
                         await message.delete()
-                        print(f"✅ Удалено стартовое сообщение для {object_key}")
+                        logger.info("Удалено стартовое сообщение для %s", object_key)
                     except discord.NotFound:
                         pass
                     except Exception as e:
-                        print(f"❌ Ошибка удаления стартового сообщения {start_message_id}: {e}")
+                        logger.warning("Ошибка удаления стартового сообщения %s: %s", start_message_id, e)
                     
                     # Очищаем ID
                     notification_messages["start_message_id"] = None
                     self._save_data(data)
             
         except Exception as e:
-            print(f"❌ Ошибка удаления стартового сообщения: {e}")
+            logger.warning("Ошибка удаления стартового сообщения: %s", e)
 
     async def _delete_all_messages_for_object(self, object_key: str, channel=None):
         """Удаляет все существующие сообщения для объекта перед запуском нового таймера"""
         try:
-            print(f"🔍 Начинаем удаление сообщений для {object_key}")
+            logger.info("Начинаем удаление сообщений для %s", object_key)
             
             config = load_config()
             
@@ -406,21 +410,21 @@ class SuppliesManager:
                 channel_id = config.get('supplies', {}).get('notification_channel_id')
                 
                 if not channel_id or not self.bot:
-                    print(f"⚠️ Не удалось получить канал для удаления сообщений {object_key}")
+                    logger.info("Не удалось получить канал для удаления сообщений %s", object_key)
                     return
                 
                 channel = self.bot.get_channel(channel_id)
                 if not channel:
-                    print(f"⚠️ Канал уведомлений {channel_id} не найден")
+                    logger.info("Канал уведомлений %s не найден", channel_id)
                     return
             
-            print(f"✅ Канал получен: {channel.id}")
+            logger.info(f" Канал получен: {channel.id}")
             
             # Получаем название объекта для поиска
             object_info = self.objects.get(object_key, {})
             object_name = object_info.get('name', object_key)
             
-            print(f"🔍 Ищем старые сообщения для объекта '{object_name}' в канале")
+            logger.info("Ищем старые сообщения для объекта '%s' в канале", object_name)
             
             # Ищем и удаляем все сообщения бота с упоминанием этого объекта
             deleted_count = 0
@@ -436,22 +440,22 @@ class SuppliesManager:
                                 try:
                                     await message.delete()
                                     deleted_count += 1
-                                    print(f"🗑️ Удалено старое сообщение для {object_name}: {message.id}")
+                                    logger.info("Удалено старое сообщение для %s: {message.id}", object_name)
                                     break  # Переходим к следующему сообщению
                                 except (discord.NotFound, discord.HTTPException) as e:
-                                    print(f"⚠️ Не удалось удалить сообщение {message.id}: {e}")
+                                    logger.info("Не удалось удалить сообщение {message.id}: %s", e)
                                     
             except Exception as e:
-                print(f"❌ Ошибка при получении истории канала: {e}")
+                logger.warning("Ошибка при получении истории канала: %s", e)
                 raise
                         
             if deleted_count > 0:
-                print(f"✅ Удалено {deleted_count} старых сообщений для '{object_name}'")
+                logger.info("Удалено %s старых сообщений для '%s'", deleted_count, object_name)
             else:
-                print(f"ℹ️ Старые сообщения для '{object_name}' не найдены")
+                logger.info("Старые сообщения для '%s' не найдены", object_name)
                         
         except Exception as e:
-            print(f"❌ Ошибка удаления старых сообщений для {object_key}: {e}")
+            logger.warning("Ошибка удаления старых сообщений для %s: %s", object_key, e)
             raise
 
     async def update_notification_messages(self, channel):
@@ -513,15 +517,15 @@ class SuppliesManager:
                 except discord.NotFound:
                     # Сообщение удалено, очищаем ID
                     notification_messages["start_message_id"] = None
-                    print(f"⚠️ Стартовое сообщение {start_message_id} для {object_key} не найдено")
+                    logger.info("Стартовое сообщение %s для %s не найдено", start_message_id, object_key)
                 except Exception as e:
-                    print(f"❌ Ошибка обновления сообщения {start_message_id} для {object_key}: {e}")
+                    logger.warning("Ошибка обновления сообщения %s для %s: %s", start_message_id, object_key, e)
             
             # Сохраняем изменения (если были очищены ID)
             self._save_data(data)
             
         except Exception as e:
-            print(f"❌ Ошибка обновления сообщений в канале оповещений: {e}")
+            logger.warning("Ошибка обновления сообщений в канале оповещений: %s", e)
 
     async def update_warning_messages(self, channel):
         """Обновляет сообщения с предупреждениями в канале оповещений с актуальным временем"""
@@ -540,7 +544,7 @@ class SuppliesManager:
             self._save_data(data)
             
         except Exception as e:
-            print(f"❌ Ошибка обновления сообщений предупреждений в канале оповещений: {e}")
+            logger.warning("Ошибка обновления сообщений предупреждений в канале оповещений: %s", e)
     
     async def _update_warning_message_for_timer(self, channel, object_key, timer_info, data):
         """Обновляет warning сообщения для конкретного таймера"""
@@ -569,7 +573,7 @@ class SuppliesManager:
             
             # Обновляем каждое сообщение с предупреждением
             for message_id in all_warning_ids[:]:  # Копия списка для безопасного изменения
-                print(f"🔍 Пытаемся обновить warning сообщение {message_id}")
+                logger.warning("Пытаемся обновить warning сообщение %s", message_id)
                 try:
                     # Получаем сообщение
                     message = await channel.fetch_message(message_id)
@@ -612,7 +616,7 @@ class SuppliesManager:
                             total_minutes = 0
                         
                         embed = discord.Embed(
-                            title="⚠️ Скоро будет доступна поставка!",
+                            title="✅ Поставка готова к запуску!",
                             description=f"{emoji} **{object_name}** будет готов через **{total_minutes} минут**!",
                             color=discord.Color.orange(),
                             timestamp=datetime.now()
@@ -636,16 +640,16 @@ class SuppliesManager:
                     # Сообщение удалено, убираем ID из соответствующих списков
                     if message_id == warning_message_id:
                         notification_messages["warning_message_id"] = None
-                        print(f"⚠️ Очищен warning_message_id {message_id} для {object_key}")
+                        logger.warning("Очищен warning_message_id %s для %s", message_id, object_key)
                     if message_id in warning_message_ids:
                         warning_message_ids.remove(message_id)
-                        print(f"⚠️ Удален из warning_message_ids {message_id} для {object_key}")
-                    print(f"⚠️ Сообщение предупреждения {message_id} для {object_key} не найдено")
+                        logger.warning("Удален из warning_message_ids %s для %s", message_id, object_key)
+                    logger.info("Сообщение предупреждения %s для %s не найдено", message_id, object_key)
                 except Exception as e:
-                    print(f"❌ Ошибка обновления сообщения предупреждения {message_id} для {object_key}: {e}")
+                    logger.warning("Ошибка обновления сообщения предупреждения %s для %s: %s", message_id, object_key, e)
                     
         except Exception as e:
-            print(f"❌ Ошибка обновления warning сообщения для {object_key}: {e}")
+            logger.warning("Ошибка обновления warning сообщения для %s: %s", object_key, e)
     
     async def _update_expired_warning_messages(self, channel):
         """Ищет и обновляет warning сообщения от истекших таймеров"""
@@ -670,7 +674,7 @@ class SuppliesManager:
                             
                             if remaining_time == "Не активен" or remaining_time == "Истек":
                                 # Обновляем сообщение до статуса "готово"
-                                print(f"🔄 Обновляем истекшее warning сообщение для {object_name}")
+                                logger.warning("Обновляем истекшее warning сообщение для %s", object_name)
                                 
                                 new_embed = discord.Embed(
                                     title="✅ Поставка готова к запуску!",
@@ -692,10 +696,10 @@ class SuppliesManager:
                                 
                                 try:
                                     await message.edit(embed=new_embed)
-                                    print(f"✅ Обновлено истекшее warning сообщение для {object_name}")
+                                    logger.warning("Обновлено истекшее warning сообщение для %s", object_name)
                                 except Exception as e:
-                                    print(f"❌ Ошибка обновления истекшего warning сообщения: {e}")
+                                    logger.warning("Ошибка обновления истекшего warning сообщения: %s", e)
                             break
                             
         except Exception as e:
-            print(f"❌ Ошибка поиска истекших warning сообщений: {e}")
+            logger.warning("Ошибка поиска истекших warning сообщений: %s", e)

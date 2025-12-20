@@ -27,8 +27,9 @@ from utils.database_manager.rank_manager import rank_manager
 from utils.database_manager import personnel_manager
 from utils.config_manager import load_config
 from utils.message_manager import get_military_ranks, get_role_reason
+from utils.logging_setup import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 class NicknameManager:
     """Менеджер автоматического управления никнеймами"""
@@ -780,7 +781,7 @@ class NicknameManager:
         except Exception as e:
             logger.error(f"❌ Ошибка изменения никнейма при переводе {member}: {e}")
             if new_nickname:
-                logger.error(f"❌ Ожидаемый никнейм был: '{new_nickname}'")
+                logger.error(f" Ожидаемый никнейм был: '{new_nickname}'")
             return None
     
     async def handle_rank_change(self, member: Any, new_rank_name: str, change_type: str = "изменение") -> Optional[str]:
@@ -827,7 +828,7 @@ class NicknameManager:
             logger.info(f"� RANK_CHANGE DEBUG: Текущий никнейм: '{current_nickname}'")
             logger.info(f"� RANK_CHANGE DEBUG: Parsed: {parsed}")
             logger.info(f"� RANK_CHANGE DEBUG: Извлеченное имя: {first_name} {last_name}")
-            logger.info(f"🔄 RANK_CHANGE DEBUG: Тип изменения: {change_type}")
+            logger.info(f" RANK_CHANGE DEBUG: Тип изменения: {change_type}")
             
             # Если никнейм имеет особый формат или должностной, не трогаем его
             if parsed['is_special']:
@@ -873,7 +874,7 @@ class NicknameManager:
         except Exception as e:
             logger.error(f"❌ Ошибка изменения никнейма при {change_type} {member}: {e}")
             if new_nickname:
-                logger.error(f"❌ Ожидаемый никнейм был: '{new_nickname}'")
+                logger.error(f" Ожидаемый никнейм был: '{new_nickname}'")
             return None
     
     async def handle_promotion(self, member: Any, new_rank_name: str) -> Optional[str]:
@@ -915,9 +916,9 @@ class NicknameManager:
                 logger.info(f"Автозамена никнеймов отключена для изменения ФИО в подразделении {current_department}, пропускаем обновление для {member}")
                 return None
             
-            logger.info(f"🔍 NAME_CHANGE DEBUG: Текущий никнейм: '{current_nickname}'")
-            logger.info(f"🔍 NAME_CHANGE DEBUG: Parsed: {parsed}")
-            logger.info(f"🔍 NAME_CHANGE DEBUG: Новое ФИО: {new_first_name} {new_last_name}")
+            logger.info(f" NAME_CHANGE DEBUG: Текущий никнейм: '{current_nickname}'")
+            logger.info(f" NAME_CHANGE DEBUG: Parsed: {parsed}")
+            logger.info(f" NAME_CHANGE DEBUG: Новое ФИО: {new_first_name} {new_last_name}")
             
             # Если никнейм имеет особый формат или должностной, не трогаем его
             if parsed['is_special']:
@@ -931,11 +932,11 @@ class NicknameManager:
                 rank_data = rank_manager.get_rank_by_name(current_rank_name)
                 if rank_data and rank_data.get('abbreviation'):
                     rank_abbr = rank_data['abbreviation']
-                    logger.info(f"🔍 NAME_CHANGE DEBUG: Звание из параметра: '{current_rank_name}' -> '{rank_abbr}'")
+                    logger.info(f" NAME_CHANGE DEBUG: Звание из параметра: '{current_rank_name}' -> '{rank_abbr}'")
             elif parsed['format_type'] == 'standard' and parsed['rank']:
                 # Используем звание из текущего никнейма
                 rank_abbr = parsed['rank']
-                logger.info(f"🔍 NAME_CHANGE DEBUG: Звание из никнейма: '{rank_abbr}'")
+                logger.info(f" NAME_CHANGE DEBUG: Звание из никнейма: '{rank_abbr}'")
             else:
                 # Пытаемся получить звание из БД
                 try:
@@ -946,15 +947,15 @@ class NicknameManager:
                         rank_data = rank_manager.get_rank_by_name(personnel_data['current_rank'])
                         if rank_data and rank_data.get('abbreviation'):
                             rank_abbr = rank_data['abbreviation']
-                            logger.info(f"🔍 NAME_CHANGE DEBUG: Звание из БД: '{personnel_data['current_rank']}' -> '{rank_abbr}'")
+                            logger.info(f" NAME_CHANGE DEBUG: Звание из БД: '{personnel_data['current_rank']}' -> '{rank_abbr}'")
                 except Exception as db_error:
-                    logger.warning(f"Ошибка получения звания из БД: {db_error}")
+                    logger.error(f"Ошибка получения звания из БД: {db_error}")
             
             # Определяем подразделение
             subdivision_abbr = "ВА"  # По умолчанию
             if parsed['format_type'] == 'standard' and parsed['subdivision'] and parsed['subdivision'] != "None":
                 subdivision_abbr = parsed['subdivision']
-                logger.info(f"🔍 NAME_CHANGE DEBUG: Подразделение из никнейма: '{subdivision_abbr}'")
+                logger.info(f" NAME_CHANGE DEBUG: Подразделение из никнейма: '{subdivision_abbr}'")
             else:
                 # Пытаемся получить из БД
                 try:
@@ -963,13 +964,13 @@ class NicknameManager:
                     personnel_data = await pm.get_personnel_summary(member.id)
                     if personnel_data and personnel_data.get('subdivision_abbreviation'):
                         subdivision_abbr = personnel_data['subdivision_abbreviation']
-                        logger.info(f"🔍 NAME_CHANGE DEBUG: Подразделение из БД: '{subdivision_abbr}'")
+                        logger.info(f" NAME_CHANGE DEBUG: Подразделение из БД: '{subdivision_abbr}'")
                 except Exception as db_error:
-                    logger.warning(f"Ошибка получения подразделения из БД: {db_error}")
+                    logger.error(f"Ошибка получения подразделения из БД: {db_error}")
             
             # Строим новый никнейм с новым ФИО
             new_nickname = self.build_service_nickname(subdivision_abbr, rank_abbr, new_first_name, new_last_name)
-            logger.info(f"🔍 NAME_CHANGE DEBUG: Построенный никнейм: '{new_nickname}'")
+            logger.info(f" NAME_CHANGE DEBUG: Построенный никнейм: '{new_nickname}'")
             
             await member.edit(nick=new_nickname, reason=get_role_reason(member.guild.id, "nickname_change.name_change", "Изменение ФИО: {old_name} → {new_name}").format(old_name=member.display_name, new_name=new_nickname, moderator="система"))
             logger.info(f"✅ Никнейм при изменении ФИО: {member} -> {new_nickname}")
@@ -979,7 +980,7 @@ class NicknameManager:
         except Exception as e:
             logger.error(f"❌ Ошибка изменения никнейма при смене ФИО {member}: {e}")
             if new_nickname:
-                logger.error(f"❌ Ожидаемый никнейм был: '{new_nickname}'")
+                logger.error(f" Ожидаемый никнейм был: '{new_nickname}'")
             return None
     
     async def handle_dismissal(self, member: Any, reason: str = None, 
@@ -1037,13 +1038,13 @@ class NicknameManager:
             # Проверяем разрешения перед изменением никнейма
             if not member.guild.me.guild_permissions.manage_nicknames:
                 logger.error(f"❌ У бота нет разрешения 'Manage Nicknames' для изменения никнейма {member}")
-                logger.error(f"❌ Ожидаемый никнейм был: '{new_nickname}'")
+                logger.error(f" Ожидаемый никнейм был: '{new_nickname}'")
                 return None
             
             # Проверяем иерархию ролей
             if member.top_role >= member.guild.me.top_role and member != member.guild.owner:
                 logger.error(f"❌ Роль бота ниже роли пользователя {member}. Невозможно изменить никнейм.")
-                logger.error(f"❌ Ожидаемый никнейм был: '{new_nickname}'")
+                logger.error(f" Ожидаемый никнейм был: '{new_nickname}'")
                 return None
             
             await member.edit(nick=new_nickname, reason=get_role_reason(member.guild.id, "nickname_change.dismissal", "Увольнение: изменён никнейм").format(moderator="система"))
@@ -1054,7 +1055,7 @@ class NicknameManager:
         except Exception as e:
             logger.error(f"❌ Ошибка изменения никнейма при увольнении {member}: {e}")
             if new_nickname:
-                logger.error(f"❌ Ожидаемый никнейм был: '{new_nickname}'")
+                logger.error(f" Ожидаемый никнейм был: '{new_nickname}'")
             return None
     
     # ================================================================

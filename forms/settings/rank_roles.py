@@ -8,6 +8,219 @@ from utils.database_manager import rank_manager
 from .base import BaseSettingsView, BaseSettingsModal
 
 
+# ---------------------------------------------------------------------------
+# Вспомогательные функции отображения (эмбед-чанкование)
+# ---------------------------------------------------------------------------
+
+def _calc_embed_text_length(embed: discord.Embed) -> int:
+    """Приблизительная длина текста эмбеда (title + description + поля)."""
+    total = 0
+    if embed.title:
+        total += len(str(embed.title))
+    if embed.description:
+        total += len(str(embed.description))
+    for field in embed.fields:
+        total += len(str(field.name or "")) + len(str(field.value or ""))
+    return total
+
+def _add_chunked_list_field(embed: discord.Embed, base_name: str, lines: list[str]):
+    """Разбить длинный список на чанки полей в пределах 1024 символов (без учета общего лимита)."""
+    if not lines:
+        embed.add_field(name=base_name, value="Нет настроенных званий", inline=False)
+        return
+
+    MAX_VALUE = 1024
+    chunk = []
+    chunk_len = 0
+    field_index = 0
+
+    def flush_chunk():
+        nonlocal chunk, chunk_len, field_index
+        if not chunk:
+            return
+        name = base_name if field_index == 0 else f"{base_name} (продолжение)"
+        embed.add_field(name=name, value="\n".join(chunk), inline=False)
+        field_index += 1
+        chunk = []
+        chunk_len = 0
+
+    for line in lines:
+        line_len = len(line) + 1
+        if chunk_len + line_len > MAX_VALUE:
+            flush_chunk()
+        chunk.append(line)
+        chunk_len += line_len
+
+    flush_chunk()
+
+def _add_chunked_list_field_capped(embed: discord.Embed, base_name: str, lines: list[str], max_total_chars: int = 5500):
+    """Как _add_chunked_list_field, но с общим лимитом эмбеда ~6000 символов.
+
+    Обрезает добавление, если суммарный текст превысит лимит, и добавляет подсказку
+    о скрытых строках.
+    """
+    if not lines:
+        embed.add_field(name=base_name, value="Нет настроенных званий", inline=False)
+        return
+
+    MAX_VALUE = 1024
+    chunk = []
+    chunk_len = 0
+    field_index = 0
+    total_len = _calc_embed_text_length(embed)
+    hidden_count = 0
+
+    def flush_chunk(force: bool = False):
+        nonlocal chunk, chunk_len, field_index, total_len
+        if not chunk:
+            return True
+        name = base_name if field_index == 0 else f"{base_name} (продолжение)"
+        value = "\n".join(chunk)
+        # Проверяем общий лимит
+        if not force and (total_len + len(name) + len(value)) > max_total_chars:
+            return False
+        embed.add_field(name=name, value=value, inline=False)
+        total_len += len(name) + len(value)
+        field_index += 1
+        chunk = []
+        chunk_len = 0
+        return True
+
+    for line in lines:
+        line_len = len(line) + 1
+        if chunk_len + line_len > MAX_VALUE:
+            if not flush_chunk():
+                hidden_count += 1  # текущая строка и все следующие будут скрыты
+                break
+        chunk.append(line)
+        chunk_len += line_len
+
+    # Финальный флаш либо прекращение
+    if chunk:
+        if not flush_chunk():
+            hidden_count += 1
+
+    # Если что-то скрыто, добавим информационное поле
+    if hidden_count > 0:
+        remaining = max(0, len(lines) - sum(1 for f in embed.fields if f.name and f.name.startswith(base_name)))
+        embed.add_field(
+            name="ℹ️ Сокращение списка",
+            value=f"Показаны не все записи. Всего: {len(lines)}. Список сокращен для соответствия ограничениям Discord.",
+            inline=False
+        )
+
+def _add_sliced_list_fields(embed: discord.Embed, base_name: str, lines: list[str], *, lines_per_field: int = 20, max_total_chars: int = 5500):
+    """Добавить список строк, разбитых на последовательные срезы по количеству строк.
+
+    Это гарантирует, что поля не повторяют префиксы и выглядят как страницы списка.
+    """
+    if not lines:
+        embed.add_field(name=base_name, value="Нет настроенных званий", inline=False)
+        return
+
+    total_len = _calc_embed_text_length(embed)
+
+    def can_add(name: str, value: str) -> bool:
+        return (total_len + len(name) + len(value)) <= max_total_chars
+
+    total_items = len(lines)
+    page = 1
+    index = 0
+    while index < total_items:
+        slice_lines = lines[index:index + lines_per_field]
+        name = base_name if page == 1 else f"{base_name} (стр. {page})"
+        value = "\n".join(slice_lines)
+        if not can_add(name, value):
+            break
+        embed.add_field(name=name, value=value, inline=False)
+        total_len += len(name) + len(value)
+        index += lines_per_field
+        page += 1
+
+    if index < total_items:
+        # Добавим краткое уведомление один раз
+        embed.add_field(
+            name="ℹ️ Сокращение списка",
+            value=f"Показаны не все записи. Отображено: {index} из {total_items}. Список сокращён для соответствия ограничениям Discord.",
+            inline=False
+        )
+
+# ---------------------------------------------------------------------------
+# Построение страниц списка званий в отдельных эмбедах
+# ---------------------------------------------------------------------------
+
+def _format_rank_line(guild: discord.Guild, rank_data: dict) -> str:
+    """Сформировать строку для одного звания."""
+    rank_name = rank_data['name']
+    role_id = rank_data['role_id']
+    rank_level = rank_data['rank_level']
+    abbreviation = rank_data.get('abbreviation', '')
+
+    if role_id:
+        role = guild.get_role(int(role_id))
+        if role:
+            abbr_text = f" ({abbreviation})" if abbreviation else ""
+            return f"• **{rank_name}**{abbr_text} → {role.mention} (уровень {rank_level})"
+        else:
+            return f"• **{rank_name}** → `{role_id}` ❌ (роль не найдена, уровень {rank_level})"
+    else:
+        return f"• **{rank_name}** → ❌ (role_id не найден, уровень {rank_level})"
+
+
+def _build_rank_pages(guild: discord.Guild, all_ranks: list[dict], *, max_field_chars: int = 1000) -> list[discord.Embed]:
+    """Построить список эмбедов-страниц, где значение поля ≤ 1024 символов.
+
+    Разбиваем по символам: добавляем строки, пока суммарная длина не превысит порог,
+    затем создаём новый эмбед-страницу.
+    """
+    if not all_ranks:
+        empty = discord.Embed(
+            title="📋 Текущие звания",
+            description="Нет настроенных званий",
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow()
+        )
+        return [empty]
+
+    # Сформировать все строки
+    all_lines = [
+        _format_rank_line(guild, rank_data)
+        for rank_data in sorted(all_ranks, key=lambda x: x['rank_level'])
+    ]
+
+    pages: list[discord.Embed] = []
+    chunk: list[str] = []
+    chunk_len = 0
+    page_num = 1
+
+    def flush_chunk():
+        nonlocal chunk, chunk_len, page_num, pages
+        if not chunk:
+            return
+        page_embed = discord.Embed(
+            title=f"📋 Текущие звания (стр. {page_num})",
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow()
+        )
+        page_embed.add_field(name="Список", value="\n".join(chunk), inline=False)
+        pages.append(page_embed)
+        page_num += 1
+        chunk = []
+        chunk_len = 0
+
+    for line in all_lines:
+        # +1 на перевод строки при склейке
+        line_len = len(line) + (1 if chunk else 0)
+        if chunk_len + line_len > max_field_chars:
+            flush_chunk()
+        chunk.append(line)
+        chunk_len += line_len
+
+    flush_chunk()
+
+    return pages
+
+
 class RankRoleModal(BaseSettingsModal):
     """Modal for adding/editing rank roles"""
 
@@ -40,7 +253,7 @@ class RankRoleModal(BaseSettingsModal):
         self.add_item(self.rank_name)
         
         self.role_id = ui.TextInput(
-            label="ID роли или упоминание",
+            label="🆔 ID роли или упоминание",
             placeholder="Например: @Рядовой или 1246114675574313021",
             min_length=1,
             max_length=100,
@@ -157,7 +370,7 @@ class RankRoleModal(BaseSettingsModal):
             )
 
         except Exception as e:
-            print(f"Error in RankRoleModal.on_submit: {e}")
+            logger.error("Error in RankRoleModal.on_submit: %s", e)
             import traceback
             traceback.print_exc()
             await self.send_error_message(
@@ -224,7 +437,7 @@ class KeyRoleModal(BaseSettingsModal):
         current_key_role_display = str(current_sync_key_role_id) if current_sync_key_role_id else ""
         
         self.role_input = ui.TextInput(
-            label="ID роли или упоминание",
+            label="🆔 ID роли или упоминание",
             placeholder="Например: @Военнослужащие или 1234567890123456789",
             min_length=1,
             max_length=100,
@@ -312,7 +525,7 @@ class RankRoleDeleteConfirmModal(BaseSettingsModal):
             if success:
                 embed = discord.Embed(
                     title="✅ Discord роль звания удалена",
-                    description=f"Discord роль звания **{self.rank_name}** успешно удалена из базы данных.\n\n"
+                    description=f"✅ Discord роль звания **{self.rank_name}** успешно удалена из базы данных.\n\n"
                                f"**Примечание:** Название звания сохранено в истории для целостности данных.",
                     color=discord.Color.green(),
                     timestamp=discord.utils.utcnow()
@@ -389,7 +602,7 @@ class RankRolesSelect(ui.Select):
             selected_value = self.values[0]
             
             if selected_value == "error":
-                await interaction.response.send_message("❌ Произошла ошибка при загрузке настроек", ephemeral=True)
+                await interaction.response.send_message(" Произошла ошибка при загрузке настроек", ephemeral=True)
                 return
             
             if selected_value == "add_rank":
@@ -403,11 +616,11 @@ class RankRolesSelect(ui.Select):
                 modal = RankRoleModal(edit_rank=rank_name)
                 await interaction.response.send_modal(modal)
         except Exception as e:
-            print(f"❌ Error in RankRolesSelect.callback: {e}")
+            logger.warning("Error in RankRolesSelect.callback: %s", e)
             import traceback
             traceback.print_exc()
             try:
-                await interaction.response.send_message("❌ Произошла ошибка при обработке действия", ephemeral=True)
+                await interaction.response.send_message(" Произошла ошибка при обработке действия", ephemeral=True)
             except:
                 await interaction.followup.send("❌ Произошла ошибка при обработке действия", ephemeral=True)
 
@@ -478,108 +691,53 @@ class RankRoleDeleteSelect(ui.Select):
         await interaction.response.send_modal(modal)
 
 
-class RankRolesConfigView(BaseSettingsView):
+from .base import SectionSettingsView
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
+
+class RankRolesConfigView(SectionSettingsView):
     """Main view for rank roles configuration"""
 
     def __init__(self, ranks_data=None):
-        super().__init__()
+        super().__init__(title="🎖️ Настройка ролей званий", description="Управление связыванием званий с ролями на сервере")
         self.add_item(RankRolesSelect(ranks_data))
         self.add_item(RankRoleDeleteSelect(ranks_data))
-    
-    @ui.button(label="� Инициализировать по умолчанию", style=discord.ButtonStyle.secondary, row=2)
-    async def initialize_defaults(self, interaction: discord.Interaction, button: ui.Button):
-        """Initialize default ranks in database"""
-        try:
-            await interaction.response.defer(ephemeral=True)
+        # Пагинация содержимого списка званий
+        self._pages: list[str] = []
+        self._page_index: int = 0
+        self._total_pages: int = 0
 
-            # Default ranks data
-            default_ranks = [
-                ("Рядовой", 1246114675574313021, 1, "Р-й"),
-                ("Ефрейтор", 1246114674638983270, 2, "Еф-р"),
-                ("Мл. Сержант", 1261982952275972187, 3, "Мл. С-т"),
-                ("Сержант", 1246114673997123595, 4, "С-т"),
-                ("Ст. Сержант", 1246114672352952403, 5, "Ст. С-т"),
-                ("Старшина", 1246114604958879754, 6, "Ст-на"),
-                ("Прапорщик", 1246114604329865327, 7, "Пр-щ"),
-                ("Ст. Прапорщик", 1251045305793773648, 8, "Ст. Пр-щ"),
-                ("Мл. Лейтенант", 1251045263062335590, 9, "Мл. Л-т"),
-                ("Лейтенант", 1246115365746901094, 10, "Л-т"),
-                ("Ст. Лейтенант", 1246114469340250214, 11, "Ст. Л-т"),
-                ("Капитан", 1246114469336322169, 12, "К-н"),
-                ("Майор", 1246114042821607424, 13, None),
-                ("Подполковник", 1246114038744875090, 14, None),
-                ("Полковник", 1246113825791672431, 15, None),
-            ]
+    def set_pages(self, pages: list[str]):
+        self._pages = pages or []
+        self._page_index = 0
+        self._total_pages = len(self._pages)
 
-            added_count = 0
-            for rank_name, role_id, rank_level, abbreviation in default_ranks:
-                success, _ = await rank_manager.add_rank_to_database(rank_name, role_id, rank_level)
-                if success and abbreviation:
-                    await rank_manager.update_rank_in_database(rank_name, role_id, rank_level, abbreviation)
-                if success:
-                    added_count += 1
-
-            embed = discord.Embed(
-                title="✅ Инициализация завершена",
-                description=f"Добавлено {added_count} стандартных званий в базу данных",
-                color=discord.Color.green(),
-                timestamp=discord.utils.utcnow()
-            )
-
-            # Refresh the view with updated data
-            all_ranks = await rank_manager.get_all_active_ranks()
-            view = RankRolesConfigView(all_ranks)
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-
-        except Exception as e:
-            error_embed = discord.Embed(
-                title="❌ Ошибка",
-                description=f"Произошла ошибка при инициализации: {str(e)}",
-                color=discord.Color.red()
-            )
-            await interaction.followup.send(embed=error_embed, ephemeral=True)
-
-
-async def show_rank_roles_config(interaction: discord.Interaction):
-    """Show rank roles configuration interface"""
-    try:
-        # Get ranks from database instead of config
-        all_ranks = await rank_manager.get_all_active_ranks()
+    def build_main_embed(self, guild: discord.Guild, *, refreshed: bool = False) -> discord.Embed:
+        description = (
+            "Управление связыванием званий с ролями на сервере.\n"
+            "**Источник данных: PostgreSQL база данных**\n\n"
+            + ("Обновлено из БД: последние изменения применены." if refreshed else "")
+        ).strip()
 
         embed = discord.Embed(
             title="🎖️ Настройка ролей званий",
-            description="Управление связыванием званий с ролями на сервере.\n**Источник данных: PostgreSQL база данных**",
+            description=description,
             color=discord.Color.gold(),
             timestamp=discord.utils.utcnow()
         )
 
-        if all_ranks:
-            ranks_list = []
-            for rank_data in sorted(all_ranks, key=lambda x: x['rank_level']):
-                rank_name = rank_data['name']
-                role_id = rank_data['role_id']
-                rank_level = rank_data['rank_level']
-                abbreviation = rank_data.get('abbreviation', '')
-
-                if role_id:
-                    role = interaction.guild.get_role(int(role_id))
-                    if role:
-                        abbr_text = f" ({abbreviation})" if abbreviation else ""
-                        ranks_list.append(f"• **{rank_name}**{abbr_text} → {role.mention} (уровень {rank_level})")
-                    else:
-                        ranks_list.append(f"• **{rank_name}** → `{role_id}` ❌ (роль не найдена, уровень {rank_level})")
-                else:
-                    ranks_list.append(f"• **{rank_name}** → ❌ (role_id не найден, уровень {rank_level})")
-
+        if self._pages:
             embed.add_field(
-                name="📋 Текущие звания:",
-                value="\n".join(ranks_list) if ranks_list else "Нет настроенных званий",
+                name=f"📋 Текущие звания (стр. {self._page_index + 1}/{self._total_pages})",
+                value=self._pages[self._page_index],
                 inline=False
             )
         else:
             embed.add_field(
                 name="❌ Звания не настроены",
-                value="Добавьте первое звание, используя кнопку ниже.",
+                value="Добавьте первое звание, используя меню ниже.",
                 inline=False
             )
 
@@ -593,7 +751,7 @@ async def show_rank_roles_config(interaction: discord.Interaction):
             ),
             inline=False
         )
-        
+
         embed.add_field(
             name="ℹ️ Информация о синхронизации:",
             value=(
@@ -604,12 +762,126 @@ async def show_rank_roles_config(interaction: discord.Interaction):
             ),
             inline=False
         )
+        return embed
+
+    @ui.button(label="⬅️ Страница", style=discord.ButtonStyle.secondary, row=3)
+    async def prev_page(self, interaction: discord.Interaction, button: ui.Button):
+        try:
+            if self._total_pages <= 1:
+                await interaction.response.defer(ephemeral=True)
+                return
+            self._page_index = max(0, self._page_index - 1)
+            embed = self.build_main_embed(interaction.guild)
+            await interaction.response.edit_message(embed=embed, view=self)
+        except Exception as e:
+            logger.warning("Ошибка переключения на предыдущую страницу: %s", e)
+            try:
+                await interaction.response.defer(ephemeral=True)
+            except Exception:
+                pass
+
+    @ui.button(label="Страница ➡️", style=discord.ButtonStyle.secondary, row=3)
+    async def next_page(self, interaction: discord.Interaction, button: ui.Button):
+        try:
+            if self._total_pages <= 1:
+                await interaction.response.defer(ephemeral=True)
+                return
+            self._page_index = min(self._total_pages - 1, self._page_index + 1)
+            embed = self.build_main_embed(interaction.guild)
+            await interaction.response.edit_message(embed=embed, view=self)
+        except Exception as e:
+            logger.warning("Ошибка переключения на следующую страницу: %s", e)
+            try:
+                await interaction.response.defer(ephemeral=True)
+            except Exception:
+                pass
+    
+    @ui.button(label="🔄 Перезагрузить из БД", style=discord.ButtonStyle.primary, row=2)
+    async def refresh_from_db(self, interaction: discord.Interaction, button: ui.Button):
+        """Перезагрузить список званий из БД и обновить представление"""
+        try:
+            await interaction.response.defer(ephemeral=True)
+            # Получаем актуальные данные из базы
+            all_ranks = await rank_manager.get_all_active_ranks()
+
+            # Пересобираем пагинацию и обновляем основной эмбед
+            pages_embeds = _build_rank_pages(interaction.guild, all_ranks)
+            page_values = [p.fields[0].value for p in pages_embeds]
+            self.set_pages(page_values)
+            self._total_pages = len(self._pages)
+            self._page_index = min(self._page_index, max(0, self._total_pages - 1))
+
+            embed = self.build_main_embed(interaction.guild, refreshed=True)
+            await interaction.followup.edit_message(message_id=interaction.message.id, embed=embed, view=self)
+
+        except Exception as e:
+            error_embed = discord.Embed(
+                title="❌ Ошибка",
+                description=f"Произошла ошибка при обновлении: {str(e)}",
+                color=discord.Color.red()
+            )
+            try:
+                await interaction.followup.send(embed=error_embed, ephemeral=True)
+            except Exception:
+                pass
+
+
+async def show_rank_roles_config(interaction: discord.Interaction):
+    """Show rank roles configuration interface"""
+    try:
+        # Get ranks from database instead of config
+        all_ranks = await rank_manager.get_all_active_ranks()
+
+        embed = discord.Embed(
+            title="⚙️ Настройка ролей званий",
+            description=(
+                "Управление связыванием званий с ролями на сервере.\n"
+                "**Источник данных: PostgreSQL база данных**"
+            ),
+            color=discord.Color.gold(),
+            timestamp=discord.utils.utcnow()
+        )
+
+        # Основной эмбед без списка, чтобы не превысить лимит
+        if not all_ranks:
+            embed.add_field(
+                name="❌ Звания не настроены",
+                value="Добавьте первое звание, используя кнопку ниже.",
+                inline=False
+            )
+
+        embed.add_field(
+            name="📋 Доступные действия:",
+            value=(
+                "• **Добавить звание** - связать новое звание с ролью\n"
+                "• **Редактировать звание** - изменить существующее звание\n"
+                "• **Удалить звание** - удалить Discord роль у звания\n"
+                "• **Инициализировать по умолчанию** - загрузить стандартные звания"
+            ),
+            inline=False
+        )
         
+        embed.add_field(
+            name="ℹ️ Информация о синхронизации:",
+            value=(
+                "** Синхронизировать с БД**: загружает актуальные данные из PostgreSQL в кэш бота\n"
+                "** Отправить в БД**: сохраняет текущие данные из кэша в PostgreSQL\n\n"
+                "**Ключевая роль** ограничивает проверку только участниками с определённой ролью, "
+                "что повышает производительность на больших серверах."
+            ),
+            inline=False
+        )
+        
+        # Сбор страниц и вывод в основном эмбеде
+        pages_embeds = _build_rank_pages(interaction.guild, all_ranks)
+        page_values = [p.fields[0].value for p in pages_embeds]
         view = RankRolesConfigView(all_ranks)
-        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        view.set_pages(page_values)
+        main_embed = view.build_main_embed(interaction.guild)
+        await interaction.followup.send(embed=main_embed, view=view, ephemeral=True)
     
     except Exception as e:
-        print(f"❌ Error in show_rank_roles_config: {e}")
+        logger.warning("Error in show_rank_roles_config: %s", e)
         import traceback
         traceback.print_exc()
         
@@ -648,13 +920,13 @@ def initialize_default_ranks():
         
         config['rank_roles'] = default_ranks
         changes_made = True
-        print("✅ Initialized default rank roles with hierarchy in config")
+        logger.info("Initialized default rank roles with hierarchy in config")
     
     # Initialize default key role if not present (military role from config)
     if 'rank_sync_key_role' not in config and config.get('military_role'):
         config['rank_sync_key_role'] = config['military_role']
         changes_made = True
-        print("✅ Initialized default key role for rank sync from military role")
+        logger.info("Initialized default key role for rank sync from military role")
     
     if changes_made:
         save_config(config)

@@ -7,6 +7,10 @@ import time
 from discord.ext import commands
 from discord import app_commands
 from typing import Optional
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 from utils.user_cache import (
     get_cache_statistics, clear_user_cache, invalidate_user_cache,
     get_cached_user_info, preload_user_data, get_user_name_fast,
@@ -45,7 +49,7 @@ class CacheAdminSlashCommands(commands.Cog):
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
     
-    @app_commands.command(name='cache_invalidate', description='Удалить конкретного пользователя из кэша')
+    @app_commands.command(name='cache_invalidate', description='❌ Удалить конкретного пользователя из кэша')
     @app_commands.describe(user='Пользователь для удаления из кэша')
     @app_commands.default_permissions(administrator=True)
     async def invalidate_user(self, interaction: discord.Interaction, user: discord.Member):
@@ -69,7 +73,7 @@ class CacheAdminSlashCommands(commands.Cog):
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
     
-    @app_commands.command(name='cache_test_user', description='Протестировать получение данных пользователя через кэш')
+    @app_commands.command(name='cache_test_user', description='👤 Протестировать получение данных пользователя через кэш')
     @app_commands.describe(user='Пользователь для тестирования')
     @app_commands.default_permissions(administrator=True)
     async def test_user_cache(self, interaction: discord.Interaction, user: discord.Member):
@@ -341,7 +345,7 @@ class CacheAdminSlashCommands(commands.Cog):
             # Получаем статистику до обновления
             old_stats = get_cache_statistics()
             
-            print(f"🔄 MANUAL CACHE REFRESH: Запрос от {interaction.user}")
+            logger.info(f" MANUAL CACHE REFRESH: Запрос от {interaction.user}")
             success = await refresh_user_cache()
             
             # Получаем статистику после обновления
@@ -356,7 +360,7 @@ class CacheAdminSlashCommands(commands.Cog):
                     f"• Всего запросов: {new_stats['total_requests']}\n"
                     f"• Попаданий: {new_stats['hits']}\n"
                     f"• Промахов: {new_stats['misses']}\n\n"
-                    f"📦 **Предзагрузка:**\n"
+                f"📦 **Предзагрузка:**\n"
                     f"• Пользователей предзагружено: {new_stats['bulk_preload_count']}\n"
                     f"• Время предзагрузки: {new_stats['bulk_preload_time']}\n\n"
                     f"💾 **Память:**\n"
@@ -371,7 +375,7 @@ class CacheAdminSlashCommands(commands.Cog):
                 )
         
         except Exception as e:
-            print(f"❌ Error in cache refresh command: {e}")
+            logger.warning("Error in cache refresh command: %s", e)
             try:
                 await interaction.followup.send(
                     f"❌ Произошла ошибка: {str(e)}",
@@ -417,7 +421,7 @@ class CacheAdminSlashCommands(commands.Cog):
                 f"📋 **Всего запросов:** {stats['total_requests']}\n"
                 f"✅ **Попаданий:** {stats['hits']}\n"
                 f"❌ **Промахов:** {stats['misses']}\n\n"
-                f"📦 **Предзагрузка:**\n"
+                f" **Предзагрузка:**\n"
                 f"• Пользователей: {stats.get('bulk_preload_count', 0)}\n"
                 f"• Последняя: {age_text}\n\n"
                 f"💾 **Память:** ~{stats['memory_usage_estimate']} байт\n"
@@ -426,7 +430,7 @@ class CacheAdminSlashCommands(commands.Cog):
             )
         
         except Exception as e:
-            print(f"❌ Error in cache stats command: {e}")
+            logger.warning("Error in cache stats command: %s", e)
             await interaction.response.send_message(
                 f"❌ Ошибка получения статистики: {str(e)}",
                 ephemeral=True
@@ -439,7 +443,7 @@ class CacheAdminSlashCommands(commands.Cog):
         try:
             await interaction.response.defer(ephemeral=True)
             
-            print(f"🚀 MANUAL BULK INIT: Запрос от {interaction.user}")
+            logger.info(f" MANUAL BULK INIT: Запрос от {interaction.user}")
             
             import time
             start_time = time.time()
@@ -476,10 +480,10 @@ class CacheAdminSlashCommands(commands.Cog):
                 )
         
         except Exception as e:
-            print(f"❌ Error in bulk init command: {e}")
+            logger.warning("Error in bulk init command: %s", e)
             try:
                 await interaction.followup.send(
-                    f"❌ Произошла ошибка: {str(e)}",
+                    f" Произошла ошибка: {str(e)}",
                     ephemeral=True
                 )
             except:

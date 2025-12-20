@@ -5,7 +5,7 @@ Handles loading and caching of per-guild messages from YAML files
 import os
 import yaml
 import time
-import logging
+from utils.logging_setup import get_logger
 from typing import Dict, Any, Optional, Tuple, List
 from pathlib import Path
 import discord
@@ -26,7 +26,7 @@ _template_resolution_time = 0.0
 _last_cache_cleanup = time.time()
 
 # Setup logging
-logger = logging.getLogger('message_manager')
+logger = get_logger(__name__)
 
 def _ensure_messages_directory():
     """Ensure messages directory exists"""
@@ -45,14 +45,14 @@ def clear_message_cache(guild_id: Optional[int] = None):
         _resolved_messages_cache.clear()
         _cache_hits = 0
         _cache_misses = 0
-        logger.info("🧹 Cleared all message caches")
+        logger.info("Message cache cleared for all guilds")
     else:
         _messages_cache.pop(guild_id, None)
         # Clear resolved messages that might reference this guild
         keys_to_remove = [k for k in _resolved_messages_cache.keys() if str(guild_id) in k]
         for key in keys_to_remove:
             _resolved_messages_cache.pop(key, None)
-        logger.info(f"🧹 Cleared message cache for guild {guild_id}")
+        logger.info("Message cache cleared for guild_id=%s", guild_id)
 
 def get_cache_stats() -> Dict[str, Any]:
     """Get cache performance statistics"""
@@ -82,7 +82,7 @@ def _cleanup_expired_cache():
             _resolved_messages_cache.update(dict(items[-500:]))
 
         _last_cache_cleanup = current_time
-        logger.debug("🧹 Performed cache cleanup")
+        logger.debug("Message cache cleanup completed")
 
 def _load_yaml_file(file_path: str) -> Tuple[Dict[str, Any], Optional[str]]:
     """
@@ -107,19 +107,19 @@ def _load_yaml_file(file_path: str) -> Tuple[Dict[str, Any], Optional[str]]:
 
     except yaml.YAMLError as e:
         error_msg = f"YAML parsing error in {file_path}: {e}"
-        logger.error(f"❌ {error_msg}")
+        logger.error(error_msg)
         return {}, error_msg
     except UnicodeDecodeError as e:
         error_msg = f"Encoding error in {file_path}: {e}"
-        logger.error(f"❌ {error_msg}")
+        logger.error(error_msg)
         return {}, error_msg
     except PermissionError as e:
         error_msg = f"Permission denied reading {file_path}: {e}"
-        logger.error(f"❌ {error_msg}")
+        logger.error(error_msg)
         return {}, error_msg
     except Exception as e:
         error_msg = f"Unexpected error loading {file_path}: {e}"
-        logger.error(f"❌ {error_msg}")
+        logger.error(error_msg)
         return {}, error_msg
 
 def _get_guild_messages_file(guild_id: int) -> str:
@@ -130,7 +130,7 @@ def load_default_messages() -> Dict[str, Any]:
     """Load default messages from template file"""
     data, error = _load_yaml_file(DEFAULT_MESSAGES_FILE)
     if error:
-        logger.warning(f"⚠️ Failed to load default messages: {error}")
+        logger.warning("Failed to load default messages: %s", error)
         return {}
     return data
 
@@ -221,18 +221,18 @@ def get_message(guild_id: int, key_path: str, default: str = None) -> str:
         return result
 
     except (KeyError, TypeError) as e:
-        logger.debug(f"Message key '{key_path}' not found for guild {guild_id}: {e}")
+        logger.debug("Message key '%s' not found for guild_id=%s: %s", key_path, guild_id, e)
 
         # Try to find a matching template based on the key path
         template_fallback = _find_template_fallback(key_path)
         if template_fallback:
-            logger.info(f"📝 Message key '{key_path}' not found, using template fallback: {template_fallback}")
+            logger.warning("Message key '%s' not found for guild_id=%s, using template fallback '%s'", key_path, guild_id, template_fallback)
             return get_message(guild_id, template_fallback, default)
 
         if default:
             return default
 
-        logger.warning(f"⚠️ Message key '{key_path}' not found for guild {guild_id}, using fallback")
+        logger.warning("Message key '%s' not found for guild_id=%s, using fallback", key_path, guild_id)
         fallback_result = f"[{key_path}]"  # Fallback indicator
 
         # Cache the fallback result too
@@ -294,52 +294,55 @@ def _find_template_fallback(key_path: str) -> str:
 
 def _resolve_template_references(message: str, messages: Dict[str, Any]) -> str:
     """
-    Resolve template references in message like {templates.permissions.insufficient}
-    Only resolves references that start with known prefixes
-    Enhanced with error handling and performance optimizations
+    Рекурсивное разрешение шаблонов вида {templates.permissions.insufficient} с защитой.
+    Выполняет до 5 итераций, чтобы раскрыть вложенные шаблоны (например,
+    permissions.insufficient → base.error_prefix).
     """
     import re
+
+    pattern = re.compile(r'\{([^}]+)\}')
 
     def replace_template(match):
         template_path = match.group(1)
 
-        # Only resolve references that start with known prefixes
+        # Разрешаем только известные префиксы, чтобы не трогать параметрические плейсхолдеры
         known_prefixes = ['templates.', 'system.', 'systems.', 'ui.', 'private_messages.', 'global.', 'moderator_notifications.', 'moderator_templates.', 'military.']
         if not any(template_path.startswith(prefix) for prefix in known_prefixes):
-            return match.group(0)  # Return original for parameter placeholders
+            return match.group(0)
 
         try:
-            # Always resolve from root of messages
             keys = template_path.split('.')
             current = messages
-
             for key in keys:
                 if not isinstance(current, dict):
                     raise TypeError(f"Expected dict at '{'.'.join(keys[:keys.index(key)])}', got {type(current)}")
                 if key not in current:
                     raise KeyError(f"Key '{key}' not found in path '{template_path}'")
                 current = current[key]
-
             result = str(current)
             if not result:
-                logger.warning(f"⚠️ Template '{template_path}' resolved to empty string")
-                return match.group(0)  # Return original if template is empty
-
+                logger.warning("Template '%s' resolved to empty string", template_path)
+                return match.group(0)
             return result
-
         except (KeyError, TypeError) as e:
-            logger.warning(f"⚠️ Template reference '{template_path}' not found: {e}")
-            return match.group(0)  # Return original if template not found
+            logger.warning("Template reference '%s' not found: %s", template_path, e)
+            return match.group(0)
         except Exception as e:
-            logger.error(f"❌ Unexpected error resolving template '{template_path}': {e}")
-            return match.group(0)  # Return original on unexpected errors
+            logger.error("Unexpected error resolving template '%s': %s", template_path, e)
+            return match.group(0)
 
-    # Replace all {template.path} patterns
+    # Итеративное раскрытие до стабилизации или 5 шагов
     try:
-        return re.sub(r'\{([^}]+)\}', replace_template, message)
+        max_iterations = 5
+        for _ in range(max_iterations):
+            new_message = pattern.sub(replace_template, message)
+            if new_message == message:
+                break
+            message = new_message
+        return message
     except Exception as e:
-        logger.error(f"❌ Error in template resolution for message: {e}")
-        return message  # Return original message if regex fails
+        logger.error("Error in template resolution for message: %s", e)
+        return message
 
 def get_message_with_params(guild_id: int, key_path: str, default: str = None, **params) -> str:
     """
@@ -358,20 +361,25 @@ def get_message_with_params(guild_id: int, key_path: str, default: str = None, *
         placeholders = re.findall(r'\{(\w+)\}', message)
         missing_params = set(placeholders) - set(params.keys())
 
+        # Auto-fill common placeholders to avoid leaking {context}
+        auto_params = dict(params)
+        if 'context' in placeholders and 'context' not in auto_params:
+            auto_params['context'] = 'неизвестно'
+
         if missing_params:
-            logger.warning(f"⚠️ Missing parameters for message '{key_path}': {missing_params}")
+            logger.warning("Missing parameters for message '%s': %s", key_path, missing_params)
             # Continue anyway, let format() handle missing placeholders
 
-        return message.format(**params)
+        return message.format(**auto_params)
 
     except KeyError as e:
-        logger.error(f"❌ Missing required parameter in message '{key_path}': {e}")
+        logger.error("Missing required parameter in message '%s': %s", key_path, e)
         return message  # Return unformatted message as fallback
     except ValueError as e:
-        logger.error(f"❌ Invalid format string in message '{key_path}': {e}")
+        logger.error("Invalid format string in message '%s': %s", key_path, e)
         return message  # Return unformatted message as fallback
     except Exception as e:
-        logger.error(f"❌ Unexpected error formatting message '{key_path}' with params {list(params.keys())}: {e}")
+        logger.error("Unexpected error formatting message '%s' with params %s: %s", key_path, list(params.keys()), e)
         return message  # Return unformatted message as fallback
 
 def save_guild_messages(guild_id: int, messages: Dict[str, Any], create_backup: bool = True) -> bool:
@@ -400,7 +408,7 @@ def save_guild_messages(guild_id: int, messages: Dict[str, Any], create_backup: 
 
         return True
     except Exception as e:
-        print(f"❌ Error saving messages for guild {guild_id}: {e}")
+        logger.error("Error saving messages for guild_id=%s: %s", guild_id, e)
         return False
 
 def get_embed_color(guild_id: int, color_key: str) -> discord.Color:
@@ -421,8 +429,8 @@ def get_embed_color(guild_id: int, color_key: str) -> discord.Color:
         color_int = int(color_hex, 16)
         return discord.Color(color_int)
     except (ValueError, TypeError):
-        print(f"⚠️ Invalid color format for '{color_key}': {color_hex}, using default")
-        return discord.Color.default()
+            logger.warning("Invalid color format for '%s': %s, using default", color_key, color_hex)
+            return discord.Color.default()
 
 def get_messages_status() -> Dict[str, Any]:
     """Get status information about messages system"""
@@ -536,14 +544,14 @@ def get_supplies_color(guild_id: int, key_path: str, default_color: str = "#3498
     except (ValueError, TypeError):
         return discord.Color.blue()
 
-def validate_messages_structure(guild_id: int) -> Tuple[bool, List[str]]:
+def validate_messages_structure(guild_id: int, override_messages: Optional[Dict[str, Any]] = None) -> Tuple[bool, List[str]]:
     """
     Validate the structure of messages for a guild
     Returns: (is_valid, list_of_errors)
     Performs basic validation of critical structures
     """
-    errors = []
-    messages = load_guild_messages(guild_id)
+    errors: List[str] = []
+    messages = override_messages if override_messages is not None else load_guild_messages(guild_id)
 
     def validate_section(section_name: str, section_data: Any, path: str = "", depth: int = 0) -> None:
         # Limit recursion depth to prevent infinite loops
@@ -582,14 +590,14 @@ def validate_messages_structure(guild_id: int) -> Tuple[bool, List[str]]:
         is_valid = len(errors) == 0
 
         if is_valid:
-            logger.info(f"✅ Messages structure validation passed for guild {guild_id}")
+            logger.info("Messages structure validation passed for guild_id=%s", guild_id)
         else:
-            logger.warning(f"⚠️ Messages structure validation found {len(errors)} issues for guild {guild_id}")
+            logger.warning("Messages structure validation found %s issues for guild_id=%s", len(errors), guild_id)
 
         return is_valid, errors
 
     except Exception as e:
-        error_msg = f"❌ Unexpected error during validation: {e}"
+        error_msg = f"Unexpected error during validation: {e}"
         logger.error(error_msg)
         return False, [error_msg]
 
@@ -753,10 +761,18 @@ def get_audit_config(guild_id: int) -> Dict[str, Any]:
     Returns:
         Dict with audit configuration (title, color, thumbnail)
     """
+    messages = load_guild_messages(guild_id)
+    action_colors = {}
+    try:
+        action_colors = messages.get('audit', {}).get('action_colors', {}) or {}
+    except Exception:
+        action_colors = {}
+
     return {
         'title': get_message(guild_id, 'audit.title', "Кадровый аудит ВС РФ"),
         'color': get_message(guild_id, 'audit.color', "#055000"),
-        'thumbnail': get_message(guild_id, 'audit.thumbnail', "https://i.imgur.com/07MRSyl.png")
+        'thumbnail': get_message(guild_id, 'audit.thumbnail', "https://i.imgur.com/07MRSyl.png"),
+        'action_colors': action_colors
     }
 
 def get_blacklist_config(guild_id: int) -> Dict[str, Any]:

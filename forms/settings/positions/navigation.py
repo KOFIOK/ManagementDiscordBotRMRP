@@ -8,6 +8,10 @@ from discord import ui
 from typing import Optional, List, Dict, Any
 from utils.postgresql_pool import get_db_cursor
 from .ui_components import create_position_embed, create_paginated_embed, create_navigation_buttons
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 class PositionNavigationView(ui.View):
     """Main navigation view for position management"""
@@ -58,7 +62,7 @@ class PositionNavigationView(ui.View):
                     label="Нет подразделений",
                     value="none",
                     description="Добавьте подразделения",
-                    emoji="❌"
+                    emoji="🚫"
                 ))
 
             # Update select
@@ -80,7 +84,7 @@ class PositionNavigationView(ui.View):
             self.add_item(self.refresh)
 
         except Exception as e:
-            print(f"❌ Error updating subdivision options: {e}")
+            logger.warning("Error updating subdivision options: %s", e)
 
     async def _get_all_subdivisions(self) -> List[Dict[str, Any]]:
         """Get all subdivisions from database"""
@@ -90,7 +94,7 @@ class PositionNavigationView(ui.View):
                 result = cursor.fetchall()
                 return [dict(row) for row in result] if result else []
         except Exception as e:
-            print(f"❌ Error getting subdivisions: {e}")
+            logger.warning("Error getting subdivisions: %s", e)
             return []
 
     def _get_position_count_for_subdivision(self, subdivision_id: int) -> int:
@@ -100,7 +104,7 @@ class PositionNavigationView(ui.View):
             positions = position_service.get_positions_for_subdivision(subdivision_id)
             return len(positions) if positions else 0
         except Exception as e:
-            print(f"❌ Error getting position count for subdivision {subdivision_id}: {e}")
+            logger.warning("Error getting position count for subdivision %s: %s", subdivision_id, e)
             return 0
 
     @ui.select(
@@ -113,7 +117,7 @@ class PositionNavigationView(ui.View):
     async def subdivision_select(self, interaction: discord.Interaction, select: ui.Select):
         """Handle subdivision selection"""
         if select.values[0] == "none":
-            await interaction.response.send_message("❌ Нет доступных подразделений.", ephemeral=True)
+            await interaction.response.send_message(" Нет доступных подразделений.", ephemeral=True)
             return
 
         subdivision_id = int(select.values[0])
@@ -123,7 +127,7 @@ class PositionNavigationView(ui.View):
         subdivision_data = next((s for s in subdivisions if s['id'] == subdivision_id), None)
 
         if not subdivision_data:
-            await interaction.response.send_message("❌ Подразделение не найдено.", ephemeral=True)
+            await interaction.response.send_message(" Подразделение не найдено.", ephemeral=True)
             return
 
         # Navigate to position list for this subdivision
@@ -142,9 +146,19 @@ class PositionNavigationView(ui.View):
 
     @ui.button(label="Добавить подразделение", style=discord.ButtonStyle.success, emoji="🏛️")
     async def add_subdivision(self, interaction: discord.Interaction, button: ui.Button):
-        """Add new subdivision"""
-        # This will open department management
-        await interaction.response.send_message("ℹ️ Управление подразделениями доступно в настройках департаментов.", ephemeral=True)
+        """Открыть модуль управления подразделениями"""
+        try:
+            from ..departments_management import DepartmentsManagementView
+            view = DepartmentsManagementView()
+            # Используем единый шаблон секции для эмбеда
+            embed = view.create_section_embed()
+            await interaction.response.edit_message(embed=embed, view=view)
+        except Exception as e:
+            logger.warning("Error opening DepartmentsManagementView from positions: %s", e)
+            try:
+                await interaction.response.send_message("❌ Не удалось открыть управление подразделениями.", ephemeral=True)
+            except Exception:
+                pass
 
     @ui.button(label="Поиск", style=discord.ButtonStyle.primary, emoji="🔍")
     async def search_positions(self, interaction: discord.Interaction, button: ui.Button):

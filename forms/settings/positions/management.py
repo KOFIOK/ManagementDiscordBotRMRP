@@ -10,6 +10,10 @@ from utils.database_manager.position_service import position_service
 from utils.postgresql_pool import get_db_cursor
 from .ui_components import create_position_embed, create_paginated_embed, create_navigation_buttons
 from .navigation import create_main_navigation_embed
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 class PositionManagementView(ui.View):
     """Manage positions for a specific subdivision with pagination"""
@@ -58,7 +62,7 @@ class PositionManagementView(ui.View):
                     label="Нет должностей",
                     value="none",
                     description="Добавьте должности",
-                    emoji="❌"
+                    emoji="🚫"
                 ))
 
             # Update select
@@ -80,7 +84,7 @@ class PositionManagementView(ui.View):
             self.add_item(self.refresh)
 
         except Exception as e:
-            print(f"❌ Error updating position options: {e}")
+            logger.warning("Error updating position options: %s", e)
 
     def _get_positions_for_subdivision(self) -> List[Dict[str, Any]]:
         """Get positions for current subdivision"""
@@ -88,7 +92,7 @@ class PositionManagementView(ui.View):
             # Use new position service
             return position_service.get_positions_for_subdivision(self.subdivision_id)
         except Exception as e:
-            print(f"❌ Error getting positions: {e}")
+            logger.warning("Error getting positions: %s", e)
             return []
 
     @ui.select(
@@ -101,7 +105,7 @@ class PositionManagementView(ui.View):
     async def position_select(self, interaction: discord.Interaction, select: ui.Select):
         """Handle position selection"""
         if select.values[0] == "none":
-            await interaction.response.send_message("❌ Нет доступных должностей.", ephemeral=True)
+            await interaction.response.send_message(" Нет доступных должностей.", ephemeral=True)
             return
 
         position_id = int(select.values[0])
@@ -111,7 +115,7 @@ class PositionManagementView(ui.View):
         position_data = next((p for p in positions if p['id'] == position_id), None)
 
         if not position_data:
-            await interaction.response.send_message("❌ Должность не найдена.", ephemeral=True)
+            await interaction.response.send_message(" Должность не найдена.", ephemeral=True)
             return
 
         # Show detailed management view
@@ -130,7 +134,7 @@ class PositionManagementView(ui.View):
 
         embed = create_position_embed(
             title=f"⚙️ Настройка: {position_data.get('name')}",
-            description=f"**Подразделение:** {self.subdivision_data.get('name')}\n**Роль Discord:** {role_display}"
+            description=f"🏢 **Подразделение:** {self.subdivision_data.get('name')}\n**Роль Discord:** {role_display}"
         )
 
         await interaction.response.edit_message(embed=embed, view=view)
@@ -182,7 +186,7 @@ class AddPositionModal(ui.Modal):
         )
 
         self.role_input = ui.TextInput(
-            label="Discord роль (ID или упоминание)",
+            label="🎖️ Discord роль (ID или упоминание)",
             placeholder="Введите ID роли или @роль (необязательно)",
             required=False,
             max_length=50
@@ -271,7 +275,7 @@ class EditPositionModal(ui.Modal):
         )
 
         self.role_input = ui.TextInput(
-            label="Discord роль (ID или упоминание)",
+            label="🎖️ Discord роль (ID или упоминание)",
             placeholder="Введите ID роли или @роль (необязательно)",
             required=False,
             max_length=50,
@@ -296,7 +300,7 @@ class EditPositionModal(ui.Modal):
         subdivision_abbr = self.subdivision_input.value.strip().lower() if self.subdivision_input.value else None
 
         if not position_name:
-            await interaction.response.send_message("❌ Название должности не может быть пустым.", ephemeral=True)
+            await interaction.response.send_message(" Название должности не может быть пустым.", ephemeral=True)
             return
 
         # Parse role ID from input
@@ -315,7 +319,7 @@ class EditPositionModal(ui.Modal):
                         role_id = role.id
                     else:
                         await interaction.response.send_message(
-                            f"❌ Роль '{role_input}' не найдена. Укажите ID роли или @роль.",
+                            f" Роль '{role_input}' не найдена. Укажите ID роли или @роль.",
                             ephemeral=True
                         )
                         return
@@ -324,14 +328,14 @@ class EditPositionModal(ui.Modal):
                 role = interaction.guild.get_role(role_id)
                 if not role:
                     await interaction.response.send_message(
-                        f"❌ Роль с ID {role_id} не найдена на сервере.",
+                        f" Роль с ID {role_id} не найдена на сервере.",
                         ephemeral=True
                     )
                     return
 
             except ValueError:
                 await interaction.response.send_message(
-                    "❌ Неверный формат ID роли. Укажите число или @роль.",
+                    " Неверный формат ID роли. Укажите число или @роль.",
                     ephemeral=True
                 )
                 return

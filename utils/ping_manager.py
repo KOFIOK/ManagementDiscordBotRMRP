@@ -6,8 +6,9 @@ import discord
 from typing import List, Dict, Optional, Set
 from utils.config_manager import load_config, save_config
 import logging
+from utils.logging_setup import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 class PingManager:
     """Centralized manager for ping-related operations with context support"""

@@ -1,6 +1,10 @@
 import discord
 from utils.config_manager import load_config
 from utils.message_manager import get_supplies_message, get_supplies_color, get_role_reason, get_moderator_display_name
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class SuppliesSubscriptionView(discord.ui.View):
@@ -84,7 +88,7 @@ class SuppliesSubscriptionView(discord.ui.View):
                     )
                     
         except Exception as e:
-            print(f"❌ Ошибка при управлении подпиской на поставки: {e}")
+            logger.warning("Ошибка при управлении подпиской на поставки: %s", e)
             try:
                 await interaction.response.send_message(
                     get_supplies_message(interaction.guild.id, "subscription.error_subscription_processing"),
@@ -113,5 +117,5 @@ async def send_supplies_subscription_message(channel: discord.TextChannel):
         return message
         
     except Exception as e:
-        print(f"❌ Ошибка отправки сообщения подписки на поставки: {e}")
+        logger.warning("Ошибка отправки сообщения подписки на поставки: %s", e)
         return None

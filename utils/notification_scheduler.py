@@ -8,6 +8,10 @@ import os
 from datetime import datetime, time
 import pytz
 from utils.config_manager import load_config
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class PromotionNotificationScheduler:
@@ -22,13 +26,13 @@ class PromotionNotificationScheduler:
         """Start the notification scheduler"""
         if self.task is None or self.task.done():
             self.task = asyncio.create_task(self._scheduler_loop())
-            print("🔔 Планировщик уведомлений запущен")
+            logger.info("Планировщик уведомлений запущен")
     
     def stop(self):
         """Stop the notification scheduler"""
         if self.task and not self.task.done():
             self.task.cancel()
-            print("🔔 Планировщик уведомлений остановлен")
+            logger.info("Планировщик уведомлений остановлен")
     
     async def _scheduler_loop(self):
         """Main scheduler loop"""
@@ -50,8 +54,8 @@ class PromotionNotificationScheduler:
                 
                 sleep_seconds = (target_time - now_moscow).total_seconds()
                 
-                print(f"⏰ Следующая отправка уведомлений: {target_time.strftime('%d.%m.%Y %H:%M')} МСК")
-                print(f"⏳ Ожидание: {int(sleep_seconds // 3600)}ч {int((sleep_seconds % 3600) // 60)}м")
+                logger.info(f"⏰ Следующая отправка уведомлений: {target_time.strftime('%d.%m.%Y %H:%M')} МСК")
+                logger.info(f"⏳ Ожидание: {int(sleep_seconds // 3600)}ч {int((sleep_seconds % 3600) // 60)}м")
                 
                 # Sleep until target time
                 await asyncio.sleep(sleep_seconds)
@@ -65,7 +69,7 @@ class PromotionNotificationScheduler:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                print(f"❌ Ошибка в планировщике уведомлений: {e}")
+                logger.warning("Ошибка в планировщике уведомлений: %s", e)
                 # Wait 5 minutes before retrying
                 await asyncio.sleep(300)
     
@@ -88,7 +92,7 @@ class PromotionNotificationScheduler:
                 
                 channel = self.bot.get_channel(channel_id)
                 if not channel:
-                    print(f"⚠️ Канал для {dept_code} не найден (ID: {channel_id})")
+                    logger.info("Канал для %s не найден (ID: %s)", dept_code, channel_id)
                     continue
                   # Prepare notification content
                 text = notification_config.get('text')
@@ -107,7 +111,7 @@ class PromotionNotificationScheduler:
                         if os.path.exists(image_path):
                             file = discord.File(image_path, filename=image_filename)
                         else:
-                            print(f"⚠️ Изображение не найдено: {image_path}")
+                            logger.info("Изображение не найдено: %s", image_path)
                             image_filename = None  # Don't reference missing file
                     
                     # Send message based on what admin configured
@@ -125,12 +129,12 @@ class PromotionNotificationScheduler:
                         continue
                     
                     sent_count += 1
-                    print(f"✅ Уведомление отправлено в {channel.name} ({dept_code})")
+                    logger.info("Уведомление отправлено в {channel.name} (%s)", dept_code)
                     
                 except Exception as e:
-                    print(f"❌ Ошибка отправки уведомления для {dept_code}: {e}")
+                    logger.warning("Ошибка отправки уведомления для %s: %s", dept_code, e)
             
-            print(f"📊 Отправлено уведомлений: {sent_count}")
+            logger.info("Отправлено уведомлений: %s", sent_count)
             
         except Exception as e:
-            print(f"❌ Ошибка при отправке ежедневных уведомлений: {e}")
+            logger.warning("Ошибка при отправке ежедневных уведомлений: %s", e)

@@ -14,6 +14,10 @@ from utils.message_manager import (
 )
 from utils.config_manager import is_administrator, load_config
 import datetime
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 class MessageManagement(commands.Cog):
     """Cog for managing bot messages through Discord commands"""
@@ -73,22 +77,21 @@ class MessageManagement(commands.Cog):
                     os.remove(old_path)
 
         except Exception as e:
-            print(f"Warning: Failed to cleanup old backups: {e}")
+            logger.error("Warning: Failed to cleanup old backups: %s", e)
 
         except Exception as e:
-            print(f"Warning: Failed to cleanup old backups: {e}")
+            logger.error("Warning: Failed to cleanup old backups: %s", e)
 
     def _get_message_categories(self, guild_id: int) -> Dict[str, str]:
-        """Get available message categories for specific guild"""
-        # Динамическая загрузка категорий из YAML файла
+        """Получить доступные категории сообщений (включая новые разделы)."""
         try:
-            messages = load_guild_messages(guild_id)  # Загружаем сообщения для конкретного гильда
+            messages = load_guild_messages(guild_id)
 
-            categories = {}
-            if 'private_messages' in messages:
+            categories: Dict[str, str] = {}
+            # Частные сообщения (DM)
+            if isinstance(messages.get('private_messages'), dict):
                 for category_key in messages['private_messages'].keys():
-                    # Преобразуем ключи в читаемые названия
-                    category_names = {
+                    readable = {
                         "welcome": "Приветственные сообщения",
                         "role_assignment": "Назначение ролей",
                         "dismissal": "Увольнения",
@@ -98,12 +101,37 @@ class MessageManagement(commands.Cog):
                         "safe_documents": "Безопасные документы",
                         "moderator_notifications": "Уведомления модераторов"
                     }
-                    categories[category_key] = category_names.get(category_key, category_key.replace('_', ' ').title())
+                    categories[category_key] = readable.get(category_key, category_key.replace('_', ' ').title())
+
+            # Новые системные разделы
+            if isinstance(messages.get('audit'), dict):
+                categories['audit'] = 'Кадровый аудит'
+            if isinstance(messages.get('blacklist'), dict):
+                categories['blacklist'] = 'Чёрный список'
+            if isinstance(messages.get('ui'), dict):
+                categories['ui'] = 'Пользовательский интерфейс'
+            if isinstance(messages.get('templates'), dict):
+                categories['templates'] = 'Шаблоны'
+            if isinstance(messages.get('system'), dict):
+                categories['system'] = 'Системные сообщения'
+                # Добавим удобный ярлык для системного раздела персонала
+                try:
+                    if isinstance(messages['system'].get('personnel'), dict):
+                        categories['personnel'] = 'Кадровые сообщения'
+                except Exception:
+                    pass
+            if isinstance(messages.get('systems'), dict):
+                categories['systems'] = 'Сообщения подсистем'
+            if isinstance(messages.get('colors'), dict):
+                categories['colors'] = 'Цвета эмбедов'
+            if isinstance(messages.get('role_reasons'), dict):
+                categories['role_reasons'] = 'Причины ролей'
+            if isinstance(messages.get('military'), dict):
+                categories['military'] = 'Военная терминология'
 
             return categories
         except Exception as e:
-            print(f"Warning: Failed to load categories dynamically: {e}")
-            # Fallback to hardcoded categories
+            logger.error("Warning: Failed to load categories dynamically: %s", e)
             return {
                 "welcome": "Приветственные сообщения",
                 "role_assignment": "Назначение ролей",
@@ -112,43 +140,58 @@ class MessageManagement(commands.Cog):
                 "department_applications": "Заявки в подразделения",
                 "leave_requests": "Заявки на отгул",
                 "safe_documents": "Безопасные документы",
-                "moderator_notifications": "Уведомления модераторов"
+                "moderator_notifications": "Уведомления модераторов",
+                "audit": "Кадровый аудит",
+                "blacklist": "Чёрный список",
+                "ui": "Пользовательский интерфейс",
+                "templates": "Шаблоны",
+                "system": "Системные сообщения",
+                "systems": "Сообщения подсистем",
+                "colors": "Цвета эмбедов",
+                "role_reasons": "Причины ролей",
+                "military": "Военная терминология"
             }
 
     def _get_messages_in_category(self, guild_id: int, category: str) -> Dict[str, str]:
-        """Get all messages in a specific category"""
+        """Получить все сообщения/параметры внутри категории (с плоскими ключами)."""
         messages = load_guild_messages(guild_id)
-        category_messages = {}
 
-        # Check if category exists in private_messages
-        if 'private_messages' in messages and category in messages['private_messages']:
-            def extract_messages(data, prefix=""):
-                result = {}
+        def extract_messages(data: Any, prefix: str = "") -> Dict[str, str]:
+            result: Dict[str, str] = {}
+            if isinstance(data, dict):
                 for key, value in data.items():
                     current_key = f"{prefix}.{key}" if prefix else key
                     if isinstance(value, dict):
                         result.update(extract_messages(value, current_key))
                     elif isinstance(value, str):
                         result[current_key] = value
-                return result
+            return result
 
-            category_messages = extract_messages(messages['private_messages'][category])
+        # Частные сообщения
+        if category in (messages.get('private_messages', {}) or {}):
+            return extract_messages(messages['private_messages'][category])
 
-        # Also check direct categories (for non-private messages)
-        elif category in messages:
-            def extract_messages(data, prefix=""):
-                result = {}
-                for key, value in data.items():
-                    current_key = f"{prefix}.{key}" if prefix else key
-                    if isinstance(value, dict):
-                        result.update(extract_messages(value, current_key))
-                    elif isinstance(value, str):
-                        result[current_key] = value
-                return result
+        # Специальная обработка аудита: включить корневые параметры и вложенные
+        if category == 'audit' and isinstance(messages.get('audit'), dict):
+            flat = extract_messages(messages['audit'])
+            # Корневые ключи (title, color, thumbnail) как есть
+            for root_key in ('title', 'color', 'thumbnail'):
+                val = messages['audit'].get(root_key)
+                if isinstance(val, str):
+                    flat[root_key] = val
+            return flat
 
-            category_messages = extract_messages(messages[category])
+        # Специальная обработка системного раздела персонала
+        if category == 'personnel' and isinstance(messages.get('system'), dict):
+            personnel_block = messages['system'].get('personnel')
+            if isinstance(personnel_block, dict):
+                return extract_messages(personnel_block)
 
-        return category_messages
+        # Прочие разделы как есть
+        if category in messages:
+            return extract_messages(messages[category])
+
+        return {}
 
     async def _check_admin_permissions(self, interaction: discord.Interaction) -> bool:
         """Check if user has administrator permissions"""
@@ -225,7 +268,10 @@ class MessageManagement(commands.Cog):
         app_commands.Choice(name="Заявки в подразделения", value="department_applications"),
         app_commands.Choice(name="Заявки на отгул", value="leave_requests"),
         app_commands.Choice(name="Безопасные документы", value="safe_documents"),
-        app_commands.Choice(name="Уведомления модераторов", value="moderator_notifications")
+        app_commands.Choice(name="Уведомления модераторов", value="moderator_notifications"),
+        app_commands.Choice(name="Кадровый аудит", value="audit"),
+        app_commands.Choice(name="Чёрный список", value="blacklist"),
+        app_commands.Choice(name="UI (интерфейс)", value="ui")
     ])
     async def messages_edit_command(self, interaction: discord.Interaction, category: str):
         """Edit messages in a specific category"""
@@ -233,7 +279,7 @@ class MessageManagement(commands.Cog):
         # Check admin permissions
         if not await self._check_admin_permissions(interaction):
             await interaction.response.send_message(
-                "❌ У вас нет прав администратора для выполнения этой команды.",
+                " У вас нет прав администратора для выполнения этой команды.",
                 ephemeral=True
             )
             return
@@ -248,7 +294,7 @@ class MessageManagement(commands.Cog):
             )
             return
 
-        # Get messages in category
+        # Получить ключи/сообщения категории
         messages = self._get_messages_in_category(interaction.guild.id, category)
 
         if not messages:
@@ -302,7 +348,7 @@ class MessageManagement(commands.Cog):
         # Check admin permissions
         if not await self._check_admin_permissions(interaction):
             await interaction.response.send_message(
-                "❌ У вас нет прав администратора для выполнения этой команды.",
+                " У вас нет прав администратора для выполнения этой команды.",
                 ephemeral=True
             )
             return
@@ -317,7 +363,7 @@ class MessageManagement(commands.Cog):
         # Check admin permissions
         if not await self._check_admin_permissions(interaction):
             await interaction.response.send_message(
-                "❌ У вас нет прав администратора для выполнения этой команды.",
+                " У вас нет прав администратора для выполнения этой команды.",
                 ephemeral=True
             )
             return
@@ -375,7 +421,7 @@ class MessageManagement(commands.Cog):
             try:
                 self._create_backup(interaction.guild.id, "upload_full_file")
             except Exception as e:
-                print(f"Warning: Failed to create backup before upload: {e}")
+                logger.error("Warning: Failed to create backup before upload: %s", e)
 
             # Save new messages
             success = save_guild_messages(interaction.guild.id, new_messages, create_backup=False)
@@ -417,7 +463,7 @@ class MessageManagement(commands.Cog):
         # Check admin permissions
         if not await self._check_admin_permissions(interaction):
             await interaction.response.send_message(
-                "❌ У вас нет прав администратора для выполнения этой команды.",
+                " У вас нет прав администратора для выполнения этой команды.",
                 ephemeral=True
             )
             return
@@ -631,7 +677,7 @@ class MessageManagement(commands.Cog):
         # Check admin permissions
         if not await self._check_admin_permissions(interaction):
             await interaction.response.send_message(
-                "❌ У вас нет прав администратора для выполнения этой команды.",
+                " У вас нет прав администратора для выполнения этой команды.",
                 ephemeral=True
             )
             return
@@ -749,18 +795,33 @@ class MessageSelectView(discord.ui.View):
         select.callback = self.select_callback
 
     async def select_callback(self, interaction: discord.Interaction):
-        """Handle message selection"""
-        # Get the select component from the interaction
-        select = self.children[0]  # The select is the first child
+        """Открыть модал для редактирования выбранного ключа."""
+        select = self.children[0]
         selected_key = select.values[0]
 
-        # Get current message content
         try:
-            # For private messages, we need to add the private_messages prefix
-            full_key = f"private_messages.{self.category}.{selected_key}"
-            current_message = get_message(self.guild_id, full_key)
+            # Собираем полный путь ключа в зависимости от категории
+            dm_categories = {
+                "welcome",
+                "role_assignment",
+                "dismissal",
+                "department_applications",
+                "leave_requests",
+                "safe_documents",
+                "moderator_notifications",
+                "supplies_access",
+            }
 
-            # Create modal for editing
+            if self.category in dm_categories:
+                full_key = f"private_messages.{self.category}.{selected_key}"
+            elif self.category == "personnel":
+                # Кадровые сообщения находятся в system.personnel
+                full_key = f"system.personnel.{selected_key}"
+            else:
+                # Для прочих разделов используем прямой префикс категории
+                full_key = f"{self.category}.{selected_key}"
+
+            current_message = get_message(self.guild_id, full_key)
             modal = MessageEditModal(self.cog, self.guild_id, full_key, current_message)
             await interaction.response.send_modal(modal)
 
@@ -769,25 +830,6 @@ class MessageSelectView(discord.ui.View):
                 f"❌ Ошибка получения сообщения: {str(e)}",
                 ephemeral=True
             )
-        """Handle message selection"""
-        selected_key = select.values[0]
-
-        # Get current message content
-        try:
-            # For private messages, we need to add the private_messages prefix
-            full_key = f"private_messages.{self.category}.{selected_key}"
-            current_message = get_message(self.guild_id, full_key)
-
-            # Create modal for editing
-            modal = MessageEditModal(self.cog, self.guild_id, full_key, current_message)
-            await interaction.response.send_modal(modal)
-
-        except Exception as e:
-            await interaction.response.send_message(
-                f"❌ Ошибка получения сообщения: {str(e)}",
-                ephemeral=True
-            )
-
 
 class MessageEditModal(discord.ui.Modal, title="Редактирование сообщения"):
     """Modal for editing message content"""
@@ -814,48 +856,48 @@ class MessageEditModal(discord.ui.Modal, title="Редактирование с�
         self.add_item(self.message_input)
 
     async def on_submit(self, interaction: discord.Interaction):
-        """Handle modal submission"""
+        """Сохранить изменение по полному ключу (универсально для всех разделов)."""
         try:
             new_content = self.message_input.value
 
-            # Load current messages
+            # Простая валидация HEX-цветов для соответствующих ключей
+            def is_color_key(full_key: str) -> bool:
+                return (
+                    full_key.endswith('.color') or
+                    '.colors.' in full_key or
+                    full_key.startswith('audit.action_colors.')
+                )
+
+            if is_color_key(self.message_key):
+                raw = new_content.strip()
+                if not (len(raw) == 7 and raw.startswith('#') and all(c in '0123456789abcdefABCDEF' for c in raw[1:])):
+                    await interaction.response.send_message(
+                        "❌ Некорректный формат цвета. Ожидается HEX вида #RRGGBB",
+                        ephemeral=True
+                    )
+                    return
+
             messages = load_guild_messages(self.guild_id)
 
-            # Parse the full key path (private_messages.category.key)
+            # Разбиваем полный ключ и идём по структуре, создавая недостающие словари
             key_parts = self.message_key.split('.')
-            if len(key_parts) < 3 or key_parts[0] != 'private_messages':
-                raise ValueError("Invalid message key format")
-
-            category = key_parts[1]
-            message_key = '.'.join(key_parts[2:])
-
-            # Navigate to the message location in private_messages
-            if 'private_messages' not in messages:
-                messages['private_messages'] = {}
-            if category not in messages['private_messages']:
-                messages['private_messages'][category] = {}
-
-            current = messages['private_messages'][category]
-
-            # Navigate to parent of the message
-            sub_keys = message_key.split('.')
-            for key in sub_keys[:-1]:
-                if key not in current:
+            current = messages
+            for key in key_parts[:-1]:
+                if key not in current or not isinstance(current[key], dict):
                     current[key] = {}
                 current = current[key]
 
-            # Update the message
-            current[sub_keys[-1]] = new_content
+            # Обновляем конечное значение
+            current[key_parts[-1]] = new_content
 
-            # Save messages (without automatic backup since we create manual backup below)
             success = save_guild_messages(self.guild_id, messages, create_backup=False)
 
             if success:
                 # Create backup manually with descriptive name
                 try:
-                    self.cog._create_backup(self.guild_id, f"edit_{sub_keys[-1]}")
+                    self.cog._create_backup(self.guild_id, f"edit_{key_parts[-1]}")
                 except Exception as e:
-                    print(f"Warning: Failed to create backup: {e}")
+                    logger.error("Warning: Failed to create backup: %s", e)
 
                 embed = discord.Embed(
                     title="✅ Сообщение обновлено",

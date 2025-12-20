@@ -11,8 +11,9 @@ from typing import Optional, Dict, Any, List, Tuple
 from ..postgresql_pool import get_db_cursor
 from utils.config_manager import load_config, save_config
 from utils.message_manager import get_role_reason, get_moderator_display_name
+from utils.logging_setup import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class RankManager:

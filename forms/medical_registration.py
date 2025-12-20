@@ -8,6 +8,10 @@ from discord.ui import Button, View, Modal, TextInput
 from datetime import datetime, timezone, timedelta
 from utils.config_manager import load_config
 from utils.user_cache import get_cached_user_info
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class BaseMedicalView(View):
@@ -20,7 +24,7 @@ class BaseMedicalView(View):
             if user_info and user_info.get('full_name') and user_info.get('static'):
                 return f"{user_info['full_name']} | {user_info['static']}"
         except Exception as e:
-            print(f"Error getting autofill data: {e}")
+            logger.error("Error getting autofill data: %s", e)
         return ""
 
 
@@ -86,7 +90,7 @@ class BaseMedicalModal(Modal):
             channel = interaction.guild.get_channel(channel_id)
             if not channel:
                 embed_error = discord.Embed(
-                    title="❌ Ошибка",
+                title="❌ Ошибка",
                     description="Канал записи к врачу не найден. Обратитесь к администратору.",
                     color=discord.Color.red()
                 )
@@ -107,7 +111,7 @@ class BaseMedicalModal(Modal):
             await interaction.response.send_message("✅ Ваша заявка отправлена!", ephemeral=True)
             
         except Exception as e:
-            print(f"Error sending medical request: {e}")
+            logger.error("Error sending medical request: %s", e)
             embed_error = discord.Embed(
                 title="❌ Ошибка",
                 description="Произошла ошибка при отправке заявки. Попробуйте позже или обратитесь к администратору.",
@@ -205,7 +209,7 @@ class DocumentsModal(BaseMedicalModal):
         )
         
         embed.add_field(name="👤 Заявитель", value=interaction.user.mention, inline=True)
-        embed.add_field(name="📝 Имя и статик", value=self.name.value, inline=True)
+        embed.add_field(name="🆔 Имя и статик", value=self.name.value, inline=True)
         embed.add_field(name="📋 Документы для обновления", value=self.docs.value, inline=False)
         embed.add_field(name="⏰ Удобное время", value=self.time.value, inline=False)
         
@@ -260,7 +264,7 @@ class PsychologistModal(BaseMedicalModal):
         )
         
         embed.add_field(name="👤 Заявитель", value=interaction.user.mention, inline=True)
-        embed.add_field(name="📝 Имя и статик", value=self.name.value, inline=True)
+        embed.add_field(name="🆔 Имя и статик", value=self.name.value, inline=True)
         embed.add_field(name="📄 Причина обращения", value=self.reason.value, inline=False)
         embed.add_field(name="⏰ Удобное время", value=self.time.value, inline=False)
         
@@ -275,12 +279,12 @@ class PsychologistModal(BaseMedicalModal):
 async def send_medical_registration_message(channel):
     """Send medical registration message with buttons to channel (called from settings)"""
     try:
-        print(f"[DEBUG] Attempting to send medical registration message to channel: {channel.name} (ID: {channel.id})")
+        logger.info("[DEBUG] Attempting to send medical registration message to channel: {channel.name} (ID: {channel.id})")
           # Check if pinned message already exists
         pinned_messages = await channel.pins()
         existing_message = None
         
-        print(f"[DEBUG] Found {len(pinned_messages)} pinned messages")
+        logger.info("[DEBUG] Found {len(pinned_messages)} pinned messages")
         
         for message in pinned_messages:
             if (message.author == channel.guild.me and 
@@ -288,14 +292,14 @@ async def send_medical_registration_message(channel):
                 len(message.embeds) > 0 and
                 "Медицинская рота | Регистратура" in message.embeds[0].title):
                 existing_message = message
-                print(f"[DEBUG] Found existing medical registration message (ID: {message.id})")
+                logger.info("[DEBUG] Found existing medical registration message (ID: {message.id})")
                 break
         
         if existing_message:
-            print(f"[DEBUG] Medical registration message already exists (ID: {existing_message.id}), skipping creation")
+            logger.info("[DEBUG] Medical registration message already exists (ID: {existing_message.id}), skipping creation")
             return  # Message already exists and is pinned
         
-        print(f"[DEBUG] Creating new medical registration message")
+        logger.info("[DEBUG] Creating new medical registration message")
         
         # Create and send new message
         embed = discord.Embed(
@@ -320,17 +324,17 @@ async def send_medical_registration_message(channel):
         view = MedicalRegistrationView()
         message = await channel.send(embed=embed, view=view)
         
-        print(f"[DEBUG] Medical registration message sent (ID: {message.id})")
+        logger.info("[DEBUG] Medical registration message sent (ID: {message.id})")
         
         # Pin the message
         try:
             await message.pin()
-            print(f"[DEBUG] Medical registration message pinned successfully")
+            logger.info("[DEBUG] Medical registration message pinned successfully")
         except Exception as pin_error:
-            print(f"[DEBUG] Failed to pin medical registration message: {pin_error}")
+            logger.error("[DEBUG] Failed to pin medical registration message: %s", pin_error)
             pass  # Ignore pin errors
             
     except Exception as e:
-        print(f"Error sending medical registration message: {e}")
+        logger.error("Error sending medical registration message: %s", e)
         import traceback
         traceback.print_exc()

@@ -2,6 +2,10 @@ import discord
 from utils.config_manager import load_config
 from utils.message_manager import get_supplies_message, get_supplies_color, get_message
 from datetime import datetime
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class SuppliesControlView(discord.ui.View):
@@ -39,7 +43,7 @@ class SuppliesControlView(discord.ui.View):
             self._update_button_states()
             
         except Exception as e:
-            print(f"❌ Ошибка создания динамических кнопок: {e}")
+            logger.warning("Ошибка создания динамических кнопок: %s", e)
     
     def _create_button_callback(self, object_key: str, object_name: str, emoji: str):
         """Создает callback функцию для кнопки"""
@@ -64,7 +68,7 @@ class SuppliesControlView(discord.ui.View):
                     item.style = discord.ButtonStyle.secondary if is_active else discord.ButtonStyle.primary
                     
         except Exception as e:
-            print(f"❌ Ошибка обновления состояния кнопок: {e}")
+            logger.warning("Ошибка обновления состояния кнопок: %s", e)
         
     async def _handle_object_button(self, interaction: discord.Interaction, object_key: str, object_name: str, emoji: str):
         """Обработка нажатия на кнопку объекта"""
@@ -105,7 +109,7 @@ class SuppliesControlView(discord.ui.View):
             try:
                 success = await supplies_manager.start_timer(object_key, interaction.user)
             except Exception as e:
-                print(f"❌ Ошибка в start_timer(): {e}")
+                logger.warning("Ошибка в start_timer(): %s", e)
                 raise
             
             if success:
@@ -132,7 +136,7 @@ class SuppliesControlView(discord.ui.View):
                         ephemeral=True
                     )
                 except Exception as e:
-                    print(f"❌ Ошибка в interaction.response.send_message(): {e}")
+                    logger.warning("Ошибка в interaction.response.send_message(): %s", e)
                     raise
                 
                 # Обновляем состояние кнопок
@@ -142,14 +146,14 @@ class SuppliesControlView(discord.ui.View):
                 try:
                     await self._update_timer_info(interaction.message)
                 except Exception as e:
-                    print(f"❌ Ошибка в _update_timer_info(): {e}")
+                    logger.warning("Ошибка в _update_timer_info(): %s", e)
                     raise
                 
                 # Отправляем уведомление в канал оповещений
                 try:
                     await self._send_start_notification(object_key, object_name, emoji, interaction.user)
                 except Exception as e:
-                    print(f"❌ Ошибка в _send_start_notification(): {e}")
+                    logger.warning("Ошибка в _send_start_notification(): %s", e)
                     raise
                 
                 # Уведомляем планировщик об изменении (для немедленного обновления)
@@ -161,7 +165,7 @@ class SuppliesControlView(discord.ui.View):
                 )
                 
         except Exception as e:
-            print(f"❌ Ошибка в обработке кнопки поставок: {e}")
+            logger.warning("Ошибка в обработке кнопки поставок: %s", e)
             try:
                 await interaction.response.send_message(
                     get_supplies_message(interaction.guild.id, "control.error_general_processing"),
@@ -227,7 +231,7 @@ class SuppliesControlView(discord.ui.View):
             await message.edit(embeds=embeds, view=self)
             
         except Exception as e:
-            print(f"❌ Ошибка при обновлении информации о таймерах: {e}")
+            logger.warning("Ошибка при обновлении информации о таймерах: %s", e)
             raise
     
     async def _send_start_notification(self, object_key: str, object_name: str, emoji: str, user):
@@ -295,7 +299,7 @@ class SuppliesControlView(discord.ui.View):
             await supplies_manager.save_notification_message(object_key, message.id, 'start')
             
         except Exception as e:
-            print(f"❌ Ошибка отправки уведомления: {e}")
+            logger.warning("Ошибка отправки уведомления: %s", e)
             raise
     
     async def _notify_scheduler_update(self):
@@ -307,7 +311,7 @@ class SuppliesControlView(discord.ui.View):
                 # Принудительно проверяем таймеры при изменении
                 await scheduler._check_timers()
         except Exception as e:
-            print(f"❌ Ошибка уведомления планировщика: {e}")
+            logger.warning("Ошибка уведомления планировщика: %s", e)
 
 
 async def send_supplies_control_message(channel: discord.TextChannel):
@@ -356,5 +360,5 @@ async def send_supplies_control_message(channel: discord.TextChannel):
         return message
         
     except Exception as e:
-        print(get_supplies_message(channel.guild.id, "control.error_send_control_message").format(error=e))
+        logger.error("%s", get_supplies_message(channel.guild.id, "control.error_send_control_message").format(error=e))
         return None

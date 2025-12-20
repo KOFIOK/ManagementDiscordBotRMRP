@@ -11,6 +11,10 @@ from discord import app_commands
 import time
 from utils.user_cache import get_cache_statistics, get_cached_user_info
 from utils.database_manager import personnel_manager
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 class PerformanceMonitoringCog(commands.Cog):
     """Cog for monitoring PostgreSQL migration performance"""
@@ -53,7 +57,7 @@ class PerformanceMonitoringCog(commands.Cog):
         )
         
         # Тест 1: Прямые запросы к PostgreSQL
-        print(f"🧪 PERFORMANCE TEST: Тестирование {len(test_users)} пользователей...")
+        logger.info("PERFORMANCE TEST: Тестирование {len(test_users)} пользователей...")
         
         start_time = time.time()
         direct_successes = 0

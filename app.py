@@ -3,12 +3,14 @@ import asyncio
 import signal
 import sys
 import discord
+import logging
 from discord.ext import commands
 from dotenv import load_dotenv
 
 from utils.config_manager import load_config, create_backup, get_config_status
 # from utils.sheets_manager import sheets_manager  # Отключено - используем PostgreSQL
 from utils.notification_scheduler import PromotionNotificationScheduler
+from utils.logging_setup import setup_logging, get_logger
 from forms.dismissal import DismissalReportButton, AutomaticDismissalApprovalView, SimplifiedDismissalApprovalView, send_dismissal_button_message, restore_dismissal_approval_views, restore_dismissal_button_views
 from forms.settings import SettingsView
 from forms.role_assignment_form import RoleAssignmentView, send_role_assignment_message, restore_role_assignment_views, restore_approval_views
@@ -18,6 +20,10 @@ from forms.welcome_system import setup_welcome_events
 
 # Load environment variables from .env file
 load_dotenv()
+
+# Initialize logging before bot creation
+setup_logging()
+logger = get_logger(__name__)
 
 # Initialize bot with intents
 intents = discord.Intents.default()
@@ -32,37 +38,37 @@ notification_scheduler = PromotionNotificationScheduler(bot)
 
 @bot.event
 async def on_ready():
-    print(f'Logged in as {bot.user} (ID: {bot.user.id})')
-    print('------')
+    logger.info('Logged in as %s (ID: %s)', bot.user, bot.user.id)
+    logger.info('------')
     
     # Create startup backup and check config status
-    print("🔄 Checking configuration system...")
+    logger.info("Проверка системы конфигурации...")
     status = get_config_status()
     
     if status['config_exists'] and status['config_valid']:
         backup_path = create_backup("startup")
         if backup_path:
-            print(f"✅ Startup backup created: {backup_path}")
-        print(f"📊 Config status: {status['backup_count']} backups available")
+            logger.info("Создан стартовый бэкап: %s", backup_path)
+        logger.info("Статус конфигурации: доступно %s бэкапов", status['backup_count'])
     else:
-        print("⚠️  Configuration issues detected - check /config-backup status")
+        logger.warning("Обнаружены проблемы конфигурации - проверьте /config-backup")
     
     # Initialize optimized PostgreSQL system
-    print("\n🚀 Initializing optimized PostgreSQL system...")
+    logger.info("Инициализация оптимизированной PostgreSQL системы...")
     from utils.user_cache import bulk_preload_all_users, print_cache_status
     from utils.postgresql_pool import print_connection_pool_status
     
     try:
         # Предзагрузка пользователей
         preload_result = await bulk_preload_all_users()
-        print(f"✅ User cache preloaded: {preload_result.get('users_loaded', 0)} users")
+        logger.info("Кэш пользователей предзагружен: %s", preload_result.get('users_loaded', 0))
         
         # Показать статистику системы
         print_cache_status()
         print_connection_pool_status()
         
     except Exception as e:
-        print(f"⚠️ Warning: Cache preload failed: {e}")
+        logger.warning("Предзагрузка кэша не удалась: %s", e)
     
     # Load all extension cogs
     await load_extensions()
@@ -71,74 +77,74 @@ async def on_ready():
     try:
         from forms.personnel_context.commands_clean import setup_context_commands
         setup_context_commands(bot)
-        print('✅ Personnel context menu commands loaded')
+        logger.info('Контекстные команды персонала загружены')
     except Exception as e:
-        print(f'❌ Error loading personnel context commands: {e}')
+        logger.error('Ошибка загрузки контекстных команд персонала: %s', e)
         import traceback
         traceback.print_exc()
     
     # Sync commands with Discord
     try:
         synced = await bot.tree.sync()
-        print(f'🔄 Synced {len(synced)} command(s) - updated permissions')
+        logger.info('Синхронизировано %s команд(ы) - права обновлены', len(synced))
     except Exception as e:
-        print(f'Failed to sync commands: {e}')
+        logger.error('Не удалось синхронизировать команды: %s', e)
     
     # Load configuration on startup
     try:
         config = load_config()
-        print('✅ Configuration loaded successfully')
+        logger.info('Конфигурация успешно загружена')
         
         # Rank roles are now initialized manually through the settings interface
         # from forms.settings.rank_roles import initialize_default_ranks
         # if initialize_default_ranks():
-        #     print('✅ Default rank roles initialized')
+        #     print(' Default rank roles initialized')
         
         # Rank data migration is no longer needed (working directly with database)
         # from forms.personnel_context.rank_utils import migrate_old_rank_format
         # migrated = migrate_old_rank_format()
         # if migrated:
-        #     print('✅ Migrated old rank data to hierarchical format')
+        #     print(' Migrated old rank data to hierarchical format')
         # else:
-        #     print('ℹ️ No old rank data to migrate or already migrated')
+        #     print(' No old rank data to migrate or already migrated')
         
-        print(f'Dismissal channel: {config.get("dismissal_channel", "Not set")}')
-        print(f'Audit channel: {config.get("audit_channel", "Not set")}')
-        print(f'Blacklist channel: {config.get("blacklist_channel", "Not set")}')
-        print(f'Role assignment channel: {config.get("role_assignment_channel", "Not set")}')
-        print(f'Military role: {config.get("military_role", "Not set")}')
-        print(f'Civilian role: {config.get("civilian_role", "Not set")}')
+        logger.info('Канал увольнений: %s', config.get('dismissal_channel', 'Not set'))
+        logger.info('Канал аудита: %s', config.get('audit_channel', 'Not set'))
+        logger.info('Канал черного списка: %s', config.get('blacklist_channel', 'Not set'))
+        logger.info('Канал выдачи ролей: %s', config.get('role_assignment_channel', 'Not set'))
+        logger.info('Военная роль: %s', config.get('military_role', 'Not set'))
+        logger.info('Гражданская роль: %s', config.get('civilian_role', 'Not set'))
     except Exception as e:
-        print(f'❌ Error loading configuration: {e}')
+        logger.error('Ошибка загрузки конфигурации: %s', e)
         import traceback
         traceback.print_exc()
         return
     
     # ИНИЦИАЛИЗАЦИЯ КЭША ПОЛЬЗОВАТЕЛЕЙ - теперь использует PostgreSQL
     try:
-        print('🚀 Initializing user cache with PostgreSQL...')
+        logger.info('Инициализация кэша пользователей через PostgreSQL...')
         from utils.user_cache import initialize_user_cache
         cache_success = await initialize_user_cache()
         if cache_success:
-            print('✅ User cache initialized successfully with bulk preload')
+            logger.info('Кэш пользователей успешно инициализирован с предзагрузкой')
         else:
-            print('⚠️ User cache bulk preload failed - will use fallback loading')
+            logger.warning('Предзагрузка кэша пользователей не удалась - используем резервную загрузку')
     except Exception as e:
-        print(f'❌ Error initializing user cache: {e}')
+        logger.error('Ошибка инициализации кэша пользователей: %s', e)
         import traceback
         traceback.print_exc()
     
     # Create persistent button views
     try:
-        print("🔄 Adding persistent button views...")
+        logger.info("Добавление постоянных кнопочных представлений...")
         bot.add_view(DismissalReportButton())
         bot.add_view(SettingsView())
         bot.add_view(RoleAssignmentView())
         bot.add_view(LeaveRequestButton())
         bot.add_view(MedicalRegistrationView())
-        print("✅ Basic persistent views added")
+        logger.info("Базовые постоянные представления добавлены")
     except Exception as e:
-        print(f"❌ Error adding basic persistent views: {e}")
+        logger.error("Ошибка добавления базовых постоянных представлений: %s", e)
         import traceback
         traceback.print_exc()
     
@@ -146,69 +152,63 @@ async def on_ready():
     # No need to register them globally like other persistent views
     
     # Add generic approval views for persistent buttons
-    print("🔄 Adding approval views...")
+    logger.info("Добавление approval views...")
     bot.add_view(SimplifiedDismissalApprovalView())  # Persistent view for manual dismissals
     bot.add_view(AutomaticDismissalApprovalView(None))  # Persistent view for automatic dismissals
     bot.add_view(LeaveRequestApprovalView("dummy"))  # Dummy ID for persistent view
-    print("✅ Approval views added")
+    logger.info("Approval views добавлены")
       # Add role assignment approval view for persistent buttons
-    print("🔄 Adding role assignment approval view...")
+    logger.info("Добавление approval view для выдачи ролей...")
     from forms.role_assignment_form import RoleApplicationApprovalView
     bot.add_view(RoleApplicationApprovalView({}))  # Empty data for persistent view
-    print("✅ Role assignment approval view added")
+    logger.info("Approval view для выдачи ролей добавлен")
     
-    print("🔄 Adding warehouse persistent views...")
+    logger.info("Добавление постоянных представлений склада...")
     try:
         from forms.warehouse import (
             WarehousePinMessageView, WarehousePersistentRequestView, WarehousePersistentMultiRequestView,
             WarehouseStatusView
         )
-        print("✅ Warehouse request views imported successfully")
+        logger.info("Warehouse request views импортированы")
     except Exception as e:
-        print(f"❌ Error importing warehouse request views: {e}")
-        import traceback
-        print(f"🔍 Import traceback: {traceback.format_exc()}")
+        logger.exception("Ошибка импорта warehouse request views: %s", e)
     
     try:
         from forms.warehouse.audit import WarehouseAuditPinMessageView
-        print("✅ Warehouse audit view imported successfully")
+        logger.info("Warehouse audit view импортирован")
     except Exception as e:
-        print(f"❌ Error importing warehouse audit view: {e}")
-        import traceback
-        print(f"🔍 Import traceback: {traceback.format_exc()}")
+        logger.exception("Ошибка импорта warehouse audit view: %s", e)
     
     try:
         # Add persistent warehouse views - БЕЗ DUMMY ДАННЫХ
         bot.add_view(WarehousePinMessageView())  # Persistent pin message view - БЕЗ ПАРАМЕТРОВ
-        print("✅ WarehousePinMessageView added")
+        logger.info("WarehousePinMessageView добавлен")
         
         bot.add_view(WarehousePersistentRequestView())  # Persistent single request moderation
-        print("✅ WarehousePersistentRequestView added")
+        logger.info("WarehousePersistentRequestView добавлен")
         bot.add_view(WarehousePersistentMultiRequestView())  # Persistent multi request moderation
-        print("✅ WarehousePersistentMultiRequestView added")
+        logger.info("WarehousePersistentMultiRequestView добавлен")
         
         # Skip WarehouseStatusView as it requires parameters - it's created dynamically
         # bot.add_view(WarehouseStatusView())  # This requires 'status' parameter
-        print("ℹ️ WarehouseStatusView skipped (requires parameters)")
+        logger.info("WarehouseStatusView пропущен (требуются параметры)")
         
         bot.add_view(WarehouseAuditPinMessageView())  # Persistent audit pin message view
-        print("✅ WarehouseAuditPinMessageView added")
+        logger.info("WarehouseAuditPinMessageView добавлен")
         
-        print('✅ All persistent views added to bot')
+        logger.info('Все постоянные представления добавлены в бота')
     except Exception as e:
-        print(f"❌ Error adding warehouse views to bot: {e}")
-        import traceback
-        print(f"🔍 Add view traceback: {traceback.format_exc()}")
+        logger.exception("Ошибка добавления warehouse views в бота: %s", e)
 
     # Add safe documents persistent views
-    print("🔄 Adding safe documents persistent views...")
+    logger.info("Добавление постоянных представлений безопасных документов...")
     try:
         from forms.safe_documents import SafeDocumentsPinView, SafeDocumentsApplicationView, SafeDocumentsApprovedView, SafeDocumentsRejectedView, setup_safe_documents_system
-        print("✅ Safe documents views imported successfully")
+        logger.info("Safe documents views импортированы")
         
         # Add persistent views
         bot.add_view(SafeDocumentsPinView())  # Persistent pin message view
-        print("✅ SafeDocumentsPinView added")
+        logger.info("SafeDocumentsPinView добавлен")
         
         # Add SafeDocumentsApplicationView with dummy data for persistent view functionality
         dummy_application_data = {
@@ -223,178 +223,136 @@ async def on_ready():
             'email': 'dummy'
         }
         bot.add_view(SafeDocumentsApplicationView(dummy_application_data))
-        print("✅ SafeDocumentsApplicationView added with dummy data")
+        logger.info("SafeDocumentsApplicationView добавлен с dummy-данными")
         
         # Add specialized views for different statuses
         bot.add_view(SafeDocumentsApprovedView(dummy_application_data))
-        print("✅ SafeDocumentsApprovedView added")
+        logger.info("SafeDocumentsApprovedView добавлен")
         
         bot.add_view(SafeDocumentsRejectedView(dummy_application_data))
-        print("✅ SafeDocumentsRejectedView added")
+        logger.info("SafeDocumentsRejectedView добавлен")
         
-        print('✅ Safe documents persistent views added to bot')
+        logger.info('Постоянные представления безопасных документов добавлены в бота')
     except Exception as e:
-        print(f"❌ Error adding safe documents views to bot: {e}")
-        import traceback
-        print(f"🔍 Safe documents traceback: {traceback.format_exc()}")
+        logger.exception("Ошибка добавления safe documents views: %s", e)
 
     # Add supplies persistent views
-    print("🔄 Adding supplies persistent views...")
+    logger.info("Добавление постоянных представлений снабжения...")
     try:
         from forms.supplies import SuppliesControlView, SuppliesSubscriptionView
         
         # Add persistent views
         bot.add_view(SuppliesControlView())  # Persistent control view
-        print("✅ SuppliesControlView added")
+        logger.info("SuppliesControlView добавлен")
         
         bot.add_view(SuppliesSubscriptionView())  # Persistent subscription view
-        print("✅ SuppliesSubscriptionView added")
+        logger.info("SuppliesSubscriptionView добавлен")
         
-        print('✅ Supplies persistent views added to bot')
+        logger.info('Постоянные представления снабжения добавлены в бота')
     except Exception as e:
-        print(f"❌ Error adding supplies views to bot: {e}")
-        import traceback
-        print(f"🔍 Supplies traceback: {traceback.format_exc()}")
+        logger.exception("Ошибка добавления supplies views: %s", e)
 
     # Add safe documents persistent views
-    print("🔄 Adding safe documents persistent views...")
-    try:
-        from forms.safe_documents import SafeDocumentsPinView, SafeDocumentsApplicationView, SafeDocumentsApprovedView, SafeDocumentsRejectedView, setup_safe_documents_system
-        print("✅ Safe documents views imported successfully")
-        
-        # Add persistent views
-        bot.add_view(SafeDocumentsPinView())  # Persistent pin message view
-        print("✅ SafeDocumentsPinView added")
-        
-        # Add SafeDocumentsApplicationView with dummy data for persistent view functionality
-        dummy_application_data = {
-            'user_id': 0,
-            'username': 'dummy',
-            'timestamp': '2024-01-01T00:00:00',
-            'status': 'pending',
-            'name': 'dummy',
-            'static': 'dummy',
-            'documents': 'dummy',
-            'phone': 'dummy',
-            'email': 'dummy'
-        }
-        bot.add_view(SafeDocumentsApplicationView(dummy_application_data))
-        print("✅ SafeDocumentsApplicationView added with dummy data")
-        
-        # Add specialized views for different statuses
-        bot.add_view(SafeDocumentsApprovedView(dummy_application_data))
-        print("✅ SafeDocumentsApprovedView added")
-        
-        bot.add_view(SafeDocumentsRejectedView(dummy_application_data))
-        print("✅ SafeDocumentsRejectedView added")
-        
-        print('✅ Safe documents persistent views added to bot')
-    except Exception as e:
-        print(f"❌ Error adding safe documents views to bot: {e}")
-        import traceback
-        print(f"🔍 Safe documents traceback: {traceback.format_exc()}")
-
     # Setup safe documents system
-    print("🔄 Setting up safe documents system...")
+    logger.info("Настройка системы безопасных документов...")
     try:
         await setup_safe_documents_system(bot)
     except Exception as e:
-        print(f"❌ Error setting up safe documents system: {e}")
-        import traceback
-        print(f"🔍 Safe documents setup traceback: {traceback.format_exc()}")
-      # Setup welcome system events
-    print("🔄 Setting up welcome system...")
+        logger.exception("Ошибка настройки системы безопасных документов: %s", e)
+
+    # Setup welcome system events
+    logger.info("Настройка системы приветствий...")
     setup_welcome_events(bot)
-    print("✅ Welcome system events setup complete")
+    logger.info("События системы приветствий настроены")
     
     # Department applications views - register base views globally
-    print("🔄 Adding department applications persistent views...")
+    logger.info("Добавление постоянных представлений заявок в подразделения...")
     try:
-        print("   📦 Importing modules...")
+        logger.info(f"Импортируем модули...")
         from forms.department_applications import register_static_views
-        print("   ✅ Views imported successfully")
+        logger.info(f"Представления импортированы")
         
-        print("   🔧 Registering static views...")
+        logger.info(f"Регистрируем статические представления...")
         if register_static_views(bot):
-            print("   ✅ Static views registered successfully")
+            logger.info(f"Статические представления зарегистрированы")
         else:
-            print("   ❌ Failed to register static views")
+            logger.warning("  Не удалось зарегистрировать статические представления")
         
-        print("✅ Department applications setup complete")
+        logger.info("Настройка заявок в подразделения завершена")
     except Exception as e:
-        print(f"❌ Error in department applications setup: {e}")
+        logger.error("Ошибка в настройке заявок в подразделения: %s", e)
         import traceback
         traceback.print_exc()
     
     # Start notification scheduler
     try:
-        print("🔄 Starting notification scheduler...")
+        logger.info("Запуск планировщика уведомлений...")
         notification_scheduler.start()
-        print("✅ Notification scheduler started")
+        logger.info("Планировщик уведомлений запущен")
     except Exception as e:
-        print(f"❌ Error starting notification scheduler: {e}")
+        logger.error("Ошибка запуска планировщика уведомлений: %s", e)
         import traceback
         traceback.print_exc()
     
     # Start supplies scheduler
     try:
-        print("🔄 Starting supplies scheduler...")
+        logger.info("Запуск планировщика снабжения...")
         from utils.supplies_scheduler import initialize_supplies_scheduler
         supplies_scheduler = initialize_supplies_scheduler(bot)
         if supplies_scheduler:
             supplies_scheduler.start()
-            print("✅ Supplies scheduler started")
+            logger.info("Планировщик снабжения запущен")
         else:
-            print("❌ Failed to initialize supplies scheduler")
+            logger.error("Не удалось инициализировать планировщик снабжения")
     except Exception as e:
-        print(f"❌ Error starting supplies scheduler: {e}")
+        logger.error("Ошибка запуска планировщика снабжения: %s", e)
         import traceback
         traceback.print_exc()
     
     # Start leave requests daily cleanup
     try:
-        print("🔄 Starting leave requests cleanup...")
+        logger.info("Запуск ежедневной очистки заявок на отгулы...")
         from utils.leave_request_storage import LeaveRequestStorage
         asyncio.create_task(LeaveRequestStorage.start_daily_cleanup_task())
-        print("🧹 Leave requests daily cleanup task started")
+        logger.info("Задача ежедневной очистки заявок запущена")
     except Exception as e:
-        print(f"❌ Error starting leave requests cleanup: {e}")
+        logger.error("Ошибка запуска очистки заявок: %s", e)
         import traceback
         traceback.print_exc()
     
     # 🚀 ЗАПУСК СИСТЕМЫ ПРЕДЗАГРУЗКИ КЭША
     try:
-        print("🔄 Starting user cache preloader...")
+        logger.info("Запуск предзагрузчика кэша пользователей...")
         from utils.user_cache import bulk_preload_all_users
         await bulk_preload_all_users()
-        print("🚀 User cache preloader started")
+        logger.info("Предзагрузчик кэша пользователей запущен")
     except Exception as e:
-        print(f"❌ Error starting user cache preloader: {e}")
+        logger.error("Ошибка запуска предзагрузчика кэша пользователей: %s", e)
         import traceback
         traceback.print_exc()
     
     # Check channels and restore messages if needed
     try:
-        print("🔄 Starting channel messages restoration...")
+        logger.info("Восстановление сообщений по каналам...")
         await restore_channel_messages(config)
-        print("✅ Channel messages restoration complete")
+        logger.info("Восстановление сообщений завершено")
     except Exception as e:
-        print(f"❌ Error during channel messages restoration: {e}")
+        logger.error("Ошибка при восстановлении сообщений каналов: %s", e)
         import traceback
         traceback.print_exc()
     
     # Restore supplies messages
     try:
-        print("🔄 Starting supplies messages restoration...")
+        logger.info("Восстановление сообщений системы снабжения...")
         from utils.supplies_restore import initialize_supplies_restore_manager
         supplies_restore = initialize_supplies_restore_manager(bot)
         if supplies_restore:
             await supplies_restore.restore_all_messages()
-            print("✅ Supplies messages restoration complete")
+            logger.info("Восстановление сообщений снабжения завершено")
         else:
-            print("❌ Failed to initialize supplies restore manager")
+            logger.error("Не удалось инициализировать менеджер восстановления снабжения")
     except Exception as e:
-        print(f"❌ Error during supplies messages restoration: {e}")
+        logger.error("Ошибка при восстановлении сообщений снабжения: %s", e)
         import traceback
         traceback.print_exc()
 
@@ -402,33 +360,33 @@ async def on_ready():
 async def on_member_remove(member):
     """Handle member leaving the server and create automatic dismissal if needed."""
     try:
-        print(f"👋 Member left: {member.name} (ID: {member.id})")
+        logger.info("Участник вышел: %s (ID: %s)", member.name, member.id)
         
         # Import here to avoid circular imports
         from forms.dismissal.automatic import should_create_automatic_dismissal, create_automatic_dismissal_report
         
         # Get target role name from config
         config = load_config()
-        target_role_name = config.get('military_role_name', 'Военнослужащий ВС РФ')
+        target_role_name = config.get('military_role_name', 'Сотрудник')
         
         # Check if member should get automatic dismissal
         should_dismiss = await should_create_automatic_dismissal(member, target_role_name)
         
         if should_dismiss:
-            print(f"🚨 Creating automatic dismissal for {member.name} - had role '{target_role_name}'")
+            logger.warning("Создание автоматического увольнения для %s (роль: %s)", member.name, target_role_name)
             
             # Create automatic dismissal report using member object (has role info)
             success = await create_automatic_dismissal_report(member.guild, member, target_role_name)
             
             if success:
-                print(f"✅ Automatic dismissal report created for {member.name}")
+                logger.info("Авто-рапорт об увольнении создан для %s", member.name)
             else:
-                print(f"❌ Failed to create automatic dismissal report for {member.name}")
+                logger.error("Не удалось создать авто-рапорт об увольнении для %s", member.name)
         else:
-            print(f"ℹ️ No automatic dismissal needed for {member.name} - didn't have target role")
+            logger.info("Авто-увольнение не требуется для %s - нет целевой роли", member.name)
             
     except Exception as e:
-        print(f"❌ Error handling member removal for {member.name}: {e}")
+        logger.error("Ошибка обработки выхода участника %s: %s", member.name, e)
 
 @bot.event
 async def on_member_update(before, after):
@@ -467,14 +425,14 @@ async def on_member_update(before, after):
                   # Отправляем уведомления
                 if became_administrator:
                     dm_sent = await send_administrator_welcome_dm(after)
-                    print(f"📢 Авто-уведомление администратору {after.display_name} (роль выдана): DM {'✅' if dm_sent else '❌'}")
+                    logger.info("Авто-уведомление администратору %s отправлено: DM %s", after.display_name, 'OK' if dm_sent else 'FAIL')
                     
                 elif became_moderator:
                     dm_sent = await send_moderator_welcome_dm(after)
-                    print(f"📢 Авто-уведомление модератору {after.display_name} (роль выдана): DM {'✅' if dm_sent else '❌'}")
+                    logger.info("Авто-уведомление модератору %s отправлено: DM %s", after.display_name, 'OK' if dm_sent else 'FAIL')
             
     except Exception as e:
-        print(f"❌ Error handling member update for {after.name}: {e}")
+        logger.error("Ошибка обработки обновления участника %s: %s", after.name, e)
 
 async def restore_channel_messages(config):
     """Check and restore button messages for all configured channels."""    # Restore dismissal channel message
@@ -483,15 +441,15 @@ async def restore_channel_messages(config):
         channel = bot.get_channel(dismissal_channel_id)
         if channel:
             if not await check_for_button_message(channel, "Рапорты на увольнение"):
-                print(f"Sending dismissal button message to channel {channel.name}")
+                logger.info("Отправляем кнопочное сообщение увольнений в канал %s", channel.name)
                 await send_dismissal_button_message(channel)
             
             # Restore dismissal button views for existing dismissal button messages
-            print(f"Restoring dismissal button views in {channel.name}")
+            logger.info("Восстанавливаем dismissal button views в %s", channel.name)
             await restore_dismissal_button_views(bot, channel)
             
             # Restore approval views for existing dismissal reports
-            print(f"Restoring approval views for dismissal reports in {channel.name}")
+            logger.info("Восстанавливаем approval views для увольнений в %s", channel.name)
             await restore_dismissal_approval_views(bot, channel)
     
     # Restore role assignment channel message
@@ -500,13 +458,13 @@ async def restore_channel_messages(config):
         channel = bot.get_channel(role_assignment_channel_id)
         if channel:
             if not await check_for_button_message(channel, "Получение ролей"):
-                print(f"Sending role assignment message to channel {channel.name}")
+                logger.info("Отправляем сообщение выдачи ролей в канал %s", channel.name)
                 await send_role_assignment_message(channel)
               # Restore role assignment views
-            print(f"Restoring role assignment views in {channel.name}")
+                logger.info("Восстанавливаем role assignment views в %s", channel.name)
             await restore_role_assignment_views(bot, channel)
               # Restore approval views for existing applications
-            print(f"Restoring approval views for role applications in {channel.name}")
+            logger.info("Восстанавливаем approval views для заявок на роли в %s", channel.name)
             await restore_approval_views(bot, channel)
     
     # Restore audit channel message
@@ -524,7 +482,7 @@ async def restore_channel_messages(config):
         channel = bot.get_channel(leave_requests_channel_id)
         if channel:
             if not await check_for_button_message(channel, "Система подачи заявок на отгулы"):
-                print(f"Sending leave request button message to channel {channel.name}")
+                logger.info("Отправляем сообщение заявок на отгулы в канал %s", channel.name)
                 await send_leave_request_button_message(channel)
       # Restore medical registration channel message
     medical_registration_channel_id = config.get('medical_registration_channel')
@@ -532,7 +490,7 @@ async def restore_channel_messages(config):
         from forms.medical_registration import send_medical_registration_message
         channel = bot.get_channel(medical_registration_channel_id)
         if channel:
-            print(f"Sending medical registration message to channel {channel.name}")
+            logger.info("Отправляем сообщение медрегистрации в канал %s", channel.name)
             await send_medical_registration_message(channel)      # Restore warehouse channels - ИСПРАВЛЕННАЯ ВЕРСИЯ
     warehouse_request_channel_id = config.get('warehouse_request_channel')
     if warehouse_request_channel_id:
@@ -544,17 +502,17 @@ async def restore_channel_messages(config):
             
             # Если не удалось восстановить, проверяем нужно ли создать новое
             if not pinned_restored and not await check_for_button_message(channel, "Запрос складского имущества"):
-                print(f"Sending warehouse message to channel {channel.name}")
+                logger.info("Отправляем сообщение склада в канал %s", channel.name)
                 try:
                     await send_warehouse_message(channel)
                 except Exception as e:
-                    print(f"❌ Ошибка при создании сообщения склада: {e}")
+                    logger.error("Ошибка при создании сообщения склада: %s", e)
             
             # Восстанавливаем views для существующих заявок
-            print(f"Restoring warehouse request views in {channel.name}")
+            logger.info("Восстанавливаем warehouse request views в %s", channel.name)
             await restore_warehouse_request_views(channel)
         else:
-            print(f"⚠️ Канал склада не найден (ID: {warehouse_request_channel_id})")    # Restore warehouse audit channel
+            logger.warning("Канал склада не найден (ID: %s)", warehouse_request_channel_id)    # Restore warehouse audit channel
     warehouse_audit_channel_id = config.get('warehouse_audit_channel')
     if warehouse_audit_channel_id:
         from forms.warehouse.audit import send_warehouse_audit_message, restore_warehouse_audit_views, restore_warehouse_audit_pinned_message
@@ -565,29 +523,29 @@ async def restore_channel_messages(config):
             
             # Если не удалось восстановить, проверяем нужно ли создать новое
             if not pinned_restored and not await check_for_button_message(channel, "Аудит склада"):
-                print(f"Sending warehouse audit message to channel #{channel.name}")
+                logger.info("Отправляем сообщение аудита склада в канал %s", channel.name)
                 try:
                     await send_warehouse_audit_message(channel)
                 except Exception as e:
-                    print(f"❌ Ошибка при создании сообщения аудита склада: {e}")
+                    logger.error("Ошибка при создании сообщения аудита склада: %s", e)
             
             # Восстанавливаем views для аудита
             await restore_warehouse_audit_views(channel)
         else:
-            print(f"⚠️ Канал аудита склада не найден (ID: {warehouse_audit_channel_id})")
+            logger.warning("Канал аудита склада не найден (ID: %s)", warehouse_audit_channel_id)
     
     # Restore leave request views
-    print("Restoring leave request views...")
+    logger.info("Восстанавливаем leave request views...")
     await restore_leave_request_views(bot)
     
     # Restore department applications messages (direct call for reliability)
-    print("Restoring department applications messages...")
+    logger.info("Восстанавливаем сообщения заявок в подразделения...")
     try:
         from forms.department_applications.manager import DepartmentApplicationManager
         dept_manager = DepartmentApplicationManager(bot)
         await dept_manager.restore_persistent_views()
     except Exception as e:
-        print(f"❌ Error restoring department applications: {e}")
+        logger.error("Ошибка восстановления заявок в подразделения: %s", e)
         import traceback
         traceback.print_exc()
 
@@ -601,7 +559,7 @@ async def check_for_button_message(channel, title_keyword):
                         return True
         return False
     except Exception as e:
-        print(f"Error checking for button message in {channel.name}: {e}")
+        logger.error("Ошибка проверки кнопочного сообщения в %s: %s", channel.name, e)
         return False
 
 async def load_extensions():
@@ -613,14 +571,14 @@ async def load_extensions():
         if filename.endswith('.py') and not filename.startswith('_'):
             cog_name = filename[:-3]
             if cog_name in excluded_cogs:
-                print(f'Skipped extension (excluded): {cog_name}')
+                logger.info('Пропущено расширение (исключено): %s', cog_name)
                 continue
                 
             try:
                 await bot.load_extension(f'cogs.{cog_name}')
-                print(f'Loaded extension: {cog_name}')
+                logger.info('Загружено расширение: %s', cog_name)
             except Exception as e:
-                print(f'Failed to load extension {cog_name}: {e}')
+                logger.error('Не удалось загрузить расширение %s: %s', cog_name, e)
 
 @bot.tree.command(name="automatic_report", description="🚨 Создать тестовый автоматический рапорт на увольнение")
 async def automatic_report(interaction: discord.Interaction, пользователь: discord.Member):
@@ -651,7 +609,7 @@ async def automatic_report(interaction: discord.Interaction, пользоват�
         success = await create_automatic_dismissal_report(
             guild=interaction.guild,
             member=пользователь,
-            target_role_name=config.get('military_role_name', 'Военнослужащий ВС РФ')
+            target_role_name=config.get('military_role_name', 'Сотрудник')
         )
         
         if success:
@@ -660,21 +618,21 @@ async def automatic_report(interaction: discord.Interaction, пользоват�
                 f"📋 Проверьте канал рапортов на увольнение.",
                 ephemeral=True
             )
-            print(f"🚨 Test automatic dismissal created by {interaction.user.display_name} for {пользователь.display_name}")
+            logger.info("Тестовый авто-рапорт создан %s для %s", interaction.user.display_name, пользователь.display_name)
         else:
             await interaction.followup.send(
                 f"❌ Не удалось создать автоматический рапорт для {пользователь.mention}.\n"
                 f"⚠️ Проверьте настройку канала и логи бота.",
                 ephemeral=True
             )
-            print(f"❌ Failed to create test automatic dismissal for {пользователь.display_name}")
+            logger.error("Не удалось создать тестовый авто-рапорт для %s", пользователь.display_name)
             
     except Exception as e:
         await interaction.followup.send(
             f"❌ Ошибка при создании автоматического рапорта:\n```{str(e)}```",
             ephemeral=True
         )
-        print(f"❌ Error in automatic_report command: {e}")
+        logger.error("Ошибка команды automatic_report: %s", e)
         import traceback
         traceback.print_exc()
 
@@ -710,32 +668,32 @@ async def force_sync(interaction: discord.Interaction):
             f"⚡ Контекстные команды должны быть видны всем пользователям",
             ephemeral=True
         )
-        print(f"🔄 Force sync completed by {interaction.user.display_name}: {len(synced)} commands")
+        logger.info("Force sync выполнен %s: %s команд", interaction.user.display_name, len(synced))
         
     except Exception as e:
         await interaction.followup.send(
             f"❌ Ошибка при синхронизации команд:\n```{str(e)}```",
             ephemeral=True
         )
-        print(f"❌ Force sync failed: {e}")
+        logger.error("Force sync завершился ошибкой: %s", e)
 
 async def shutdown_handler():
     """Gracefully shutdown the bot."""
-    print("\n⚠️  Получен сигнал завершения...")
-    print("🔄 Завершение работы бота...")
+    logger.warning("Получен сигнал завершения...")
+    logger.info("Завершение работы бота...")
     
     try:
         # Закрываем соединение с Discord
         await bot.close()
-        print("✅ Соединение с Discord закрыто")
+        logger.info("Соединение с Discord закрыто")
     except Exception as e:
-        print(f"❌ Ошибка при закрытии соединения: {e}")
+        logger.error("Ошибка при закрытии соединения: %s", e)
     
-    print("✅ Бот успешно завершил работу")
+    logger.info("Бот успешно завершил работу")
 
 def signal_handler(sig, frame):
     """Handle shutdown signals."""
-    print(f"\n⚠️  Получен сигнал {sig}")
+    logger.warning("Получен сигнал %s", sig)
     
     # Создаем новый event loop если его нет
     try:
@@ -761,22 +719,22 @@ signal.signal(signal.SIGTERM, signal_handler)
 
 # Run the bot
 if __name__ == '__main__':
-    print("🤖 Запуск Army Discord Bot...")
-    print("💡 Для остановки нажмите Ctrl+C")
+    logger.info("Запуск Army Discord Bot...")
+    logger.info("Для остановки нажмите Ctrl+C")
     
     # Check for token - first from environment, then try to read from .env file
     token = os.environ.get('DISCORD_TOKEN')
     if not token:
         # If we get here, it means dotenv didn't find the token in .env file
         # or the .env file doesn't exist
-        print("Warning: DISCORD_TOKEN not found in environment variables or .env file.")
-        print("Checking for token.txt as a fallback...")
+        logger.warning("DISCORD_TOKEN не найден в переменных окружения или .env.")
+        logger.info("Пробуем token.txt как запасной вариант...")
         
         # Try to read from token.txt if exists
         try:
             with open('token.txt', 'r') as f:
                 token = f.read().strip()
-                print("Token found in token.txt")
+                logger.info("Токен найден в token.txt")
         except FileNotFoundError:
             raise ValueError(
                 "No Discord token found. Please either:\n"
@@ -791,5 +749,5 @@ if __name__ == '__main__':
         # Этот блок теперь просто для красоты, основная обработка в signal_handler
         pass
     except Exception as e:
-        print(f"❌ Произошла ошибка при запуске бота: {e}")
+        logger.error("Произошла ошибка при запуске бота: %s", e)
         input("Нажмите Enter для выхода...")

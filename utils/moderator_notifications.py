@@ -5,6 +5,10 @@
 """
 import discord
 from utils.message_manager import get_private_messages
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 async def send_moderator_welcome_dm(user: discord.Member) -> bool:
@@ -50,10 +54,10 @@ async def send_moderator_welcome_dm(user: discord.Member) -> bool:
         return True
         
     except discord.Forbidden:
-        print(f"⚠️ Не удалось отправить DM модератору {user.display_name} - закрыты личные сообщения")
+        logger.info(f" Не удалось отправить DM модератору {user.display_name} - закрыты личные сообщения")
         return False
     except Exception as e:
-        print(f"❌ Ошибка при отправке DM модератору {user.display_name}: {e}")
+        logger.error("Ошибка при отправке DM модератору {user.display_name}: %s", e)
         return False
 
 
@@ -106,10 +110,10 @@ async def send_administrator_welcome_dm(user: discord.Member) -> bool:
         return True
         
     except discord.Forbidden:
-        print(f"⚠️ Не удалось отправить DM администратору {user.display_name} - закрыты личные сообщения")
+        logger.info(f" Не удалось отправить DM администратору {user.display_name} - закрыты личные сообщения")
         return False
     except Exception as e:
-        print(f"❌ Ошибка при отправке DM администратору {user.display_name}: {e}")
+        logger.error("Ошибка при отправке DM администратору {user.display_name}: %s", e)
         return False
 
 

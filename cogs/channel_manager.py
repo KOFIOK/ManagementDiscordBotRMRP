@@ -11,6 +11,10 @@ from utils.config_manager import (
     export_config, get_config_status, is_blacklisted_user
 )
 # Импорт централизованных функций уведомлений
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 from utils.moderator_notifications import (
     send_moderator_welcome_dm, send_administrator_welcome_dm,
     check_if_user_is_moderator, check_if_user_is_administrator
@@ -40,7 +44,7 @@ async def handle_moderator_assignment(guild: discord.Guild, target: discord.Memb
         dm_sent = await send_moderator_welcome_dm(user)
         
         status = "✅" if dm_sent else "❌"
-        print(f"{status} Уведомление модератору {user.display_name}: DM {status}")
+        logger.info("%s Уведомление модератору {user.display_name}: DM %s", status, status)
 
 
 async def handle_administrator_assignment(guild: discord.Guild, target: discord.Member | discord.Role, old_config: dict) -> None:
@@ -64,7 +68,7 @@ async def handle_administrator_assignment(guild: discord.Guild, target: discord.
         dm_sent = await send_administrator_welcome_dm(user)
         
         status = "✅" if dm_sent else "❌"
-        print(f"{status} Уведомление администратору {user.display_name}: DM {status}")
+        logger.info("%s Уведомление администратору {user.display_name}: DM %s", status, status)
 
 
 # ===================== ОСНОВНОЙ COG =====================
@@ -82,7 +86,7 @@ class ChannelManagementCog(commands.Cog):
         
         if not is_administrator(interaction.user, config):
             await interaction.response.send_message(
-                "❌ У вас нет прав для выполнения этой команды. Требуются права администратора.", 
+                    "❌ У вас нет прав для выполнения этой команды. Требуются права администратора.", 
                 ephemeral=True
             )
             return
@@ -144,7 +148,7 @@ class ChannelManagementCog(commands.Cog):
                 f"❌ Ошибка при добавлении модератора: {e}",
                 ephemeral=True
             )
-            print(f"Add moderator error: {e}")
+            logger.error("Add moderator error: %s", e)
 
     @moder.command(name="remove", description="➖ Убрать модератора (роль или пользователя)")
     @app_commands.describe(target="Роль или пользователь для удаления из модераторов")
@@ -192,7 +196,7 @@ class ChannelManagementCog(commands.Cog):
                 f"❌ Ошибка при удалении модератора: {e}",
                 ephemeral=True
             )
-            print(f"Remove moderator error: {e}")
+            logger.error("Remove moderator error: %s", e)
 
     @moder.command(name="list", description="📋 Показать список модераторов")
     @app_commands.checks.has_permissions(administrator=True)
@@ -225,7 +229,7 @@ class ChannelManagementCog(commands.Cog):
                 )
             else:
                 embed.add_field(
-                    name="👤 Пользователи-модераторы",
+                    name="👮 Пользователи-модераторы",
                     value="Нет назначенных пользователей",
                     inline=False
                 )
@@ -246,7 +250,7 @@ class ChannelManagementCog(commands.Cog):
                 )
             else:
                 embed.add_field(
-                    name="🛡️ Модераторские роли",
+                    name="👮 Модераторские роли",
                     value="Нет назначенных ролей",
                     inline=False
                 )
@@ -258,7 +262,7 @@ class ChannelManagementCog(commands.Cog):
                 f"❌ Ошибка при получении списка модераторов: {e}",
                 ephemeral=True
             )
-            print(f"List moderators error: {e}")    # Error handling for commands
+            logger.error("List moderators error: %s", e)    # Error handling for commands
     async def on_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
         """Handle app command errors"""
         if isinstance(error, app_commands.errors.MissingPermissions):
@@ -271,7 +275,7 @@ class ChannelManagementCog(commands.Cog):
                 f"❌ Произошла ошибка: {error}", 
                 ephemeral=True
             )
-            print(f"App command error: {error}")
+            logger.error("App command error: %s", error)
 
     @app_commands.command(name="config-backup", description="🔄 Управление резервными копиями конфигурации")
     @app_commands.describe(
@@ -471,7 +475,7 @@ class ChannelManagementCog(commands.Cog):
                 f"❌ Ошибка при добавлении администратора: {e}",
                 ephemeral=True
             )
-            print(f"Add administrator error: {e}")
+            logger.error("Add administrator error: %s", e)
 
     @admin.command(name="remove", description="➖ Убрать администратора (роль или пользователя)")
     @app_commands.describe(target="Роль или пользователь для удаления из администраторов")
@@ -519,7 +523,7 @@ class ChannelManagementCog(commands.Cog):
                 f"❌ Ошибка при удалении администратора: {e}",
                 ephemeral=True
             )
-            print(f"Remove administrator error: {e}")
+            logger.error("Remove administrator error: %s", e)
 
     @admin.command(name="list", description="📋 Показать список администраторов")
     @app_commands.checks.has_permissions(administrator=True)
@@ -552,7 +556,7 @@ class ChannelManagementCog(commands.Cog):
                 )
             else:
                 embed.add_field(
-                    name="👤 Пользователи-администраторы",
+                    name="👑 Пользователи-администраторы",
                     value="Нет назначенных пользователей",
                     inline=False
                 )
@@ -580,7 +584,7 @@ class ChannelManagementCog(commands.Cog):
                 )
             
             embed.add_field(
-                name="ℹ️ Привилегии администраторов",
+                name="👑 Привилегии администраторов",
                 value=(
                     "• Одобрение/отклонение ЛЮБЫХ рапортов на увольнение\n"
                     "• Одобрение/отклонение ЛЮБЫХ заявок на выдачу ролей\n"
@@ -597,7 +601,7 @@ class ChannelManagementCog(commands.Cog):
                 f"❌ Ошибка при получении списка администраторов: {e}",
                 ephemeral=True
             )
-            print(f"List administrators error: {e}")
+            logger.error("List administrators error: %s", e)
 
     # Blacklist management command group
     blacklist = app_commands.Group(name="blacklist", description="🚫 Управление чёрным списком пользователей")
@@ -648,7 +652,7 @@ class ChannelManagementCog(commands.Cog):
                 f"❌ Ошибка при добавлении в чёрный список: {e}",
                 ephemeral=True
             )
-            print(f"Add to blacklist error: {e}")
+            logger.error("Add to blacklist error: %s", e)
 
     @blacklist.command(name="remove", description="➖ Убрать пользователя или роль из чёрного списка")
     @app_commands.describe(target="Пользователь или роль для удаления из чёрного списка")
@@ -696,7 +700,7 @@ class ChannelManagementCog(commands.Cog):
                 f"❌ Ошибка при удалении из чёрного списка: {e}",
                 ephemeral=True
             )
-            print(f"Remove from blacklist error: {e}")
+            logger.error("Remove from blacklist error: %s", e)
 
     @blacklist.command(name="list", description="📋 Показать чёрный список")
     @app_commands.checks.has_permissions(administrator=True)
@@ -752,7 +756,7 @@ class ChannelManagementCog(commands.Cog):
                 )
             else:
                 embed.add_field(
-                    name="🛡️ Заблокированные роли",
+                    name="🏷️ Заблокированные роли",
                     value="Нет заблокированных ролей",
                     inline=False
                 )
@@ -764,7 +768,7 @@ class ChannelManagementCog(commands.Cog):
                 f"❌ Ошибка при получении чёрного списка: {e}",
                 ephemeral=True
             )
-            print(f"List blacklist error: {e}")
+            logger.error("List blacklist error: %s", e)
 
     @app_commands.command(name="send_welcome_message", description="📨 Отправить приветственное сообщение пользователю")
     @app_commands.describe(user="Пользователь, которому отправить приветственное сообщение")
@@ -777,7 +781,7 @@ class ChannelManagementCog(commands.Cog):
             
             if not (is_administrator(interaction.user, config)):
                 await interaction.response.send_message(
-                    "❌ У вас нет прав для выполнения этой команды. Требуются права администратора.", 
+                    " У вас нет прав для выполнения этой команды. Требуются права администратора.", 
                     ephemeral=True
                 )
                 return
@@ -805,7 +809,7 @@ class ChannelManagementCog(commands.Cog):
                 f"❌ Ошибка при отправке приветственного сообщения: {e}",
                 ephemeral=True
             )
-            print(f"Send welcome message error: {e}")
+            logger.error("Send welcome message error: %s", e)
 
     @app_commands.command(name="send_moderator_welcome_message", description="📨 Отправить приветственное сообщение новому модератору/администратору")
     @app_commands.describe(user="Пользователь, которому отправить приветственное сообщение", role_type='Тип: "Модератор" / "Администратор"')
@@ -822,7 +826,7 @@ class ChannelManagementCog(commands.Cog):
             
             if not (is_administrator(interaction.user, config)):
                 await interaction.response.send_message(
-                    "❌ У вас нет прав для выполнения этой команды. Требуются права администратора.", 
+                    " У вас нет прав для выполнения этой команды. Требуются права администратора.", 
                     ephemeral=True
                 )
                 return
@@ -855,10 +859,10 @@ class ChannelManagementCog(commands.Cog):
         
         except Exception as e:
             await interaction.response.send_message(
-                f"❌ Ошибка при отправке приветственного сообщения: {e}",
+                f" Ошибка при отправке приветственного сообщения: {e}",
                 ephemeral=True
             )
-            print(f"Send welcome message error: {e}")
+            logger.error("Send welcome message error: %s", e)
 
 # Setup function for adding the cog to the bot
 async def setup(bot):

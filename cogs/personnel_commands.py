@@ -15,6 +15,10 @@ from utils.audit_logger import audit_logger, AuditAction
 from utils.role_utils import role_utils
 from utils import get_safe_personnel_name
 from utils.message_manager import get_role_reason
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class PersonnelNameChangeModal(discord.ui.Modal, title="Изменение ФИО"):
@@ -62,17 +66,17 @@ class PersonnelNameChangeModal(discord.ui.Modal, title="Изменение ФИ�
     async def on_submit(self, interaction: discord.Interaction):
         """Обработка отправки формы"""
         try:
-            first_name = self.first_name_input.value.strip()
-            last_name = self.last_name_input.value.strip()
+            first_name = self.first_name_input.value.strip().capitalize()
+            last_name = self.last_name_input.value.strip().capitalize()
             static = self.static_input.value.strip() or None
             
-            print(f"🎆 MODAL SUBMIT: Изменение ФИО {self.target_member.display_name} -> {first_name} {last_name}")
+            logger.info("MODAL SUBMIT: Изменение ФИО {self.target_member.display_name} -> %s %s", first_name, last_name)
             
             # Сначала откладываем ответ (defer), чтобы потом можно было редактировать
             await interaction.response.defer(ephemeral=True)
             
             # Обновляем ФИО и статик в базе данных С ЗАПИСЬЮ В ИСТОРИЮ
-            print(f"🔍 Начинаем обновление ФИО в БД...")
+            logger.info("Начинаем обновление ФИО в БД...")
             success, message = await audit_logger.update_personnel_profile_with_history(
                 self.target_member.id, 
                 first_name, 
@@ -80,11 +84,11 @@ class PersonnelNameChangeModal(discord.ui.Modal, title="Изменение ФИ�
                 static,
                 self.moderator.id  # Передаем ID модератора для записи в историю
             )
-            print(f"🔍 Обновление ФИО в БД завершено: success={success}, message={message}")
+            logger.info("Обновление ФИО в БД завершено: success=%s, message=%s", success, message)
             
             if success:
                 # Автоматически обновляем никнейм с новым ФИО
-                print(f"🔍 Начинаем обновление никнейма...")
+                logger.info("Начинаем обновление никнейма...")
                 try:
                     # Получаем текущее звание пользователя из никнейма или БД  
                     current_rank = None
@@ -99,11 +103,11 @@ class PersonnelNameChangeModal(discord.ui.Modal, title="Изменение ФИ�
                                 possible_rank = self.target_member.nick.split('|')[-1].strip()
                             current_rank = possible_rank
                     
-                    print(f"🔍 Извлеченное звание: {current_rank}")
+                    logger.info("Извлеченное звание: %s", current_rank)
                     
                     if current_rank:
                         from utils.nickname_manager import nickname_manager
-                        print(f"🔍 Вызываем nickname_manager.handle_name_change...")
+                        logger.info("Вызываем nickname_manager.handle_name_change...")
                         # Обновляем никнейм с новым ФИО, сохраняя звание
                         new_nickname = await nickname_manager.handle_name_change(
                             member=self.target_member,
@@ -111,27 +115,27 @@ class PersonnelNameChangeModal(discord.ui.Modal, title="Изменение ФИ�
                             new_last_name=last_name,
                             current_rank_name=current_rank
                         )
-                        print(f"🔍 nickname_manager.handle_name_change завершен: {new_nickname}")
+                        logger.info("nickname_manager.handle_name_change завершен: %s", new_nickname)
                         
                         if new_nickname:
-                            print(f"🔍 Обновляем никнейм Discord...")
+                            logger.info("Обновляем никнейм Discord...")
                             await self.target_member.edit(nick=new_nickname, reason=get_role_reason(self.target_member.guild.id, "nickname_change.name_change", "Изменение ФИО: {old_name} → {new_name}").format(old_name=self.target_member.display_name, new_name=new_nickname, moderator=interaction.user.mention))
-                            print(f"✅ MODAL NICKNAME: Обновлен никнейм {new_nickname}")
+                            logger.info("MODAL NICKNAME: Обновлен никнейм %s", new_nickname)
                     else:
-                        print(f"🔍 Звание не извлечено, пропускаем обновление никнейма")
+                        logger.info("Звание не извлечено, пропускаем обновление никнейма")
                             
                 except Exception as nickname_error:
-                    print(f"⚠️ MODAL NICKNAME ERROR: {nickname_error}")
+                    logger.error("MODAL NICKNAME ERROR: %s", nickname_error)
                     import traceback
                     traceback.print_exc()
                 
-                print(f"🔍 Начинаем отправку аудит-уведомления...")
+                logger.info("Начинаем отправку аудит-уведомления...")
                 # Отправляем аудит-уведомление
                 try:
                     from utils.user_cache import get_cached_user_info
-                    print(f"🔍 Получаем personnel_data из кэша...")
+                    logger.info("Получаем personnel_data из кэша...")
                     personnel_data = await get_cached_user_info(self.target_member.id)
-                    print(f"🔍 personnel_data получен: {personnel_data is not None}")
+                    logger.info("personnel_data получен: %s", personnel_data is not None)
                     
                     if personnel_data:
                         # Подготавливаем данные для аудита
@@ -143,7 +147,7 @@ class PersonnelNameChangeModal(discord.ui.Modal, title="Изменение ФИ�
                             'position': personnel_data.get('position_name', 'Не назначено')
                         }
                         
-                        print(f"🔍 Отправляем аудит через audit_logger...")
+                        logger.info("Отправляем аудит через audit_logger...")
                         # Отправляем аудит через audit_logger
                         audit_url = await audit_logger.send_personnel_audit(
                             guild=interaction.guild,
@@ -152,21 +156,21 @@ class PersonnelNameChangeModal(discord.ui.Modal, title="Изменение ФИ�
                             moderator=self.moderator,
                             personnel_data=audit_personnel_data
                         )
-                        print(f"🔍 Аудит завершен: {audit_url is not None}")
+                        logger.info("Аудит завершен: %s", audit_url is not None)
                         
                         if audit_url:
-                            print(f"✅ Отправлено аудит-уведомление для изменения ФИО: {audit_url}")
+                            logger.info("Отправлено аудит-уведомление для изменения ФИО: %s", audit_url)
                         else:
-                            print("⚠️ Не удалось отправить аудит-уведомление")
+                            logger.info("Не удалось отправить аудит-уведомление")
                     else:
-                        print("⚠️ personnel_data is None, пропускаем аудит")
+                        logger.info("personnel_data is None, пропускаем аудит")
                     
                 except Exception as audit_error:
-                    print(f"⚠️ AUDIT ERROR: {audit_error}")
+                    logger.error("AUDIT ERROR: %s", audit_error)
                     import traceback
                     traceback.print_exc()
                 
-                print(f"🔍 Создаем embed с результатом...")
+                logger.info("Создаем embed с результатом...")
                 embed = discord.Embed(
                     title="✅ ФИО обновлено",
                     description=f"ФИО пользователя {self.target_member.mention} успешно обновлено.\n\n"
@@ -175,7 +179,7 @@ class PersonnelNameChangeModal(discord.ui.Modal, title="Изменение ФИ�
                     color=discord.Color.green()
                 )
             else:
-                print(f"🔍 Создаем embed с ошибкой...")
+                logger.info("Создаем embed с ошибкой...")
                 embed = discord.Embed(
                     title="❌ Ошибка обновления ФИО",
                     description=f"Не удалось обновить ФИО пользователя {self.target_member.mention}.\n\n"
@@ -184,12 +188,12 @@ class PersonnelNameChangeModal(discord.ui.Modal, title="Изменение ФИ�
                 )
             
             # Отправляем окончательный результат через followup (так как модальное окно не имеет исходного сообщения)
-            print(f"🔍 Отправляем финальный ответ пользователю...")
+            logger.info("Отправляем финальный ответ пользователю...")
             await interaction.followup.send(embed=embed, ephemeral=True)
-            print(f"✅ MODAL: Финальный ответ отправлен!")
+            logger.info("MODAL: Финальный ответ отправлен!")
             
         except Exception as e:
-            print(f"❌ MODAL ERROR: {e}")
+            logger.error("MODAL ERROR: %s", e)
             import traceback
             traceback.print_exc()
             embed = discord.Embed(
@@ -199,9 +203,9 @@ class PersonnelNameChangeModal(discord.ui.Modal, title="Изменение ФИ�
             )
             
             # Отправляем сообщение об ошибке через followup
-            print(f"🔍 Отправляем сообщение об ошибке...")
+            logger.info("Отправляем сообщение об ошибке...")
             await interaction.followup.send(embed=embed, ephemeral=True)
-            print(f"✅ MODAL ERROR: Сообщение об ошибке отправлено!")
+            logger.error("MODAL ERROR: Сообщение об ошибке отправлено!")
 
 
 class PersonnelCommands(commands.Cog):
@@ -252,7 +256,7 @@ class PersonnelCommands(commands.Cog):
                     actions_result = cursor.fetchall()
                     settings['actions'] = [row['name'] for row in actions_result] if actions_result else []
                 except Exception as e:
-                    print(f"⚠️ Actions table not available: {e}")
+                    logger.info("Actions table not available: %s", e)
                     settings['actions'] = []
                 
                 # Get ranks
@@ -261,7 +265,7 @@ class PersonnelCommands(commands.Cog):
                     ranks_result = cursor.fetchall()
                     settings['ranks'] = [row['name'] for row in ranks_result] if ranks_result else []
                 except Exception as e:
-                    print(f"⚠️ Ranks table not available: {e}")
+                    logger.info("Ranks table not available: %s", e)
                     settings['ranks'] = []
                 
                 # Get subdivisions
@@ -270,7 +274,7 @@ class PersonnelCommands(commands.Cog):
                     subdivisions_result = cursor.fetchall()
                     settings['departments'] = [row['name'] for row in subdivisions_result] if subdivisions_result else []
                 except Exception as e:
-                    print(f"⚠️ Subdivisions table not available: {e}")
+                    logger.info("Subdivisions table not available: %s", e)
                     settings['departments'] = []
                 
                 # Get positions
@@ -279,23 +283,23 @@ class PersonnelCommands(commands.Cog):
                     positions_result = cursor.fetchall()
                     settings['positions'] = [row['name'] for row in positions_result] if positions_result else []
                 except Exception as e:
-                    print(f"⚠️ Positions table not available: {e}")
+                    logger.info("Positions table not available: %s", e)
                     settings['positions'] = []
             
             # If no data from PostgreSQL, use fallback
             if not any(settings.values()):
-                print("⚠️ No data from PostgreSQL, using fallback settings")
+                logger.info("No data from PostgreSQL, using fallback settings")
                 return self._get_fallback_settings()
             
             # Update cache
             self._cached_settings = settings
             self._cache_timestamp = current_time
             
-            print(f"🔄 PostgreSQL settings loaded: {len(settings['actions'])} actions, {len(settings['ranks'])} ranks, {len(settings['departments'])} subdivisions, {len(settings['positions'])} positions")
+            logger.info("PostgreSQL settings loaded: {len(settings['actions'])} actions, {len(settings['ranks'])} ranks, {len(settings['departments'])} subdivisions, {len(settings['positions'])} positions")
             return settings
             
         except Exception as e:
-            print(f"❌ Error loading settings from PostgreSQL: {e}")
+            logger.error("Error loading settings from PostgreSQL: %s", e)
             return self._get_fallback_settings()
     
     def _get_fallback_settings(self):
@@ -345,7 +349,7 @@ class PersonnelCommands(commands.Cog):
                     if rank_result:
                         defaults['rank'] = rank_result['name']
                 except Exception as e:
-                    print(f"⚠️ Could not get default rank: {e}")
+                    logger.info("Could not get default rank: %s", e)
                 
                 # Get first subdivision (alphabetically)
                 try:
@@ -354,12 +358,12 @@ class PersonnelCommands(commands.Cog):
                     if subdivision_result:
                         defaults['subdivision'] = subdivision_result['name']
                 except Exception as e:
-                    print(f"⚠️ Could not get default subdivision: {e}")
+                    logger.info("Could not get default subdivision: %s", e)
             
             return defaults
             
         except Exception as e:
-            print(f"❌ Error getting default values from DB: {e}")
+            logger.error("Error getting default values from DB: %s", e)
             return {
                 'rank': 'Рядовой',
                 'subdivision': 'Военная Академия'
@@ -482,7 +486,7 @@ class PersonnelCommands(commands.Cog):
                         first_name = full_name
                         last_name = ''
                     
-                    print(f"🎆 AUDIT COMMAND: Приём на службу {full_name} (звание: {звание})")
+                    logger.info("AUDIT COMMAND: Приём на службу %s (звание: %s)", full_name, звание)
                     
                     # Используем nickname_manager
                     new_nickname = await nickname_manager.handle_hiring(
@@ -494,10 +498,10 @@ class PersonnelCommands(commands.Cog):
                     
                     if new_nickname:
                         await сотрудник.edit(nick=new_nickname, reason=get_role_reason(сотрудник.guild.id, "nickname_change.personnel_acceptance", "Приём в организацию: изменён никнейм").format(moderator=interaction.user.mention))
-                        print(f"✅ AUDIT NICKNAME: Установлен никнейм {new_nickname}")
+                        logger.info("AUDIT NICKNAME: Установлен никнейм %s", new_nickname)
                     
                 except Exception as nickname_error:
-                    print(f"⚠️ AUDIT NICKNAME ERROR: {nickname_error}")
+                    logger.error("AUDIT NICKNAME ERROR: %s", nickname_error)
                 
                 if success:
                     embed = discord.Embed(
@@ -526,7 +530,7 @@ class PersonnelCommands(commands.Cog):
                         await interaction.followup.send(embed=embed, ephemeral=True)
                         return
 
-                    print(f"🎆 AUDIT COMMAND: Повышение в звании {сотрудник.display_name} -> {звание}")
+                    logger.info("AUDIT COMMAND: Повышение в звании {сотрудник.display_name} -> %s", звание)
 
                     # Get current rank BEFORE changing it in database
                     from utils.postgresql_pool import get_db_cursor
@@ -602,10 +606,10 @@ class PersonnelCommands(commands.Cog):
                             personnel_data=personnel_data,
                             config=config
                         )
-                        print(f"✅ AUDIT PROMOTION: Аудит-уведомление отправлено")
+                        logger.info("AUDIT PROMOTION: Аудит-уведомление отправлено")
 
                     except Exception as audit_error:
-                        print(f"Warning: Failed to send audit notification: {audit_error}")
+                        logger.error("Warning: Failed to send audit notification: %s", audit_error)
 
                     # Update Discord roles using RoleUtils (unified role management)
                     try:
@@ -616,11 +620,11 @@ class PersonnelCommands(commands.Cog):
                             reason=f"Повышение ранга: {old_rank} → {звание}"
                         )
                         if not rank_assigned:
-                            print(f"Warning: Failed to assign rank role {звание} to {сотрудник}")
+                            logger.error("Warning: Failed to assign rank role %s to %s", звание, сотрудник)
                         else:
-                            print(f"✅ Discord roles updated: {old_rank} -> {звание}")
+                            logger.info("Discord roles updated: %s -> %s", old_rank, звание)
                     except Exception as role_error:
-                        print(f"Warning: Failed to update Discord roles: {role_error}")
+                        logger.error("Warning: Failed to update Discord roles: %s", role_error)
 
                     # Update nickname using nickname_manager
                     new_nickname = await nickname_manager.handle_rank_change(
@@ -639,7 +643,7 @@ class PersonnelCommands(commands.Cog):
                                        f"Никнейм автоматически обновлён: `{new_nickname}`",
                             color=discord.Color.green()
                         )
-                        print(f"✅ AUDIT PROMOTION: Никнейм обновлён: {new_nickname}")
+                        logger.info("AUDIT PROMOTION: Никнейм обновлён: %s", new_nickname)
                     else:
                         embed = discord.Embed(
                             title="⚠️ Повышение с предупреждением",
@@ -653,7 +657,7 @@ class PersonnelCommands(commands.Cog):
                     await interaction.followup.send(embed=embed, ephemeral=True)
                     
                 except Exception as e:
-                    print(f"❌ AUDIT PROMOTION ERROR: {e}")
+                    logger.error("AUDIT PROMOTION ERROR: %s", e)
                     embed = discord.Embed(
                         title="❌ Ошибка повышения",
                         description=f"Произошла ошибка при повышении {сотрудник.mention}: {e}",
@@ -673,7 +677,7 @@ class PersonnelCommands(commands.Cog):
                         await interaction.followup.send(embed=embed, ephemeral=True)
                         return
 
-                    print(f"🎆 AUDIT COMMAND: Разжалование в звании {сотрудник.display_name} -> {звание}")
+                    logger.info("AUDIT COMMAND: Разжалование в звании {сотрудник.display_name} -> %s", звание)
 
                     # Get current rank BEFORE changing it in database
                     from utils.postgresql_pool import get_db_cursor
@@ -749,10 +753,10 @@ class PersonnelCommands(commands.Cog):
                             personnel_data=personnel_data,
                             config=config
                         )
-                        print(f"✅ AUDIT DEMOTION: Аудит-уведомление отправлено")
+                        logger.info("AUDIT DEMOTION: Аудит-уведомление отправлено")
 
                     except Exception as audit_error:
-                        print(f"Warning: Failed to send audit notification: {audit_error}")
+                        logger.error("Warning: Failed to send audit notification: %s", audit_error)
 
                     # Update Discord roles using RoleUtils (unified role management)
                     try:
@@ -763,11 +767,11 @@ class PersonnelCommands(commands.Cog):
                             reason=f"Понижение ранга: {old_rank} → {звание}"
                         )
                         if not rank_assigned:
-                            print(f"Warning: Failed to assign rank role {звание} to {сотрудник}")
+                            logger.error("Warning: Failed to assign rank role %s to %s", звание, сотрудник)
                         else:
-                            print(f"✅ Discord roles updated: {old_rank} -> {звание}")
+                            logger.info("Discord roles updated: %s -> %s", old_rank, звание)
                     except Exception as role_error:
-                        print(f"Warning: Failed to update Discord roles: {role_error}")
+                        logger.error("Warning: Failed to update Discord roles: %s", role_error)
 
                     # Update nickname using nickname_manager
                     new_nickname = await nickname_manager.handle_rank_change(
@@ -786,7 +790,7 @@ class PersonnelCommands(commands.Cog):
                                        f"Никнейм автоматически обновлён: `{new_nickname}`",
                             color=discord.Color.orange()
                         )
-                        print(f"✅ AUDIT DEMOTION: Никнейм обновлён: {new_nickname}")
+                        logger.info("AUDIT DEMOTION: Никнейм обновлён: %s", new_nickname)
                     else:
                         embed = discord.Embed(
                             title="⚠️ Разжалование с предупреждением",
@@ -800,7 +804,7 @@ class PersonnelCommands(commands.Cog):
                     await interaction.followup.send(embed=embed, ephemeral=True)
                     
                 except Exception as e:
-                    print(f"❌ AUDIT DEMOTION ERROR: {e}")
+                    logger.error("AUDIT DEMOTION ERROR: %s", e)
                     embed = discord.Embed(
                         title="❌ Ошибка разжалования",
                         description=f"Произошла ошибка при разжаловании {сотрудник.mention}: {e}",
@@ -823,7 +827,7 @@ class PersonnelCommands(commands.Cog):
                     # Получить дефолтные значения из базы данных
                     defaults = await self._get_default_values_from_db()
                     
-                    print(f"🎆 AUDIT COMMAND: Перевод {сотрудник.display_name} -> {подразделение}")
+                    logger.info("AUDIT COMMAND: Перевод {сотрудник.display_name} -> %s", подразделение)
                     
                     # Используем название подразделения напрямую как ключ
                     subdivision_key = подразделение
@@ -842,7 +846,7 @@ class PersonnelCommands(commands.Cog):
                             description=f"{сотрудник.mention} успешно переведён в **{подразделение}**.\n\nНикнейм автоматически обновлён: `{new_nickname}`",
                             color=discord.Color.green()
                         )
-                        print(f"✅ AUDIT TRANSFER: Никнейм обновлён: {new_nickname}")
+                        logger.info("AUDIT TRANSFER: Никнейм обновлён: %s", new_nickname)
                     else:
                         embed = discord.Embed(
                             title="⚠️ Перевод с предупреждением",
@@ -853,7 +857,7 @@ class PersonnelCommands(commands.Cog):
                     await interaction.followup.send(embed=embed, ephemeral=True)
                     
                 except Exception as e:
-                    print(f"❌ AUDIT TRANSFER ERROR: {e}")
+                    logger.error("AUDIT TRANSFER ERROR: %s", e)
                     embed = discord.Embed(
                         title="❌ Ошибка перевода",
                         description=f"Произошла ошибка при переводе {сотрудник.mention}: {e}",
@@ -892,7 +896,7 @@ class PersonnelCommands(commands.Cog):
                     await interaction.response.send_modal(modal)
                     
                 except Exception as e:
-                    print(f"❌ AUDIT NAME CHANGE ERROR: {e}")
+                    logger.error("AUDIT NAME CHANGE ERROR: %s", e)
                     embed = discord.Embed(
                         title="❌ Ошибка открытия формы ФИО",
                         description=f"Произошла ошибка при открытии формы изменения ФИО: {e}",
@@ -921,7 +925,7 @@ class PersonnelCommands(commands.Cog):
                 await interaction.followup.send(embed=embed, ephemeral=True)
                 
         except Exception as e:
-            print(f"Error in audit command: {e}")
+            logger.error("Error in audit command: %s", e)
             embed = discord.Embed(
                 title="❌ Ошибка команды",
                 description="Произошла ошибка при выполнении команды аудита.",
@@ -945,7 +949,7 @@ class PersonnelCommands(commands.Cog):
             filtered = [action for action in enabled_actions if current.lower() in action.lower()]
             return [app_commands.Choice(name=action, value=action) for action in filtered[:25]]
         except Exception as e:
-            print(f"Error in action autocomplete: {e}")
+            logger.error("Error in action autocomplete: %s", e)
             # Fallback to basic settings
             settings = self._get_fallback_settings()
             actions = settings.get('actions', [])
@@ -970,7 +974,7 @@ class PersonnelCommands(commands.Cog):
             filtered = [dept for dept in departments if current.lower() in dept.lower()]
             return [app_commands.Choice(name=dept, value=dept) for dept in filtered[:25]]
         except Exception as e:
-            print(f"Error in department autocomplete: {e}")
+            logger.error("Error in department autocomplete: %s", e)
             settings = self._get_fallback_settings()
             departments = settings.get('departments', [])
             filtered = [dept for dept in departments if current.lower() in dept.lower()]
@@ -985,7 +989,7 @@ class PersonnelCommands(commands.Cog):
             filtered = [pos for pos in positions if current.lower() in pos.lower()]
             return [app_commands.Choice(name=pos, value=pos) for pos in filtered[:25]]
         except Exception as e:
-            print(f"Error in position autocomplete: {e}")
+            logger.error("Error in position autocomplete: %s", e)
             settings = self._get_fallback_settings()
             positions = settings.get('positions', [])
             filtered = [pos for pos in positions if current.lower() in pos.lower()]
@@ -1000,7 +1004,7 @@ class PersonnelCommands(commands.Cog):
             filtered = [rank for rank in ranks if current.lower() in rank.lower()]
             return [app_commands.Choice(name=rank, value=rank) for rank in filtered[:25]]
         except Exception as e:
-            print(f"Error in rank autocomplete: {e}")
+            logger.error("Error in rank autocomplete: %s", e)
             settings = self._get_fallback_settings()
             ranks = settings.get('ranks', [])
             filtered = [rank for rank in ranks if current.lower() in rank.lower()]
@@ -1073,7 +1077,7 @@ class PersonnelCommands(commands.Cog):
             await interaction.followup.send(embed=embed, ephemeral=True)
             
         except Exception as e:
-            print(f"Error in blacklist_add_command: {e}")
+            logger.error("Error in blacklist_add_command: %s", e)
             import traceback
             traceback.print_exc()
             
@@ -1137,7 +1141,7 @@ class PersonnelCommands(commands.Cog):
             await interaction.followup.send(embed=embed, ephemeral=True)
             
         except Exception as e:
-            print(f"Error in blacklist_remove_command: {e}")
+            logger.error("Error in blacklist_remove_command: %s", e)
             import traceback
             traceback.print_exc()
             

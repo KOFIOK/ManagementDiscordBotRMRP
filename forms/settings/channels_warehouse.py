@@ -5,6 +5,10 @@ import discord
 from discord import ui
 from utils.config_manager import load_config, save_config
 from .base import BaseSettingsView, BaseSettingsModal, ChannelParser, ConfigDisplayHelper
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class WarehouseChannelsConfigView(BaseSettingsView):
@@ -13,7 +17,7 @@ class WarehouseChannelsConfigView(BaseSettingsView):
     def __init__(self):
         super().__init__()
         
-    @discord.ui.button(label="📦 Канал запросов", style=discord.ButtonStyle.primary, emoji="📦")
+    @discord.ui.button(label="📂 Канал запросов", style=discord.ButtonStyle.primary, emoji="📥")
     async def set_request_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = WarehouseChannelSelectionModal("warehouse_request_channel", "📦 Настройка канала запросов склада")
         await interaction.response.send_modal(modal)
@@ -23,7 +27,7 @@ class WarehouseChannelsConfigView(BaseSettingsView):
         modal = WarehouseChannelSelectionModal("warehouse_submission_channel", "📤 Настройка канала отправки заявок")
         await interaction.response.send_modal(modal)
         
-    @discord.ui.button(label="📊 Канал аудита", style=discord.ButtonStyle.primary, emoji="📊")
+    @discord.ui.button(label="📂 Канал аудита", style=discord.ButtonStyle.primary, emoji="📊")
     async def set_audit_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = WarehouseChannelSelectionModal("warehouse_audit_channel", "📊 Настройка канала аудита склада")
         await interaction.response.send_modal(modal)
@@ -89,7 +93,7 @@ class WarehouseChannelSelectionModal(BaseSettingsModal):
                     await send_warehouse_message(channel)
                     success_message += "\n\n✅ Закрепленное сообщение склада добавлено в канал."
                 except Exception as e:
-                    print(f"Ошибка при создании сообщения склада: {e}")
+                    logger.error("Ошибка при создании сообщения склада: %s", e)
                     success_message += "\n\n⚠️ Канал настроен, но произошла ошибка при создании сообщения. Используйте `/warehouse_setup` в канале."
             elif self.config_key == "warehouse_submission_channel":
                 success_message += "\n\n📤 Все заявки склада будут отправляться в этот канал!"

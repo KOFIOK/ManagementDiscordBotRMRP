@@ -5,6 +5,10 @@ import discord
 from discord import ui
 from utils.config_manager import load_config, save_config
 from .base import BaseSettingsView, BaseSettingsModal, ChannelParser, ConfigDisplayHelper
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class ChannelSelectionModal(BaseSettingsModal):
@@ -26,7 +30,7 @@ class ChannelSelectionModal(BaseSettingsModal):
         super().__init__(title=f"Настройка канала {type_names.get(config_type, config_type)}")
         
         self.channel_input = ui.TextInput(
-            label="ID или упоминание канала",
+            label="🆔 ID или упоминание канала",
             placeholder="Например: #канал-увольнений или 1234567890123456789",
             min_length=1,
             max_length=100,
@@ -101,7 +105,7 @@ class ChannelSelectionModal(BaseSettingsModal):
                     button_message_added = True
                 else:
                     # Если не удалось создать pin message, все равно продолжаем
-                    print(f"Warning: Failed to create safe documents pin message in channel {channel.id}")
+                    logger.error(f"Warning: Failed to create safe documents pin message in channel {channel.id}")
             
             success_message = f"Канал {type_name} успешно настроен на {channel.mention}!"
             if button_message_added:

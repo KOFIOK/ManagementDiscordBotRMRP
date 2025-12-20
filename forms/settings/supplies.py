@@ -2,14 +2,18 @@ import discord
 from discord.ext import commands
 from typing import Optional, Dict, Any
 from utils.config_manager import load_config, save_config
-from .base import BaseSettingsView
+from .base import BaseSettingsView, SectionSettingsView
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
-class SuppliesSettingsView(BaseSettingsView):
+class SuppliesSettingsView(SectionSettingsView):
     """Настройки системы поставок"""
     
     def __init__(self):
-        super().__init__()
+        super().__init__(title="🚚 Настройки системы поставок", description="Управление военными объектами и уведомлениями о поставках", timeout=300)
         self.create_buttons()
     
     async def get_current_config(self) -> Dict[str, Any]:
@@ -28,10 +32,10 @@ class SuppliesSettingsView(BaseSettingsView):
             supplies_config['timer_duration_minutes'] = old_hours * 60
             config['supplies'] = supplies_config
             save_config(config)
-            print(f"🔄 Мигрировали настройку таймера: {old_hours}ч → {old_hours * 60}мин")
+            logger.info("Мигрировали настройку таймера: %sч → {old_hours * 60}мин", old_hours)
         
         embed = discord.Embed(
-            title="🚚 Настройки системы поставок",
+            title="⚙️ Настройки системы поставок",
             description="Управление военными объектами и уведомлениями о поставках",
             color=discord.Color.blue()
         )
@@ -42,7 +46,7 @@ class SuppliesSettingsView(BaseSettingsView):
         subscription_channel_id = supplies_config.get('subscription_channel_id')
         
         embed.add_field(
-            name="📺 Каналы",
+            name="📂 Каналы",
             value=(
                 f"🎮 **Управление:** {f'<#{control_channel_id}>' if control_channel_id else '❌ Не настроен'}\n"
                 f"📢 **Уведомления:** {f'<#{notification_channel_id}>' if notification_channel_id else '❌ Не настроен'}\n"
@@ -78,7 +82,7 @@ class SuppliesSettingsView(BaseSettingsView):
         # Роль подписки
         subscription_role_id = supplies_config.get('subscription_role_id')
         embed.add_field(
-            name="👥 Роли",
+            name="🏷️ Роли",
             value=(
                 f"🔔 **Подписка на уведомления:** "
                 f"{f'<@&{subscription_role_id}>' if subscription_role_id else '❌ Не настроена'}"
@@ -88,7 +92,7 @@ class SuppliesSettingsView(BaseSettingsView):
         
         # Военные объекты (статичная информация)
         embed.add_field(
-            name="🏭 Военные объекты",
+            name="⏰ Настройки времени",
             value=(
                 "🏭 **Объект №7** - Промышленный комплекс\n"
                 "📦 **Военные Склады** - Складская база\n"
@@ -146,7 +150,7 @@ class ChannelControlSelectView(discord.ui.View):
             )
         else:
             await interaction.response.send_message(
-                "❌ Ошибка сохранения настроек",
+                " Ошибка сохранения настроек",
                 ephemeral=True
             )
 
@@ -193,12 +197,12 @@ class ChannelNotificationSelectView(discord.ui.View):
         
         if save_config(config):
             await interaction.response.send_message(
-                f"✅ Канал уведомлений о поставках настроен: <#{channel_id}>",
+                f" Канал уведомлений о поставках настроен: <#{channel_id}>",
                 ephemeral=True
             )
         else:
             await interaction.response.send_message(
-                "❌ Ошибка сохранения настроек",
+                " Ошибка сохранения настроек",
                 ephemeral=True
             )
 
@@ -245,12 +249,12 @@ class ChannelSubscriptionSelectView(discord.ui.View):
         
         if save_config(config):
             await interaction.response.send_message(
-                f"✅ Канал подписки на поставки настроен: <#{channel_id}>",
+                f" Канал подписки на поставки настроен: <#{channel_id}>",
                 ephemeral=True
             )
         else:
             await interaction.response.send_message(
-                "❌ Ошибка сохранения настроек",
+                " Ошибка сохранения настроек",
                 ephemeral=True
             )
 
@@ -333,7 +337,7 @@ class SubscriptionRoleSelectView(discord.ui.View):
             )
         else:
             await interaction.response.send_message(
-                "❌ Ошибка сохранения настроек",
+                " Ошибка сохранения настроек",
                 ephemeral=True
             )
 
@@ -344,7 +348,7 @@ class SubscriptionRoleButton(discord.ui.Button):
     def __init__(self):
         super().__init__(
             label="Роль подписки",
-            emoji="🔔",
+            emoji="👥",
             style=discord.ButtonStyle.success,
             custom_id="supplies_subscription_role"
         )
@@ -359,7 +363,7 @@ class BackToMainButton(discord.ui.Button):
     
     def __init__(self):
         super().__init__(
-            label="◀️ Назад",
+            label="Назад",
             style=discord.ButtonStyle.danger,
             custom_id="supplies_back_to_main"
         )
@@ -444,7 +448,7 @@ class TimerDurationModal(discord.ui.Modal):
                 
         except ValueError:
             await interaction.response.send_message(
-                "❌ Введите корректное число",
+                " Введите корректное число",
                 ephemeral=True
             )
 
@@ -486,12 +490,12 @@ class WarningTimeModal(discord.ui.Modal):
                 )
             else:
                 await interaction.response.send_message(
-                    "❌ Ошибка сохранения настроек",
+                    " Ошибка сохранения настроек",
                     ephemeral=True
                 )
                 
         except ValueError:
             await interaction.response.send_message(
-                "❌ Введите корректное число",
+                " Введите корректное число",
                 ephemeral=True
             )

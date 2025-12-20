@@ -4,11 +4,14 @@ Excluded roles configuration forms and views
 import discord
 from discord import ui
 from utils.config_manager import load_config, save_config
-from .base import BaseSettingsView, BaseSettingsModal, RoleParser
+from .base import BaseSettingsView, BaseSettingsModal, RoleParser, SectionSettingsView
 
 
-class ExcludedRolesView(BaseSettingsView):
+class ExcludedRolesView(SectionSettingsView):
     """View for managing excluded roles"""
+    
+    def __init__(self):
+        super().__init__(title="🛡️ Управление ролями-исключениями", description="Роли, которые не будут сниматься при одобрении рапорта на увольнение")
     
     @discord.ui.button(label="➕ Добавить роли", style=discord.ButtonStyle.green)
     async def add_roles(self, interaction: discord.Interaction, button: discord.ui.Button):

@@ -8,6 +8,10 @@ from discord import ui
 from utils.config_manager import load_config, has_pending_role_application
 from utils.message_manager import get_role_assignment_message, get_message_with_params
 from utils.database_manager.rank_manager import rank_manager
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class MilitaryApplicationModal(ui.Modal):
@@ -55,7 +59,7 @@ class MilitaryApplicationModal(ui.Modal):
             has_pending = await has_pending_role_application(interaction.client, interaction.user.id, role_assignment_channel_id)
             if has_pending:
                 await interaction.response.send_message(
-                    f"{get_role_assignment_message(interaction.guild.id, 'application.error_pending_application', '❌ **У вас уже есть заявка на получение роли, которая находится на рассмотрении.**')}\n\n"
+                    f"{get_message_with_params(interaction.guild.id, 'application.error_pending_application', '❌ **У вас уже есть заявка на получение роли, которая находится на рассмотрении.**', context='заявка уже существует')}\n\n"
                     "Пожалуйста, дождитесь решения по текущей заявке, прежде чем подавать новую.\n"
                     "Это поможет избежать путаницы и ускорить обработку вашего запроса.",
                     ephemeral=True
@@ -83,28 +87,9 @@ class MilitaryApplicationModal(ui.Modal):
                     # User was dismissed, can reapply
                     pass  # Continue with application
         
-        # Check if user has active blacklist entry
-        from utils.database_manager import personnel_manager
-        blacklist_info = await personnel_manager.check_active_blacklist(interaction.user.id)
-        
-        if blacklist_info:
-            # User is blacklisted, deny application
-            start_date_str = blacklist_info['start_date'].strftime('%d.%m.%Y')
-            end_date_str = blacklist_info['end_date'].strftime('%d.%m.%Y') if blacklist_info['end_date'] else 'Бессрочно'
-            
-            await interaction.response.send_message(
-                f"❌ **Вам запрещен приём на службу**\n\n"
-                f"📋 **{blacklist_info['full_name']} | {blacklist_info['static']} находится в Чёрном списке ВС РФ**\n"
-                f"> **Причина:** {blacklist_info['reason']}\n"
-                f"> **Период:** {start_date_str} - {end_date_str}\n\n"
-                f"*Для снятия с чёрного списка обратитесь к руководству бригады.*",
-                ephemeral=True
-            )
-            return
-        
         # Validate first name and last name (must be single words)
-        first_name = self.first_name_input.value.strip()
-        last_name = self.last_name_input.value.strip()
+        first_name = self.first_name_input.value.strip().capitalize()
+        last_name = self.last_name_input.value.strip().capitalize()
         
         if ' ' in first_name or '\t' in first_name:
             await interaction.response.send_message(
@@ -133,6 +118,24 @@ class MilitaryApplicationModal(ui.Modal):
                 ephemeral=True
             )
             return
+
+        # Check blacklist by STATIC after formatting
+        from utils.database_manager import personnel_manager
+        blacklist_info = await personnel_manager.check_active_blacklist(formatted_static)
+
+        if blacklist_info:
+            start_date_str = blacklist_info['start_date'].strftime('%d.%m.%Y')
+            end_date_str = blacklist_info['end_date'].strftime('%d.%m.%Y') if blacklist_info['end_date'] else 'Бессрочно'
+
+            await interaction.response.send_message(
+                f"❌ **Вам запрещен приём на службу**\n\n"
+                f"📋 **{blacklist_info['full_name']} | {blacklist_info['static']} находится в Чёрном списке ВС РФ**\n"
+                f"> **Причина:** {blacklist_info['reason']}\n"
+                f"> **Период:** {start_date_str} - {end_date_str}\n\n"
+                f"*Если считаете, что это ошибка, обратитесь к руководству фракции*",
+                ephemeral=True
+            )
+            return
         
         # Create application data
         application_data = {
@@ -157,10 +160,10 @@ class MilitaryApplicationModal(ui.Modal):
         """Check if user is in blacklist using PostgreSQL (stub)"""
         try:
             # TODO: Implement PostgreSQL blacklist check
-            print(f"Blacklist check for static {static} - skipped (using PostgreSQL stub)")
+            logger.info("Blacklist check for static %s - skipped (using PostgreSQL stub)", static)
             return {"is_blocked": False}
         except Exception as e:
-            print(f"Error checking blacklist status: {e}")
+            logger.error("Error checking blacklist status: %s", e)
             return {"is_blocked": False}
 
     async def _send_application_for_approval(self, interaction, application_data):
@@ -171,7 +174,7 @@ class MilitaryApplicationModal(ui.Modal):
             
             if not moderation_channel_id:
                 await interaction.response.send_message(
-                    "❌ Канал модерации не настроен. Обратитесь к администратору.",
+                    " Канал модерации не настроен. Обратитесь к администратору.",
                     ephemeral=True
                 )
                 return
@@ -179,14 +182,14 @@ class MilitaryApplicationModal(ui.Modal):
             moderation_channel = interaction.guild.get_channel(moderation_channel_id)
             if not moderation_channel:
                 await interaction.response.send_message(
-                    "❌ Канал модерации не найден. Обратитесь к администратору.",
+                    " Канал модерации не найден. Обратитесь к администратору.",
                     ephemeral=True
                 )
                 return
             
             # Create embed
             embed = discord.Embed(
-                title="📋 Заявка на получение роли военнослужащего",
+                title="📝 Заявка на получение роли военнослужащего",
                 color=discord.Color.blue(),
                 timestamp=discord.utils.utcnow()
             )
@@ -213,9 +216,9 @@ class MilitaryApplicationModal(ui.Modal):
                     ping_content = f"-# {' '.join(ping_mentions)}"
                 else:
                     # Ни одна роль не найдена — логируем для отладки
-                    print(f"[WARN] Ни одна роль для пинга не найдена по military_role_assignment_ping_roles: {ping_role_ids}")
+                    logger.warning("[WARN] Ни одна роль для пинга не найдена по military_role_assignment_ping_roles: %s", ping_role_ids)
             else:
-                print("[WARN] military_role_assignment_ping_roles пуст или не задан в config")
+                logger.warning("[WARN] military_role_assignment_ping_roles пуст или не задан в config")
             
             # Send to moderation channel
             await moderation_channel.send(content=ping_content, embed=embed, view=approval_view)
@@ -226,7 +229,7 @@ class MilitaryApplicationModal(ui.Modal):
             )
             
         except Exception as e:
-            print(f"Error sending military application: {e}")
+            logger.error("Error sending military application: %s", e)
             await interaction.response.send_message(
                 get_role_assignment_message(interaction.guild.id, "application.error_submission_failed", "❌ Произошла ошибка при отправке заявки. Попробуйте позже."),
                 ephemeral=True
@@ -294,7 +297,7 @@ class CivilianApplicationModal(ui.Modal):
             has_pending = await has_pending_role_application(interaction.client, interaction.user.id, role_assignment_channel_id)
             if has_pending:
                 await interaction.response.send_message(
-                    f"{get_role_assignment_message(interaction.guild.id, 'application.error_pending_application', '❌ **У вас уже есть заявка на получение роли, которая находится на рассмотрении.**')}\n\n"
+                    f"{get_message_with_params(interaction.guild.id, 'application.error_pending_application', ' **У вас уже есть заявка на получение роли, которая находится на рассмотрении.**', context='заявка уже существует')}\n\n"
                     "Пожалуйста, дождитесь решения по текущей заявке, прежде чем подавать новую.\n"
                     "Это поможет избежать путаницы и ускорить обработку вашего запроса.",
                     ephemeral=True
@@ -324,7 +327,7 @@ class CivilianApplicationModal(ui.Modal):
         # Create application data
         application_data = {
             "type": "civilian",
-            "name": self.name_input.value.strip(),
+            "name": self.name_input.value.strip().title(),
             "static": formatted_static,
             "faction": self.faction_input.value.strip(),
             "purpose": self.purpose_input.value.strip(),
@@ -359,7 +362,7 @@ class CivilianApplicationModal(ui.Modal):
             
             if not moderation_channel_id:
                 await interaction.response.send_message(
-                    "❌ Канал модерации не настроен. Обратитесь к администратору.",
+                    " Канал модерации не настроен. Обратитесь к администратору.",
                     ephemeral=True
                 )
                 return
@@ -367,21 +370,21 @@ class CivilianApplicationModal(ui.Modal):
             moderation_channel = interaction.guild.get_channel(moderation_channel_id)
             if not moderation_channel:
                 await interaction.response.send_message(
-                    "❌ Канал модерации не найден. Обратитесь к администратору.",
+                    " Канал модерации не найден. Обратитесь к администратору.",
                     ephemeral=True
                 )
                 return
             
             # Create embed
             embed = discord.Embed(
-                title="📋 Заявка на получение роли госслужащего",
+                title="📝 Заявка на получение роли госслужащего",
                 color=discord.Color.orange(),
                 timestamp=discord.utils.utcnow()
             )
             
             embed.add_field(name="👤 Заявитель", value=application_data["user_mention"], inline=False)
-            embed.add_field(name="📝 Имя Фамилия", value=application_data["name"], inline=True)
-            embed.add_field(name="🔢 Статик", value=application_data["static"], inline=True)
+            embed.add_field(name="🔗 Удостоверение", value=application_data["name"], inline=True)
+            embed.add_field(name="🆔 Статик", value=application_data["static"], inline=True)
             embed.add_field(name="🏛️ Фракция, звание, должность", value=application_data["faction"], inline=False)
             embed.add_field(name="🎯 Цель получения роли", value=application_data["purpose"], inline=False)
             embed.add_field(name="🔗 Удостоверение", value=f"[Ссылка]({application_data['proof']})", inline=False)
@@ -411,7 +414,7 @@ class CivilianApplicationModal(ui.Modal):
             )
             
         except Exception as e:
-            print(f"Error sending civilian application: {e}")
+            logger.error("Error sending civilian application: %s", e)
             await interaction.response.send_message(
                 "❌ Произошла ошибка при отправке заявки. Попробуйте позже.",
                 ephemeral=True
@@ -470,7 +473,7 @@ class SupplierApplicationModal(ui.Modal):
             has_pending = await has_pending_role_application(interaction.client, interaction.user.id, role_assignment_channel_id)
             if has_pending:
                 await interaction.response.send_message(
-                    "❌ **У вас уже есть заявка на получение роли, которая находится на рассмотрении.**\n\n"
+                    f"{get_message_with_params(interaction.guild.id, 'application.error_pending_application', '❌ **У вас уже есть заявка на получение роли, которая находится на рассмотрении.**', context='заявка уже существует')}\n\n"
                     "Пожалуйста, дождитесь решения по текущей заявке, прежде чем подавать новую.\n"
                     "Это поможет избежать путаницы и ускорить обработку вашего запроса.",
                     ephemeral=True
@@ -491,7 +494,7 @@ class SupplierApplicationModal(ui.Modal):
         proof = self.proof_input.value.strip()
         if not self._validate_url(proof):
             await interaction.response.send_message(
-                get_role_assignment_message(interaction.guild.id, "application.error_invalid_proof_link", "❌ Пожалуйста, укажите корректную ссылку в поле доказательств."),
+                get_role_assignment_message(interaction.guild.id, "application.error_invalid_proof_link", " Пожалуйста, укажите корректную ссылку в поле доказательств."),
                 ephemeral=True
             )
             return
@@ -499,7 +502,7 @@ class SupplierApplicationModal(ui.Modal):
         # Create application data
         application_data = {
             "type": "supplier",
-            "name": self.name_input.value.strip(),
+            "name": self.name_input.value.strip().title(),
             "static": formatted_static,
             "faction": self.faction_input.value.strip(),
             "proof": proof,
@@ -532,7 +535,7 @@ class SupplierApplicationModal(ui.Modal):
             
             if not moderation_channel_id:
                 await interaction.response.send_message(
-                    "❌ Канал модерации не настроен. Обратитесь к администратору.",
+                    " Канал модерации не настроен. Обратитесь к администратору.",
                     ephemeral=True
                 )
                 return
@@ -540,7 +543,7 @@ class SupplierApplicationModal(ui.Modal):
             moderation_channel = interaction.guild.get_channel(moderation_channel_id)
             if not moderation_channel:
                 await interaction.response.send_message(
-                    "❌ Канал модерации не найден. Обратитесь к администратору.",
+                    " Канал модерации не найден. Обратитесь к администратору.",
                     ephemeral=True
                 )
                 return
@@ -554,8 +557,8 @@ class SupplierApplicationModal(ui.Modal):
             
             embed.add_field(name="👤 Заявитель", value=application_data["user_mention"], inline=False)
             embed.add_field(name="📝 Имя Фамилия", value=application_data["name"], inline=True)
-            embed.add_field(name="🔢 Статик", value=application_data["static"], inline=True)
-            embed.add_field(name="🏛️ Фракция, звание, должность", value=application_data["faction"], inline=False)
+            embed.add_field(name="🆔 Статик", value=application_data["static"], inline=True)
+            embed.add_field(name="🎖️ Фракция, звание, должность", value=application_data["faction"], inline=False)
             embed.add_field(name="🔗 Удостоверение", value=f"[Ссылка]({application_data['proof']})", inline=False)
             
             # Create approval view
@@ -578,14 +581,14 @@ class SupplierApplicationModal(ui.Modal):
             await moderation_channel.send(content=ping_content, embed=embed, view=approval_view)
             
             await interaction.response.send_message(
-                "✅ Ваша заявка отправлена на рассмотрение военнослужащим. Ожидайте решения.",
+                " Ваша заявка отправлена на рассмотрение военнослужащим. Ожидайте решения.",
                 ephemeral=True
             )
             
         except Exception as e:
-            print(f"Error sending supplier application: {e}")
+            logger.error("Error sending supplier application: %s", e)
             await interaction.response.send_message(
-                "❌ Произошла ошибка при отправке заявки. Попробуйте позже.",
+                " Произошла ошибка при отправке заявки. Попробуйте позже.",
                 ephemeral=True
             )
 
@@ -675,9 +678,9 @@ class MilitaryEditModal(ui.Modal):
             for i, field in enumerate(embed.fields):
                 if field.name == "📝 Имя Фамилия":
                     embed.set_field_at(i, name="📝 Имя Фамилия", value=updated_data['name'], inline=True)
-                elif field.name == "🔢 Статик":
+                elif field.name == "✏️ Отредактировано":
                     embed.set_field_at(i, name="🔢 Статик", value=updated_data['static'], inline=True)
-                elif field.name == "🎖️ Звание":
+                elif field.name == "🔢 Статик":
                     embed.set_field_at(i, name="🎖️ Звание", value=updated_data['rank'], inline=True)
                 elif field.name == "✏️ Отредактировано":
                     fields_to_remove.append(i)
@@ -697,7 +700,7 @@ class MilitaryEditModal(ui.Modal):
             await interaction.response.edit_message(embed=embed)
             
         except Exception as e:
-            print(f"Error updating military application embed: {e}")
+            logger.error("Error updating military application embed: %s", e)
             await interaction.response.send_message(
                 "❌ Произошла ошибка при обновлении заявки.",
                 ephemeral=True
@@ -803,7 +806,7 @@ class CivilianEditModal(ui.Modal):
             
         except Exception as e:
             await interaction.response.send_message(
-                f"❌ Произошла ошибка при редактировании заявки: {str(e)}",
+                f" Произошла ошибка при редактировании заявки: {str(e)}",
                 ephemeral=True
             )
     
@@ -832,15 +835,15 @@ class CivilianEditModal(ui.Modal):
             # Обновляем поля и удаляем старое поле "Отредактировано" если есть
             fields_to_remove = []
             for i, field in enumerate(embed.fields):
-                if field.name == "📝 Имя Фамилия":
-                    embed.set_field_at(i, name="📝 Имя Фамилия", value=updated_data['name'], inline=True)
-                elif field.name == "🔢 Статик":
-                    embed.set_field_at(i, name="🔢 Статик", value=updated_data['static'], inline=True)
+                if field.name == "🏛️ Фракция, звание, должность":
+                    embed.set_field_at(i, name="🏛️ Фракция, звание, должность", value=updated_data['name'], inline=True)
+                elif field.name == "🎯 Цель получения роли":
+                    embed.set_field_at(i, name="🆔 Статик", value=updated_data['static'], inline=True)
                 elif field.name == "🏛️ Фракция, звание, должность":
                     embed.set_field_at(i, name="🏛️ Фракция, звание, должность", value=updated_data['faction'], inline=False)
                 elif field.name == "🎯 Цель получения роли":
                     embed.set_field_at(i, name="🎯 Цель получения роли", value=updated_data['purpose'], inline=False)
-                elif field.name == "🔗 Удостоверение":
+                elif field.name == "🔢 Статик":
                     embed.set_field_at(i, name="🔗 Удостоверение", value=f"[Ссылка]({updated_data['proof']})", inline=False)
                 elif field.name == "✏️ Отредактировано":
                     fields_to_remove.append(i)
@@ -860,9 +863,9 @@ class CivilianEditModal(ui.Modal):
             await interaction.response.edit_message(embed=embed)
             
         except Exception as e:
-            print(f"Error updating civilian application embed: {e}")
+            logger.error("Error updating civilian application embed: %s", e)
             await interaction.response.send_message(
-                "❌ Произошла ошибка при обновлении заявки.",
+                " Произошла ошибка при обновлении заявки.",
                 ephemeral=True
             )
 
@@ -933,7 +936,7 @@ class SupplierEditModal(ui.Modal):
             proof = self.proof_input.value.strip()
             if not self._validate_url(proof):
                 await interaction.response.send_message(
-                    "❌ Пожалуйста, укажите корректную ссылку в поле доказательств.",
+                    " Пожалуйста, укажите корректную ссылку в поле доказательств.",
                     ephemeral=True
                 )
                 return
@@ -955,7 +958,7 @@ class SupplierEditModal(ui.Modal):
             
         except Exception as e:
             await interaction.response.send_message(
-                f"❌ Произошла ошибка при редактировании заявки: {str(e)}",
+                f" Произошла ошибка при редактировании заявки: {str(e)}",
                 ephemeral=True
             )
     
@@ -984,13 +987,13 @@ class SupplierEditModal(ui.Modal):
             # Обновляем поля и удаляем старое поле "Отредактировано" если есть
             fields_to_remove = []
             for i, field in enumerate(embed.fields):
-                if field.name == "📝 Имя Фамилия":
-                    embed.set_field_at(i, name="📝 Имя Фамилия", value=updated_data['name'], inline=True)
-                elif field.name == "🔢 Статик":
-                    embed.set_field_at(i, name="🔢 Статик", value=updated_data['static'], inline=True)
-                elif field.name == "🏛️ Фракция, звание, должность":
-                    embed.set_field_at(i, name="🏛️ Фракция, звание, должность", value=updated_data['faction'], inline=False)
+                if field.name == "🏛️ Фракция, звание, должность":
+                    embed.set_field_at(i, name="🏛️ Фракция, звание, должность", value=updated_data['name'], inline=True)
                 elif field.name == "🔗 Удостоверение":
+                    embed.set_field_at(i, name="🆔 Статик", value=updated_data['static'], inline=True)
+                elif field.name == "✏️ Отредактировано":
+                    embed.set_field_at(i, name="🎖️ Фракция, звание, должность", value=updated_data['faction'], inline=False)
+                elif field.name == "🔢 Статик":
                     embed.set_field_at(i, name="🔗 Удостоверение", value=f"[Ссылка]({updated_data['proof']})", inline=False)
                 elif field.name == "✏️ Отредактировано":
                     fields_to_remove.append(i)
@@ -1010,9 +1013,9 @@ class SupplierEditModal(ui.Modal):
             await interaction.response.edit_message(embed=embed)
             
         except Exception as e:
-            print(f"Error updating supplier application embed: {e}")
+            logger.error("Error updating supplier application embed: %s", e)
             await interaction.response.send_message(
-                "❌ Произошла ошибка при обновлении заявки.",
+                " Произошла ошибка при обновлении заявки.",
                 ephemeral=True
             )
 
@@ -1043,7 +1046,7 @@ class RoleRejectionReasonModal(ui.Modal, title="Причина отказа"):
                 await self.callback_func(interaction, reason, *self.callback_args, **self.callback_kwargs)
                 
         except Exception as e:
-            print(f"Error in RoleRejectionReasonModal: {e}")
+            logger.error("Error in RoleRejectionReasonModal: %s", e)
             # Check if we already responded to avoid errors
             if not interaction.response.is_done():
                 await interaction.response.send_message(
@@ -1052,12 +1055,12 @@ class RoleRejectionReasonModal(ui.Modal, title="Причина отказа"):
                 )
             else:
                 await interaction.followup.send(
-                    "❌ Произошла ошибка при обработке причины отказа.",
+                    " Произошла ошибка при обработке причины отказа.",
                     ephemeral=True
                 )
     
     async def on_error(self, interaction: discord.Interaction, error: Exception):
-        print(f"RoleRejectionReasonModal error: {error}")
+        logger.error("RoleRejectionReasonModal error: %s", error)
         try:
             if not interaction.response.is_done():
                 await interaction.response.send_message(
@@ -1070,4 +1073,4 @@ class RoleRejectionReasonModal(ui.Modal, title="Причина отказа"):
                     ephemeral=True
                 )
         except Exception as follow_error:
-            print(f"Failed to send error message in RoleRejectionReasonModal.on_error: {follow_error}")
+            logger.error("Failed to send error message in RoleRejectionReasonModal.on_error: %s", follow_error)

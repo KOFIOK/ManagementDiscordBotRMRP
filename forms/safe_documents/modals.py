@@ -4,6 +4,10 @@ from typing import Optional
 from utils.user_cache import get_cached_user_info
 from utils.message_manager import get_safe_documents_message
 from .manager import SafeDocumentsManager
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class SafeDocumentsModal(discord.ui.Modal):
@@ -112,18 +116,18 @@ class SafeDocumentsModal(discord.ui.Modal):
             
             # Если нет данных в user_cache, используем fallback значения
             if not cached_data:
-                print(f"Warning: No cached data found for user {user_id} in safe documents form")
+                logger.warning("Warning: No cached data found for user %s in safe documents form", user_id)
                 # Оставляем поля пустыми для ручного заполнения
                             
         except Exception as e:
             # Если автозаполнение не удалось, просто продолжаем с пустыми полями
-            print(f"Warning: Could not autofill safe documents form for user {user_id}: {e}")
+            logger.warning("Warning: Could not autofill safe documents form for user %s: %s", user_id, e)
 
 
 class SafeDocumentsRejectionModal(discord.ui.Modal):
     def __init__(self, application_data: dict):
         super().__init__(
-            title="❌ Причина отклонения",
+            title="📋 Причина отклонения",
             timeout=300
         )
         

@@ -9,6 +9,10 @@ import re
 from utils.config_manager import load_config, has_pending_dismissal_report
 
 from utils.user_cache import get_cached_user_info
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class SimplifiedDismissalModal(ui.Modal):
@@ -57,10 +61,10 @@ class SimplifiedDismissalModal(ui.Modal):
                 prefilled_name = user_info.get('full_name', '')
                 prefilled_static = user_info.get('static', '')
             else:
-                print(f"⚠️ No data found in PersonnelManager for user {user_discord_id}")
+                logger.info("No data found in PersonnelManager for user %s", user_discord_id)
                 
         except Exception as e:
-            print(f"❌ Error getting user data for auto-fill: {e}")
+            logger.warning("Error getting user data for auto-fill: %s", e)
         
         return cls(prefilled_name, prefilled_static, dismissal_reason)
     
@@ -119,7 +123,7 @@ class SimplifiedDismissalModal(ui.Modal):
                     if position and position != 'Не назначено':
                         embed.add_field(name="Должность", value=position, inline=True)
             except Exception as e:
-                print(f"❌ Error getting additional user data: {e}")
+                logger.warning("Error getting additional user data: %s", e)
             
             embed.add_field(name="Причина увольнения", value=self.dismissal_reason, inline=False)
 
@@ -151,7 +155,7 @@ class SimplifiedDismissalModal(ui.Modal):
                             ping_roles = [role.mention for role in ping_roles_list]
                             ping_content = f"-# {' '.join(ping_roles)}"
                     except Exception as e:
-                        print(f"⚠️ Error getting ping roles: {e}")
+                        logger.warning("Error getting ping roles: %s", e)
                     
                     ping_content += f"\n-# **Новый рапорт на увольнение от {interaction.user.mention}**"
                     
@@ -176,7 +180,7 @@ class SimplifiedDismissalModal(ui.Modal):
                 )
                 
         except Exception as e:
-            print(f"❌ Error in simplified dismissal submission: {e}")
+            logger.warning("Error in simplified dismissal submission: %s", e)
             await interaction.response.send_message(
                 "❌ Произошла ошибка при отправке рапорта. Обратитесь к администратору.",
                 ephemeral=True
@@ -212,7 +216,7 @@ class StaticRequestModal(ui.Modal, title="Укажите статик уволь
             formatted_static = self.format_static(self.static_input.value)
             if not formatted_static:
                 await interaction.response.send_message(
-                    "❌ **Ошибка валидации статика**\n"
+                    " **Ошибка валидации статика**\n"
                     "Статик должен содержать ровно 5 или 6 цифр.\n"
                     "**Примеры:** `123456` → `123-456`, `12345` → `12-345`",
                     ephemeral=True
@@ -231,7 +235,7 @@ class StaticRequestModal(ui.Modal, title="Укажите статик уволь
                 await self.callback_func(interaction, formatted_static, *self.callback_args, **self.callback_kwargs)
                 
         except Exception as e:
-            print(f"Error in StaticRequestModal: {e}")
+            logger.error("Error in StaticRequestModal: %s", e)
             await interaction.followup.send(
                 "❌ Произошла ошибка при обработке статика.",
                 ephemeral=True
@@ -304,7 +308,7 @@ class RejectionReasonModal(ui.Modal, title="Причина отказа"):
                                             self.guild_permissions = discord.Permissions.none()  # No permissions
                                     target_user = MockUser(user_id)
                     except Exception as e:
-                        print(f"Error extracting target user for rejection: {e}")
+                        logger.error("Error extracting target user for rejection: %s", e)
                 
                 await interaction.response.defer(ephemeral=True)
                 
@@ -317,7 +321,7 @@ class RejectionReasonModal(ui.Modal, title="Причина отказа"):
                 )
                 
         except Exception as e:
-            print(f"Error in RejectionReasonModal: {e}")
+            logger.error("Error in RejectionReasonModal: %s", e)
             # Check if we already responded to avoid errors
             if not interaction.response.is_done():
                 await interaction.response.send_message(
@@ -326,12 +330,12 @@ class RejectionReasonModal(ui.Modal, title="Причина отказа"):
                 )
             else:
                 await interaction.followup.send(
-                    "❌ Произошла ошибка при обработке причины отказа.",
+                    " Произошла ошибка при обработке причины отказа.",
                     ephemeral=True
                 )
     
     async def on_error(self, interaction: discord.Interaction, error: Exception):
-        print(f"RejectionReasonModal error: {error}")
+        logger.error("RejectionReasonModal error: %s", error)
         try:
             if not interaction.response.is_done():
                 await interaction.response.send_message(
@@ -344,7 +348,7 @@ class RejectionReasonModal(ui.Modal, title="Причина отказа"):
                     ephemeral=True
                 )
         except Exception as follow_error:
-            print(f"Failed to send error message in RejectionReasonModal.on_error: {follow_error}")
+            logger.error("Failed to send error message in RejectionReasonModal.on_error: %s", follow_error)
 
 
 class AutomaticDismissalEditModal(ui.Modal, title="Редактирование автоматического рапорта"):
@@ -451,7 +455,7 @@ class AutomaticDismissalEditModal(ui.Modal, title="Редактирование 
             await self.original_message.edit(embed=embed, view=self.view_instance)
             
         except Exception as e:
-            print(f"Error in AutomaticDismissalEditModal: {e}")
+            logger.error("Error in AutomaticDismissalEditModal: %s", e)
             if not interaction.response.is_done():
                 await interaction.response.send_message(
                     "❌ Произошла ошибка при обработке изменений.",
@@ -459,7 +463,7 @@ class AutomaticDismissalEditModal(ui.Modal, title="Редактирование 
                 )
     
     async def on_error(self, interaction: discord.Interaction, error: Exception):
-        print(f"AutomaticDismissalEditModal error: {error}")
+        logger.error("AutomaticDismissalEditModal error: %s", error)
         try:
             if not interaction.response.is_done():
                 await interaction.response.send_message(
@@ -467,4 +471,4 @@ class AutomaticDismissalEditModal(ui.Modal, title="Редактирование 
                     ephemeral=True
                 )
         except Exception as follow_error:
-            print(f"Failed to send error message in AutomaticDismissalEditModal.on_error: {follow_error}")
+            logger.error("Failed to send error message in AutomaticDismissalEditModal.on_error: %s", follow_error)

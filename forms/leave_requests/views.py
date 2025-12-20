@@ -7,6 +7,10 @@ from utils.config_manager import load_config, is_moderator_or_admin
 from utils.leave_request_storage import LeaveRequestStorage
 from utils.message_manager import get_leave_requests_message, get_private_messages, get_message
 from utils.message_service import MessageService
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 class LeaveRequestButton(ui.View):
     """Persistent button for submitting leave requests"""
     
@@ -165,7 +169,7 @@ class LeaveRequestApprovalView(ui.View):
             await interaction.response.send_message(embed=embed, ephemeral=True)
     
     @ui.button(
-        label="❌ Отклонить",
+        label="🗑️ Отклонить",
         style=discord.ButtonStyle.red,
         custom_id="leave_request_reject"
     )
@@ -326,7 +330,7 @@ class LeaveRequestApprovalView(ui.View):
             await interaction.message.edit(embed=embed, view=None)
             
         except Exception as e:
-            print(f"Error updating request embed: {e}")
+            logger.error("Error updating request embed: %s", e)
     
     async def _send_dm_notification(self, interaction, request):
         """Send DM notification to user about approval"""
@@ -355,4 +359,4 @@ class LeaveRequestApprovalView(ui.View):
             await user.send(embed=embed)
             
         except Exception as e:
-            print(f"Error sending DM notification: {e}")
+            logger.error("Error sending DM notification: %s", e)

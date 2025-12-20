@@ -7,6 +7,10 @@ import discord
 from typing import Optional, Dict, Any, List, Tuple, Set
 from utils.postgresql_pool import get_db_cursor
 from utils.message_manager import get_role_reason, get_moderator_display_name
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 class PositionService:
     """New position service with proper database schema integration"""
@@ -30,13 +34,13 @@ class PositionService:
         """Invalidate position cache"""
         self._position_cache = {}
         self._cache_timestamp = 0
-        print("🗑️ Position service cache invalidated")
+        logger.info("Position service cache invalidated")
     
     def invalidate_roles_cache(self):
         """Invalidate position roles cache"""
         self._position_roles_cache = None
         self._roles_cache_timestamp = 0
-        print("🗑️ Position roles cache invalidated")
+        logger.info("Position roles cache invalidated")
     
     def get_cache_stats(self):
         """Get cache statistics"""
@@ -71,9 +75,9 @@ class PositionService:
                     }
                     self._roles_cache_timestamp = current_time
                     self._cache_stats['refreshes'] += 1
-                    print(f"🔄 Refreshed position roles cache: {len(role_to_position)} roles")
+                    logger.info("Refreshed position roles cache: {len(role_to_position)} roles")
             except Exception as e:
-                print(f"⚠️ Failed to refresh position roles cache: {e}")
+                logger.warning("Failed to refresh position roles cache: %s", e)
                 if self._position_roles_cache is None:
                     self._position_roles_cache = {
                         'role_to_position': {},
@@ -112,7 +116,7 @@ class PositionService:
                 return [dict(row) for row in result] if result else []
 
         except Exception as e:
-            print(f"❌ Error getting positions for subdivision {subdivision_id}: {e}")
+            logger.warning("Error getting positions for subdivision %s: %s", subdivision_id, e)
             return []
 
     def get_all_positions_with_subdivisions(self) -> List[Dict[str, Any]]:
@@ -143,7 +147,7 @@ class PositionService:
                 return [dict(row) for row in result] if result else []
 
         except Exception as e:
-            print(f"❌ Error getting all positions with subdivisions: {e}")
+            logger.warning("Error getting all positions with subdivisions: %s", e)
             return []
 
     def add_position_to_subdivision(self, position_name: str, subdivision_id: int,
@@ -208,14 +212,14 @@ class PositionService:
 
                 message = f"Должность '{position_name}' добавлена (ID: {next_id})"
                 if role_id:
-                    message += f" с ролью Discord ID: {role_id}"
+                    message += f"с ролью Discord ID: {role_id}"
 
-                print(f"✅ {message}")
+                logger.info("%s", message)
                 return True, message
 
         except Exception as e:
             error_msg = f"Ошибка при добавлении должности: {e}"
-            print(f"❌ {error_msg}")
+            logger.warning("%s", error_msg)
             return False, error_msg
 
     def update_position_role(self, position_id: int, role_id: Optional[int],
@@ -319,7 +323,7 @@ class PositionService:
                             f"UPDATE employees SET position_subdivision_id = NULL WHERE position_subdivision_id IN ({placeholders})",
                             ps_ids
                         )
-                        print(f"🧹 Cleared position assignments for {dependencies['active_employees']} employees")
+                        logger.info(f" Cleared position assignments for {dependencies['active_employees']} employees")
 
                 # Remove from position_subdivision first (FK constraint)
                 cursor.execute("DELETE FROM position_subdivision WHERE position_id = %s", (position_id,))
@@ -334,7 +338,7 @@ class PositionService:
                 if dependencies['active_employees'] > 0:
                     message += f" (очищены назначения {dependencies['active_employees']} сотрудников)"
 
-                print(f"✅ {message}")
+                logger.info("%s", message)
                 return True, message
 
         except Exception as e:
@@ -647,7 +651,7 @@ class PositionService:
                 return dict(result) if result else None
                 
         except Exception as e:
-            print(f"❌ Error getting position by ID {position_id}: {e}")
+            logger.warning("Error getting position by ID %s: %s", position_id, e)
             return None
 
     def get_user_position_from_db(self, user_id: int) -> Optional[Dict[str, Any]]:
@@ -686,7 +690,7 @@ class PositionService:
                 return None
                 
         except Exception as e:
-            print(f"❌ Error getting user position: {e}")
+            logger.warning("Error getting user position: %s", e)
             return None
 
     async def update_position_subdivision_by_role_id(self, user_discord_id: int, position_role_id: int, 
@@ -715,7 +719,7 @@ class PositionService:
             role_id = dept_config.get('role_id')
             
             if not role_id:
-                print(f"⚠️ No role_id found for department {dept_code}")
+                logger.info("No role_id found for department %s", dept_code)
                 return False
             
             subdivision_id = None
@@ -726,11 +730,11 @@ class PositionService:
                     if result:
                         subdivision_id = result['id']
             except Exception as e:
-                print(f"⚠️ Error getting subdivision_id: {e}")
+                logger.warning("Error getting subdivision_id: %s", e)
                 return False
             
             if not subdivision_id:
-                print(f"⚠️ Could not find subdivision_id for department {dept_code}")
+                logger.info("Could not find subdivision_id for department %s", dept_code)
                 return False
             
             with get_db_cursor() as cursor:
@@ -738,7 +742,7 @@ class PositionService:
                 cursor.execute("SELECT id FROM personnel WHERE discord_id = %s AND is_dismissal = false;", (user_discord_id,))
                 personnel_result = cursor.fetchone()
                 if not personnel_result:
-                    print(f"⚠️ Could not find personnel record for user {user_discord_id}")
+                    logger.info("Could not find personnel record for user %s", user_discord_id)
                     return False
                 personnel_id = personnel_result['id']
                 
@@ -753,7 +757,7 @@ class PositionService:
                 
                 ps_result = cursor.fetchone()
                 if not ps_result:
-                    print(f"⚠️ Could not find position_subdivision for role ID {position_role_id} in department {dept_code}")
+                    logger.info("Could not find position_subdivision for role ID %s in department %s", position_role_id, dept_code)
                     return False
                 
                 position_subdivision_id = ps_result['id']
@@ -770,7 +774,7 @@ class PositionService:
                 cursor.execute("SELECT id FROM personnel WHERE discord_id = %s;", (moderator_discord_id,))
                 moderator_result = cursor.fetchone()
                 if not moderator_result:
-                    print(f"⚠️ Could not find moderator personnel record for {moderator_discord_id}")
+                    logger.info("Could not find moderator personnel record for %s", moderator_discord_id)
                     return False
                 moderator_personnel_id = moderator_result['id']
                 
@@ -793,11 +797,11 @@ class PositionService:
                     datetime.now(timezone(timedelta(hours=3)))  # Moscow time
                 ))
                 
-                print(f"✅ Updated position_subdivision_id to {position_subdivision_id} ({position_name}) for user {user_discord_id} in department {dept_code}")
+                logger.info("Updated position_subdivision_id to %s (%s) for user %s in department %s", position_subdivision_id, position_name, user_discord_id, dept_code)
                 return True
                 
         except Exception as e:
-            print(f"❌ Error updating position in database for user {user_discord_id}: {e}")
+            logger.warning("Error updating position in database for user %s: %s", user_discord_id, e)
             return False
 
     def get_position_roles_cache(self):
@@ -896,7 +900,7 @@ class PositionService:
                 return dependencies
 
         except Exception as e:
-            print(f"❌ Error checking dependencies: {e}")
+            logger.warning("Error checking dependencies: %s", e)
             return {
                 'active_employees': 0,
                 'subdivisions': 0,

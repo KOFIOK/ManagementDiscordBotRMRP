@@ -5,6 +5,10 @@ Rank hierarchy utilities for personnel management
 from utils.config_manager import load_config
 from typing import Optional, Dict, List, Tuple
 import discord
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class RankHierarchy:
@@ -36,7 +40,7 @@ class RankHierarchy:
                         'role_id': data.get('role_id'),
                         'rank_level': data.get('rank', 0)
                     }
-                    print(f"🔄 RANK FIX: Converted '{rank_name}' from 'rank' to 'rank_level'")
+                    logger.info("RANK FIX: Converted '%s' from 'rank' to 'rank_level'", rank_name)
                 else:
                     converted_roles[rank_name] = {
                         'role_id': data.get('role_id'),
@@ -86,8 +90,8 @@ class RankHierarchy:
         rank_roles = RankHierarchy.get_rank_roles_dict()
         
         if current_rank not in rank_roles:
-            print(f"❌ RANK ERROR: Rank '{current_rank}' not found in rank_roles")
-            print(f"📋 Available ranks: {list(rank_roles.keys())}")
+            logger.warning("RANK ERROR: Rank '%s' not found in rank_roles", current_rank)
+            logger.info("Available ranks: {list(rank_roles.keys())}")
             return None
         
         try:
@@ -101,8 +105,8 @@ class RankHierarchy:
                     
             return None  # No higher rank exists
         except KeyError as e:
-            print(f"❌ RANK ERROR: Missing key {e} in rank data for '{current_rank}'")
-            print(f"📋 Rank data: {rank_roles[current_rank]}")
+            logger.warning("RANK ERROR: Missing key %s in rank data for '%s'", e, current_rank)
+            logger.info(f" Rank data: {rank_roles[current_rank]}")
             return None
     
     @staticmethod
@@ -111,8 +115,8 @@ class RankHierarchy:
         rank_roles = RankHierarchy.get_rank_roles_dict()
         
         if current_rank not in rank_roles:
-            print(f"❌ RANK ERROR: Rank '{current_rank}' not found in rank_roles")
-            print(f"📋 Available ranks: {list(rank_roles.keys())}")
+            logger.warning("RANK ERROR: Rank '%s' not found in rank_roles", current_rank)
+            logger.info("Available ranks: {list(rank_roles.keys())}")
             return None
             
         try:
@@ -129,8 +133,8 @@ class RankHierarchy:
                     
             return None  # No lower rank exists
         except KeyError as e:
-            print(f"❌ RANK ERROR: Missing key {e} in rank data for '{current_rank}'")
-            print(f"📋 Rank data: {rank_roles[current_rank]}")
+            logger.warning("RANK ERROR: Missing key %s in rank data for '%s'", e, current_rank)
+            logger.info(f" Rank data: {rank_roles[current_rank]}")
             return None
     
     @staticmethod
@@ -182,7 +186,7 @@ def migrate_old_rank_format():
     if not needs_migration:
         return False
         
-    print("🔄 Migrating rank roles to new format with hierarchy...")
+    logger.info("Migrating rank roles to new format with hierarchy...")
     
     # Default hierarchy for migration
     default_hierarchy = {
@@ -234,7 +238,7 @@ def migrate_old_rank_format():
     from utils.config_manager import save_config
     save_config(config)
     
-    print("✅ Rank roles migration completed!")
+    logger.info("Rank roles migration completed!")
     return True
 
 
@@ -256,7 +260,7 @@ def fix_rank_level_keys():
                     'rank_level': data.get('rank')
                 }
                 changes_made = True
-                print(f"🔧 FIXED: '{rank_name}' - changed 'rank' to 'rank_level'")
+                logger.info("FIXED: '%s' - changed 'rank' to 'rank_level'", rank_name)
             else:
                 # Keep as is
                 fixed_ranks[rank_name] = data
@@ -267,10 +271,10 @@ def fix_rank_level_keys():
     if changes_made:
         config['rank_roles'] = fixed_ranks
         save_config(config)
-        print("✅ Fixed rank_level keys in config!")
+        logger.info("Fixed rank_level keys in config!")
         return True
     else:
-        print("ℹ️  No rank key fixes needed.")
+        logger.info(" No rank key fixes needed.")
         return False
 
 
@@ -288,5 +292,5 @@ def get_user_position_from_db(user_id: int) -> Optional[Dict]:
         from utils.database_manager.position_service import position_service
         return position_service.get_user_position_from_db(user_id)
     except Exception as e:
-        print(f"❌ Error getting user position from database: {e}")
+        logger.warning("Error getting user position from database: %s", e)
         return None

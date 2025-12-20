@@ -8,8 +8,9 @@ import logging
 from typing import Optional, Dict, Any, Tuple
 from datetime import datetime, timezone, timedelta
 from ..postgresql_pool import get_db_cursor
+from utils.logging_setup import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class DepartmentOperations:

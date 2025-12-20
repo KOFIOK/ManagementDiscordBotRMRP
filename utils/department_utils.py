@@ -5,10 +5,11 @@
 import discord
 import logging
 from typing import Dict, Optional
+from utils.logging_setup import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
-async def restore_department_applications_messages(bot):
+async def restore_department_application_messages(bot):
     """Восстановить сообщения заявлений в подразделения для всех настроенных каналов"""
     try:
         from utils.config_manager import load_config
@@ -19,8 +20,8 @@ async def restore_department_applications_messages(bot):
         
         if not departments:
             logger.info("No departments configured for applications - skipping restoration")
-            print("ℹ️ No departments configured for applications in config.json - skipping")
-            print("ℹ️ To configure departments, use /settings -> Channels -> Departments")
+            logger.info("No departments configured for applications in config.json - skipping")
+            logger.info("To configure departments, use /settings -> Channels -> Departments")
             return True
         
         manager = DepartmentApplicationManager(bot)
@@ -37,39 +38,39 @@ async def restore_department_applications_messages(bot):
                 logger.warning(f"Channel {channel_id} for {dept_code} not found")
                 continue
             
-            print(f"🔄 Processing department {dept_code} in channel {channel.name}")
+            logger.info("Processing department %s in channel {channel.name}", dept_code)
             
             # Сначала пытаемся восстановить существующее закрепленное сообщение
             pinned_restored = await restore_department_pinned_message(channel, dept_code, manager, bot)
             
             if pinned_restored:
                 restored_count += 1
-                print(f"✅ Restored existing pinned message for {dept_code}")
+                logger.info("Restored existing pinned message for %s", dept_code)
             else:
                 # Если нет закреплённого, проверяем есть ли любое сообщение
                 message_exists = await check_department_message_exists(channel, dept_code)
                 if message_exists:
-                    print(f"ℹ️ Message already exists for {dept_code} (but not pinned)")
+                    logger.info("Message already exists for %s (but not pinned)", dept_code)
                     # Пытаемся найти и закрепить существующее сообщение
                     pinned_existing = await try_pin_existing_message(channel, dept_code, manager, bot)
                     if pinned_existing:
                         restored_count += 1
-                        print(f"✅ Restored and pinned existing message for {dept_code}")
+                        logger.info("Restored and pinned existing message for %s", dept_code)
                     else:
-                        print(f"⚠️ Found message for {dept_code} but could not restore view")
+                        logger.info("Found message for %s but could not restore view", dept_code)
                 else:
-                    print(f"📝 Creating new message for {dept_code} in {channel.name}")
+                    logger.info("Creating new message for %s in {channel.name}", dept_code)
                     try:
                         success = await manager.setup_department_channel(dept_code, channel)
                         if success:
                             created_count += 1
-                            print(f"✅ Created new message for {dept_code}")
+                            logger.info("Created new message for %s", dept_code)
                         else:
-                            print(f"❌ Failed to create message for {dept_code}")
+                            logger.warning("Failed to create message for %s", dept_code)
                     except Exception as e:
-                        print(f"❌ Error creating message for {dept_code}: {e}")
+                        logger.warning("Error creating message for %s: %s", dept_code, e)
         
-        print(f"Department applications: restored {restored_count}, created {created_count} messages")
+        logger.info("Department applications: restored %s, created %s messages", restored_count, created_count)
         return True
         
     except Exception as e:
@@ -102,20 +103,20 @@ async def restore_department_pinned_message(channel: discord.TextChannel, dept_c
                     if not message.pinned:
                         try:
                             await message.pin()
-                            print(f"📌 Pinned message for {dept_code} (ID: {message.id})")
+                            logger.info("Pinned message for %s (ID: {message.id})", dept_code)
                         except Exception as pin_error:
-                            print(f"⚠️ Could not pin message for {dept_code}: {pin_error}")
+                            logger.warning("Could not pin message for %s: %s", dept_code, pin_error)
                     
                     logger.info(f"✅ Restored view for {dept_code} by persistent_message_id (ID: {message.id})")
-                    print(f"✅ Restored view for {dept_code} from config (ID: {message.id})")
+                    logger.info("Restored view for %s from config (ID: {message.id})", dept_code)
                     return True
             except discord.NotFound:
-                print(f"⚠️ Message ID {persistent_message_id} for {dept_code} not found, clearing from config")
+                logger.info("Message ID %s for %s not found, clearing from config", persistent_message_id, dept_code)
                 # Очищаем неактуальный ID из конфигурации
                 dept_config.pop('persistent_message_id', None)
                 await manager._save_department_config(dept_code, dept_config)
             except Exception as e:
-                print(f"⚠️ Error fetching message {persistent_message_id} for {dept_code}: {e}")
+                logger.warning("Error fetching message %s for %s: %s", persistent_message_id, dept_code, e)
         
         # Если не нашли по ID, ищем среди закрепленных сообщений
         pinned_messages = await channel.pins()
@@ -135,7 +136,7 @@ async def restore_department_pinned_message(channel: discord.TextChannel, dept_c
                 bot.add_view(view, message_id=message.id)
                 
                 logger.info(f"✅ Restored view for {dept_code} pinned message (ID: {message.id})")
-                print(f"✅ Restored view for {dept_code} from pinned messages (ID: {message.id})")
+                logger.info("Restored view for %s from pinned messages (ID: {message.id})", dept_code)
                 
                 # Обновляем конфигурацию с message_id
                 await manager._save_department_message_info(dept_code, channel.id, message.id)
@@ -165,13 +166,13 @@ async def check_department_message_exists(channel: discord.TextChannel, dept_cod
                 message = await channel.fetch_message(persistent_message_id)
                 if message and message.author == channel.guild.me:
                     logger.info(f"Found existing message for {dept_code} by ID (ID: {message.id}, pinned: {message.pinned})")
-                    print(f"ℹ️ Found existing message for {dept_code} by ID: '{message.embeds[0].title if message.embeds else 'No title'}' (ID: {message.id})")
+                    logger.info("Found existing message for %s by ID: '{message.embeds[0].title if message.embeds else 'No title'}' (ID: {message.id})", dept_code)
                     return True
             except discord.NotFound:
-                print(f"⚠️ Message ID {persistent_message_id} for {dept_code} not found in channel, will clear from config")
+                logger.info("Message ID %s for %s not found in channel, will clear from config", persistent_message_id, dept_code)
                 # Не очищаем здесь, только логируем - очистка будет в restore_department_pinned_message
             except Exception as e:
-                print(f"⚠️ Error fetching message {persistent_message_id} for {dept_code}: {e}")
+                logger.warning("Error fetching message %s for %s: %s", persistent_message_id, dept_code, e)
         
         # Если не нашли по ID, проверяем последние сообщения в канале
         async for message in channel.history(limit=50):  # Увеличил лимит
@@ -187,11 +188,11 @@ async def check_department_message_exists(channel: discord.TextChannel, dept_cod
                 if (dept_code_lower in title and 
                     ("заявление" in title or "подразделение" in title)):
                     logger.info(f"Found existing message for {dept_code} by search (ID: {message.id}, pinned: {message.pinned})")
-                    print(f"ℹ️ Found existing message for {dept_code} by search: '{message.embeds[0].title}' (ID: {message.id})")
+                    logger.info("Found existing message for %s by search: f'{message.embeds[0].title}' (ID: {message.id})", dept_code)
                     return True
         
         logger.info(f"No existing message found for {dept_code}")
-        print(f"⚠️ No existing message found for {dept_code}")
+        logger.info("No existing message found for %s", dept_code)
         return False
     except Exception as e:
         logger.error(f"Error checking for department message in {channel.name}: {e}")
@@ -223,20 +224,20 @@ async def try_pin_existing_message(channel: discord.TextChannel, dept_code: str,
                     if not message.pinned:
                         try:
                             await message.pin()
-                            print(f"📌 Pinned existing message for {dept_code} (ID: {message.id})")
-                            logger.info(f"✅ Pinned existing message for {dept_code} (ID: {message.id})")
+                            logger.info("Pinned existing message for %s (ID: {message.id})", dept_code)
+                        logger.info(f"✅ Pinned existing message for {dept_code} (ID: {message.id})")
                         except discord.Forbidden:
-                            logger.warning(f"⚠️ Could not pin message for {dept_code} - insufficient permissions")
+                        logger.warning(f"⚠️ Could not pin message for {dept_code} - insufficient permissions")
                         except discord.HTTPException as e:
-                            logger.warning(f"⚠️ Could not pin message for {dept_code}: {e}")
+                        logger.warning(f"⚠️ Could not pin message for {dept_code}: {e}")
                     
                     logger.info(f"✅ Restored and updated existing message for {dept_code} by ID (ID: {message.id})")
-                    print(f"✅ Restored existing message for {dept_code} from config (ID: {message.id})")
+                    logger.info("Restored existing message for %s from config (ID: {message.id})", dept_code)
                     return True
             except discord.NotFound:
-                print(f"⚠️ Message ID {persistent_message_id} for {dept_code} not found, will search manually")
+                logger.info("Message ID %s for %s not found, will search manually", persistent_message_id, dept_code)
             except Exception as e:
-                print(f"⚠️ Error fetching message {persistent_message_id} for {dept_code}: {e}")
+                logger.warning("Error fetching message %s for %s: %s", persistent_message_id, dept_code, e)
         
         # Если не нашли по ID, ищем сообщение подразделения среди последних сообщений
         async for message in channel.history(limit=20):
@@ -258,18 +259,18 @@ async def try_pin_existing_message(channel: discord.TextChannel, dept_code: str,
                 if not message.pinned:
                     try:
                         await message.pin()
-                        logger.info(f"✅ Pinned existing message for {dept_code} (ID: {message.id})")
-                        print(f"📌 Pinned existing message for {dept_code} (ID: {message.id})")
+                        logger.info(f" Pinned existing message for {dept_code} (ID: {message.id})")
+                        logger.info("Pinned existing message for %s (ID: {message.id})", dept_code)
                     except discord.Forbidden:
-                        logger.warning(f"⚠️ Could not pin message for {dept_code} - insufficient permissions")
+                        logger.warning(f" Could not pin message for {dept_code} - insufficient permissions")
                     except discord.HTTPException as e:
-                        logger.warning(f"⚠️ Could not pin message for {dept_code}: {e}")
+                        logger.warning(f" Could not pin message for {dept_code}: {e}")
                 
                 # Обновляем конфигурацию с message_id
                 await manager._save_department_message_info(dept_code, channel.id, message.id)
                 
                 logger.info(f"✅ Restored and updated existing message for {dept_code} by search (ID: {message.id})")
-                print(f"✅ Restored existing message for {dept_code} by search (ID: {message.id})")
+                logger.info("Restored existing message for %s by search (ID: {message.id})", dept_code)
                 return True
         
         logger.info(f"⚠️ No existing message found for {dept_code} to pin")

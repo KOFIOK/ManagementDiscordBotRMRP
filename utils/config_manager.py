@@ -6,6 +6,10 @@ import json
 import shutil
 import datetime
 from typing import Dict, Any
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 # Configuration file to store channel IDs
 CONFIG_FILE = 'data/config.json'
@@ -152,17 +156,17 @@ def create_backup(reason: str = "auto") -> str:
     try:
         if os.path.exists(CONFIG_FILE):
             shutil.copy2(CONFIG_FILE, backup_path)
-            print(f"✅ Backup created: {backup_path}")
+            logger.info("Backup created: %s", backup_path)
             
             # Keep only last 10 backups to avoid disk space issues
             cleanup_old_backups()
             
             return backup_path
         else:
-            print("⚠️  No config file to backup")
+            logger.info(" No config file to backup")
             return ""
     except Exception as e:
-        print(f"❌ Failed to create backup: {e}")
+        logger.error("Failed to create backup: %s", e)
         return ""
 
 def cleanup_old_backups(keep_count: int = 10):
@@ -183,12 +187,12 @@ def cleanup_old_backups(keep_count: int = 10):
                 old_backup_path = os.path.join(BACKUP_DIR, old_backup)
                 try:
                     os.remove(old_backup_path)
-                    print(f"🗑️  Removed old backup: {old_backup}")
+                    logger.info(" Removed old backup: %s", old_backup)
                 except Exception as e:
-                    print(f"⚠️  Failed to remove old backup {old_backup}: {e}")
+                    logger.error("Failed to remove old backup %s: %s", old_backup, e)
                     
     except Exception as e:
-        print(f"⚠️  Error during backup cleanup: {e}")
+        logger.error("Error during backup cleanup: %s", e)
 
 def list_backups() -> list:
     """List all available backups sorted by date (newest first)."""
@@ -203,7 +207,7 @@ def list_backups() -> list:
         
         return backup_files
     except Exception as e:
-        print(f"❌ Error listing backups: {e}")
+        logger.error("Error listing backups: %s", e)
         return []
 
 def restore_from_backup(backup_filename: str) -> bool:
@@ -211,7 +215,7 @@ def restore_from_backup(backup_filename: str) -> bool:
     backup_path = os.path.join(BACKUP_DIR, backup_filename)
     
     if not os.path.exists(backup_path):
-        print(f"❌ Backup file not found: {backup_path}")
+        logger.info("Backup file not found: %s", backup_path)
         return False
     
     try:
@@ -224,14 +228,14 @@ def restore_from_backup(backup_filename: str) -> bool:
         
         # Copy backup to main config
         shutil.copy2(backup_path, CONFIG_FILE)
-        print(f"✅ Configuration restored from: {backup_filename}")
+        logger.info("Configuration restored from: %s", backup_filename)
         return True
         
     except json.JSONDecodeError as e:
-        print(f"❌ Invalid JSON in backup file: {e}")
+        logger.info("Invalid JSON in backup file: %s", e)
         return False
     except Exception as e:
-        print(f"❌ Failed to restore from backup: {e}")
+        logger.error("Failed to restore from backup: %s", e)
         return False
 
 def safe_save_config(config: Dict[Any, Any]) -> bool:
@@ -257,11 +261,11 @@ def safe_save_config(config: Dict[Any, Any]) -> bool:
             create_backup("replaced")
         
         shutil.move(TEMP_CONFIG_FILE, CONFIG_FILE)
-        print("✅ Configuration saved successfully")
+        logger.info("Configuration saved successfully")
         return True
         
     except Exception as e:
-        print(f"❌ Failed to save configuration: {e}")
+        logger.error("Failed to save configuration: %s", e)
         
         # Clean up temporary file if it exists
         if os.path.exists(TEMP_CONFIG_FILE):
@@ -279,7 +283,7 @@ def load_config() -> Dict[Any, Any]:
         os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
         
         if not os.path.exists(CONFIG_FILE):
-            print("📝 Config file doesn't exist, creating default configuration")
+            logger.info("Config file doesn't exist, creating default configuration")
             safe_save_config(default_config)
             return default_config.copy()
         
@@ -288,32 +292,32 @@ def load_config() -> Dict[Any, Any]:
         
         # Apply migrations
         if migrate_config(config):
-            print("🔄 Configuration migrated to new format")
+            logger.info("Configuration migrated to new format")
             safe_save_config(config)
         return config
         
     except json.JSONDecodeError as e:
-        print(f"❌ Config file is corrupted: {e}")
+        logger.info("Config file is corrupted: %s", e)
         return attempt_recovery()
     except Exception as e:
-        print(f"❌ Error loading config: {e}")
+        logger.error("Error loading config: %s", e)
         return attempt_recovery()
 
 def attempt_recovery() -> Dict[Any, Any]:
     """Attempt to recover configuration from backups."""
-    print("🔄 Attempting configuration recovery...")
+    logger.info("Attempting configuration recovery...")
     
     backups = list_backups()
     
     if not backups:
-        print("⚠️  No backups found, using default configuration")
+        logger.info(" No backups found, using default configuration")
         safe_save_config(default_config)
         return default_config.copy()
     
-    print(f"📂 Found {len(backups)} backup(s), trying to restore...")
+    logger.info("Found {len(backups)} backup(s), trying to restore...")
     
     for backup_file in backups:
-        print(f"🔄 Trying backup: {backup_file}")
+        logger.info("Trying backup: %s", backup_file)
         backup_path = os.path.join(BACKUP_DIR, backup_file)
         
         try:
@@ -322,14 +326,14 @@ def attempt_recovery() -> Dict[Any, Any]:
             
             # Backup seems valid, restore it
             shutil.copy2(backup_path, CONFIG_FILE)
-            print(f"✅ Successfully recovered from backup: {backup_file}")
+            logger.info("Successfully recovered from backup: %s", backup_file)
             return recovered_config
             
         except Exception as e:
-            print(f"❌ Backup {backup_file} is also corrupted: {e}")
+            logger.info("Backup %s is also corrupted: %s", backup_file, e)
             continue
     
-    print("❌ All backups are corrupted, using default configuration")
+    logger.info("All backups are corrupted, using default configuration")
     safe_save_config(default_config)
     return default_config.copy()
 
@@ -506,11 +510,11 @@ def export_config(export_path: str) -> bool:
         with open(export_path, 'w', encoding='utf-8') as f:
             json.dump(export_data, f, indent=4, ensure_ascii=False)
         
-        print(f"✅ Configuration exported to: {export_path}")
+        logger.info("Configuration exported to: %s", export_path)
         return True
         
     except Exception as e:
-        print(f"❌ Failed to export configuration: {e}")
+        logger.error("Failed to export configuration: %s", e)
         return False
 
 def import_config(import_path: str) -> bool:
@@ -522,7 +526,7 @@ def import_config(import_path: str) -> bool:
         # Check if it's an export file with metadata
         if 'config' in import_data and 'exported_at' in import_data:
             config = import_data['config']
-            print(f"📦 Importing configuration exported at: {import_data['exported_at']}")
+            logger.info(f" Importing configuration exported at: {import_data['exported_at']}")
         else:
             # Assume it's a raw config file
             config = import_data
@@ -534,7 +538,7 @@ def import_config(import_path: str) -> bool:
         return safe_save_config(config)
         
     except Exception as e:
-        print(f"❌ Failed to import configuration: {e}")
+        logger.error("Failed to import configuration: %s", e)
         return False
 
 def get_config_status() -> Dict[str, Any]:
@@ -567,7 +571,7 @@ def get_config_status() -> Dict[str, Any]:
             ).isoformat()
     
     except Exception as e:
-        print(f"Error getting config status: {e}")
+        logger.error("Error getting config status: %s", e)
     
     return status
 
@@ -678,7 +682,7 @@ async def has_pending_dismissal_report(bot, user_id, dismissal_channel_id):
                     # Check if report is still pending (not approved/rejected)
                     status_pending = True
                     for field in embed.fields:
-                        if field.name == "Обработано":
+                        if field.name == "✅ Обработано":
                             status_pending = False
                             break
                     
@@ -688,7 +692,7 @@ async def has_pending_dismissal_report(bot, user_id, dismissal_channel_id):
         return False
         
     except Exception as e:
-        print(f"Error checking pending dismissal reports: {e}")
+        logger.error("Error checking pending dismissal reports: %s", e)
         return False
 
 async def has_pending_role_application(bot, user_id, role_assignment_channel_id):
@@ -732,7 +736,7 @@ async def has_pending_role_application(bot, user_id, role_assignment_channel_id)
         return False
         
     except Exception as e:
-        print(f"Error checking pending role applications: {e}")
+        logger.error("Error checking pending role applications: %s", e)
         return False
 
 def save_role_assignment_message_id(message_id: int):
@@ -741,10 +745,10 @@ def save_role_assignment_message_id(message_id: int):
         config = load_config()
         config['role_assignment_message_id'] = message_id
         save_config(config)
-        print(f"✅ Saved role assignment message ID: {message_id}")
+        logger.info("Saved role assignment message ID: %s", message_id)
         return True
     except Exception as e:
-        print(f"❌ Error saving role assignment message ID: {e}")
+        logger.error("Error saving role assignment message ID: %s", e)
         return False
 
 def get_role_assignment_message_link(guild_id: int):
@@ -758,7 +762,7 @@ def get_role_assignment_message_link(guild_id: int):
             return f"https://discord.com/channels/{guild_id}/{channel_id}/{message_id}"
         return None
     except Exception as e:
-        print(f"❌ Error getting role assignment message link: {e}")
+        logger.error("Error getting role assignment message link: %s", e)
         return None
 
 def save_dismissal_message_id(message_id: int):
@@ -767,10 +771,10 @@ def save_dismissal_message_id(message_id: int):
         config = load_config()
         config['dismissal_message_id'] = message_id
         save_config(config)
-        print(f"✅ Saved dismissal message ID: {message_id}")
+        logger.info("Saved dismissal message ID: %s", message_id)
         return True
     except Exception as e:
-        print(f"❌ Error saving dismissal message ID: {e}")
+        logger.error("Error saving dismissal message ID: %s", e)
         return False
 
 def get_dismissal_message_link(guild_id: int):
@@ -784,7 +788,7 @@ def get_dismissal_message_link(guild_id: int):
             return f"https://discord.com/channels/{guild_id}/{channel_id}/{message_id}"
         return None
     except Exception as e:
-        print(f"❌ Error getting dismissal message link: {e}")
+        logger.error("Error getting dismissal message link: %s", e)
         return None
 
 def get_default_warehouse_limits():
@@ -1003,12 +1007,12 @@ def initialize_warehouse_limits():
     # Инициализировать лимиты по должностям, если они пусты
     if not config.get('warehouse_limits_positions'):
         config['warehouse_limits_positions'] = get_default_warehouse_limits()
-        print("✅ Инициализированы лимиты склада по должностям")
+        logger.info("Инициализированы лимиты склада по должностям")
 
     # Инициализировать лимиты по званиям, если они пусты
     if not config.get('warehouse_limits_ranks'):
         config['warehouse_limits_ranks'] = get_default_warehouse_ranks_limits()
-        print("✅ Инициализированы лимиты склада по званиям")
+        logger.info("Инициализированы лимиты склада по званиям")
 
     save_config(config)
     return config
@@ -1052,7 +1056,7 @@ def ensure_warehouse_config():
     
     if updated:
         save_config(config)
-        print("✅ Конфигурация склада обновлена")
+        logger.info("Конфигурация склада обновлена")
     
     return config
 

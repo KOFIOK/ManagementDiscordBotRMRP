@@ -122,7 +122,6 @@ class Blacklist(Base):
     start_date = Column(Date)
     end_date = Column(Date)
     last_updated = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-    is_active = Column(Boolean, default=True)
     personnel_id = Column(BigInteger, ForeignKey('personnel.discord_id'))
     added_by = Column(String(200))
     

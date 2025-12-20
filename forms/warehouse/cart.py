@@ -5,6 +5,10 @@
 import discord
 from datetime import datetime
 from typing import Optional, Dict, List
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class WarehouseRequestItem:
@@ -123,19 +127,19 @@ def clear_user_cart(user_id: int):
             message_cleared = True
             
         if cart_cleared or message_cleared:
-            print(f"🧹 CART CLEANUP: Очищены данные для пользователя {user_id} (корзина: {'✅' if cart_cleared else '❌'}, сообщение: {'✅' if message_cleared else '❌'})")
+            logger.info("CART CLEANUP: Очищены данные для пользователя %s (корзина: %s, сообщение: %s)", user_id, '' if cart_cleared else '', '' if message_cleared else '')
         
     except Exception as e:
-        print(f"❌ CART CLEANUP ERROR: Ошибка очистки корзины для {user_id}: {e}")
+        logger.warning("CART CLEANUP ERROR: Ошибка очистки корзины для %s: %s", user_id, e)
 
 
 def clear_user_cart_safe(user_id: int, reason: str = "unknown"):
     """Безопасная очистка корзины с указанием причины"""
     try:
-        print(f"🧹 CART SAFE CLEAR: Начата очистка для пользователя {user_id}, причина: {reason}")
+        logger.info("CART SAFE CLEAR: Начата очистка для пользователя %s, причина: %s", user_id, reason)
         clear_user_cart(user_id)
     except Exception as e:
-        print(f"❌ CART SAFE CLEAR ERROR: Критическая ошибка очистки корзины для {user_id}: {e}")
+        logger.warning("CART SAFE CLEAR ERROR: Критическая ошибка очистки корзины для %s: %s", user_id, e)
 
 
 def get_user_cart_message(user_id: int) -> Optional[discord.Message]:

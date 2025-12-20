@@ -739,11 +739,6 @@ class TemplateEditorView(NicknameBaseView):
     def __init__(self):
         super().__init__()
         self.add_item(TemplateEditorSelect())
-    """View for template editing"""
-    
-    def __init__(self):
-        super().__init__()
-        self.add_item(TemplateEditorSelect())
 
 
 class FormatSettingsSelect(ui.Select):

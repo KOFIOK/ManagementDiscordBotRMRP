@@ -65,6 +65,12 @@ class MainSettingsSelect(ui.Select):
                 value="nickname_settings"
             ),
             discord.SelectOption(
+                label="Электронные заявки",
+                description="Настройка системы электронных заявок на вступление/восстановление",
+                emoji="📋",
+                value="electronic_applications"
+            ),
+            discord.SelectOption(
                 label="Настройки команд",
                 description="Настройка доступности действий для различных команд",
                 emoji="⚙️",
@@ -100,6 +106,8 @@ class MainSettingsSelect(ui.Select):
             await self.show_warehouse_settings_menu(interaction)
         elif selected_option == "supplies_settings":
             await self.show_supplies_settings_menu(interaction)
+        elif selected_option == "electronic_applications":
+            await self.show_electronic_applications_menu(interaction)
         elif selected_option == "commands_settings":
             await self.show_commands_settings_menu(interaction)
         elif selected_option == "nickname_settings":
@@ -210,6 +218,12 @@ class MainSettingsSelect(ui.Select):
                 await interaction.followup.send(f"❌ Ошибка открытия настроек должностей: {str(e)}", ephemeral=True)
             except Exception as e2:
                 logger.warning("Failed to send error message: %s", e2)
+    
+    async def show_electronic_applications_menu(self, interaction: discord.Interaction):
+        """Show electronic applications settings menu"""
+        from .electronic_applications import show_electronic_applications_menu
+        
+        await show_electronic_applications_menu(interaction)
 
     async def show_warehouse_settings_menu(self, interaction: discord.Interaction):
         """Show warehouse settings configuration menu"""

@@ -152,6 +152,26 @@ default_config = {
         'allow_subdivision_selection': False,
         'default_subdivision_key': 'ВА',
         'allowed_subdivision_keys': []
+    },
+    
+    # Electronic applications system configuration
+    'electronic_applications': {
+        'enabled': False,
+        'channel_id': None,
+        'template_path': 'data/electronic_applications.md',
+        'discord_tag_pattern': 'Дискорд для связи с вами:\\s*(?:\\(Пример-\\s*)?@?([\\w.#\\d-]+)',
+        'success_reaction': '✅',
+        'failure_reaction': '❌',
+        'templates': {
+            'вступление': {
+                'path': 'data/electronic_applications.md',
+                'type_keyword': 'Заявление на вступление'
+            },
+            'восстановление': {
+                'path': 'data/electronic_applications_restore.md',
+                'type_keyword': 'Заявление на восстановление'
+            }
+        }
     }
 }
 

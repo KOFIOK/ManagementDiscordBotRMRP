@@ -141,6 +141,17 @@ default_config = {
             #     'subdivision_chars': 'А-ЯЁA-Zа-яё\\d'
             # }
         }
+    },
+
+    # Recruitment settings
+    'recruitment': {
+        'enabled': True,
+        'allow_user_rank_selection': False,
+        'default_rank_id': 1,
+        'allowed_rank_ids': [],  # empty -> all ranks
+        'allow_subdivision_selection': False,
+        'default_subdivision_key': 'ВА',
+        'allowed_subdivision_keys': []
     }
 }
 
@@ -494,6 +505,60 @@ def migrate_config(config):
         migrated = True
     
     return migrated
+
+
+# ============================================================================
+# Recruitment configuration helpers
+# ============================================================================
+
+
+def get_recruitment_config(guild_id: int | None = None) -> Dict[str, Any]:
+    """Возвращает настройки приёма с мерджем дефолтов и безопасной очисткой списков."""
+    config = load_config()
+    defaults = default_config.get('recruitment', {})
+    user_cfg = config.get('recruitment', {}) or {}
+
+    merged = defaults.copy()
+    merged.update(user_cfg)
+
+    # Безопасно приводим типы
+    try:
+        merged['default_rank_id'] = int(merged['default_rank_id']) if merged.get('default_rank_id') is not None else None
+    except Exception:
+        merged['default_rank_id'] = None
+
+    allowed_rank_ids = []
+    for rid in merged.get('allowed_rank_ids', []) or []:
+        try:
+            allowed_rank_ids.append(int(rid))
+        except Exception:
+            continue
+    merged['allowed_rank_ids'] = allowed_rank_ids
+
+    # Заглушки для подразделений
+    merged['allow_subdivision_selection'] = False
+    merged['default_subdivision_key'] = merged.get('default_subdivision_key', 'ВА') or 'ВА'
+    merged['allowed_subdivision_keys'] = merged.get('allowed_subdivision_keys', []) or []
+
+    return merged
+
+
+async def get_recruitment_ranks(limit: int = 25) -> list[Dict[str, Any]]:
+    """Возвращает список рангов для приёма с учётом whitelist и лимита."""
+    from utils.database_manager.rank_manager import RankManager
+
+    cfg = get_recruitment_config()
+    allowed_ids = cfg.get('allowed_rank_ids') or []
+
+    rank_manager = RankManager()
+    ranks = await rank_manager.get_all_active_ranks()
+
+    if allowed_ids:
+        ranks = [r for r in ranks if r.get('id') in allowed_ids]
+
+    # Отсортируем по rank_level, затем обрежем лимит
+    ranks = sorted(ranks, key=lambda x: x.get('rank_level', 0))[:limit]
+    return ranks
 
 def export_config(export_path: str) -> bool:
     """Export current configuration to a specified path."""

@@ -5,13 +5,101 @@ Application modals for role assignment system
 import discord
 import re
 from discord import ui
-from utils.config_manager import load_config, has_pending_role_application
+from utils.config_manager import load_config, has_pending_role_application, get_recruitment_config
 from utils.message_manager import get_role_assignment_message, get_message_with_params
 from utils.database_manager.rank_manager import rank_manager
+from utils.postgresql_pool import get_db_cursor
 from utils.logging_setup import get_logger
 
 # Initialize logger
 logger = get_logger(__name__)
+
+
+class RankDropdown(ui.Select):
+    """Dropdown для выбора ранга с загрузкой из БД"""
+    
+    def __init__(self, recruitment_cfg: dict = None):
+        """
+        Args:
+            recruitment_cfg: Конфигурация набора с allowed_rank_ids
+        """
+        if recruitment_cfg is None:
+            recruitment_cfg = get_recruitment_config()
+        
+        self.recruitment_cfg = recruitment_cfg
+        self.selected_rank_name = None
+        
+        # Загружаем опции из БД синхронно
+        options = self._load_rank_options()
+        
+        super().__init__(
+            placeholder="Выберите желаемое звание",
+            min_values=1,
+            max_values=1,
+            options=options
+        )
+    
+    def _load_rank_options(self) -> list[discord.SelectOption]:
+        """Загружает ранги из БД с учётом whitelist"""
+        try:
+            allowed_ids = self.recruitment_cfg.get('allowed_rank_ids') or []
+            
+            query = """
+                SELECT id, name, rank_level
+                FROM ranks
+                WHERE role_id IS NOT NULL
+            """
+            params = []
+            
+            if allowed_ids:
+                placeholders = ','.join(['%s'] * len(allowed_ids))
+                query += f" AND id IN ({placeholders})"
+                params.extend(allowed_ids)
+            
+            query += " ORDER BY rank_level ASC LIMIT 25"
+            
+            options = []
+            with get_db_cursor() as cursor:
+                cursor.execute(query, tuple(params))
+                rows = cursor.fetchall() or []
+                
+                for row in rows:
+                    options.append(
+                        discord.SelectOption(
+                            label=row['name'],
+                            description=f"Ранг: {row['rank_level']}",
+                            value=row['name']  # Используем название как value
+                        )
+                    )
+            
+            # Если нет рангов - добавляем дефолтную опцию
+            if not options:
+                default_rank = rank_manager.get_default_recruit_rank_sync()
+                options.append(
+                    discord.SelectOption(
+                        label=default_rank,
+                        description="Стандартный ранг",
+                        value=default_rank
+                    )
+                )
+            
+            return options
+            
+        except Exception as e:
+            logger.error("Failed to load rank options: %s", e)
+            # Возвращаем дефолтную опцию при ошибке
+            default_rank = rank_manager.get_default_recruit_rank_sync()
+            return [
+                discord.SelectOption(
+                    label=default_rank,
+                    description="Стандартный ранг",
+                    value=default_rank
+                )
+            ]
+    
+    async def callback(self, interaction: discord.Interaction):
+        """Обработка выбора ранга"""
+        self.selected_rank_name = self.values[0]
 
 
 class MilitaryApplicationModal(ui.Modal):
@@ -19,6 +107,10 @@ class MilitaryApplicationModal(ui.Modal):
     
     def __init__(self):
         super().__init__(title=get_role_assignment_message(0, 'application.military_modal_title', 'Заявка на получение роли военнослужащего'))
+
+        self.recruitment_cfg = get_recruitment_config()
+        self.allow_rank_selection = self.recruitment_cfg.get('allow_user_rank_selection', False)
+        self.default_rank_id = self.recruitment_cfg.get('default_rank_id')
         
         self.first_name_input = ui.TextInput(
             label=get_role_assignment_message(0, 'application.first_name_label', 'Имя'),
@@ -47,8 +139,15 @@ class MilitaryApplicationModal(ui.Modal):
         )
         self.add_item(self.static_input)
         
-        # Rank is always default recruit rank for new military recruits, no need for input field
-    
+        # Если включен выбор ранга пользователем - добавляем Select через ui.Label
+        if self.allow_rank_selection:
+            self.rank_dropdown = ui.Label(
+                text='🎖️ Выберите желаемое звание:',
+                component=RankDropdown(self.recruitment_cfg)
+            )
+            self.add_item(self.rank_dropdown)
+
+
     async def on_submit(self, interaction: discord.Interaction):
         """Process military application submission"""
         # Check for pending applications
@@ -137,12 +236,40 @@ class MilitaryApplicationModal(ui.Modal):
             )
             return
         
+        # Resolve rank (используем выбранный в Select или дефолт из конфига)
+        resolved_rank_name = None
+        
+        # Если включен выбор ранга и пользователь выбрал ранг через Select
+        if self.allow_rank_selection and hasattr(self, 'rank_dropdown'):
+            # Получаем значение из dropdown компонента
+            if self.rank_dropdown.component.values:
+                resolved_rank_name = self.rank_dropdown.component.values[0]
+        
+        # Если ранг не выбран, используем дефолт
+        if not resolved_rank_name:
+            default_rank_id = self.recruitment_cfg.get('default_rank_id')
+            
+            if default_rank_id:
+                default_rank = await rank_manager.get_rank_by_id(default_rank_id)
+                if default_rank:
+                    resolved_rank_name = default_rank['name']
+            
+            if not resolved_rank_name:
+                resolved_rank_name = rank_manager.get_default_recruit_rank_sync()
+
+        if not resolved_rank_name:
+            await interaction.response.send_message(
+                "❌ Не настроено дефолтное звание. Обратитесь к администратору.",
+                ephemeral=True
+            )
+            return
+
         # Create application data
         application_data = {
             "type": "military",
             "name": full_name,
             "static": formatted_static,
-            "rank": rank_manager.get_default_recruit_rank_sync(),  # Always set rank as default for new military recruits
+            "rank": resolved_rank_name,
             "user_id": interaction.user.id,
             "user_mention": interaction.user.mention
         }

@@ -85,7 +85,8 @@ class RoleAssignmentView(ui.View):
             )
             return
         
-        # No issues, proceed with application
+        # Открываем модаль с формой заявки (Select для ранга внутри Modal через ui.Label)
+        from .modals import MilitaryApplicationModal
         modal = MilitaryApplicationModal()
         await interaction.response.send_modal(modal)
     

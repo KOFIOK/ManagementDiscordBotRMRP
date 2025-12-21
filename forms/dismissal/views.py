@@ -13,7 +13,7 @@ import asyncio
 import re
 import traceback
 from datetime import datetime
-from utils.config_manager import load_config, is_moderator_or_admin, can_moderate_user
+from utils.config_manager import load_config, is_moderator_or_admin, can_moderate_user, get_dismissal_message_link, is_blacklisted_user
 from utils.message_manager import (
     get_message, get_embed_color, get_private_messages,
     get_systems_message, get_ui_button, get_ui_status, get_military_term,

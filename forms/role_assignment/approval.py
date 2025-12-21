@@ -19,6 +19,7 @@ from utils.audit_logger import audit_logger
 from .base import get_channel_with_fallback
 from .views import ApprovedApplicationView, RejectedApplicationView, ProcessingApplicationView
 from utils.logging_setup import get_logger
+from utils.postgresql_pool import get_db_cursor
 
 # Initialize logger
 logger = get_logger(__name__)
@@ -55,6 +56,9 @@ class RoleApplicationApprovalView(ui.View):
                 # Звание (военные)
                 elif field.name == "🎖️ Звание":
                     application_data['rank'] = field.value
+                # Подразделение (военные)
+                elif field.name == "🏢 Подразделение":
+                    application_data['subdivision'] = field.value
                 # Фракция/должность (гос/поставки)
                 elif "Фракция" in field.name:
                     application_data['faction'] = field.value
@@ -537,7 +541,17 @@ class RoleApplicationApprovalView(ui.View):
         try:
             from utils.role_utils import role_utils
             
-            logger.info(f" ROLE ASSIGNMENT: Начинаем обработку ролей для {user.display_name} (тип: {self.application_data['type']})")
+            logger.debug(f" ROLE ASSIGNMENT: Начинаем обработку ролей для {user.display_name} (тип: {self.application_data['type']})")
+            # Диагностика: показываем subdivision из application_data
+            try:
+                logger.debug(
+                    "ROLE ASSIGNMENT: application_data subdivision=%s, rank=%s, name=%s",
+                    self.application_data.get('subdivision', '<none>'),
+                    self.application_data.get('rank', '<none>'),
+                    self.application_data.get('name', '<none>')
+                )
+            except Exception:
+                pass
             
             # Шаг 1: Очистить роли подразделений и должностей (для чистоты)
             # Базовые роли (военные/гражданские/поставщики) не должны иметь ролей подразделений
@@ -779,7 +793,8 @@ class RoleApplicationApprovalView(ui.View):
             # Update or add status field
             status_field_index = None
             for i, field in enumerate(embed.fields):
-                if "Статус" in field.name or "Обрабатывается" in field.value:
+                # Ищем поля со словами "Статус", "Ошибка" или "Обрабатывается" в имени или значении
+                if "Статус" in field.name or "Ошибка" in field.name or "Обрабатывается" in field.value:
                     status_field_index = i
                     break
             
@@ -832,6 +847,13 @@ class RoleApplicationApprovalView(ui.View):
                 moderator_discord_id,
                 signed_by_name
             )
+            try:
+                logger.debug(
+                    "PERSONNEL PROCESS: sent application_data subdivision=%s",
+                    self.application_data.get('subdivision', '<none>')
+                )
+            except Exception:
+                pass
             
             if personnel_success:
                 logger.info("PersonnelManager: %s", personnel_message)
@@ -850,11 +872,37 @@ class RoleApplicationApprovalView(ui.View):
                         return
                     
                     # Prepare personnel data for audit
+                    # Определяем подразделение для аудита из заявки или дефолта конфига
+                    department_name = self.application_data.get('subdivision')
+                    if not department_name:
+                        try:
+                            from utils.config_manager import load_config
+                            cfg = load_config().get('recruitment', {}) or {}
+                            default_id = cfg.get('default_subdivision_id')
+                            default_key = cfg.get('default_subdivision_key')
+                            with get_db_cursor() as cursor:
+                                if default_id:
+                                    cursor.execute("SELECT name FROM subdivisions WHERE id = %s", (default_id,))
+                                    r = cursor.fetchone()
+                                    if r:
+                                        department_name = r['name']
+                                elif default_key:
+                                    cursor.execute("SELECT name FROM subdivisions WHERE abbreviation = %s", (default_key,))
+                                    r = cursor.fetchone()
+                                    if r:
+                                        department_name = r['name']
+                        except Exception as ce:
+                            logger.error("Failed to resolve default department for audit: %s", ce)
+                    try:
+                        logger.debug("AUDIT DATA: department=%s (from application or config)", department_name or '<none>')
+                    except Exception:
+                        pass
+
                     personnel_data = {
                         'name': self.application_data.get('name', 'Неизвестно'),
                         'static': self.application_data.get('static', ''),
                         'rank': self.application_data.get('rank', rank_manager.get_default_recruit_rank_sync()),
-                        'department': 'Военная Академия',
+                        'department': department_name or 'Не назначено',
                         'position': 'Не назначено'
                     }
                     

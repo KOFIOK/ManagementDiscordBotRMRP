@@ -350,6 +350,53 @@ class RoleUtils:
                         if rank_role:
                             assigned_roles.append(f"{rank_role.name} ({default_rank})")
 
+        # Назначить роль подразделения из заявки (если указано)
+        subdivision_name = application_data.get('subdivision')
+        try:
+            logger.debug("ROLE UTILS: subdivision passed to assign_military_roles=%s", subdivision_name or '<none>')
+        except Exception:
+            pass
+        if subdivision_name:
+            from utils.postgresql_pool import get_db_cursor
+            try:
+                with get_db_cursor() as cursor:
+                    cursor.execute("""
+                        SELECT role_id FROM subdivisions 
+                        WHERE name = %s AND role_id IS NOT NULL
+                        LIMIT 1
+                    """, (subdivision_name,))
+                    result = cursor.fetchone()
+                    
+                    if result:
+                        subdivision_role = user.guild.get_role(result['role_id'])
+                        if subdivision_role and subdivision_role not in user.roles:
+                            try:
+                                reason = get_role_reason(
+                                    user.guild.id,
+                                    "role_assignment.military",
+                                    "Заявка на роль военнослужащего: одобрена"
+                                ).format(moderator=moderator_display)
+                                
+                                await user.add_roles(subdivision_role, reason=reason)
+                                assigned_roles.append(f"{subdivision_role.name} (подразделение)")
+                                logger.info("Назначена роль подразделения %s пользователю %s", subdivision_role.name, user)
+                            except discord.Forbidden:
+                                logger.info("Нет прав для назначения роли подразделения %s пользователю %s", subdivision_role.name, user)
+                            except Exception as e:
+                                logger.error("Ошибка при назначении роли подразделения %s пользователю %s: %s", subdivision_role.name, user, e)
+                        else:
+                            try:
+                                logger.info("ROLE UTILS: subdivision role_id=%s not found or role already present", result.get('role_id'))
+                            except Exception:
+                                pass
+            except Exception as e:
+                logger.error("Ошибка при получении роли подразделения %s: %s", subdivision_name, e)
+        else:
+            try:
+                logger.info("ROLE UTILS: subdivision missing in application_data; department role will not be assigned")
+            except Exception:
+                pass
+
         return assigned_roles
 
     @staticmethod

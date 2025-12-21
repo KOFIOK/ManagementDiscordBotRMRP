@@ -102,6 +102,93 @@ class RankDropdown(ui.Select):
         self.selected_rank_name = self.values[0]
 
 
+class SubdivisionDropdown(ui.Select):
+    """Dropdown для выбора подразделения с загрузкой из БД"""
+    
+    def __init__(self, recruitment_cfg: dict = None):
+        """
+        Args:
+            recruitment_cfg: Конфигурация набора с allowed_subdivision_ids
+        """
+        if recruitment_cfg is None:
+            recruitment_cfg = get_recruitment_config()
+        
+        self.recruitment_cfg = recruitment_cfg
+        self.selected_subdivision_name = None
+        
+        # Загружаем опции из БД синхронно
+        options = self._load_subdivision_options()
+        
+        super().__init__(
+            placeholder="Выберите подразделение",
+            min_values=1,
+            max_values=1,
+            options=options
+        )
+    
+    def _load_subdivision_options(self) -> list[discord.SelectOption]:
+        """Загружает подразделения из БД с учётом whitelist (IDs или keys/abbreviation)."""
+        try:
+            allowed_ids = self.recruitment_cfg.get('allowed_subdivision_ids') or []
+            allowed_keys = self.recruitment_cfg.get('allowed_subdivision_keys') or []
+            
+            query = """
+                SELECT id, name, abbreviation
+                FROM subdivisions
+                WHERE role_id IS NOT NULL
+            """
+            params = []
+            
+            if allowed_ids:
+                placeholders = ','.join(['%s'] * len(allowed_ids))
+                query += f" AND id IN ({placeholders})"
+                params.extend(allowed_ids)
+            elif allowed_keys:
+                placeholders = ','.join(['%s'] * len(allowed_keys))
+                query += f" AND abbreviation IN ({placeholders})"
+                params.extend(allowed_keys)
+            
+            query += " ORDER BY name ASC LIMIT 25"
+            
+            options = []
+            with get_db_cursor() as cursor:
+                cursor.execute(query, tuple(params))
+                rows = cursor.fetchall() or []
+                
+                for row in rows:
+                    options.append(
+                        discord.SelectOption(
+                            label=row['name'],
+                            value=row['name']  # Используем название как value
+                        )
+                    )
+            
+            # Если нет подразделений - добавляем дефолтную опцию
+            if not options:
+                options.append(
+                    discord.SelectOption(
+                        label="По умолчанию",
+                        value="По умолчанию"
+                    )
+                )
+            
+            return options
+            
+        except Exception as e:
+            logger.error("Failed to load subdivision options: %s", e)
+            # Возвращаем дефолтную опцию при ошибке
+            return [
+                discord.SelectOption(
+                    label="По умолчанию",
+                    value="По умолчанию"
+                )
+            ]
+    
+    async def callback(self, interaction: discord.Interaction):
+        """Обработка выбора подразделения"""
+        self.selected_subdivision_name = self.values[0]
+
+
 class MilitaryApplicationModal(ui.Modal):
     """Modal for military service role applications"""
     
@@ -110,6 +197,11 @@ class MilitaryApplicationModal(ui.Modal):
 
         self.recruitment_cfg = get_recruitment_config()
         self.allow_rank_selection = self.recruitment_cfg.get('allow_user_rank_selection', False)
+        # Совместимость с ключами: allow_user_subdivision_selection или allow_subdivision_selection
+        self.allow_subdivision_selection = (
+            self.recruitment_cfg.get('allow_user_subdivision_selection', False)
+            or self.recruitment_cfg.get('allow_subdivision_selection', False)
+        )
         self.default_rank_id = self.recruitment_cfg.get('default_rank_id')
         
         self.first_name_input = ui.TextInput(
@@ -146,6 +238,14 @@ class MilitaryApplicationModal(ui.Modal):
                 component=RankDropdown(self.recruitment_cfg)
             )
             self.add_item(self.rank_dropdown)
+        
+        # Если включен выбор подразделения пользователем - добавляем Select через ui.Label
+        if self.allow_subdivision_selection:
+            self.subdivision_dropdown = ui.Label(
+                text='🏢 Выберите подразделение:',
+                component=SubdivisionDropdown(self.recruitment_cfg)
+            )
+            self.add_item(self.subdivision_dropdown)
 
 
     async def on_submit(self, interaction: discord.Interaction):
@@ -263,6 +363,40 @@ class MilitaryApplicationModal(ui.Modal):
                 ephemeral=True
             )
             return
+        
+        # Resolve subdivision (используем выбранное в Select или дефолт из конфига)
+        resolved_subdivision_name = None
+        subdivision_source = "none"
+        
+        # Если включен выбор подразделения и пользователь выбрал подразделение через Select
+        if self.allow_subdivision_selection and hasattr(self, 'subdivision_dropdown'):
+            # Получаем значение из dropdown компонента
+            if self.subdivision_dropdown.component.values:
+                resolved_subdivision_name = self.subdivision_dropdown.component.values[0]
+                subdivision_source = "dropdown"
+        
+        # Если подразделение не выбрано, используем дефолт из конфига
+        if not resolved_subdivision_name:
+            # Порядок: ID из конфига, затем ключ (аббревиатура)
+            default_subdivision_id = self.recruitment_cfg.get('default_subdivision_id')
+            default_subdivision_key = self.recruitment_cfg.get('default_subdivision_key')
+
+            try:
+                with get_db_cursor() as cursor:
+                    if default_subdivision_id:
+                        cursor.execute("SELECT name FROM subdivisions WHERE id = %s", (default_subdivision_id,))
+                        result = cursor.fetchone()
+                        if result:
+                            resolved_subdivision_name = result['name']
+                            subdivision_source = "config_id"
+                    elif default_subdivision_key:
+                        cursor.execute("SELECT name FROM subdivisions WHERE abbreviation = %s", (default_subdivision_key,))
+                        result = cursor.fetchone()
+                        if result:
+                            resolved_subdivision_name = result['name']
+                            subdivision_source = "config_key"
+            except Exception as e:
+                logger.error("Failed to get default subdivision: %s", e)
 
         # Create application data
         application_data = {
@@ -273,6 +407,22 @@ class MilitaryApplicationModal(ui.Modal):
             "user_id": interaction.user.id,
             "user_mention": interaction.user.mention
         }
+        
+        # Добавляем подразделение если оно выбрано
+        if resolved_subdivision_name:
+            application_data["subdivision"] = resolved_subdivision_name
+        # Диагностика: логируем источник и итоговые данные заявки
+        try:
+            logger.debug(
+                "ROLE ASSIGNMENT MODAL: subdivision=%s (source=%s), rank=%s, name=%s, static=%s",
+                resolved_subdivision_name or "<none>",
+                subdivision_source,
+                resolved_rank_name,
+                full_name,
+                formatted_static
+            )
+        except Exception:
+            pass
         
         # Send for approval
         await self._send_application_for_approval(interaction, application_data)
@@ -326,6 +476,10 @@ class MilitaryApplicationModal(ui.Modal):
             embed.add_field(name="🔢 Статик", value=application_data["static"], inline=True)
             embed.add_field(name="🎖️ Звание", value=application_data["rank"], inline=True)
             
+            # Добавляем подразделение если оно есть
+            if "subdivision" in application_data:
+                embed.add_field(name="🏢 Подразделение", value=application_data["subdivision"], inline=True)
+            
             # Create approval view
             from .base import create_approval_view
             approval_view = create_approval_view(application_data)
@@ -351,7 +505,7 @@ class MilitaryApplicationModal(ui.Modal):
             await moderation_channel.send(content=ping_content, embed=embed, view=approval_view)
             
             await interaction.response.send_message(
-                get_message_with_params(interaction.guild.id, "systems.role_assignment.application.success_application_submitted", action="Заявка на получение роли"),
+                get_message_with_params(interaction.guild.id, "systems.role_assignment.application_submitted", action="Заявка на получение роли"),
                 ephemeral=True
             )
             
@@ -731,6 +885,7 @@ class MilitaryEditModal(ui.Modal):
         self.application_data = application_data
         self.recruitment_cfg = get_recruitment_config()
         self.allow_rank_selection = self.recruitment_cfg.get('allow_user_rank_selection', False)
+        self.allow_subdivision_selection = self.recruitment_cfg.get('allow_user_subdivision_selection', False)
         
         # Предзаполняем поля текущими данными
         self.name_input = ui.TextInput(
@@ -760,6 +915,14 @@ class MilitaryEditModal(ui.Modal):
                 component=RankDropdown(self.recruitment_cfg)
             )
             self.add_item(self.rank_dropdown)
+        
+        # Если включен выбор подразделения - добавляем Select через ui.Label
+        if self.allow_subdivision_selection:
+            self.subdivision_dropdown = ui.Label(
+                text='🏢 Выберите подразделение:',
+                component=SubdivisionDropdown(self.recruitment_cfg)
+            )
+            self.add_item(self.subdivision_dropdown)
     
     async def on_submit(self, interaction: discord.Interaction):
         """Обработка редактирования военной заявки"""
@@ -781,6 +944,12 @@ class MilitaryEditModal(ui.Modal):
                 if self.rank_dropdown.component.values:
                     rank = self.rank_dropdown.component.values[0]
             
+            # Получаем подразделение из Select если включен выбор подразделения
+            subdivision = None
+            if self.allow_subdivision_selection and hasattr(self, 'subdivision_dropdown'):
+                if self.subdivision_dropdown.component.values:
+                    subdivision = self.subdivision_dropdown.component.values[0]
+            
             # Собираем новые данные
             updated_data = {
                 'name': self.name_input.value.strip(),
@@ -792,6 +961,13 @@ class MilitaryEditModal(ui.Modal):
                 'user_mention': self.application_data.get('user_mention', f"<@{self.application_data['user_id']}>"),
                 'timestamp': self.application_data.get('timestamp')
             }
+            
+            # Добавляем подразделение если оно выбрано
+            if subdivision:
+                updated_data['subdivision'] = subdivision
+            elif 'subdivision' in self.application_data:
+                # Сохраняем существующее подразделение если оно было
+                updated_data['subdivision'] = self.application_data['subdivision']
             
             await self._handle_edit_update(interaction, updated_data)
             
@@ -823,13 +999,29 @@ class MilitaryEditModal(ui.Modal):
                     embed.set_field_at(i, name="🔢 Статик", value=updated_data['static'], inline=True)
                 elif field.name == "🎖️ Звание":
                     embed.set_field_at(i, name="🎖️ Звание", value=updated_data['rank'], inline=True)
+                elif field.name == "🏢 Подразделение":
+                    # Обновляем подразделение если оно есть в updated_data
+                    if 'subdivision' in updated_data:
+                        embed.set_field_at(i, name="🏢 Подразделение", value=updated_data['subdivision'], inline=True)
+                    else:
+                        # Помечаем для удаления если его больше нет
+                        fields_to_remove.append(i)
                 elif field.name == "✏️ Отредактировано":
                     # Помечаем старое поле для удаления
                     fields_to_remove.append(i)
             
-            # Удаляем старые поля "Отредактировано" (в обратном порядке, чтобы не сбить индексы)
+            # Удаляем старые поля (в обратном порядке, чтобы не сбить индексы)
             for i in reversed(fields_to_remove):
                 embed.remove_field(i)
+            
+            # Добавляем подразделение если его нет в embed и оно есть в updated_data
+            if 'subdivision' in updated_data:
+                if not any(field.name == "🏢 Подразделение" for field in embed.fields):
+                    embed.add_field(
+                        name="🏢 Подразделение",
+                        value=updated_data['subdivision'],
+                        inline=True
+                    )
             
             # Добавляем обновленную информацию о редактировании
             embed.add_field(

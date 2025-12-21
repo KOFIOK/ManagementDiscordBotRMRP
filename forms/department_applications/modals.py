@@ -654,7 +654,7 @@ class DepartmentApplicationStage2Modal(ui.Modal):
         
         self.age_input = ui.TextInput(
             label="Возраст",
-            placeholder="Ваш возраст (или укажите предпочитаемый диапазон)",
+            placeholder="Ваш возраст",
             max_length=20,
             required=True
         )

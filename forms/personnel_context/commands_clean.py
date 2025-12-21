@@ -220,6 +220,7 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
         # Если включен выбор ранга - добавляем Select через ui.Label
         self.recruitment_cfg = get_recruitment_config()
         self.allow_rank_selection = self.recruitment_cfg.get('allow_user_rank_selection', False)
+        self.allow_subdivision_selection = self.recruitment_cfg.get('allow_user_subdivision_selection', False)
         
         if self.allow_rank_selection:
             from forms.role_assignment.modals import RankDropdown
@@ -228,6 +229,15 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                 component=RankDropdown(self.recruitment_cfg)
             )
             self.add_item(self.rank_dropdown)
+        
+        # Если включен выбор подразделения - добавляем Select через ui.Label
+        if self.allow_subdivision_selection:
+            from forms.role_assignment.modals import SubdivisionDropdown
+            self.subdivision_dropdown = ui.Label(
+                text='🏢 Выберите подразделение:',
+                component=SubdivisionDropdown(self.recruitment_cfg)
+            )
+            self.add_item(self.subdivision_dropdown)
     
     async def on_submit(self, interaction: discord.Interaction):
         """Process recruitment submission using PersonnelManager"""
@@ -326,12 +336,19 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                 if self.rank_dropdown.component.values:
                     rank = self.rank_dropdown.component.values[0]
             
+            # Получаем подразделение из Select если включен выбор подразделения
+            subdivision = None
+            if self.allow_subdivision_selection and hasattr(self, 'subdivision_dropdown'):
+                if self.subdivision_dropdown.component.values:
+                    subdivision = self.subdivision_dropdown.component.values[0]
+            
             # Process recruitment using PersonnelManager
             success = await self._process_recruitment_with_personnel_manager(
                 interaction,
                 full_name,
                 formatted_static,
-                rank
+                rank,
+                subdivision
             )
             
             if success:
@@ -346,7 +363,8 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                         f"**Имя:** {first_name}\n"
                         f"**Фамилия:** {last_name}\n"
                         f"**Статик:** {formatted_static}\n"
-                        f"**Звание:** {rank}"
+                        f"**Звание:** {rank}" +
+                        (f"\n**Подразделение:** {subdivision}" if subdivision else "")
                     ),
                     inline=False
                 )
@@ -455,7 +473,7 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                 ephemeral=True
             )
     
-    async def _process_recruitment_with_personnel_manager(self, interaction: discord.Interaction, full_name: str, static: str, rank: str) -> bool:
+    async def _process_recruitment_with_personnel_manager(self, interaction: discord.Interaction, full_name: str, static: str, rank: str, subdivision: str = None) -> bool:
         """Process recruitment using PersonnelManager"""
         try:
             logger.info(f" RECRUITMENT: Starting recruitment via PersonnelManager for {self.target_user.id}")
@@ -468,7 +486,7 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                 'static': static,
                 'type': 'military',
                 'rank': rank,
-                'subdivision': 'Военная Академия',
+                'subdivision': subdivision or None,
                 'position': None
             }
             
@@ -490,11 +508,25 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                     from utils.audit_logger import audit_logger, AuditAction
                     config = load_config()
                     
+                    # Отправляем в аудит выбранное подразделение или дефолт из конфига
+                    dept_name = subdivision
+                    if not dept_name:
+                        try:
+                            cfg = load_config().get('recruitment', {}) or {}
+                            default_key = cfg.get('default_subdivision_key')
+                            if default_key:
+                                with get_db_cursor() as cursor:
+                                    cursor.execute("SELECT name FROM subdivisions WHERE abbreviation = %s", (default_key,))
+                                    r = cursor.fetchone()
+                                    if r:
+                                        dept_name = r['name']
+                        except Exception as ce:
+                            logger.error("Recruitment audit department resolve failed: %s", ce)
                     personnel_data = {
                         'name': full_name,
                         'static': static,
                         'rank': rank,
-                        'department': 'Военная Академия'
+                        'department': dept_name or 'Не назначено'
                     }
                     await audit_logger.send_personnel_audit(
                         guild=interaction.guild,
@@ -525,7 +557,7 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                     dm_embed.add_field(name="ФИО", value=full_name, inline=True)
                     dm_embed.add_field(name="Статик", value=static, inline=True)
                     dm_embed.add_field(name="Звание", value="Рядовой", inline=True)
-                    dm_embed.add_field(name="Подразделение", value="Военная Академия", inline=False)
+                    dm_embed.add_field(name="Подразделение", value=subdivision or "Не назначено", inline=False)
                     
                     await self.target_user.send(embed=dm_embed)
                     logger.info(f" RECRUITMENT: DM sent to {self.target_user.display_name}")
@@ -3439,7 +3471,7 @@ class RecruitmentStaticConflictView(ui.View):
                 'static': self.new_static,
                 'type': 'military',
                 'rank': "Рядовой",
-                'subdivision': 'Военная Академия',
+                'subdivision': None,
                 'position': None
             }
             
@@ -3462,11 +3494,25 @@ class RecruitmentStaticConflictView(ui.View):
                     from utils.audit_logger import audit_logger, AuditAction
                     config = load_config()
                     
+                    # Для аудита определяем подразделение по дефолту, т.к. выбор не выполнялся
+                    dept_name = None
+                    try:
+                        cfg = load_config().get('recruitment', {}) or {}
+                        default_key = cfg.get('default_subdivision_key')
+                        if default_key:
+                            with get_db_cursor() as cursor:
+                                cursor.execute("SELECT name FROM subdivisions WHERE abbreviation = %s", (default_key,))
+                                r = cursor.fetchone()
+                                if r:
+                                    dept_name = r['name']
+                    except Exception as ce:
+                        logger.error("Recruitment static conflict audit department resolve failed: %s", ce)
+
                     personnel_data = {
                         'name': self.new_name,
                         'static': self.new_static,
                         'rank': "Рядовой",
-                        'department': 'Военная Академия'
+                        'department': dept_name or 'Не назначено'
                     }
                     
                     await audit_logger.send_personnel_audit(

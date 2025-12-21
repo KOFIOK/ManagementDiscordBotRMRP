@@ -226,8 +226,37 @@ class PersonnelManager:
                 rank_name = application_data.get("rank", "Рядовой")
                 rank_id = await self._get_or_create_rank_id(rank_name, cursor)
 
-                # Get subdivision ID for Военная Академия (default for new recruits)
-                subdivision_id = await self._get_subdivision_id("Военная Академия", cursor)
+                # Получаем ID подразделения: из заявки, иначе дефолт из конфига
+                subdivision_name = application_data.get("subdivision")
+                if not subdivision_name:
+                    try:
+                        from utils.config_manager import load_config
+                        cfg = load_config().get('recruitment', {}) or {}
+                        default_id = cfg.get('default_subdivision_id')
+                        default_key = cfg.get('default_subdivision_key')
+                        if default_id:
+                            cursor.execute("SELECT name FROM subdivisions WHERE id = %s", (default_id,))
+                            r = cursor.fetchone()
+                            if r:
+                                subdivision_name = r['name']
+                        elif default_key:
+                            # Пытаемся найти по аббревиатуре (ключу)
+                            cursor.execute("SELECT name FROM subdivisions WHERE abbreviation = %s", (default_key,))
+                            r = cursor.fetchone()
+                            if r:
+                                subdivision_name = r['name']
+                    except Exception as ce:
+                        logger.error("Failed to resolve default subdivision from config: %s", ce)
+                subdivision_id = await self._get_subdivision_id(subdivision_name or "", cursor)
+                try:
+                    logger.debug(
+                        "DB MANAGER: employee create subdivision_name=%s -> id=%s (source=%s)",
+                        subdivision_name or '<none>',
+                        subdivision_id,
+                        'application' if application_data.get('subdivision') else ('config_id' if cfg.get('default_subdivision_id') else ('config_key' if cfg.get('default_subdivision_key') else 'none'))
+                    )
+                except Exception:
+                    pass
 
                 # For new recruits (Рядовой), no specific position is assigned
                 # Only officers and specialists have positions
@@ -255,7 +284,7 @@ class PersonnelManager:
                 employee_id = result['id'] if result else None
                 
                 if employee_id:
-                    logger.info("Создана запись employee: %s в Военная Академия (ID: %s)", rank_name, employee_id)
+                    logger.info("Создана запись employee: %s (subdivision_id=%s, employee_id=%s)", rank_name, subdivision_id, employee_id)
                     return True
                 
                 return False
@@ -292,16 +321,42 @@ class PersonnelManager:
             return 1  # Fallback to default rank ID
     
     async def _get_subdivision_id(self, subdivision_name: str, cursor) -> int:
-        """Get subdivision ID with smart matching"""
+        """Получить ID подразделения по названию/аббревиатуре с умным сопоставлением.
+        Без жёсткого фолбэка на "Военная Академия".
+        Логируем этапы резолва.
+        """
         try:
-            # First try exact name match
+            # Пустое имя → пробуем дефолт из конфига
+            if not subdivision_name or not subdivision_name.strip():
+                try:
+                    from utils.config_manager import load_config
+                    cfg = load_config().get('recruitment', {}) or {}
+                    default_id = cfg.get('default_subdivision_id')
+                    default_key = cfg.get('default_subdivision_key')
+                    if default_id:
+                        cursor.execute("SELECT id FROM subdivisions WHERE id = %s;", (default_id,))
+                        d = cursor.fetchone()
+                        if d:
+                            logger.debug("GET SUBDIVISION ID: empty name -> config_id=%s => %s", default_id, d['id'])
+                            return d['id']
+                    elif default_key:
+                        cursor.execute("SELECT id FROM subdivisions WHERE abbreviation = %s;", (default_key,))
+                        d = cursor.fetchone()
+                        if d:
+                            logger.debug("GET SUBDIVISION ID: empty name -> config_key=%s => %s", default_key, d['id'])
+                            return d['id']
+                except Exception as ce:
+                    logger.error("_get_subdivision_id: failed to read default from config: %s", ce)
+
+            # Сначала точное совпадение по названию
             cursor.execute("SELECT id FROM subdivisions WHERE name = %s;", (subdivision_name,))
             subdivision = cursor.fetchone()
             
             if subdivision:
+                logger.debug("GET SUBDIVISION ID: exact name '%s' => %s", subdivision_name, subdivision['id'])
                 return subdivision['id']
             
-            # Try partial matching or abbreviation lookup
+            # Пытаемся частичное совпадение или по аббревиатуре
             cursor.execute("""
                 SELECT id, name, abbreviation FROM subdivisions 
                 WHERE name ILIKE %s OR abbreviation ILIKE %s;
@@ -309,24 +364,35 @@ class PersonnelManager:
             similar = cursor.fetchone()
             
             if similar:
-                logger.info("Найдено похожее подразделение: {similar['name']} ({similar['abbreviation']}) для запроса '%s'", subdivision_name)
+                logger.debug("Найдено похожее подразделение: %s (%s) для запроса '%s'", similar['name'], similar['abbreviation'], subdivision_name)
                 return similar['id']
             
-            # Only create new subdivision if really needed
-            logger.info("Подразделение '%s' не найдено, используем Военная Академия по умолчанию", subdivision_name)
-            
-            # Return Военная Академия as default (ID=7)
-            cursor.execute("SELECT id FROM subdivisions WHERE name = 'Военная Академия';")
-            default = cursor.fetchone()
-            if default:
-                return default['id']
-            
-            # Fallback to first subdivision
-            return 1
+            # Если не нашли — пробуем дефолт по ключу ещё раз
+            try:
+                from utils.config_manager import load_config
+                cfg = load_config().get('recruitment', {}) or {}
+                default_id = cfg.get('default_subdivision_id')
+                default_key = cfg.get('default_subdivision_key')
+                if default_id:
+                    cursor.execute("SELECT id FROM subdivisions WHERE id = %s;", (default_id,))
+                    d = cursor.fetchone()
+                    if d:
+                        return d['id']
+                elif default_key:
+                    cursor.execute("SELECT id FROM subdivisions WHERE abbreviation = %s;", (default_key,))
+                    d = cursor.fetchone()
+                    if d:
+                        return d['id']
+            except Exception as ce:
+                logger.error("_get_subdivision_id: failed default lookup: %s", ce)
+
+            # В крайнем случае — ничего не возвращаем валидного
+            logger.warning("GET SUBDIVISION ID: '%s' не найдено и дефолт не определён", subdivision_name)
+            return 0
             
         except Exception as e:
             logger.error(f"_get_subdivision_id failed: {e}")
-            return 7  # Fallback to Военная Академия ID
+            return 0
     
     def _generate_abbreviation(self, subdivision_name: str) -> str:
         """Generate abbreviation for subdivision"""
@@ -424,7 +490,19 @@ class PersonnelManager:
                 
                 # ГРОМОЗДКИЙ JSON для changes (как требуется)
                 rank_name = application_data.get('rank', 'Рядовой')
-                subdivision_name = application_data.get('subdivision', 'Военная Академия')
+                subdivision_name = application_data.get('subdivision')
+                if not subdivision_name:
+                    try:
+                        from utils.config_manager import load_config
+                        cfg = load_config().get('recruitment', {}) or {}
+                        default_key = cfg.get('default_subdivision_key')
+                        if default_key:
+                            cursor.execute("SELECT name FROM subdivisions WHERE abbreviation = %s;", (default_key,))
+                            r = cursor.fetchone()
+                            if r:
+                                subdivision_name = r['name']
+                    except Exception as ce:
+                        logger.error("_log_approval_action: failed default subdivision resolve: %s", ce)
                 
                 changes = {
                     "rank": {

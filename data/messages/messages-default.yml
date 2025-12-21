@@ -175,7 +175,6 @@ systems:
 
   role_assignment:
     banned_from_service: "{templates.permissions.no_access} приём на службу"
-    supplies_access_exists: "{templates.errors.already_exists} У вас уже есть доступ к поставкам"
     pending_application: "{templates.errors.already_exists} У вас уже есть заявка на получение роли, которая находится на рассмотрении"
     moderation_channel_not_configured: "{templates.channels.not_configured} Канал модерации"
     moderation_channel_not_found: "{templates.channels.not_found} Канал модерации"

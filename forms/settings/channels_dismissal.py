@@ -30,11 +30,11 @@ class AutoDismissalRoleModal(BaseSettingsModal):
         
         # Load current setting
         config = load_config()
-        current_role = config.get('military_role_name', 'Военнослужащий ВС РФ')
+        current_role = config.get('military_role_name', 'Сотрудник')
         
         self.role_name = ui.TextInput(
             label="Имя роли для автоувольнений",
-            placeholder="Например: Военнослужащий ВС РФ",
+            placeholder="Например: Сотрудник организации",
             default=current_role,
             min_length=1,
             max_length=100,
@@ -104,7 +104,7 @@ async def show_dismissal_config(interaction: discord.Interaction):
     )
     
     # Show automatic dismissal role
-    auto_role_name = config.get('military_role_name', 'Военнослужащий ВС РФ')
+    auto_role_name = config.get('military_role_name', 'Сотрудник')
     auto_role = None
     for role in interaction.guild.roles:
         if role.name == auto_role_name:
@@ -119,13 +119,13 @@ async def show_dismissal_config(interaction: discord.Interaction):
     )
     
     embed.add_field(
-        name="📢 Настройки пингов:",
+        name="⚙️ Настройки пингов:",
         value="Настройки пингов для уведомлений при увольнениях теперь находятся в отдельном разделе:\n`/settings` → **Настройки пингов**",
         inline=False
     )
     
     embed.add_field(
-        name="ℹ️ Доступные действия:",
+        name="📋 Доступные действия:",
         value=(
             "• **Настроить канал** - установить канал для рапортов на увольнение\n"
             "• **Роль автоувольнений** - настроить роль для автоматических рапортов"

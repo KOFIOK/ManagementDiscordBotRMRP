@@ -17,6 +17,11 @@ import discord
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any, Tuple
 from enum import Enum
+from utils.message_manager import get_audit_embed_field, get_audit_config, get_blacklist_config
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class AuditAction:
@@ -59,11 +64,11 @@ class AuditAction:
                 for row in rows:
                     actions[row['name']] = row['id']
             
-            print(f"Loaded {len(actions)} actions from database")
+            logger.info("Loaded {len(actions)} actions from database")
             return actions
             
         except Exception as e:
-            print(f"Error loading actions from database: {e}")
+            logger.error("Error loading actions from database: %s", e)
             # Fallback to common actions if DB fails
             return {
                 "Принят на службу": 10,
@@ -215,11 +220,6 @@ class PersonnelAuditLogger:
         )
     """
     
-    # Standard audit embed configuration
-    AUDIT_TITLE = "Кадровый аудит ВС РФ"
-    AUDIT_COLOR = 0x055000  # Green color from original template
-    AUDIT_THUMBNAIL = "https://i.imgur.com/07MRSyl.png"
-    
     def __init__(self):
         """Initialize audit logger"""
         pass
@@ -264,12 +264,12 @@ class PersonnelAuditLogger:
             # Get audit channel
             audit_channel_id = config.get('audit_channel')
             if not audit_channel_id:
-                print("Audit channel not configured")
+                logger.info("Audit channel not configured")
                 return None
             
             audit_channel = guild.get_channel(audit_channel_id)
             if not audit_channel:
-                print(f"Audit channel {audit_channel_id} not found")
+                logger.info("Audit channel %s not found", audit_channel_id)
                 return None
             
             # Get moderator info from PersonnelManager
@@ -277,15 +277,20 @@ class PersonnelAuditLogger:
             if not moderator_display:
                 moderator_display = moderator.display_name
             
+            # Get audit configuration
+            audit_config = get_audit_config(guild.id)
+            
             # Create audit embed
             embed = await self._create_base_embed(
+                guild_id=guild.id,
                 action=action,
                 moderator_display=moderator_display,
-                personnel_data=personnel_data
+                personnel_data=personnel_data,
+                audit_config=audit_config
             )
             
             # Add conditional fields
-            await self._add_conditional_fields(embed, personnel_data, action)
+            await self._add_conditional_fields(guild.id, embed, personnel_data, action)
             
             # Add custom fields if provided
             if custom_fields:
@@ -298,11 +303,11 @@ class PersonnelAuditLogger:
                 embed=embed
             )
             
-            print(f"Sent audit notification for {action} - {personnel_data.get('name')}")
+            logger.info(f"Sent audit notification for {target_user.id} - {personnel_data.get('name')} - {action}")
             return audit_message.jump_url
             
         except Exception as e:
-            print(f"Error sending audit notification: {e}")
+            logger.error("Error sending audit notification: %s", e)
             import traceback
             traceback.print_exc()
             return None
@@ -349,16 +354,18 @@ class PersonnelAuditLogger:
             return None
             
         except Exception as e:
-            print(f"⚠️ Could not get moderator info from personnel DB: {e}")
+            logger.info("Could not get moderator info from personnel DB: %s", e)
             import traceback
             traceback.print_exc()
             return None
     
     async def _create_base_embed(
         self,
+        guild_id: int,
         action: str,
         moderator_display: str,
-        personnel_data: Dict[str, Any]
+        personnel_data: Dict[str, Any],
+        audit_config: Dict[str, Any]
     ) -> discord.Embed:
         """
         Create base audit embed with standard fields.
@@ -375,18 +382,37 @@ class PersonnelAuditLogger:
         moscow_tz = timezone(timedelta(hours=3))
         moscow_time = datetime.now(moscow_tz)
         
+        # Parse base color (handle both hex string and int)
+        color_value = audit_config.get('color', "#055000")
+        # Override color for specific action if configured
+        try:
+            per_action_colors = audit_config.get('action_colors', {}) or {}
+            if isinstance(per_action_colors, dict) and action in per_action_colors:
+                color_value = per_action_colors.get(action, color_value)
+        except Exception:
+            pass
+        if isinstance(color_value, str) and color_value.startswith('#'):
+            color_value = int(color_value[1:], 16)
+        elif isinstance(color_value, str):
+            try:
+                color_value = int(color_value, 16)
+            except ValueError:
+                color_value = 0x055000
+        
         embed = discord.Embed(
-            title=self.AUDIT_TITLE,
-            color=self.AUDIT_COLOR,
+            title=audit_config.get('title', "Кадровый аудит"),
+            color=color_value,
             timestamp=moscow_time
         )
         
         # Set thumbnail
-        embed.set_thumbnail(url=self.AUDIT_THUMBNAIL)
+        thumbnail_url = audit_config.get('thumbnail', "https://i.imgur.com/07MRSyl.png")
+        if thumbnail_url:
+            embed.set_thumbnail(url=thumbnail_url)
         
         # Standard fields
         embed.add_field(
-            name="Кадровую отписал",
+            name=get_audit_embed_field(guild_id, 'moderator', 'Кадровую отписал'),
             value=moderator_display,
             inline=False
         )
@@ -397,33 +423,33 @@ class PersonnelAuditLogger:
         name_with_static = f"{name} | {static}" if static else name
         
         embed.add_field(
-            name="Имя Фамилия | 6 цифр статика",
+            name=get_audit_embed_field(guild_id, 'name_static', 'Имя Фамилия | № Паспорта'),
             value=name_with_static,
             inline=False
         )
         
         embed.add_field(
-            name="Действие",
+            name=get_audit_embed_field(guild_id, 'action', 'Действие'),
             value=action,
             inline=False
         )
         
-        # Format date as dd-MM-yyyy using Moscow time
-        action_date = moscow_time.strftime('%d-%m-%Y')
+        # Format date as dd.MM.yyyy using Moscow time
+        action_date = moscow_time.strftime('%d.%m.%Y')
         embed.add_field(
-            name="Дата Действия",
+            name=get_audit_embed_field(guild_id, 'action_date', 'Дата Действия'),
             value=action_date,
             inline=False
         )
         
         embed.add_field(
-            name="Подразделение",
+            name=get_audit_embed_field(guild_id, 'department', 'Подразделение'),
             value=personnel_data.get('department', 'Неизвестно'),
             inline=False
         )
         
         embed.add_field(
-            name="Воинское звание",
+            name=get_audit_embed_field(guild_id, 'rank', 'Воинское звание'),
             value=personnel_data.get('rank', 'Неизвестно'),
             inline=False
         )
@@ -432,6 +458,7 @@ class PersonnelAuditLogger:
     
     async def _add_conditional_fields(
         self,
+        guild_id: int,
         embed: discord.Embed,
         personnel_data: Dict[str, Any],
         action: str
@@ -472,6 +499,7 @@ class PersonnelAuditLogger:
     
     async def _add_conditional_fields(
         self,
+        guild_id: int,
         embed: discord.Embed,
         personnel_data: Dict[str, Any],
         action: str
@@ -551,12 +579,12 @@ class PersonnelAuditLogger:
             # Get blacklist channel
             blacklist_channel_id = config.get('blacklist_channel')
             if not blacklist_channel_id:
-                print("⚠️ Blacklist channel not configured")
+                logger.info("Blacklist channel not configured")
                 return None
             
             blacklist_channel = guild.get_channel(blacklist_channel_id)
             if not blacklist_channel:
-                print(f"⚠️ Blacklist channel {blacklist_channel_id} not found")
+                logger.info("Blacklist channel %s not found", blacklist_channel_id)
                 return None
             
             # Get moderator personnel_id for "added_by"
@@ -571,9 +599,9 @@ class PersonnelAuditLogger:
                     if result:
                         moderator_personnel_id = result['id']
                     else:
-                        print(f"⚠️ Moderator not found in personnel DB: {moderator.id}")
+                        logger.info(f" Moderator not found in personnel DB: {moderator.id}")
             except Exception as e:
-                print(f"⚠️ Error getting moderator personnel_id: {e}")
+                logger.error("Error getting moderator personnel_id: %s", e)
             
             # Get moderator info for "Кто выдаёт"
             if auto_generated:
@@ -609,74 +637,89 @@ class PersonnelAuditLogger:
                 with get_db_cursor() as cursor:
                     cursor.execute("""
                         INSERT INTO blacklist (
-                            reason, start_date, end_date, last_updated, 
-                            is_active, personnel_id, added_by
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            reason, start_date, end_date, last_updated,
+                            personnel_id, added_by
+                        ) VALUES (%s, %s, %s, %s, %s, %s)
                         RETURNING id;
                     """, (
                         "Неустойка",  # reason
                         start_date,  # start_date
                         end_date,  # end_date
                         start_date,  # last_updated
-                        True,  # is_active
-                        personnel_id,  # personnel_id (target user)
+                        personnel_id,  # personnel_id (internal personnel.id)
                         moderator_personnel_id  # added_by (moderator)
                     ))
                     
                     blacklist_id = cursor.fetchone()['id']
-                    print(f"✅ Added blacklist record #{blacklist_id} for personnel {personnel_id}")
+                    logger.info("Added blacklist record #%s for personnel %s", blacklist_id, personnel_id)
                     
             except Exception as e:
-                print(f"❌ Error adding blacklist record to database: {e}")
+                logger.error("Error adding blacklist record to database: %s", e)
                 import traceback
                 traceback.print_exc()
                 # Continue anyway to send Discord notification
             
             # Create embed with fields (not description for better formatting)
+            blacklist_config = get_blacklist_config(guild.id)
+            
+            # Parse color
+            color_value = blacklist_config.get('color', 0xED4245)
+            if isinstance(color_value, str) and color_value.startswith('#'):
+                color_value = int(color_value[1:], 16)
+            elif isinstance(color_value, str):
+                try:
+                    color_value = int(color_value, 16)
+                except ValueError:
+                    color_value = 0xED4245
+            
             embed = discord.Embed(
-                title="📋 Новое дело",
-                color=0xED4245  # Red color
+                title=blacklist_config.get('title', "📋 Новое дело"),
+                color=color_value
             )
             
-            embed.set_thumbnail(url="https://i.imgur.com/07MRSyl.png")
+            # Set thumbnail
+            thumbnail_url = blacklist_config.get('thumbnail')
+            if thumbnail_url:
+                embed.set_thumbnail(url=thumbnail_url)
             
             # Field 1: Кто выдаёт
+            fields = blacklist_config.get('fields', {})
             embed.add_field(
-                name="**1. Кто выдаёт**",
+                name=fields.get('moderator', "**1. Кто выдаёт**"),
                 value=moderator_display,
                 inline=False
             )
             
             # Field 2: Кому
             embed.add_field(
-                name="**2. Кому**",
+                name=fields.get('target', "**2. Кому**"),
                 value=target_display,
                 inline=False
             )
             
             # Field 3: Причина
             embed.add_field(
-                name="**3. Причина**",
+                name=fields.get('reason', "**3. Причина**"),
                 value="Неустойка",
                 inline=False
             )
             
             # Fields 4-5: Даты (inline для двух столбцов)
             embed.add_field(
-                name="**4. Дата начала**",
+                name=fields.get('start_date', "**4. Дата начала**"),
                 value=start_date_str,
                 inline=True
             )
             
             embed.add_field(
-                name="**5. Дата окончания**",
+                name=fields.get('end_date', "**5. Дата окончания**"),
                 value=end_date_str,
                 inline=True
             )
             
             # Field 6: Доказательства
             embed.add_field(
-                name="**6. Доказательства**",
+                name=fields.get('evidence', "**6. Доказательства**"),
                 value=audit_message_url if audit_message_url else "Не указано",
                 inline=False
             )
@@ -693,11 +736,11 @@ class PersonnelAuditLogger:
                 embed=embed
             )
             
-            print(f"✅ Sent blacklist notification for {name} (auto: {auto_generated})")
+            logger.info("Sent blacklist notification for %s (auto: %s)", name, auto_generated)
             return blacklist_message.jump_url
             
         except Exception as e:
-            print(f"❌ Error sending blacklist notification: {e}")
+            logger.error("Error sending blacklist notification: %s", e)
             import traceback
             traceback.print_exc()
             return None
@@ -745,7 +788,7 @@ class PersonnelAuditLogger:
                 has_hiring_records = hiring_result['hiring_count'] > 0 if hiring_result else False
             
             if not has_hiring_records:
-                print(f"ℹ️ No hiring records found for {personnel_data.get('name')} - skipping auto-blacklist check")
+                logger.info(f" No hiring records found for {personnel_data.get('name')} - skipping auto-blacklist check")
                 return False
             
             # Calculate total service time
@@ -753,7 +796,7 @@ class PersonnelAuditLogger:
             
             # Check if served less than 5 days
             if total_days < 5:
-                print(f"⚠️ Auto-blacklist triggered: {personnel_data.get('name')} served only {total_days} days")
+                logger.info(f" Auto-blacklist triggered: {personnel_data.get('name')} served only {total_days} days")
                 
                 # Prepare blacklist reason
                 reason = f"Ранний роспуск (отслужил {total_days} из 5 обязательных дней)"
@@ -772,20 +815,23 @@ class PersonnelAuditLogger:
                 )
                 
                 if blacklist_url:
-                    print(f"✅ Auto-blacklist successful for {personnel_data.get('name')}")
+                    logger.info(f" Auto-blacklist successful for {personnel_data.get('name')}")
                     # Invalidate cache for this user
                     from utils.database_manager import personnel_manager
                     personnel_manager.invalidate_blacklist_cache(target_user.id)
+                    # Also invalidate general user cache since blacklist status changed
+                    from utils.user_cache import invalidate_user_cache
+                    invalidate_user_cache(target_user.id)
                     return True
                 else:
-                    print(f"❌ Auto-blacklist failed for {personnel_data.get('name')}")
+                    logger.error(f" Auto-blacklist failed for {personnel_data.get('name')}")
                     return False
             else:
-                print(f"✅ No auto-blacklist: {personnel_data.get('name')} served {total_days} days")
+                logger.info(f" No auto-blacklist: {personnel_data.get('name')} served {total_days} days")
                 return False
                 
         except Exception as e:
-            print(f"❌ Error in auto-blacklist check: {e}")
+            logger.error("Error in auto-blacklist check: %s", e)
             import traceback
             traceback.print_exc()
             return False
@@ -808,10 +854,10 @@ class PersonnelAuditLogger:
         """
         try:
             from utils.postgresql_pool import get_db_cursor
-            print(f"🔍 AUDIT: Начинаем update_personnel_profile_with_history для {discord_id}")
+            logger.info("AUDIT: Начинаем update_personnel_profile_with_history для %s", discord_id)
             
             with get_db_cursor() as cursor:
-                print(f"🔍 AUDIT: Получили DB cursor")
+                logger.info("AUDIT: Получили DB cursor")
                 # Получаем current data для истории
                 cursor.execute("""
                     SELECT id, first_name, last_name, static 
@@ -820,7 +866,7 @@ class PersonnelAuditLogger:
                 """, (discord_id,))
                 
                 current_data = cursor.fetchone()
-                print(f"🔍 AUDIT: current_data получен: {current_data is not None}")
+                logger.info("AUDIT: current_data получен: %s", current_data is not None)
                 if not current_data:
                     return False, f"Активный персонал с ID {discord_id} не найден"
                 
@@ -829,20 +875,20 @@ class PersonnelAuditLogger:
                 old_last_name = current_data['last_name']
                 old_static = current_data['static']
                 
-                print(f"🔍 AUDIT: Старые данные: {old_first_name} {old_last_name} | {old_static}")
-                print(f"🔍 AUDIT: Новые данные: {first_name} {last_name} | {static}")
+                logger.info("AUDIT: Старые данные: %s %s | %s", old_first_name, old_last_name, old_static)
+                logger.info("AUDIT: Новые данные: %s %s | %s", first_name, last_name, static)
                 
                 # Форматируем статик
                 if static:
-                    print(f"🔍 AUDIT: Форматируем статик '{static}'...")
+                    logger.info("AUDIT: Форматируем статик '%s'...", static)
                     formatted_static = self._format_static_for_db(static)
-                    print(f"🔍 AUDIT: Отформатированный статик: '{formatted_static}'")
+                    logger.info("AUDIT: Отформатированный статик: '%s'", formatted_static)
                 else:
                     formatted_static = old_static  # Оставляем старый статик
-                    print(f"🔍 AUDIT: Используем старый статик: '{formatted_static}'")
+                    logger.info("AUDIT: Используем старый статик: '%s'", formatted_static)
                 
                 # Обновляем данные
-                print(f"🔍 AUDIT: Начинаем UPDATE personnel...")
+                logger.info("AUDIT: Начинаем UPDATE personnel...")
                 if static:
                     cursor.execute("""
                         UPDATE personnel 
@@ -865,10 +911,10 @@ class PersonnelAuditLogger:
                     
                     message = f"Данные персонала обновлены: {first_name} {last_name}"
                 
-                print(f"🔍 AUDIT: UPDATE personnel завершен")
+                logger.info("AUDIT: UPDATE personnel завершен")
                 
                 # Создаем запись в истории
-                print(f"🔍 AUDIT: Начинаем log_name_change_action...")
+                logger.info("AUDIT: Начинаем log_name_change_action...")
                 from utils.database_manager import personnel_manager
                 await personnel_manager.log_name_change_action(
                     personnel_id, 
@@ -876,14 +922,14 @@ class PersonnelAuditLogger:
                     first_name, last_name, formatted_static,
                     moderator_discord_id
                 )
-                print(f"🔍 AUDIT: log_name_change_action завершен")
+                logger.info("AUDIT: log_name_change_action завершен")
                 
-                print(f"✅ {message} (ID: {discord_id}) с записью в историю")
+                logger.info("%s (ID: %s) с записью в историю", message, discord_id)
                 return True, message
                 
         except Exception as e:
             error_msg = f"Ошибка обновления профиля персонала с историей: {e}"
-            print(error_msg)
+            logger.error("%s", error_msg)
             return False, error_msg
     
     def _format_static_for_db(self, static: str) -> str:
@@ -896,31 +942,23 @@ class PersonnelAuditLogger:
         Returns:
             str: Отформатированный статик
         """
-        print(f"🔍 FORMAT_STATIC: Входной статик: '{static}' (type: {type(static)})")
+        logger.info("FORMAT_STATIC: Входной статик: '%s' (type: {type(static)})", static)
         
         if not static:
-            print(f"🔍 FORMAT_STATIC: Статик пустой, возвращаем пустую строку")
+            print(f" FORMAT_STATIC: Статик пустой, возвращаем пустую строку")
             return ""
         
-        # Убираем все нецифровые символы
-        digits_only = ''.join(filter(str.isdigit, static))
-        print(f"🔍 FORMAT_STATIC: Только цифры: '{digits_only}' (длина: {len(digits_only)})")
+        # Используем унифицированную валидацию
+        from utils.static_validator import StaticValidator
+        is_valid, formatted = StaticValidator.validate_and_format(static)
         
-        # Проверяем длину
-        if len(digits_only) == 6:
-            # Форматируем как XXX-XXX
-            result = f"{digits_only[:3]}-{digits_only[3:]}"
-            print(f"🔍 FORMAT_STATIC: 6 цифр -> XXX-XXX: '{result}'")
-            return result
-        elif len(digits_only) == 5:
-            # Форматируем как XX-XXX
-            result = f"{digits_only[:2]}-{digits_only[2:]}"
-            print(f"🔍 FORMAT_STATIC: 5 цифр -> XX-XXX: '{result}'")
-            return result
+        if is_valid:
+            print(f" FORMAT_STATIC: Успешно отформатировано: '{formatted}'")
+            return formatted
         else:
             # Возвращаем как есть, если не подходит под стандарт
             result = static.strip()
-            print(f"🔍 FORMAT_STATIC: Нестандартная длина, возвращаем как есть: '{result}'")
+            print(f" FORMAT_STATIC: Нестандартная длина, возвращаем как есть: '{result}'")
             return result
     
     async def add_to_blacklist_manual(
@@ -989,20 +1027,62 @@ class PersonnelAuditLogger:
             end_date_str = end_date.strftime('%d.%m.%Y')
             timestamp_str = start_date.strftime('%d.%m.%Y %H:%M')
             
+            # Get blacklist configuration
+            blacklist_config = get_blacklist_config(guild.id)
+            
+            # Parse color
+            color_value = blacklist_config.get('color', 0xED4245)
+            if isinstance(color_value, str) and color_value.startswith('#'):
+                color_value = int(color_value[1:], 16)
+            elif isinstance(color_value, str):
+                try:
+                    color_value = int(color_value, 16)
+                except ValueError:
+                    color_value = 0xED4245
+            
             # Create embed
             embed = discord.Embed(
-                title="📋 Новое дело",
-                color=0xED4245  # Red color
+                title=blacklist_config.get('title', " Новое дело"),
+                color=color_value
             )
             
-            embed.set_thumbnail(url="https://i.imgur.com/07MRSyl.png")
+            # Set thumbnail
+            thumbnail_url = blacklist_config.get('thumbnail')
+            if thumbnail_url:
+                embed.set_thumbnail(url=thumbnail_url)
             
-            embed.add_field(name="**1. Кто выдаёт**", value=moderator_display, inline=False)
-            embed.add_field(name="**2. Кому**", value=target_display, inline=False)
-            embed.add_field(name="**3. Причина**", value=reason, inline=False)
-            embed.add_field(name="**4. Дата начала**", value=start_date_str, inline=True)
-            embed.add_field(name="**5. Дата окончания**", value=end_date_str, inline=True)
-            embed.add_field(name="**6. Доказательства**", value=evidence_url if evidence_url else "Не указано", inline=False)
+            # Add fields using configuration
+            fields = blacklist_config.get('fields', {})
+            embed.add_field(
+                name=fields.get('moderator', "**1. Кто выдаёт**"), 
+                value=moderator_display, 
+                inline=False
+            )
+            embed.add_field(
+                name=fields.get('target', "**2. Кому**"), 
+                value=target_display, 
+                inline=False
+            )
+            embed.add_field(
+                name=fields.get('reason', "**3. Причина**"), 
+                value=reason, 
+                inline=False
+            )
+            embed.add_field(
+                name=fields.get('start_date', "**4. Дата начала**"), 
+                value=start_date_str, 
+                inline=True
+            )
+            embed.add_field(
+                name=fields.get('end_date', "**5. Дата окончания**"), 
+                value=end_date_str, 
+                inline=True
+            )
+            embed.add_field(
+                name=fields.get('evidence', "**6. Доказательства**"), 
+                value=evidence_url if evidence_url else "Не указано", 
+                inline=False
+            )
             
             embed.set_footer(text=timestamp_str)
             
@@ -1017,20 +1097,22 @@ class PersonnelAuditLogger:
             )
             
             success_message = (
-                f"✅ Пользователь **{personnel_data['name']}** успешно добавлен в чёрный список.\n\n"
-                f"**Детали:**\n"
-                f"• Причина: {reason}\n"
-                f"• Период: {start_date_str} - {end_date_str}\n"
-                f"• Добавил: {moderator.display_name}\n\n"
-                f"[Посмотреть запись в канале чёрного списка]({blacklist_message.jump_url})"
+                blacklist_config['success']['title'].format(name=personnel_data['name']) + "\n\n" +
+                blacklist_config['success']['details'].format(
+                    reason=reason,
+                    start_date=start_date_str,
+                    end_date=end_date_str,
+                    moderator=moderator.display_name
+                ) + "\n\n" +
+                blacklist_config['success']['view_link'].format(link=blacklist_message.jump_url)
             )
             
-            print(f"✅ Manual blacklist successful for {personnel_data['name']}")
+            logger.info(f" Manual blacklist successful for {personnel_data['name']}")
             return True, success_message
             
         except Exception as e:
             error_msg = f"❌ Ошибка при добавлении в чёрный список: {e}"
-            print(error_msg)
+            logger.error("%s", error_msg)
             import traceback
             traceback.print_exc()
             return False, error_msg
@@ -1065,7 +1147,7 @@ class PersonnelAuditLogger:
                 f"• Снял с чёрного списка: {moderator.display_name}"
             )
             
-            print(f"✅ Blacklist removal successful for discord_id={discord_id} by {moderator.display_name}")
+            logger.info(f"Blacklist removal successful for discord_id=%s by {moderator.display_name}", discord_id)
             return True, success_message
             
         except Exception as e:
@@ -1094,7 +1176,7 @@ class PersonnelAuditLogger:
             Tuple[bool, str]: (success, message)
         """
         try:
-            print(f"🔍 AUDIT: Начинаем update_personnel_profile_with_history для {discord_id}")
+            logger.info("AUDIT: Начинаем update_personnel_profile_with_history для %s", discord_id)
 
             # Get current data for comparison
             from utils.postgresql_pool import get_db_cursor
@@ -1109,26 +1191,26 @@ class PersonnelAuditLogger:
             if not current_data:
                 return False, f"Пользователь с Discord ID {discord_id} не найден в базе данных"
 
-            print(f"🔍 AUDIT: current_data получен: {current_data is not None}")
-            print(f"🔍 AUDIT: Старые данные: {current_data['first_name']} {current_data['last_name']} | {current_data['static']}")
-            print(f"🔍 AUDIT: Новые данные: {first_name} {last_name} | {static}")
+            logger.info("AUDIT: current_data получен: %s", current_data is not None)
+            logger.info(f" AUDIT: Старые данные: {current_data['first_name']} {current_data['last_name']} | {current_data['static']}")
+            logger.info("AUDIT: Новые данные: %s %s | %s", first_name, last_name, static)
 
             # Format static
             from utils.database_manager.manager import PersonnelManager
             pm = PersonnelManager()
             formatted_static = pm._format_static_for_db(static)
-            print(f"🔍 AUDIT: Форматируем статик '{static}'...")
-            print(f"🔍 FORMAT_STATIC: Входной статик: '{static}' (type: {type(static)})")
-            print(f"🔍 FORMAT_STATIC: Только цифры: '{''.join(filter(str.isdigit, static))}' (длина: {len(''.join(filter(str.isdigit, static)))})")
-            print(f"🔍 FORMAT_STATIC: {len(''.join(filter(str.isdigit, static)))} цифр -> XXX-XXX: '{formatted_static}'")
-            print(f"🔍 AUDIT: Отформатированный статик: '{formatted_static}'")
+            logger.info("AUDIT: Форматируем статик '%s'...", static)
+            print(f" FORMAT_STATIC: Входной статик: '{static}' (type: {type(static)})")
+            logger.info("FORMAT_STATIC: Только цифры: '{''.join(filter(str.isdigit, static))}' (длина: {len(''.join(filter(str.isdigit, static)))})")
+            logger.info("FORMAT_STATIC: {len(''.join(filter(str.isdigit, static)))} цифр -> XXX-XXX: '%s'", formatted_static)
+            logger.info("AUDIT: Отформатированный статик: '%s'", formatted_static)
 
             # Update personnel profile
-            print(f"🔍 AUDIT: Начинаем UPDATE personnel...")
+            logger.info("AUDIT: Начинаем UPDATE personnel...")
             success, message = pm.update_personnel_profile(discord_id, first_name, last_name, formatted_static)
             if not success:
                 return False, message
-            print(f"🔍 AUDIT: UPDATE personnel завершен")
+            logger.info("AUDIT: UPDATE personnel завершен")
 
             # Get personnel_id for the user being updated
             with get_db_cursor() as cursor:
@@ -1141,10 +1223,10 @@ class PersonnelAuditLogger:
                 return False, f"Не удалось найти personnel_id для пользователя {discord_id}"
                 
             personnel_id = personnel_result['id']
-            print(f"🔍 AUDIT: personnel_id получен: {personnel_id}")
+            logger.info("AUDIT: personnel_id получен: %s", personnel_id)
 
             # Log to history
-            print(f"🔍 AUDIT: Начинаем log_name_change_action...")
+            logger.info("AUDIT: Начинаем log_name_change_action...")
             history_success = await pm.log_name_change_action(
                 personnel_id=personnel_id,
                 old_first_name=current_data['first_name'],
@@ -1157,9 +1239,9 @@ class PersonnelAuditLogger:
             )
 
             if not history_success:
-                print(f"⚠️ AUDIT: History logging failed, but profile update succeeded")
+                logger.error("AUDIT: History logging failed, but profile update succeeded")
             else:
-                print(f"✅ AUDIT: History logging successful")
+                logger.info("AUDIT: History logging successful")
 
             # Get personnel data for audit notification
             personnel_data = await pm.get_personnel_data_for_audit(discord_id)
@@ -1167,13 +1249,13 @@ class PersonnelAuditLogger:
                 return True, f"Профиль обновлен, но не удалось получить данные для аудита"
 
             # Note: Audit notification is sent from the modal/form handler, not here
-            print(f"✅ AUDIT: Profile update completed successfully")
+            logger.info("AUDIT: Profile update completed successfully")
 
             return True, f"Профиль успешно обновлен: {first_name} {last_name} | {formatted_static}"
 
         except Exception as e:
             error_msg = f"Ошибка при обновлении профиля с историей: {e}"
-            print(f"❌ AUDIT: {error_msg}")
+            logger.error("AUDIT: %s", error_msg)
             import traceback
             traceback.print_exc()
             return False, error_msg

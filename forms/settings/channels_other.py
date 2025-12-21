@@ -6,6 +6,10 @@ from discord import ui
 from utils.config_manager import load_config, save_config
 from .base import BaseSettingsView, BaseSettingsModal, ConfigDisplayHelper, RoleParser
 from .channels_base import ChannelSelectionModal
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 # Blacklist Channel Configuration
@@ -160,7 +164,7 @@ class LeaveRequestAllowedRolesModal(BaseSettingsModal):
     """Modal for setting allowed roles for leave requests"""
     
     def __init__(self):
-        super().__init__(title="👥 Настройка ролей для отгулов")
+        super().__init__(title="⚙️ Настройка ролей для отгулов")
         
         # Load current roles
         config = load_config()
@@ -239,17 +243,17 @@ class MedicalRegistrationConfigView(BaseSettingsView):
         modal = ChannelSelectionModal("medical_registration")
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="👩‍⚕️ Роль медицинской роты", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="‍⚕️ Роль медицинской роты", style=discord.ButtonStyle.primary)
     async def set_medical_role(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = MedicalRoleModal()
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="🩺 Роли доступа ВВК", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="🏷️ Роли доступа ВВК", style=discord.ButtonStyle.secondary)
     async def set_vvk_roles(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = MedicalVVKRolesModal()
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="📚 Роли доступа лекций", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="🏷️ Роли доступа лекций", style=discord.ButtonStyle.secondary)
     async def set_lecture_roles(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = MedicalLectureRolesModal()
         await interaction.response.send_modal(modal)
@@ -259,7 +263,7 @@ class MedicalRoleModal(BaseSettingsModal):
     """Modal for setting medical role"""
     
     def __init__(self):
-        super().__init__(title="👩‍⚕️ Настройка роли медицинской роты")
+        super().__init__(title="‍⚕️ Настройка роли медицинской роты")
         
         # Load current role
         config = load_config()
@@ -327,7 +331,7 @@ class MedicalVVKRolesModal(BaseSettingsModal):
     """Modal for setting allowed roles for VVK"""
     
     def __init__(self):
-        super().__init__(title="🩺 Настройка ролей доступа к ВВК")
+        super().__init__(title="⚙️ Настройка ролей доступа к ВВК")
         
         # Load current roles
         config = load_config()
@@ -336,7 +340,7 @@ class MedicalVVKRolesModal(BaseSettingsModal):
         
         self.roles_input = ui.TextInput(
             label="Роли (названия или ID через запятую)",
-            placeholder="Например: Военнослужащий ВС РФ, 123456789012345678, @Офицер",
+            placeholder="Например: Сотрудник, 123456789012345678, @Офицер",
             style=discord.TextStyle.paragraph,
             default=current_value,
             max_length=1000,
@@ -401,7 +405,7 @@ class MedicalLectureRolesModal(BaseSettingsModal):
     """Modal for setting allowed roles for lectures"""
     
     def __init__(self):
-        super().__init__(title="📚 Настройка ролей доступа к лекциям")
+        super().__init__(title="⚙️ Настройка ролей доступа к лекциям")
         
         # Load current roles
         config = load_config()
@@ -410,7 +414,7 @@ class MedicalLectureRolesModal(BaseSettingsModal):
         
         self.roles_input = ui.TextInput(
             label="Роли (названия или ID через запятую)",
-            placeholder="Например: Военнослужащий ВС РФ, 123456789012345678, @Офицер",
+            placeholder="Например: Сотрудник, 123456789012345678, @Офицер",
             style=discord.TextStyle.paragraph,
             default=current_value,
             max_length=1000,
@@ -509,7 +513,7 @@ async def show_blacklist_config(interaction: discord.Interaction):
     )
     
     embed.add_field(
-        name="ℹ️ Доступные действия:",
+        name="📋 Доступные действия:",
         value=(
             "• **Настроить канал** - установить канал для чёрного списка\n"
             "• **Добавить пинг-роль** - добавить роль для уведомлений\n"
@@ -557,7 +561,7 @@ async def show_leave_requests_config(interaction: discord.Interaction):
         )
         
         embed.add_field(
-            name="🔧 Доступные действия:",
+            name="📋 Доступные действия:",
             value="Выберите действие для настройки системы отгулов:",
             inline=False
         )
@@ -566,7 +570,7 @@ async def show_leave_requests_config(interaction: discord.Interaction):
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
         
     except Exception as e:
-        print(f"❌ ERROR in show_leave_requests_config: {e}")
+        logger.warning("ERROR in show_leave_requests_config: %s", e)
         import traceback
         traceback.print_exc()
         # Try to send error message if interaction hasn't been responded to yet
@@ -607,7 +611,7 @@ async def show_medical_registration_config(interaction: discord.Interaction):
             medic_text = "❌ Роль не настроена"
         
         embed.add_field(
-            name="👩‍⚕️ Роль медицинской роты:",
+            name="‍⚕️ Роль медицинской роты:",
             value=medic_text,
             inline=True
         )
@@ -620,7 +624,7 @@ async def show_medical_registration_config(interaction: discord.Interaction):
             vvk_text = "❌ Роли не настроены"
         
         embed.add_field(
-            name="🩺 Доступ к ВВК:",
+            name="👩‍⚕️ Роль медицинской роты:",
             value=vvk_text,
             inline=True
         )
@@ -633,13 +637,13 @@ async def show_medical_registration_config(interaction: discord.Interaction):
             lecture_text = "❌ Роли не настроены"
         
         embed.add_field(
-            name="📚 Доступ к лекциям:",
+            name="👩‍⚕️ Роль медицинской роты:",
             value=lecture_text,
             inline=True
         )
         
         embed.add_field(
-            name="🔧 Доступные действия:",
+            name="📋 Доступные действия:",
             value="Выберите действие для настройки медицинского канала:",
             inline=False
         )
@@ -648,7 +652,7 @@ async def show_medical_registration_config(interaction: discord.Interaction):
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
         
     except Exception as e:
-        print(f"❌ ERROR in show_medical_registration_config: {e}")
+        logger.warning("ERROR in show_medical_registration_config: %s", e)
         import traceback
         traceback.print_exc()
         # Try to send error message if interaction hasn't been responded to yet
@@ -704,7 +708,7 @@ async def show_safe_documents_config(interaction: discord.Interaction):
         )
         
         embed.add_field(
-            name="ℹ️ Описание системы:",
+            name="📂 Текущий канал:",
             value=(
                 "Система безопасных документов позволяет пользователям подавать заявки на размещение "
                 "документов в безопасном хранилище. Модераторы могут одобрять или отклонять заявки.\n\n"
@@ -719,7 +723,7 @@ async def show_safe_documents_config(interaction: discord.Interaction):
         )
         
         embed.add_field(
-            name="🔧 Доступные действия:",
+            name="📋 Доступные действия:",
             value="Выберите действие для настройки канала сейф документов:",
             inline=False
         )
@@ -728,7 +732,7 @@ async def show_safe_documents_config(interaction: discord.Interaction):
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
         
     except Exception as e:
-        print(f"❌ ERROR in show_safe_documents_config: {e}")
+        logger.warning("ERROR in show_safe_documents_config: %s", e)
         import traceback
         traceback.print_exc()
         if not interaction.response.is_done():

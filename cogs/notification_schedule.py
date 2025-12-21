@@ -5,6 +5,10 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from utils.config_manager import load_config, save_config
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class NotificationScheduleCommands(commands.Cog):
@@ -71,7 +75,7 @@ class NotificationScheduleCommands(commands.Cog):
             await interaction.response.send_message(embed=embed, ephemeral=True)
             
             # Log the change
-            print(f"🕐 Время уведомлений изменено на {time_str} МСК пользователем {interaction.user}")
+            logger.info(f"Время уведомлений изменено на %s МСК пользователем {interaction.user}", time_str)
             
         except Exception as e:
             await interaction.response.send_message(
@@ -178,7 +182,7 @@ class NotificationScheduleCommands(commands.Cog):
         # Check if user has administrator permissions
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message(
-                "❌ У вас нет прав администратора для выполнения этой команды.",
+                " У вас нет прав администратора для выполнения этой команды.",
                 ephemeral=True
             )
             return
@@ -269,7 +273,7 @@ class NotificationScheduleCommands(commands.Cog):
                 ephemeral=True
             )
             
-            print(f"🧪 Тестовое уведомление отправлено для {department} пользователем {interaction.user}")
+            logger.info(f"Тестовое уведомление отправлено для %s пользователем {interaction.user}", department)
             
         except Exception as e:
             await interaction.response.send_message(

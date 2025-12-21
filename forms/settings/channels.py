@@ -17,6 +17,10 @@ from .channels_other import (
 )
 from .channels_promotion import show_promotion_reports_config
 from .channels_warehouse import show_warehouse_config
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class ChannelsConfigView(BaseSettingsView):
@@ -41,7 +45,7 @@ class ChannelConfigSelect(ui.Select):
             discord.SelectOption(
                 label="Канал аудита",
                 description="Настроить канал для кадрового аудита",
-                emoji="🔍",
+                emoji="📋",
                 value="audit"
             ),
             discord.SelectOption(
@@ -83,7 +87,7 @@ class ChannelConfigSelect(ui.Select):
             discord.SelectOption(
                 label="Заявления в подразделения",
                 description="Настроить каналы для заявлений в подразделения",
-                emoji="🎓",
+                emoji="🏢",
                 value="departments"
             ),
             discord.SelectOption(
@@ -105,6 +109,30 @@ class ChannelConfigSelect(ui.Select):
     async def callback(self, interaction: discord.Interaction):
         selected_option = self.values[0]
         await self.show_channel_selection(interaction, selected_option)
+    
+    async def _redirect_to_warehouse_settings(self, interaction: discord.Interaction):
+        """Редирект на полную панель настроек склада"""
+        from .warehouse_settings import WarehouseSettingsView
+        
+        embed = discord.Embed(
+            title="📦 Настройки склада",
+            description=(
+                "Для настройки каналов склада используйте полную панель настроек склада.\n\n"
+                "📋 **Доступные настройки:**\n"
+                "• Каналы склада (запросы, отправка заявок, аудит)\n"
+                "• Кулдаун запросов\n"
+                "• Режим лимитов\n"
+                "• Лимиты по должностям и званиям"
+            ),
+            color=discord.Color.blue()
+        )
+        
+        view = WarehouseSettingsView()
+        
+        if not interaction.response.is_done():
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        else:
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
     async def show_channel_selection(self, interaction: discord.Interaction, config_type: str):
         """Show channel selection interface"""
@@ -122,7 +150,8 @@ class ChannelConfigSelect(ui.Select):
             elif config_type == "medical_registration":
                 await show_medical_registration_config(interaction)
             elif config_type == "warehouse":
-                await show_warehouse_config(interaction)
+                # Редирект на полную панель настроек склада для избежания дублирования
+                await self._redirect_to_warehouse_settings(interaction)
             elif config_type == "departments":
                 from .channels_departments import show_department_channels_config
                 await show_department_channels_config(interaction)
@@ -135,7 +164,7 @@ class ChannelConfigSelect(ui.Select):
                 await interaction.response.send_modal(modal)
                 
         except Exception as e:
-            print(f"Ошибка в show_channel_selection для {config_type}: {e}")
+            logger.error("Ошибка в show_channel_selection для %s: %s", config_type, e)
             import traceback
             traceback.print_exc()
             
@@ -146,6 +175,6 @@ class ChannelConfigSelect(ui.Select):
                 )
             else:
                 await interaction.followup.send(
-                    f"❌ Произошла ошибка при загрузке настроек канала {config_type}.",
+                    f" Произошла ошибка при загрузке настроек канала {config_type}.",
                     ephemeral=True
                 )

@@ -3,8 +3,12 @@ Department Applications Module - System for department applications with moderat
 """
 
 from .manager import DepartmentApplicationManager
-from .views import DepartmentApplicationView, DepartmentSelectView
+from .views import DepartmentApplicationModerationView as DepartmentApplicationView, DepartmentSelectView
 from .modals import DepartmentApplicationStage1Modal, DepartmentApplicationStage2Modal
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 def register_static_views(bot):
     """Регистрирует статические views для восстановления после рестарта"""
@@ -22,11 +26,11 @@ def register_static_views(bot):
         static_moderation_view = DepartmentApplicationView(static_application_data)
         static_moderation_view.setup_buttons()
         bot.add_view(static_moderation_view)
-        print("✅ Registered static department application moderation view")
+        logger.info("Registered static department application moderation view")
         
         return True
     except Exception as e:
-        print(f"❌ Error registering static views: {e}")
+        logger.warning("Error registering static views: %s", e)
         return False
 
 __all__ = [

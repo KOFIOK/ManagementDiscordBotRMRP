@@ -4,6 +4,10 @@ Base classes and utilities for settings forms
 import discord
 from discord import ui
 from utils.config_manager import load_config, save_config
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class BaseSettingsView(ui.View):
@@ -11,6 +15,9 @@ class BaseSettingsView(ui.View):
     
     def __init__(self, timeout=300):
         super().__init__(timeout=timeout)
+        # Уникальный тег контекста для семантического определения: используется при решении edit vs new
+        # По умолчанию имя класса. Может переопределяться в наследниках.
+        self.context_tag = self.__class__.__name__
     
     async def send_success_message(self, interaction: discord.Interaction, title: str, description: str):
         """Send a standardized success message"""
@@ -25,7 +32,7 @@ class BaseSettingsView(ui.View):
     async def send_error_message(self, interaction: discord.Interaction, title: str, description: str):
         """Send a standardized error message"""
         embed = discord.Embed(
-            title=f"❌ {title}",
+            title=f"✅ {title}",
             description=description,
             color=discord.Color.red(),
             timestamp=discord.utils.utcnow()
@@ -39,7 +46,7 @@ class BaseSettingsModal(ui.Modal):
     async def send_success_message(self, interaction: discord.Interaction, title: str, description: str):
         """Send a standardized success message"""
         embed = discord.Embed(
-            title=f"✅ {title}",
+            title=f"❌ {title}",
             description=description,
             color=discord.Color.green(),
             timestamp=discord.utils.utcnow()
@@ -49,7 +56,7 @@ class BaseSettingsModal(ui.Modal):
     async def send_error_message(self, interaction: discord.Interaction, title: str, description: str):
         """Send a standardized error message"""
         embed = discord.Embed(
-            title=f"❌ {title}",
+            title=f"✅ {title}",
             description=description,
             color=discord.Color.red(),
             timestamp=discord.utils.utcnow()
@@ -82,7 +89,7 @@ class ConfigDisplayHelper:
         if channel_id:
             channel = guild.get_channel(channel_id)
             return channel.mention if channel else f"❌ Канал не найден (ID: {channel_id})"
-        return "❌ Не настроен"
+        return " Не настроен"
     
     @staticmethod
     def format_role_info(config: dict, role_key: str, guild: discord.Guild) -> str:
@@ -91,7 +98,7 @@ class ConfigDisplayHelper:
         if role_id:
             role = guild.get_role(role_id)
             return role.mention if role else f"❌ Роль не найдена (ID: {role_id})"
-        return "❌ Не настроена"
+        return " Не настроена"
     
     @staticmethod
     def format_roles_list(config: dict, roles_key: str, guild: discord.Guild) -> str:
@@ -106,7 +113,7 @@ class ConfigDisplayHelper:
                 else:
                     roles.append(f"❌ Роль не найдена (ID: {role_id})")
             return "\n".join(roles) if roles else "❌ Роли не найдены"
-        return "❌ Не настроены"
+        return " Не настроены"
     
     @staticmethod
     def format_roles_info(config: dict, roles_key: str, guild: discord.Guild) -> str:
@@ -174,6 +181,65 @@ class ChannelParser:
         # Try to find channel by name (with smart normalization)
         return ChannelParser._find_channel_by_name(guild, channel_text)
     
+    # ---------------------------------------------------------------------------
+    # Базовый шаблон секции настроек: единая кнопка «Назад» и генератор эмбедов
+    # ---------------------------------------------------------------------------
+
+class SectionSettingsView(BaseSettingsView):
+    """Базовый шаблон для секций настроек.
+
+    Предоставляет:
+      - Единообразную кнопку «⬅️ Назад» к главному меню настроек
+      - Помощник создания стандартного эмбеда для раздела
+    """
+
+    def __init__(self, *, title: str | None = None, description: str | None = None, back_enabled: bool = True, timeout: int | None = 300):
+        super().__init__(timeout=timeout)
+        self.section_title = title
+        self.section_description = description
+
+        if back_enabled:
+            self.add_item(self._BackButton())
+
+    def create_section_embed(self, *, title: str | None = None, description: str | None = None, color: discord.Color = discord.Color.blue()) -> discord.Embed:
+        """Создать стандартный эмбед для секции.
+
+        Если параметры не переданы, используются значения из self.section_title/section_description.
+        """
+        final_title = title or self.section_title or "Настройки"
+        final_description = description or self.section_description or ""
+
+        embed = discord.Embed(
+            title=final_title,
+            description=final_description,
+            color=color,
+            timestamp=discord.utils.utcnow()
+        )
+        return embed
+
+    class _BackButton(ui.Button):
+        def __init__(self):
+            super().__init__(label="⬅️ Назад", style=discord.ButtonStyle.secondary, row=4)
+
+        async def callback(self, interaction: discord.Interaction):
+            try:
+                # Ленивая загрузка главного меню, чтобы избежать циклических импортов
+                from .main import send_settings_message
+                await send_settings_message(interaction)
+            except Exception as e:
+                logger.warning("Ошибка возврата к главному меню настроек: %s", e)
+                try:
+                    # Фолбэк: минимальный эмбед + главное меню
+                    from .main import SettingsView
+                    fallback = discord.Embed(
+                        title="⚙️ Панель настроек бота",
+                        description="Возврат к главному меню.",
+                        color=discord.Color.blue(),
+                        timestamp=discord.utils.utcnow()
+                    )
+                    await safe_send(interaction, embed=fallback, view=SettingsView(), ephemeral=True)
+                except Exception:
+                    pass
     @staticmethod
     def _normalize_channel_name(channel_name: str, is_text_channel=True) -> str:
         """Normalize channel name by removing cosmetic elements"""
@@ -222,3 +288,78 @@ class ChannelParser:
         
         # Fallback to Discord's built-in search
         return discord.utils.get(guild.text_channels, name=search_name)
+
+
+# ---------------------------------------------------------------------------
+# Interaction / message response helpers для унифицированной логики обновления
+# ---------------------------------------------------------------------------
+
+async def safe_send(interaction: discord.Interaction, *, embed: discord.Embed = None, view: ui.View = None, content: str = None, ephemeral: bool = True):
+    """Безопасная отправка нового сообщения (если response уже использован — followup).
+
+    Использование:
+        await safe_send(interaction, embed=my_embed, view=my_view)
+    """
+    try:
+        if not interaction.response.is_done():
+            await interaction.response.send_message(content=content, embed=embed, view=view, ephemeral=ephemeral)
+        else:
+            await interaction.followup.send(content=content, embed=embed, view=view, ephemeral=ephemeral)
+    except Exception as e:
+        logger.warning("safe_send error: %s", e)
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(f"❌ Ошибка отправки сообщения: {e}", ephemeral=True)
+            else:
+                await interaction.response.send_message(f"❌ Ошибка отправки сообщения: {e}", ephemeral=True)
+        except Exception:
+            pass
+
+
+async def safe_edit_or_send(interaction: discord.Interaction, *, embed: discord.Embed = None, view: ui.View = None, content: str = None, ephemeral: bool = True):
+    """Попытка обновить текущее ephemeral сообщение, иначе отправить новое.
+
+    Подходит для случаев «логическое обновление» (изменение данных той же секции).
+    """
+    try:
+        if not interaction.response.is_done():
+            await interaction.response.edit_message(content=content, embed=embed, view=view)
+        else:
+            # edit_message возможен только если есть ссылка на исходное; fallback на followup
+            await interaction.followup.send(content=content, embed=embed, view=view, ephemeral=ephemeral)
+    except Exception as e:
+        logger.warning("safe_edit_or_send error: %s", e)
+        try:
+            await safe_send(interaction, content=f"❌ Ошибка обновления: {e}", ephemeral=True)
+        except Exception:
+            pass
+
+
+async def semantic_update_or_new(interaction: discord.Interaction, *, embed: discord.Embed, view: BaseSettingsView, previous_context_tag: str | None, force_new: bool = False, ephemeral: bool = True):
+    """Семантическое решение: обновить или отправить новое сообщение.
+
+    Логика:
+      - Если force_new=True -> всегда новое сообщение.
+      - Если previous_context_tag совпадает с view.context_tag -> edit (safe_edit_or_send)
+      - Иначе -> новое (safe_send)
+
+    Использование:
+        prev_tag = getattr(existing_view, 'context_tag', None)  # сохраняется вызывающим кодом
+        await semantic_update_or_new(interaction, embed=embed, view=new_view, previous_context_tag=prev_tag)
+    """
+    try:
+        if force_new:
+            await safe_send(interaction, embed=embed, view=view, ephemeral=ephemeral)
+            return view.context_tag
+        if previous_context_tag and previous_context_tag == getattr(view, 'context_tag', None):
+            await safe_edit_or_send(interaction, embed=embed, view=view, ephemeral=ephemeral)
+        else:
+            await safe_send(interaction, embed=embed, view=view, ephemeral=ephemeral)
+        return view.context_tag
+    except Exception as e:
+        logger.warning("semantic_update_or_new error: %s", e)
+        try:
+            await safe_send(interaction, content=f"❌ Ошибка отображения: {e}", ephemeral=True)
+        except Exception:
+            pass
+        return getattr(view, 'context_tag', None)

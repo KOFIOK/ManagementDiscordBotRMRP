@@ -30,19 +30,19 @@ class PromotionDepartmentSelect(ui.Select):
             discord.SelectOption(
                 label="Отчёты ВК",
                 description="Военный Комиссариат",
-                emoji="🚀",
+                emoji="🏢",
                 value="vk"
             ),
             discord.SelectOption(
                 label="Отчёты УВП",
                 description="Управление Военной Полиции",
-                emoji="👮",
+                emoji="🚔",
                 value="uvp"
             ),
             discord.SelectOption(
                 label="Отчёты ССО",
                 description="Силы Специальных Операций",
-                emoji="🔫",
+                emoji="🗡️",
                 value="sso"
             ),
             discord.SelectOption(
@@ -81,9 +81,9 @@ class PromotionDepartmentSelect(ui.Select):
         
         department_emojis = {
             'va': '✈️',
-            'vk': '🚀',
-            'uvp': '👮',
-            'sso': '🔫',
+            'vk': '🏢',
+            'uvp': '🚔',
+            'sso': '🗡️',
             'mr': '⚓',
             'roio': '🛡️'
         }
@@ -149,7 +149,7 @@ class PromotionDepartmentSelect(ui.Select):
             )
         else:
             embed.add_field(
-                name="🕐 Ежедневные уведомления:",
+                name="🔔 Ежедневные уведомления:",
                 value="❌ Не настроены",
                 inline=False
             )
@@ -449,7 +449,7 @@ async def show_promotion_reports_config(interaction: discord.Interaction):
         channels_info += f"**{dept_name}**: {channel_text}\n"
     
     embed.add_field(
-        name="📊 Настроенные каналы:",
+        name="📂 Настроенные каналы:",
         value=channels_info or "❌ Каналы не настроены",
         inline=False
     )
@@ -465,7 +465,7 @@ async def show_promotion_reports_config(interaction: discord.Interaction):
     )
     
     embed.add_field(
-        name="🔧 Доступные действия:",
+        name="📋 Доступные действия:",
         value="Выберите подразделение для настройки канала и уведомлений:",
         inline=False
     )

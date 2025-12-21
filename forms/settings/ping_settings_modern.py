@@ -6,7 +6,7 @@ from discord import ui
 from typing import Dict, List, Optional
 from utils.config_manager import load_config, save_config
 from utils.ping_manager import ping_manager
-from .base import BaseSettingsView, BaseSettingsModal, RoleParser
+from .base import BaseSettingsView, BaseSettingsModal, RoleParser, SectionSettingsView
 
 
 async def show_ping_settings_overview(interaction: discord.Interaction):
@@ -87,14 +87,14 @@ async def show_ping_settings_overview(interaction: discord.Interaction):
     )
     
     view = ModernPingSettingsView()
-    await interaction.response.edit_message(embed=embed, view=view)
+    await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
 
-class ModernPingSettingsView(BaseSettingsView):
+class ModernPingSettingsView(SectionSettingsView):
     """Modern view for managing ping settings with context support"""
     
     def __init__(self):
-        super().__init__()
+        super().__init__(title="📢 Настройки пингов", description="Управление уведомлениями для подразделений по различным типам заявок", timeout=300)
         self.add_item(DepartmentPingSelect())
         
         # Add legacy migration button if needed
@@ -241,7 +241,7 @@ class PingContextSelect(ui.Select):
             await interaction.response.send_modal(modal)
         except Exception as e:
             await interaction.response.send_message(
-                f"❌ Ошибка: {e}",
+                f" Ошибка: {e}",
                 ephemeral=True
             )
 
@@ -373,7 +373,7 @@ class MigrateLegacyButton(ui.Button):
     
     def __init__(self):
         super().__init__(
-            label="🔄 Мигрировать старые настройки",
+            label="⚙️ Мигрировать старые настройки",
             style=discord.ButtonStyle.danger
         )
     

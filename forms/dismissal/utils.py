@@ -5,6 +5,10 @@ Contains helper functions for message management and view restoration
 
 import discord
 from discord import ui
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 async def send_dismissal_button_message(channel):
@@ -24,20 +28,20 @@ async def send_dismissal_button_message(channel):
                 view = DismissalReportButton()
                 try:
                     await message.edit(view=view)
-                    print(f"Updated existing pinned dismissal message {message.id}")
+                    logger.info(f"Updated existing pinned dismissal message {message.id}")
                     return
                 except Exception as e:
-                    print(f"Error updating pinned dismissal message: {e}")
+                    logger.error("Error updating pinned dismissal message: %s", e)
                     # If update fails, unpin and delete old message, create new one
                     try:
                         await message.unpin()
                         await message.delete()
-                        print(f"Removed old pinned dismissal message {message.id}")
+                        logger.info(f"Removed old pinned dismissal message {message.id}")
                     except:
                         pass
                     break
     except Exception as e:
-        print(f"Error checking pinned messages for dismissal: {e}")
+        logger.error("Error checking pinned messages for dismissal: %s", e)
     # Create new message if none exists or old one couldn't be updated
     embed = discord.Embed(
         title="Рапорты на увольнение",
@@ -64,7 +68,7 @@ async def send_dismissal_button_message(channel):
     # Pin the new message for easy access
     try:
         await message.pin()
-        print(f"Pinned new dismissal message {message.id}")
+        logger.info(f"Pinned new dismissal message {message.id}")
         
         # TODO: Save message ID for footer links when we implement clickable solution
         # from utils.config_manager import save_dismissal_message_id
@@ -72,7 +76,7 @@ async def send_dismissal_button_message(channel):
         # print(f"Saved dismissal message ID: {message.id}")
         
     except Exception as e:
-        print(f"Error pinning dismissal message: {e}")
+        logger.error("Error pinning dismissal message: %s", e)
 
 
 async def restore_dismissal_approval_views(bot, channel):
@@ -88,10 +92,10 @@ async def restore_dismissal_approval_views(bot, channel):
                 embed = message.embeds[0]
                 
                 # Check if report is still pending (not approved/rejected)
-                # We check if there's no "Обработано" field, which means it's still pending
+                # We check if there's no "✅ Обработано" field, which means it's still pending
                 status_pending = True
                 for field in embed.fields:
-                    if field.name in ["Обработано", "Отказано"]:
+                    if field.name in ["✅ Обработано", "Отказано"]:
                         status_pending = False
                         break
                 
@@ -112,14 +116,14 @@ async def restore_dismissal_approval_views(bot, channel):
                     # Edit message to restore the view
                     try:
                         await message.edit(view=view)
-                        print(f"Restored simplified approval view for dismissal report message {message.id}")
+                        logger.info(f"Restored simplified approval view for dismissal report message {message.id}")
                     except discord.NotFound:
                         continue
                     except Exception as e:
-                        print(f"Error restoring view for message {message.id}: {e}")
+                        logger.error("Error restoring view for message {message.id}: %s", e)
                         
     except Exception as e:
-        print(f"Error restoring dismissal approval views: {e}")
+        logger.error("Error restoring dismissal approval views: %s", e)
 
 
 async def restore_dismissal_button_views(bot, channel):
@@ -138,12 +142,12 @@ async def restore_dismissal_button_views(bot, channel):
                 view = DismissalReportButton()
                 try:
                     await message.edit(view=view)
-                    print(f"Restored dismissal button view for pinned message {message.id}")
+                    logger.info(f"Restored dismissal button view for pinned message {message.id}")
                     return  # Found and restored pinned message
                 except discord.NotFound:
                     continue
                 except Exception as e:
-                    print(f"Error restoring dismissal button view for pinned message {message.id}: {e}")
+                    logger.error("Error restoring dismissal button view for pinned message {message.id}: %s", e)
         
         # If no pinned message found, check recent history as fallback
         async for message in channel.history(limit=50):
@@ -158,10 +162,10 @@ async def restore_dismissal_button_views(bot, channel):
                 view = DismissalReportButton()
                 try:
                     await message.edit(view=view)
-                    print(f"Restored dismissal button view for message {message.id}")
+                    logger.info(f"Restored dismissal button view for message {message.id}")
                 except discord.NotFound:
                     continue
                 except Exception as e:
-                    print(f"Error restoring dismissal button view for message {message.id}: {e}")                    
+                    logger.error("Error restoring dismissal button view for message {message.id}: %s", e)                    
     except Exception as e:
-        print(f"Error restoring dismissal button views: {e}")
+        logger.error("Error restoring dismissal button views: %s", e)

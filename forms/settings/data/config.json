@@ -1,0 +1,126 @@
+{
+    "dismissal_channel": null,
+    "dismissal_message_id": null,
+    "audit_channel": null,
+    "blacklist_channel": null,
+    "role_assignment_channel": null,
+    "role_assignment_message_id": null,
+    "moderator_registration_channel": null,
+    "leave_requests_channel": null,
+    "leave_requests_allowed_roles": [],
+    "promotion_report_channels": {
+        "va": null,
+        "vk": null,
+        "uvp": null,
+        "sso": null,
+        "mr": null,
+        "roio": null
+    },
+    "promotion_notifications": {
+        "va": {
+            "text": null,
+            "image": null,
+            "enabled": false
+        },
+        "vk": {
+            "text": null,
+            "image": null,
+            "enabled": false
+        },
+        "uvp": {
+            "text": null,
+            "image": null,
+            "enabled": false
+        },
+        "sso": {
+            "text": null,
+            "image": null,
+            "enabled": false
+        },
+        "mr": {
+            "text": null,
+            "image": null,
+            "enabled": false
+        },
+        "roio": {
+            "text": null,
+            "image": null,
+            "enabled": false
+        }
+    },
+    "notification_schedule": {
+        "hour": 21,
+        "minute": 0
+    },
+    "military_roles": [],
+    "supplier_roles": [],
+    "civilian_roles": [],
+    "military_role_assignment_ping_roles": [],
+    "supplier_role_assignment_ping_roles": [],
+    "civilian_role_assignment_ping_roles": [],
+    "excluded_roles": [],
+    "ping_settings": {},
+    "blacklist_role_mentions": [],
+    "moderators": {
+        "users": [],
+        "roles": []
+    },
+    "administrators": {
+        "users": [],
+        "roles": []
+    },
+    "blacklist": {
+        "users": [],
+        "roles": []
+    },
+    "warehouse_request_channel": 1385238151609585764,
+    "warehouse_audit_channel": 1385238191610662912,
+    "warehouse_submission_channel": 1386763537023504456,
+    "warehouse_cooldown_hours": 6,
+    "warehouse_limits_mode": {
+        "positions_enabled": true,
+        "ranks_enabled": false
+    },
+    "warehouse_limits_positions": {},
+    "warehouse_limits_ranks": {},
+    "medical_registration_channel": null,
+    "medical_role_id": null,
+    "medical_vvk_allowed_roles": [],
+    "medical_lecture_allowed_roles": [],
+    "departments": {},
+    "safe_documents_channel": null,
+    "nickname_auto_replacement": {
+        "enabled": true,
+        "departments": {
+            "УВП": true,
+            "ВА": true,
+            "ВК": true,
+            "РОиО": true,
+            "ГШ": true,
+            "ССО": true,
+            "МР": true
+        },
+        "modules": {
+            "dismissal": true,
+            "department_applications": true,
+            "personnel_commands": true
+        },
+        "known_positions": [
+            "Нач.",
+            "Нач. по КР",
+            "Зам.",
+            "Зам. Ком.",
+            "Ком.",
+            "Ком. Бриг",
+            "Нач. Штаба",
+            "Нач. Отдела",
+            "Зам. Нач. Отдела"
+        ],
+        "format_support": {
+            "standard_with_subgroup": true,
+            "positional_with_subgroup": true,
+            "auto_detect_positions": true
+        },
+        "custom_templates": {}
+    }
+}

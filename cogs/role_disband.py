@@ -9,6 +9,11 @@ from discord import app_commands
 from typing import List
 import asyncio
 from utils.config_manager import load_config, is_administrator
+from utils.message_manager import get_role_reason
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class RoleDisbandView(discord.ui.View):
@@ -43,7 +48,7 @@ class RoleDisbandView(discord.ui.View):
             await self._execute_disband(interaction)
             
         except Exception as e:
-            print(f"Error in role disband confirmation: {e}")
+            logger.error("Error in role disband confirmation: %s", e)
             await interaction.followup.send(
                 "❌ Произошла ошибка при подтверждении расформирования.",
                 ephemeral=True
@@ -125,7 +130,7 @@ class RoleDisbandView(discord.ui.View):
             await self._send_audit_log(interaction.guild, processed_users - len(failed_users))
             
         except Exception as e:
-            print(f"Error executing role disband: {e}")
+            logger.error("Error executing role disband: %s", e)
             error_embed = discord.Embed(
                 title="❌ Ошибка расформирования",
                 description="Произошла критическая ошибка при расформировании ролей.",
@@ -142,11 +147,11 @@ class RoleDisbandView(discord.ui.View):
                     roles_to_remove.append(role)
             
             if roles_to_remove:
-                await user.remove_roles(*roles_to_remove, reason=f"Расформирование ролей администратором {self.admin_user}")
-                print(f"✅ Removed {len(roles_to_remove)} roles from {user.display_name}")
+                await user.remove_roles(*roles_to_remove, reason=get_role_reason(user.guild.id, "role_removal.administrative", "Административное снятие роли").format(moderator=self.admin_user.mention))
+                logger.info(f"Removed {len(roles_to_remove)} roles from {user.display_name}")
             
         except Exception as e:
-            print(f"❌ Failed to remove roles from {user.display_name}: {e}")
+            logger.warning(f"Failed to remove roles from {user.display_name}: %s", e)
             failed_users.append(user.id)
     
     async def _send_audit_log(self, guild: discord.Guild, successful_count: int):
@@ -156,12 +161,12 @@ class RoleDisbandView(discord.ui.View):
             audit_channel_id = config.get('audit_channel')
             
             if not audit_channel_id:
-                print("No audit channel configured")
+                logger.info("No audit channel configured")
                 return
             
             audit_channel = guild.get_channel(audit_channel_id)
             if not audit_channel:
-                print(f"Audit channel not found: {audit_channel_id}")
+                logger.info("Audit channel not found: %s", audit_channel_id)
                 return
             
             # Create audit embed
@@ -188,10 +193,10 @@ class RoleDisbandView(discord.ui.View):
             audit_embed.timestamp = discord.utils.utcnow()
             
             await audit_channel.send(embed=audit_embed)
-            print(f"✅ Sent audit log for role disband by {self.admin_user.display_name}")
+            logger.info(f" Sent audit log for role disband by {self.admin_user.display_name}")
             
         except Exception as e:
-            print(f"❌ Error sending audit log: {e}")
+            logger.warning("Error sending audit log: %s", e)
     
     @discord.ui.button(label="❌ Отменить", style=discord.ButtonStyle.secondary, custom_id="cancel_disband")
     async def cancel_disband(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -216,7 +221,7 @@ class RoleDisbandView(discord.ui.View):
             await interaction.response.edit_message(embed=embed, view=None)
             
         except Exception as e:
-            print(f"Error in role disband cancellation: {e}")
+            logger.error("Error in role disband cancellation: %s", e)
             await interaction.response.send_message(
                 "❌ Произошла ошибка при отмене расформирования.",
                 ephemeral=True
@@ -239,7 +244,7 @@ class RoleDisbandView(discord.ui.View):
             # The timeout will just disable the buttons
             
         except Exception as e:
-            print(f"Error handling role disband timeout: {e}")
+            logger.error("Error handling role disband timeout: %s", e)
 
     # ...existing code...
   
@@ -248,7 +253,7 @@ class RoleDisband(commands.Cog):
     
     def __init__(self, bot):
         self.bot = bot
-        print("🔧 RoleDisband cog initialized")
+        logger.info("RoleDisband cog initialized")
     
     @app_commands.command(name="расформ", description="Расформировать указанные роли (убрать у всех пользователей)")
     @app_commands.describe(
@@ -278,7 +283,7 @@ class RoleDisband(commands.Cog):
         роль10: discord.Role = None
     ):
         """Disband specified roles from all users"""
-        print(f"🔧 /расформ command called by {interaction.user}")
+        logger.info(f" /расформ command called by {interaction.user}")
         try:
             # Check admin permissions - ONLY ADMINISTRATORS can use this command
             config = load_config()
@@ -305,7 +310,7 @@ class RoleDisband(commands.Cog):
             
             roles_to_disband = unique_roles
             
-            print(f"🔧 Roles to disband: {[role.name for role in roles_to_disband]}")
+            logger.info(f" Roles to disband: {[role.name for role in roles_to_disband]}")
             
             if not roles_to_disband:
                 embed = discord.Embed(
@@ -343,7 +348,7 @@ class RoleDisband(commands.Cog):
             # Create confirmation embed
             embed = discord.Embed(
                 title="⚠️ Подтверждение расформирования",
-                description="**ВНИМАНИЕ!** Это действие необратимо!",
+                description="⚠️ **ВНИМАНИЕ!** Это действие необратимо!",
                 color=discord.Color.orange()
             )
             
@@ -376,7 +381,7 @@ class RoleDisband(commands.Cog):
             await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
             
         except Exception as e:
-            print(f"Error in disband_roles command: {e}")
+            logger.error("Error in disband_roles command: %s", e)
             await interaction.response.send_message(
                 "❌ Произошла ошибка при обработке команды.",
                 ephemeral=True
@@ -431,4 +436,4 @@ async def setup(bot):
     """Setup function for the cog"""
     # Add the cog first
     await bot.add_cog(RoleDisband(bot))
-    print("Loaded role disband cog successfully")
+    logger.info("Loaded role disband cog successfully")

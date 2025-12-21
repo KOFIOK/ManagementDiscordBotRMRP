@@ -9,6 +9,12 @@ import re
 
 from .rank_utils import RankHierarchy
 from utils.config_manager import load_config, is_moderator_or_admin
+from utils.message_manager import get_role_reason
+from utils.role_utils import role_utils
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 async def send_audit_message(channel: discord.TextChannel, audit_data: dict, action_type: str = "default"):
@@ -95,7 +101,7 @@ class PromotionModal(ui.Modal, title="Повышение в звании"):
             config = load_config()
             if not is_moderator_or_admin(interaction.user, config):
                 await interaction.response.send_message(
-                    "❌ У вас нет прав для выполнения этой команды.",
+                    " У вас нет прав для выполнения этой команды.",
                     ephemeral=True
                 )
                 return
@@ -150,44 +156,44 @@ class PromotionModal(ui.Modal, title="Повышение в звании"):
                 await interaction.followup.send(embed=embed, ephemeral=True)
             else:
                 await interaction.followup.send(
-                    "❌ Произошла ошибка при обработке повышения.",
+                    " Произошла ошибка при обработке повышения.",
                     ephemeral=True
                 )
                 
         except Exception as e:
-            print(f"Error in promotion modal: {e}")
+            logger.error("Error in promotion modal: %s", e)
             await interaction.followup.send(
                 "❌ Произошла ошибка при обработке запроса.",
                 ephemeral=True
             )
     
     async def _process_promotion(self, interaction: discord.Interaction, new_rank: str, action: str, user_data: dict) -> bool:
-        """Process the promotion - update roles and add to audit"""
+        """Process the promotion - update roles and add to audit using RoleUtils"""
         try:
-            # Remove old rank role
-            old_rank_role_id = RankHierarchy.get_rank_role_id(self.current_rank)
-            if old_rank_role_id:
-                old_role = interaction.guild.get_role(old_rank_role_id)
-                if old_role and old_role in self.target_user.roles:
-                    await self.target_user.remove_roles(old_role, reason=f"Rank promotion by {interaction.user}")
-            
-            # Add new rank role
-            new_rank_role_id = RankHierarchy.get_rank_role_id(new_rank)
-            if new_rank_role_id:
-                new_role = interaction.guild.get_role(new_rank_role_id)
-                if new_role:
-                    await self.target_user.add_roles(new_role, reason=f"Rank promotion by {interaction.user}")
-            
+            # Use RoleUtils to assign new rank role (this will clear old rank roles automatically)
+            rank_assigned = await role_utils.assign_rank_role(
+                self.target_user,
+                new_rank,
+                interaction.user,
+                reason=f"Повышение ранга: {self.current_rank} → {new_rank}"
+            )
+
+            if not rank_assigned:
+                logger.error(f"PROMOTION: Failed to assign rank role %s to {self.target_user}", new_rank)
+                return False
+
+            logger.info(f"PROMOTION: Successfully assigned rank role %s to {self.target_user}", new_rank)
+
             # TODO: Update PersonnelManager database with new rank
             try:
                 # For now, assume success
                 sheet_update_success = True
                 if sheet_update_success:
-                    print(f"✅ PROMOTION: Mock database update for new rank: {new_rank}")
+                    logger.info("PROMOTION: Mock database update for new rank: %s", new_rank)
                 else:
-                    print(f"❌ PROMOTION: Mock database update failed for user {self.target_user.id}")
+                    logger.error(f" PROMOTION: Mock database update failed for user {self.target_user.id}")
             except Exception as e:
-                print(f"❌ PROMOTION: Error updating database: {e}")
+                logger.error("PROMOTION: Error updating database: %s", e)
             
             # Add to audit using existing personnel system
             from cogs.personnel_commands import PersonnelCommands
@@ -221,11 +227,11 @@ class PromotionModal(ui.Modal, title="Повышение в звании"):
                 try:
                     sheets_success = await personnel_cog._add_to_audit_sheet(audit_data)
                     if sheets_success:
-                        print(f"✅ PROMOTION: Added to Audit sheet successfully")
+                        logger.info("PROMOTION: Added to Audit sheet successfully")
                     else:
-                        print(f"❌ PROMOTION: Failed to add to Audit sheet")
+                        logger.error("PROMOTION: Failed to add to Audit sheet")
                 except Exception as e:
-                    print(f"❌ PROMOTION: Error adding to Audit sheet: {e}")
+                    logger.error("PROMOTION: Error adding to Audit sheet: %s", e)
                 
                 # Send to audit channel
                 config = load_config()
@@ -238,7 +244,7 @@ class PromotionModal(ui.Modal, title="Повышение в звании"):
             return True
             
         except Exception as e:
-            print(f"Error processing promotion: {e}")
+            logger.error("Error processing promotion: %s", e)
             return False
 
 
@@ -267,7 +273,7 @@ class DemotionModal(ui.Modal, title="Разжалование в звании"):
             config = load_config()
             if not is_moderator_or_admin(interaction.user, config):
                 await interaction.response.send_message(
-                    "❌ У вас нет прав для выполнения этой команды.",
+                    " У вас нет прав для выполнения этой команды.",
                     ephemeral=True
                 )
                 return
@@ -278,7 +284,7 @@ class DemotionModal(ui.Modal, title="Разжалование в звании"):
             rank_info = RankHierarchy.get_rank_info(new_rank_name)
             if not rank_info:
                 await interaction.response.send_message(
-                    f"❌ Звание '{new_rank_name}' не найдено в системе.",
+                    f" Звание '{new_rank_name}' не найдено в системе.",
                     ephemeral=True
                 )
                 return
@@ -317,45 +323,45 @@ class DemotionModal(ui.Modal, title="Разжалование в звании"):
                 await interaction.followup.send(embed=embed, ephemeral=True)
             else:
                 await interaction.followup.send(
-                    "❌ Произошла ошибка при обработке разжалования.",
+                    " Произошла ошибка при обработке разжалования.",
                     ephemeral=True
                 )
                 
         except Exception as e:
-            print(f"Error in demotion modal: {e}")
+            logger.error("Error in demotion modal: %s", e)
             await interaction.followup.send(
-                "❌ Произошла ошибка при обработке запроса.",
+                " Произошла ошибка при обработке запроса.",
                 ephemeral=True
             )
     
     async def _process_demotion(self, interaction: discord.Interaction, new_rank: str, user_data: dict) -> bool:
-        """Process the demotion - update roles and add to audit"""
+        """Process the demotion - update roles and add to audit using RoleUtils"""
         # Same logic as promotion but with "Понижен в звании" action
         try:
-            # Remove old rank role
-            old_rank_role_id = RankHierarchy.get_rank_role_id(self.current_rank)
-            if old_rank_role_id:
-                old_role = interaction.guild.get_role(old_rank_role_id)
-                if old_role and old_role in self.target_user.roles:
-                    await self.target_user.remove_roles(old_role, reason=f"Rank demotion by {interaction.user}")
-            
-            # Add new rank role
-            new_rank_role_id = RankHierarchy.get_rank_role_id(new_rank)
-            if new_rank_role_id:
-                new_role = interaction.guild.get_role(new_rank_role_id)
-                if new_role:
-                    await self.target_user.add_roles(new_role, reason=f"Rank demotion by {interaction.user}")
-            
+            # Use RoleUtils to assign new rank role (this will clear old rank roles automatically)
+            rank_assigned = await role_utils.assign_rank_role(
+                self.target_user,
+                new_rank,
+                interaction.user,
+                reason=f"Понижение ранга: {self.current_rank} → {new_rank}"
+            )
+
+            if not rank_assigned:
+                logger.error(f"DEMOTION: Failed to assign rank role %s to {self.target_user}", new_rank)
+                return False
+
+            logger.info(f"DEMOTION: Successfully assigned rank role %s to {self.target_user}", new_rank)
+
             # TODO: Update PersonnelManager database with new rank
             try:
                 # For now, assume success
                 sheet_update_success = True
                 if sheet_update_success:
-                    print(f"✅ DEMOTION: Mock database update for new rank: {new_rank}")
+                    logger.info("DEMOTION: Mock database update for new rank: %s", new_rank)
                 else:
-                    print(f"❌ DEMOTION: Mock database update failed for user {self.target_user.id}")
+                    logger.error(f" DEMOTION: Mock database update failed for user {self.target_user.id}")
             except Exception as e:
-                print(f"❌ DEMOTION: Error updating database: {e}")
+                logger.error("DEMOTION: Error updating database: %s", e)
             
             personnel_cog = interaction.client.get_cog('PersonnelCommands')
             
@@ -387,11 +393,11 @@ class DemotionModal(ui.Modal, title="Разжалование в звании"):
                 try:
                     sheets_success = await personnel_cog._add_to_audit_sheet(audit_data)
                     if sheets_success:
-                        print(f"✅ DEMOTION: Added to Audit sheet successfully")
+                        logger.info("DEMOTION: Added to Audit sheet successfully")
                     else:
-                        print(f"❌ DEMOTION: Failed to add to Audit sheet")
+                        logger.error("DEMOTION: Failed to add to Audit sheet")
                 except Exception as e:
-                    print(f"❌ DEMOTION: Error adding to Audit sheet: {e}")
+                    logger.error("DEMOTION: Error adding to Audit sheet: %s", e)
                 
                 # Send to audit channel
                 config = load_config()
@@ -404,7 +410,7 @@ class DemotionModal(ui.Modal, title="Разжалование в звании"):
             return True
             
         except Exception as e:
-            print(f"Error processing demotion: {e}")
+            logger.error("Error processing demotion: %s", e)
             return False
 
 
@@ -429,7 +435,7 @@ class PositionModal(ui.Modal, title="Назначение/Снятие долж�
             config = load_config()
             if not is_moderator_or_admin(interaction.user, config):
                 await interaction.response.send_message(
-                    "❌ У вас нет прав для выполнения этой команды.",
+                    " У вас нет прав для выполнения этой команды.",
                     ephemeral=True
                 )
                 return
@@ -473,14 +479,14 @@ class PositionModal(ui.Modal, title="Назначение/Снятие долж�
                 await interaction.followup.send(embed=embed, ephemeral=True)
             else:
                 await interaction.followup.send(
-                    "❌ Произошла ошибка при обработке назначения.",
+                    " Произошла ошибка при обработке назначения.",
                     ephemeral=True
                 )
                 
         except Exception as e:
-            print(f"Error in position modal: {e}")
+            logger.error("Error in position modal: %s", e)
             await interaction.followup.send(
-                "❌ Произошла ошибка при обработке запроса.",
+                " Произошла ошибка при обработке запроса.",
                 ephemeral=True
             )
     
@@ -497,11 +503,11 @@ class PositionModal(ui.Modal, title="Назначение/Снятие долж�
                 success = True  # For now, assume success
                 
                 if not success:
-                    print(f"Failed to update Personal List sheet for user {self.target_user.id}")
+                    logger.error(f"Failed to update Personal List sheet for user {self.target_user.id}")
                     return False
                     
             except Exception as e:
-                print(f"Error updating Personal List sheet: {e}")
+                logger.error("Error updating Personal List sheet: %s", e)
                 return False
             
             # Add to audit using existing personnel system  
@@ -538,11 +544,11 @@ class PositionModal(ui.Modal, title="Назначение/Снятие долж�
                 try:
                     sheets_success = await personnel_cog._add_to_audit_sheet(audit_data)
                     if sheets_success:
-                        print(f"✅ POSITION: Added to Audit sheet successfully")
+                        logger.info("POSITION: Added to Audit sheet successfully")
                     else:
-                        print(f"❌ POSITION: Failed to add to Audit sheet")
+                        logger.error("POSITION: Failed to add to Audit sheet")
                 except Exception as e:
-                    print(f"❌ POSITION: Error adding to Audit sheet: {e}")
+                    logger.error("POSITION: Error adding to Audit sheet: %s", e)
                 
                 # Send to audit channel
                 config = load_config()
@@ -555,7 +561,7 @@ class PositionModal(ui.Modal, title="Назначение/Снятие долж�
             return True
             
         except Exception as e:
-            print(f"Error processing position change: {e}")
+            logger.error("Error processing position change: %s", e)
             return False
 
 
@@ -577,8 +583,8 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
         
         self.static_input = ui.TextInput(
             label="Статик",
-            placeholder="123-456 (допускается 5-6 цифр)",
-            min_length=5,
+            placeholder="123-456 (допускается 1-6 цифр)",
+            min_length=1,
             max_length=7,
             required=True
         )
@@ -601,7 +607,7 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
             config = load_config()
             if not is_moderator_or_admin(interaction.user, config):
                 await interaction.response.send_message(
-                    "❌ У вас нет прав для выполнения этой команды.",
+                    " У вас нет прав для выполнения этой команды.",
                     ephemeral=True
                 )
                 return
@@ -610,9 +616,9 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
             static = self.static_input.value.strip()
             formatted_static = self._format_static(static)
             if not formatted_static:
+                from utils.static_validator import StaticValidator
                 await interaction.response.send_message(
-                    "❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.\n"
-                    "Примеры: 123456, 123-456, 12345, 12-345, 123 456",
+                    StaticValidator.get_validation_error_message(),
                     ephemeral=True
                 )
                 return
@@ -651,7 +657,7 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                 )
                 
         except Exception as e:
-            print(f"❌ RECRUITMENT ERROR: {e}")
+            logger.error("RECRUITMENT ERROR: %s", e)
             import traceback
             traceback.print_exc()
             try:
@@ -662,16 +668,17 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                     )
                 else:
                     await interaction.followup.send(
-                        "❌ Произошла ошибка при обработке запроса.",
+                        " Произошла ошибка при обработке запроса.",
                         ephemeral=True
                     )
             except:
-                print(f"Failed to send error response: {e}")
+                logger.error("Failed to send error response: %s", e)
     
     def _format_static(self, static_input: str) -> str:
-        """Auto-format static number to standard format - copied from MilitaryApplicationModal"""
-        import re
-        digits_only = re.sub(r'\D', '', static_input.strip())
+        """Auto-format static number to standard format"""
+        from utils.static_validator import StaticValidator
+        is_valid, formatted = StaticValidator.validate_and_format(static_input)
+        return formatted if is_valid else ""
         
         if len(digits_only) == 5:
             return f"{digits_only[:2]}-{digits_only[2:]}"
@@ -683,8 +690,8 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
     async def _process_recruitment_direct(self, interaction: discord.Interaction, full_name: str, static: str, rank: str) -> bool:
         """Process recruitment using PersonnelManager"""
         try:
-            print(f"🔄 RECRUITMENT: Starting recruitment via PersonnelManager for {self.target_user.id}")
-            print(f"🔄 RECRUITMENT: Data - Name: '{full_name}', Static: '{static}', Rank: '{rank}'")
+            logger.info(f" RECRUITMENT: Starting recruitment via PersonnelManager for {self.target_user.id}")
+            logger.info("RECRUITMENT: Data - Name: '%s', Static: '%s', Rank: '%s'", full_name, static, rank)
             
             # Prepare application data for PersonnelManager
             application_data = {
@@ -710,14 +717,14 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
             )
             
             if success:
-                print(f"✅ RECRUITMENT: PersonnelManager processed successfully: {message}")
+                logger.info("RECRUITMENT: PersonnelManager processed successfully: %s", message)
             else:
-                print(f"❌ RECRUITMENT: PersonnelManager failed: {message}")
+                logger.error("RECRUITMENT: PersonnelManager failed: %s", message)
             
             return success
             
         except Exception as e:
-            print(f"❌ RECRUITMENT: Error processing recruitment: {e}")
+            logger.error("RECRUITMENT: Error processing recruitment: %s", e)
             import traceback
             traceback.print_exc()
             return False
@@ -732,7 +739,7 @@ class PersonalDataModal(ui.Modal, title="Изменить личные данн�
 
         # Add input fields
         # self.discord_id = ui.TextInput(
-        #    label="Discord ID",
+        #    label="🆔 Discord ID",
         #    placeholder="ID пользователя в Discord",
         #    default=str(target_user.id),
         #    min_length=15,
@@ -761,8 +768,8 @@ class PersonalDataModal(ui.Modal, title="Изменить личные данн�
 
         self.static = ui.TextInput(
             label="Статик",
-            placeholder="123-456 (5-7 цифр)",
-            min_length=5,
+            placeholder="123-456 (1-6 цифр)",
+            min_length=1,
             max_length=7,
             required=True
         )
@@ -797,9 +804,9 @@ class PersonalDataModal(ui.Modal, title="Изменить личные данн�
                 if static:
                     self.static.default = static
                     
-                print(f"✅ AUTO-FILL: Данные для {self.target_user.id} успешно загружены из кэша")
+                logger.info(f" AUTO-FILL: Данные для {self.target_user.id} успешно загружены из кэша")
             else:
-                print(f"⚠️ AUTO-FILL: Данные для {self.target_user.id} не найдены в кэше")
+                logger.info(f" AUTO-FILL: Данные для {self.target_user.id} не найдены в кэше")
                 
                 # Fallback to database query
                 try:
@@ -832,28 +839,22 @@ class PersonalDataModal(ui.Modal, title="Изменить личные данн�
                         if static:
                             self.static.default = static
                             
-                        print(f"✅ AUTO-FILL: Данные для {self.target_user.id} загружены из БД и закэшированы")
+                        logger.info(f" AUTO-FILL: Данные для {self.target_user.id} загружены из БД и закэшированы")
                     else:
-                        print(f"⚠️ AUTO-FILL: Пользователь {self.target_user.id} не найден в БД или уволен")
+                        logger.info(f" AUTO-FILL: Пользователь {self.target_user.id} не найден в БД или уволен")
                         
                 except Exception as db_error:
-                    print(f"❌ AUTO-FILL: Ошибка запроса к БД для {self.target_user.id}: {db_error}")
+                    logger.error("AUTO-FILL: Ошибка запроса к БД для {self.target_user.id}: %s", db_error)
                 
         except Exception as e:
-            print(f"Warning: Could not auto-fill personal data: {e}")
+            logger.warning("Warning: Could not auto-fill personal data: %s", e)
             # Continue with empty defaults
 
     def _format_static(self, static_input: str) -> str:
         """Auto-format static number to standard format"""
-        import re
-        digits_only = re.sub(r'\D', '', static_input.strip())
-
-        if len(digits_only) == 5:
-            return f"{digits_only[:2]}-{digits_only[2:]}"
-        elif len(digits_only) == 6:
-            return f"{digits_only[:3]}-{digits_only[3:]}"
-        else:
-            return ""
+        from utils.static_validator import StaticValidator
+        is_valid, formatted = StaticValidator.validate_and_format(static_input)
+        return formatted if is_valid else ""
 
     async def on_submit(self, interaction: discord.Interaction):
         """Handle form submission with database update and history logging"""
@@ -862,7 +863,7 @@ class PersonalDataModal(ui.Modal, title="Изменить личные данн�
             config = load_config()
             if not is_moderator_or_admin(interaction.user, config):
                 await interaction.response.send_message(
-                    "❌ У вас нет прав для выполнения этой команды.",
+                    " У вас нет прав для выполнения этой команды.",
                     ephemeral=True
                 )
                 return
@@ -870,8 +871,8 @@ class PersonalDataModal(ui.Modal, title="Изменить личные данн�
             # Get form data
             # TEMPORARILY DISABLED: Discord ID field (lines 734-742) - using target user ID directly
             discord_id = self.target_user.id  # Temporarily use target user ID since field is disabled
-            first_name = self.first_name.value.strip()
-            last_name = self.last_name.value.strip()
+            first_name = self.first_name.value.strip().capitalize()
+            last_name = self.last_name.value.strip().capitalize()
             static = self.static.value.strip()
 
             # TEMPORARILY DISABLED: Discord ID validation - field is disabled, so no ID changes possible
@@ -909,7 +910,7 @@ class PersonalDataModal(ui.Modal, title="Изменить личные данн�
             #                 return
             #
             #     except Exception as db_error:
-            #         print(f"❌ Database error checking Discord ID conflict: {db_error}")
+            #         print(f" Database error checking Discord ID conflict: {db_error}")
             #         await interaction.response.send_message(
             #             "❌ Ошибка проверки данных в базе данных.",
             #             ephemeral=True
@@ -927,9 +928,9 @@ class PersonalDataModal(ui.Modal, title="Изменить личные данн�
             # Validate and format static (required field)
             formatted_static = self._format_static(static)
             if not formatted_static:
+                from utils.static_validator import StaticValidator
                 await interaction.response.send_message(
-                    "❌ Неверный формат статика. Статик должен содержать 5 или 6 цифр.\n"
-                    "Примеры: 123456, 123-456, 12345, 12-345, 123 456",
+                    StaticValidator.get_validation_error_message(),
                     ephemeral=True
                 )
                 return
@@ -943,7 +944,7 @@ class PersonalDataModal(ui.Modal, title="Изменить личные данн�
                 from utils.database_manager import personnel_manager
                 old_data = personnel_manager.get_personnel_by_discord_id(discord_id)
             except Exception as e:
-                print(f"⚠️ Could not get old data for audit: {e}")
+                logger.info("Could not get old data for audit: %s", e)
 
             try:
                 # Update personnel data with history logging
@@ -998,12 +999,12 @@ class PersonalDataModal(ui.Modal, title="Изменить личные данн�
                                 personnel_data=audit_data
                             )
                             
-                            print(f"✅ Audit notification sent for name change: {first_name} {last_name}")
+                            logger.info("Audit notification sent for name change: %s %s", first_name, last_name)
                         else:
-                            print(f"⚠️ Could not get personnel data for audit notification")
+                            logger.info("Could not get personnel data for audit notification")
                             
                     except Exception as audit_error:
-                        print(f"⚠️ Error sending audit notification: {audit_error}")
+                        logger.error("Error sending audit notification: %s", audit_error)
                         import traceback
                         traceback.print_exc()
 
@@ -1026,7 +1027,7 @@ class PersonalDataModal(ui.Modal, title="Изменить личные данн�
                     )
 
                     embed.add_field(
-                        name="👤 Изменено модератором:",
+                        name="👮 Изменено модератором:",
                         value=interaction.user.mention,
                         inline=True
                     )
@@ -1034,8 +1035,8 @@ class PersonalDataModal(ui.Modal, title="Изменить личные данн�
                     await interaction.followup.send(embed=embed, ephemeral=True)
 
                     # Log to console
-                    print(f"✅ PERSONAL DATA UPDATE: {self.target_user.id} updated by {interaction.user.id}")
-                    print(f"   New data: {first_name} {last_name}, static: {formatted_static}")
+                    logger.info(f" PERSONAL DATA UPDATE: {self.target_user.id} updated by {interaction.user.id}")
+                    logger.info(f"New data: %s %s, static: %s", first_name, last_name, formatted_static)
 
                 else:
                     await interaction.followup.send(
@@ -1044,15 +1045,15 @@ class PersonalDataModal(ui.Modal, title="Изменить личные данн�
                     )
 
             except Exception as db_error:
-                print(f"❌ DATABASE ERROR in personal data update: {db_error}")
+                logger.error("DATABASE ERROR in personal data update: %s", db_error)
                 await interaction.followup.send(
-                    "❌ Произошла ошибка при сохранении данных в базу данных.",
+                    " Произошла ошибка при сохранении данных в базу данных.",
                     ephemeral=True
                 )
 
         except Exception as e:
-            print(f"Error in personal data modal: {e}")
+            logger.error("Error in personal data modal: %s", e)
             await interaction.response.send_message(
-                "❌ Произошла ошибка при обработке запроса.",
+                " Произошла ошибка при обработке запроса.",
                 ephemeral=True
             )

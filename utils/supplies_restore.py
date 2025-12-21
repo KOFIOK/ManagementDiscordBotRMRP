@@ -7,6 +7,10 @@ from typing import Optional, Dict, Any
 from utils.config_manager import load_config
 from forms.supplies.supplies_control_view import send_supplies_control_message
 from forms.supplies.supplies_subscription_view import send_supplies_subscription_message
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class SuppliesRestoreManager:
@@ -21,7 +25,7 @@ class SuppliesRestoreManager:
             config = load_config()
             supplies_config = config.get('supplies', {})
             
-            print("🔄 Восстановление сообщений системы поставок...")
+            logger.info("Восстановление сообщений системы поставок...")
             
             # Восстанавливаем сообщение управления
             await self._restore_control_message(supplies_config)
@@ -29,22 +33,22 @@ class SuppliesRestoreManager:
             # Восстанавливаем сообщение подписки
             await self._restore_subscription_message(supplies_config)
             
-            print("✅ Восстановление сообщений поставок завершено")
+            logger.info("Восстановление сообщений поставок завершено")
             
         except Exception as e:
-            print(f"❌ Ошибка восстановления сообщений поставок: {e}")
+            logger.warning("Ошибка восстановления сообщений поставок: %s", e)
     
     async def _restore_control_message(self, supplies_config: Dict[str, Any]):
         """Восстанавливает сообщение управления поставками"""
         try:
             control_channel_id = supplies_config.get('control_channel_id')
             if not control_channel_id:
-                print("⚠️ Канал управления поставками не настроен")
+                logger.info("Канал управления поставками не настроен")
                 return
             
             channel = self.bot.get_channel(control_channel_id)
             if not channel:
-                print(f"❌ Канал управления поставками не найден (ID: {control_channel_id})")
+                logger.info("Канал управления поставками не найден (ID: %s)", control_channel_id)
                 return
             
             # Проверяем, есть ли уже сообщение
@@ -54,25 +58,25 @@ class SuppliesRestoreManager:
             )
             
             if not has_message:
-                print(f"📝 Создаем сообщение управления поставками в #{channel.name}")
+                logger.info(f" Создаем сообщение управления поставками в #{channel.name}")
                 await send_supplies_control_message(channel)
             else:
-                print(f"✅ Сообщение управления поставками уже существует в #{channel.name}")
+                logger.info(f" Сообщение управления поставками уже существует в #{channel.name}")
                 
         except Exception as e:
-            print(f"❌ Ошибка восстановления сообщения управления: {e}")
+            logger.warning("Ошибка восстановления сообщения управления: %s", e)
     
     async def _restore_subscription_message(self, supplies_config: Dict[str, Any]):
         """Восстанавливает сообщение подписки на уведомления"""
         try:
             subscription_channel_id = supplies_config.get('subscription_channel_id')
             if not subscription_channel_id:
-                print("⚠️ Канал подписки на поставки не настроен")
+                logger.info("Канал подписки на поставки не настроен")
                 return
             
             channel = self.bot.get_channel(subscription_channel_id)
             if not channel:
-                print(f"❌ Канал подписки на поставки не найден (ID: {subscription_channel_id})")
+                logger.info("Канал подписки на поставки не найден (ID: %s)", subscription_channel_id)
                 return
             
             # Проверяем, есть ли уже сообщение
@@ -82,13 +86,13 @@ class SuppliesRestoreManager:
             )
             
             if not has_message:
-                print(f"📝 Создаем сообщение подписки на поставки в #{channel.name}")
+                logger.info(f" Создаем сообщение подписки на поставки в #{channel.name}")
                 await send_supplies_subscription_message(channel)
             else:
-                print(f"✅ Сообщение подписки на поставки уже существует в #{channel.name}")
+                logger.info(f" Сообщение подписки на поставки уже существует в #{channel.name}")
                 
         except Exception as e:
-            print(f"❌ Ошибка восстановления сообщения подписки: {e}")
+            logger.warning("Ошибка восстановления сообщения подписки: %s", e)
     
     async def _check_for_supplies_message(self, channel: discord.TextChannel, 
                                         title_keyword: str) -> bool:
@@ -102,7 +106,7 @@ class SuppliesRestoreManager:
                             return True
             return False
         except Exception as e:
-            print(f"❌ Ошибка проверки сообщений в #{channel.name}: {e}")
+            logger.warning("Ошибка проверки сообщений в #{channel.name}: %s", e)
             return False
     
     async def update_control_message_timers(self):
@@ -218,7 +222,7 @@ class SuppliesRestoreManager:
                     break
                     
         except Exception as e:
-            print(f"❌ Ошибка обновления таймеров в сообщении управления: {e}")
+            logger.warning("Ошибка обновления таймеров в сообщении управления: %s", e)
 
 
 # Глобальный экземпляр для использования в других модулях
@@ -233,7 +237,7 @@ def initialize_supplies_restore_manager(bot) -> SuppliesRestoreManager:
         supplies_restore_manager = SuppliesRestoreManager(bot)
         return supplies_restore_manager
     except Exception as e:
-        print(f"❌ Ошибка инициализации менеджера восстановления поставок: {e}")
+        logger.warning("Ошибка инициализации менеджера восстановления поставок: %s", e)
         return None
 
 

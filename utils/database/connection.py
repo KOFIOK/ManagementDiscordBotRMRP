@@ -9,6 +9,10 @@ from sqlalchemy import text
 import os
 from typing import Optional
 from dotenv import load_dotenv
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 # Загружаем переменные окружения
 load_dotenv()
@@ -34,12 +38,12 @@ class DatabaseConnection:
         # Use direct IP to avoid DNS issues
         direct_host = "127.0.0.1" if self.host in ["localhost", "127.0.0.1"] else self.host
         self.async_url = f"postgresql+asyncpg://{self.username}:{self.password}@{direct_host}:{self.port}/{self.database}"
-        print(f"🔧 Using PostgreSQL database: {self.database}@{self.host}")
+        logger.info(f" Using PostgreSQL database: {self.database}@{self.host}")
     
     async def initialize(self) -> bool:
         """Initialize database connections"""
         try:
-            print("🔗 Initializing PostgreSQL connections...")
+            logger.info("Initializing PostgreSQL connections...")
             
             # Create SQLAlchemy async engine
             self.engine = create_async_engine(
@@ -60,11 +64,11 @@ class DatabaseConnection:
             
             # Test connection
             await self.test_connection()
-            print("✅ PostgreSQL connections initialized successfully!")
+            logger.info("PostgreSQL connections initialized successfully!")
             return True
             
         except Exception as e:
-            print(f"❌ Failed to initialize PostgreSQL connections: {e}")
+            logger.warning("Failed to initialize PostgreSQL connections: %s", e)
             return False
     
     async def test_connection(self):
@@ -75,9 +79,9 @@ class DatabaseConnection:
                 value = result.scalar()
                 if value != 1:
                     raise Exception("Database connection test failed")
-                print("🔍 PostgreSQL connection test passed")
+                logger.info("PostgreSQL connection test passed")
         except Exception as e:
-            print(f"❌ Connection test failed: {e}")
+            logger.warning("Connection test failed: %s", e)
             raise
     
     def get_session(self) -> AsyncSession:
@@ -91,10 +95,10 @@ class DatabaseConnection:
         try:
             if self.engine:
                 await self.engine.dispose()
-                print("🔒 SQLAlchemy engine disposed")
+                logger.info("SQLAlchemy engine disposed")
                 
         except Exception as e:
-            print(f"⚠️ Error closing database connections: {e}")
+            logger.warning("Error closing database connections: %s", e)
 
 # Global database connection instance
 db_connection = DatabaseConnection()

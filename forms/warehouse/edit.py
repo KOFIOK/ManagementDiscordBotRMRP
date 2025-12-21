@@ -5,6 +5,10 @@
 import re
 import discord
 from typing import List
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class WarehouseEditSelectView(discord.ui.View):
@@ -42,7 +46,7 @@ class WarehouseEditSelect(discord.ui.Select):
                 else:
                     # Обычный предмет
                     options.append(discord.SelectOption(
-                        label=f"{i+1}. {item_name}",
+                        label=f"❌ {i+1}. {item_name}",
                         description=f"Количество: {quantity}",
                         value=str(i),
                         emoji="📦"
@@ -127,7 +131,7 @@ class WarehouseEditSelect(discord.ui.Select):
                                             pass
                     break
         except Exception as e:
-            print(f"❌ Ошибка парсинга предметов из embed: {e}")
+            logger.error("Ошибка парсинга предметов из embed: %s", e)
         
         return items
     
@@ -165,7 +169,7 @@ class WarehouseEditSelect(discord.ui.Select):
                 
                 embed = discord.Embed(
                     title="🔧 Восстановление предмета",
-                    description=f"**Удаленный предмет:** {item_name}\n**Было количество:** {current_quantity}",
+                    description=f"🗑️ **Удаленный предмет:** {item_name}\n**Было количество:** {current_quantity}",
                     color=discord.Color.orange()
                 )
             else:
@@ -187,9 +191,9 @@ class WarehouseEditSelect(discord.ui.Select):
             await interaction.response.edit_message(embed=embed, view=view)
             
         except Exception as e:
-            print(f"❌ Ошибка при выборе предмета для редактирования: {e}")
+            logger.error("Ошибка при выборе предмета для редактирования: %s", e)
             await interaction.response.send_message(
-                "❌ Произошла ошибка при обработке выбора.",
+                " Произошла ошибка при обработке выбора.",
                 ephemeral=True
             )
 
@@ -216,12 +220,12 @@ class WarehouseEditActionView(discord.ui.View):
             await self._update_original_message_remove_item(interaction)
             
             # Возвращаемся к Select Menu с сообщением об успехе
-            await self._return_to_select_menu(interaction, f"✅ Предмет **{self.item_name}** удален из заявки")
+            await self._return_to_select_menu(interaction, f" Предмет **{self.item_name}** удален из заявки")
             
         except Exception as e:
-            print(f"❌ Ошибка при удалении предмета: {e}")
+            logger.error("Ошибка при удалении предмета: %s", e)
             await interaction.followup.send(
-                "❌ Произошла ошибка при удалении предмета.",
+                " Произошла ошибка при удалении предмета.",
                 ephemeral=True
             )
     
@@ -240,9 +244,9 @@ class WarehouseEditActionView(discord.ui.View):
             await interaction.response.send_modal(modal)
             
         except Exception as e:
-            print(f"❌ Ошибка при открытии модального окна: {e}")
+            logger.error("Ошибка при открытии модального окна: %s", e)
             await interaction.response.send_message(
-                "❌ Произошла ошибка при открытии формы.",
+                " Произошла ошибка при открытии формы.",
                 ephemeral=True
             )
     
@@ -291,7 +295,7 @@ class WarehouseEditActionView(discord.ui.View):
             await self.original_message.edit(embed=embed, view=original_view)
             
         except Exception as e:
-            print(f"❌ Ошибка при обновлении сообщения: {e}")
+            logger.error("Ошибка при обновлении сообщения: %s", e)
             raise
 
     async def _return_to_select_menu(self, interaction: discord.Interaction, success_message: str = None):
@@ -322,7 +326,7 @@ class WarehouseEditActionView(discord.ui.View):
                 await interaction.response.edit_message(embed=embed, view=new_view)
                 
         except Exception as e:
-            print(f"❌ Ошибка при возврате к Select Menu: {e}")
+            logger.error("Ошибка при возврате к Select Menu: %s", e)
             raise
 
 
@@ -348,12 +352,12 @@ class WarehouseRestoreActionView(discord.ui.View):
             await self._update_original_message_restore_item(interaction)
             
             # Возвращаемся к Select Menu с сообщением об успехе
-            await self._return_to_select_menu(interaction, f"✅ Предмет **{self.item_name}** восстановлен в заявке")
+            await self._return_to_select_menu(interaction, f" Предмет **{self.item_name}** восстановлен в заявке")
             
         except Exception as e:
-            print(f"❌ Ошибка при восстановлении предмета: {e}")
+            logger.error("Ошибка при восстановлении предмета: %s", e)
             await interaction.followup.send(
-                "❌ Произошла ошибка при восстановлении предмета.",
+                " Произошла ошибка при восстановлении предмета.",
                 ephemeral=True
             )
     
@@ -427,7 +431,7 @@ class WarehouseRestoreActionView(discord.ui.View):
             await self.original_message.edit(embed=embed, view=original_view)
             
         except Exception as e:
-            print(f"❌ Ошибка при обновлении сообщения: {e}")
+            logger.error("Ошибка при обновлении сообщения: %s", e)
             raise
 
     async def _return_to_select_menu(self, interaction: discord.Interaction, success_message: str = None):
@@ -438,7 +442,7 @@ class WarehouseRestoreActionView(discord.ui.View):
             
             # Создаем embed для Select Menu
             embed = discord.Embed(
-                title="🔧 Редактирование заявки склада",
+                title="📦 Редактирование заявки склада",
                 description="Выберите предмет для редактирования из списка ниже:",
                 color=discord.Color.blue()
             )
@@ -458,7 +462,7 @@ class WarehouseRestoreActionView(discord.ui.View):
                 await interaction.response.edit_message(embed=embed, view=new_view)
                 
         except Exception as e:
-            print(f"❌ Ошибка при возврате к Select Menu: {e}")
+            logger.error("Ошибка при возврате к Select Menu: %s", e)
             raise
 
 
@@ -518,9 +522,9 @@ class WarehouseEditQuantityModal(discord.ui.Modal):
             )
             
         except Exception as e:
-            print(f"❌ Ошибка при изменении количества: {e}")
+            logger.error("Ошибка при изменении количества: %s", e)
             await interaction.followup.send(
-                "❌ Произошла ошибка при изменении количества.",
+                " Произошла ошибка при изменении количества.",
                 ephemeral=True
             )
     
@@ -581,7 +585,7 @@ class WarehouseEditQuantityModal(discord.ui.Modal):
             await self.original_message.edit(embed=embed, view=original_view)
             
         except Exception as e:
-            print(f"❌ Ошибка при обновлении количества в сообщении: {e}")
+            logger.error("Ошибка при обновлении количества в сообщении: %s", e)
             raise
 
     def _extract_original_quantity(self, line: str) -> int:
@@ -625,7 +629,7 @@ class WarehouseEditQuantityModal(discord.ui.Modal):
             
             # Создаем embed для Select Menu
             embed = discord.Embed(
-                title="🔧 Редактирование заявки склада",
+                title="📦 Редактирование заявки склада",
                 description="Выберите предмет для редактирования из списка ниже:",
                 color=discord.Color.blue()
             )
@@ -642,5 +646,5 @@ class WarehouseEditQuantityModal(discord.ui.Modal):
             await interaction.edit_original_response(embed=embed, view=new_view)
                 
         except Exception as e:
-            print(f"❌ Ошибка при возврате к Select Menu: {e}")
+            logger.error("Ошибка при возврате к Select Menu: %s", e)
             raise

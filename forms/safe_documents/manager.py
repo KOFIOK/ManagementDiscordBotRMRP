@@ -2,6 +2,11 @@ import discord
 from datetime import datetime
 
 from utils.config_manager import load_config
+from utils.message_manager import get_safe_documents_message, get_private_messages
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class SafeDocumentsManager:
@@ -37,7 +42,7 @@ class SafeDocumentsManager:
             channel_id = self.config.get('safe_documents_channel')
             if not channel_id:
                 await interaction.response.send_message(
-                    "❌ Канал для безопасных документов не настроен!",
+                    get_safe_documents_message(interaction.guild.id, "manager.error_channel_not_configured", "❌ Канал для безопасных документов не настроен!"),
                     ephemeral=True
                 )
                 return
@@ -45,7 +50,7 @@ class SafeDocumentsManager:
             channel = interaction.guild.get_channel(channel_id)
             if not channel:
                 await interaction.response.send_message(
-                    "❌ Канал для безопасных документов не найден!",
+                    get_safe_documents_message(interaction.guild.id, "manager.error_channel_not_found", "❌ Канал для безопасных документов не найден!"),
                     ephemeral=True
                 )
                 return
@@ -68,7 +73,7 @@ class SafeDocumentsManager:
             )
             
         except Exception as e:
-            print(f"Error in handle_new_submission: {e}")
+            logger.error("Error in handle_new_submission: %s", e)
             if not interaction.response.is_done():
                 await interaction.response.send_message(
                     f"❌ Произошла ошибка при обработке заявки: {str(e)}",
@@ -114,9 +119,9 @@ class SafeDocumentsManager:
             await self.notify_user(interaction.guild, application_data, 'approved')
             
         except Exception as e:
-            print(f"Error in handle_approval: {e}")
+            logger.error("Error in handle_approval: %s", e)
             await interaction.response.send_message(
-                f"❌ Произошла ошибка при одобрении заявки: {str(e)}",
+                f" Произошла ошибка при одобрении заявки: {str(e)}",
                 ephemeral=True
             )
 
@@ -160,9 +165,9 @@ class SafeDocumentsManager:
             await self.notify_user(interaction.guild, application_data, 'rejected', reason)
             
         except Exception as e:
-            print(f"Error in handle_rejection: {e}")
+            logger.error("Error in handle_rejection: %s", e)
             await interaction.response.send_message(
-                f"❌ Произошла ошибка при отклонении заявки: {str(e)}",
+                f" Произошла ошибка при отклонении заявки: {str(e)}",
                 ephemeral=True
             )
 
@@ -244,9 +249,9 @@ class SafeDocumentsManager:
             await interaction.response.edit_message(content=content, embed=embed, view=view)
             
         except Exception as e:
-            print(f"Error in handle_edit_update: {e}")
+            logger.error("Error in handle_edit_update: %s", e)
             await interaction.response.send_message(
-                f"❌ Произошла ошибка при обновлении заявки: {str(e)}",
+                f" Произошла ошибка при обновлении заявки: {str(e)}",
                 ephemeral=True
             )
 
@@ -280,7 +285,7 @@ class SafeDocumentsManager:
         )
         
         embed.add_field(
-            name="🎭 Статик",
+            name="🆔 Статик",
             value=application_data.get('static', 'Не указано'),
             inline=True
         )
@@ -292,7 +297,7 @@ class SafeDocumentsManager:
         )
         
         embed.add_field(
-            name="📧 Почта",
+            name="✉️ Почта",
             value=application_data.get('email', 'Не указано'),
             inline=True
         )
@@ -317,7 +322,7 @@ class SafeDocumentsManager:
             )
         elif status == 'rejected':
             embed.add_field(
-                name="❌ Отклонено",
+                name="🗑️ Отклонено",
                 value=f"<@{application_data.get('rejected_by', 'Неизвестно')}>\n{application_data.get('rejected_at', 'Неизвестно')}",
                 inline=True
             )
@@ -357,7 +362,7 @@ class SafeDocumentsManager:
             return is_moderator_or_admin(user, self.config)
             
         except Exception as e:
-            print(f"Error checking moderator permissions: {e}")
+            logger.error("Error checking moderator permissions: %s", e)
             return False
 
     async def get_permission_error_message(self, user: discord.Member, department: str = None, application_user_id: int = None) -> str:
@@ -411,7 +416,7 @@ class SafeDocumentsManager:
                 return ""
                 
         except Exception as e:
-            print(f"Error getting ping content: {e}")
+            logger.error("Error getting ping content: %s", e)
             return ""
 
     async def notify_user(self, guild: discord.Guild, application_data: dict, status: str, reason: str = None):
@@ -425,34 +430,43 @@ class SafeDocumentsManager:
             if not user:
                 return
             
+            # Определяем статус текст и эмодзи
             if status == 'approved':
-                embed = discord.Embed(
-                    title="✅ Заявка одобрена",
-                    description="Ваша заявка на безопасные документы была одобрена!",
-                    color=discord.Color.green()
-                )
+                status_emoji = "✅"
+                status_text = "одобрена"
+                embed_color = discord.Color.green()
             elif status == 'rejected':
-                embed = discord.Embed(
-                    title="❌ Заявка отклонена",
-                    description="Ваша заявка на безопасные документы была отклонена.",
-                    color=discord.Color.red()
-                )
-                
-                if reason:
-                    embed.add_field(
-                        name="📝 Причина",
-                        value=reason,
-                        inline=False
-                    )
+                status_emoji = "❌"
+                status_text = "отклонена"
+                embed_color = discord.Color.red()
             else:
                 return
             
+            embed = discord.Embed(
+                title=get_private_messages(guild.id, 'safe_documents.notification.title'),
+                description=get_private_messages(guild.id, 'safe_documents.notification.description').format(
+                    status=status_text,
+                    status_emoji=status_emoji,
+                    status_text=status_text
+                ),
+                color=embed_color
+            )
+            
+            if status == 'rejected' and reason:
+                embed.add_field(
+                    name="📝 Причина",
+                    value=reason,
+                    inline=False
+                )
+            
             embed.add_field(
                 name="📋 Данные заявки",
-                value=f"**Имя Фамилия:** {application_data.get('name', 'Не указано')}\n"
-                      f"**Статик:** {application_data.get('static', 'Не указано')}\n"
-                      f"**Телефон:** {application_data.get('phone', 'Не указано')}\n"
-                      f"**Почта:** {application_data.get('email', 'Не указано')}",
+                value=get_private_messages(guild.id, 'safe_documents.notification.application_data').format(
+                    name=application_data.get('name', 'Не указано'),
+                    static=application_data.get('static', 'Не указано'),
+                    phone=application_data.get('phone', 'Не указано'),
+                    email=application_data.get('email', 'Не указано')
+                ),
                 inline=False
             )
             
@@ -465,7 +479,7 @@ class SafeDocumentsManager:
                 pass
                 
         except Exception as e:
-            print(f"Error notifying user: {e}")
+            logger.error("Error notifying user: %s", e)
 
 
 async def ensure_safe_documents_pin_message(bot, channel_id: int = None) -> bool:
@@ -487,12 +501,12 @@ async def ensure_safe_documents_pin_message(bot, channel_id: int = None) -> bool
             channel_id = config.get('safe_documents_channel')
             
         if not channel_id:
-            print("❌ Safe documents channel not configured")
+            logger.info("Safe documents channel not configured")
             return False
             
         channel = bot.get_channel(channel_id)
         if not channel:
-            print(f"❌ Safe documents channel {channel_id} not found")
+            logger.info("Safe documents channel %s not found", channel_id)
             return False
         
         # Создаем embed для закрепленного сообщения
@@ -528,6 +542,7 @@ async def ensure_safe_documents_pin_message(bot, channel_id: int = None) -> bool
             if (message.author == bot.user and 
                 message.embeds and 
                 len(message.embeds) > 0 and
+                message.embeds[0].title and
                 "Система безопасных документов" in message.embeds[0].title):
                 
                 try:
@@ -538,14 +553,14 @@ async def ensure_safe_documents_pin_message(bot, channel_id: int = None) -> bool
                     if not message.pinned:
                         await message.pin()
                     
-                    print(f"✅ Safe documents pin message updated in {channel.name}")
+                    logger.info(f" Safe documents pin message updated in {channel.name}")
                     return True
                     
                 except discord.Forbidden:
-                    print(f"❌ No permission to edit/pin message in {channel.name}")
+                    logger.info(f" No permission to edit/pin message in {channel.name}")
                     return False
                 except Exception as e:
-                    print(f"❌ Error updating safe documents message: {e}")
+                    logger.warning("Error updating safe documents message: %s", e)
                     continue
         
         # Если существующее сообщение не найдено, создаем новое
@@ -553,18 +568,18 @@ async def ensure_safe_documents_pin_message(bot, channel_id: int = None) -> bool
             message = await channel.send(embed=embed, view=view)
             await message.pin()
             
-            print(f"✅ Safe documents pin message created in {channel.name}")
+            logger.info(f" Safe documents pin message created in {channel.name}")
             return True
             
         except discord.Forbidden:
-            print(f"❌ No permission to send/pin message in {channel.name}")
+            logger.info(f" No permission to send/pin message in {channel.name}")
             return False
         except Exception as e:
-            print(f"❌ Error creating safe documents pin message: {e}")
+            logger.warning("Error creating safe documents pin message: %s", e)
             return False
             
     except Exception as e:
-        print(f"❌ Error in ensure_safe_documents_pin_message: {e}")
+        logger.warning("Error in ensure_safe_documents_pin_message: %s", e)
         return False
 
 
@@ -583,18 +598,18 @@ async def setup_safe_documents_system(bot) -> bool:
         channel_id = config.get('safe_documents_channel')
         
         if not channel_id:
-            print("ℹ️ Safe documents channel not configured, skipping setup")
+            logger.info("Safe documents channel not configured, skipping setup")
             return True
             
         success = await ensure_safe_documents_pin_message(bot, channel_id)
         
         if success:
-            print("✅ Safe documents system setup completed")
+            logger.info("Safe documents system setup completed")
         else:
-            print("❌ Safe documents system setup failed")
+            logger.warning("Safe documents system setup failed")
             
         return success
         
     except Exception as e:
-        print(f"❌ Error setting up safe documents system: {e}")
+        logger.warning("Error setting up safe documents system: %s", e)
         return False

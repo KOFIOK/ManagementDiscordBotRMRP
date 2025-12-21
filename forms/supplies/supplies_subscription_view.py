@@ -1,5 +1,10 @@
 import discord
 from utils.config_manager import load_config
+from utils.message_manager import get_supplies_message, get_supplies_color, get_role_reason, get_moderator_display_name
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class SuppliesSubscriptionView(discord.ui.View):
@@ -34,7 +39,7 @@ class SuppliesSubscriptionView(discord.ui.View):
             
             if not subscription_role_id:
                 await interaction.response.send_message(
-                    "❌ Роль для подписки на уведомления не настроена. Обратитесь к администратору.",
+                    "🚫 Роль для подписки на уведомления о поставках не настроена. Обратитесь к администратору.",
                     ephemeral=True
                 )
                 return
@@ -45,69 +50,72 @@ class SuppliesSubscriptionView(discord.ui.View):
             
             if not subscription_role:
                 await interaction.response.send_message(
-                    "❌ Роль для подписки не найдена на сервере. Обратитесь к администратору.",
+                    "🚫 Роль для подписки на уведомления о поставках не найдена на сервере. Обратитесь к администратору.",
                     ephemeral=True
                 )
                 return
             
             user = interaction.user
+            # Get user display name for audit reasons
+            user_display = await get_moderator_display_name(user)
             
             if subscribe:
                 # Включаем уведомления
                 if subscription_role in user.roles:
                     await interaction.response.send_message(
-                        "ℹ️ У вас уже включены уведомления о поставках!",
+                        get_supplies_message(interaction.guild.id, "subscription.info_already_subscribed"),
                         ephemeral=True
                     )
                 else:
-                    await user.add_roles(subscription_role, reason="Подписка на уведомления о поставках")
+                    reason = get_role_reason(interaction.guild.id, "supplies_subscription.enabled", "Подписка на поставки: включена").format(user=user_display)
+                    await user.add_roles(subscription_role, reason=reason)
                     await interaction.response.send_message(
-                        "✅ Уведомления о поставках **включены**!\n"
-                        "🔔 Теперь вы будете получать уведомления о готовности военных объектов.",
+                        get_supplies_message(interaction.guild.id, "subscription.success_subscribed"),
                         ephemeral=True
                     )
             else:
                 # Выключаем уведомления
                 if subscription_role not in user.roles:
                     await interaction.response.send_message(
-                        "ℹ️ У вас уже выключены уведомления о поставках!",
+                        get_supplies_message(interaction.guild.id, "subscription.info_already_unsubscribed"),
                         ephemeral=True
                     )
                 else:
-                    await user.remove_roles(subscription_role, reason="Отписка от уведомлений о поставках")
+                    await user.remove_roles(subscription_role, reason=get_role_reason(interaction.guild.id, "supplies_subscription.disabled", "Подписка на поставки: отключена").format(user=user_display))
                     await interaction.response.send_message(
-                        "✅ Уведомления о поставках **выключены**.\n"
-                        "🔕 Вы больше не будете получать уведомления о готовности объектов.",
+                        get_supplies_message(interaction.guild.id, "subscription.success_unsubscribed"),
                         ephemeral=True
                     )
                     
         except Exception as e:
-            print(f"❌ Ошибка при управлении подпиской на поставки: {e}")
-            await interaction.response.send_message(
-                "❌ Произошла ошибка при обработке подписки. Попробуйте позже.",
-                ephemeral=True
-            )
+            logger.warning("Ошибка при управлении подпиской на поставки: %s", e)
+            try:
+                await interaction.response.send_message(
+                    get_supplies_message(interaction.guild.id, "subscription.error_subscription_processing"),
+                    ephemeral=True
+                )
+            except:
+                # If interaction.response is already used, use followup
+                await interaction.followup.send(
+                    get_supplies_message(interaction.guild.id, "subscription.error_subscription_processing"),
+                    ephemeral=True
+                )
 
 
 async def send_supplies_subscription_message(channel: discord.TextChannel):
     """Отправляет сообщение с кнопками подписки на уведомления"""
     try:
         embed = discord.Embed(
-            title="🔔 Подписка на уведомления о поставках",
-            description=(
-                "**Управление уведомлениями о военных поставках**\n\n"
-                "🔔 **Включить** - Получать уведомления о готовности объектов\n"
-                "🔕 **Выключить** - Отключить все уведомления\n\n"
-                "ℹ️ Уведомления приходят когда военные объекты готовы к новой поставке материалов."
-            ),
-            color=discord.Color.blue()
+            title=get_supplies_message(channel.guild.id, "subscription.embed_title"),
+            description=get_supplies_message(channel.guild.id, "subscription.embed_description"),
+            color=get_supplies_color(channel.guild.id, "colors.timer_embed")
         )
-        embed.set_footer(text="Выберите нужное действие")
+        embed.set_footer(text=get_supplies_message(channel.guild.id, "subscription.embed_footer"))
         
         view = SuppliesSubscriptionView()
         message = await channel.send(embed=embed, view=view)
         return message
         
     except Exception as e:
-        print(f"❌ Ошибка при отправке сообщения подписки на поставки: {e}")
+        logger.warning("Ошибка отправки сообщения подписки на поставки: %s", e)
         return None

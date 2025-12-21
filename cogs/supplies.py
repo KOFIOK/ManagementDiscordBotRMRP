@@ -3,6 +3,10 @@ from discord.ext import commands
 from datetime import datetime
 from forms.supplies import SuppliesManager
 from utils.config_manager import load_config
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class SuppliesCog(commands.Cog):
@@ -30,7 +34,7 @@ class SuppliesCog(commands.Cog):
             # Ограничиваем до 25 вариантов (лимит Discord)
             return choices[:25]
         except Exception as e:
-            print(f"❌ Ошибка автодополнения объектов поставок: {e}")
+            logger.warning("Ошибка автодополнения объектов поставок: %s", e)
             return []
     
     @discord.app_commands.command(
@@ -99,7 +103,7 @@ class SuppliesCog(commands.Cog):
                 )
                 
         except Exception as e:
-            print(f"❌ Ошибка в команде supplies-reset: {e}")
+            logger.warning("Ошибка в команде supplies-reset: %s", e)
             await interaction.response.send_message(
                 "❌ Произошла ошибка при выполнении команды.",
                 ephemeral=True
@@ -151,7 +155,7 @@ class SuppliesCog(commands.Cog):
             await interaction.followup.send(message, ephemeral=True)
             
         except Exception as e:
-            print(f"❌ Ошибка в команде supplies-setup: {e}")
+            logger.warning("Ошибка в команде supplies-setup: %s", e)
             await interaction.followup.send(
                 "❌ Произошла ошибка при настройке системы поставок.",
                 ephemeral=True
@@ -176,7 +180,7 @@ class SuppliesCog(commands.Cog):
             return None
             
         except Exception as e:
-            print(f"❌ Ошибка создания сообщения управления: {e}")
+            logger.warning("Ошибка создания сообщения управления: %s", e)
             return None
     
     async def _setup_subscription_message(self, supplies_config: dict) -> str:
@@ -198,7 +202,7 @@ class SuppliesCog(commands.Cog):
             return None
             
         except Exception as e:
-            print(f"❌ Ошибка создания сообщения подписки: {e}")
+            logger.warning("Ошибка создания сообщения подписки: %s", e)
             return None
     
     async def _update_control_message_after_reset(self):
@@ -209,11 +213,11 @@ class SuppliesCog(commands.Cog):
             if restore_manager:
                 await restore_manager.update_control_message_timers()
         except Exception as e:
-            print(f"❌ Ошибка обновления сообщения управления после сброса: {e}")
+            logger.warning("Ошибка обновления сообщения управления после сброса: %s", e)
     
     @discord.app_commands.command(
         name="supplies-debug", 
-        description="[DEV] Отладочная информация о системе поставок"
+        description="ℹ️ [DEV] Отладочная информация о системе поставок"
     )
     async def supplies_debug(self, interaction: discord.Interaction):
         """Показывает отладочную информацию о системе поставок"""
@@ -300,7 +304,7 @@ class SuppliesCog(commands.Cog):
             await interaction.response.send_message(embed=embed, ephemeral=True)
             
         except Exception as e:
-            print(f"❌ Ошибка в команде supplies-debug: {e}")
+            logger.warning("Ошибка в команде supplies-debug: %s", e)
             await interaction.response.send_message(
                 "❌ Произошла ошибка при получении отладочной информации.",
                 ephemeral=True
@@ -310,4 +314,4 @@ class SuppliesCog(commands.Cog):
 async def setup(bot):
     """Функция загрузки cog"""
     await bot.add_cog(SuppliesCog(bot))
-    print("✅ Supplies cog loaded successfully")
+    logger.info("Supplies cog loaded successfully")

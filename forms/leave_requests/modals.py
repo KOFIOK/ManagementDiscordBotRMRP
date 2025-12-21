@@ -7,7 +7,12 @@ from discord.ext import commands
 from utils.config_manager import load_config, is_moderator_or_admin
 from utils.leave_request_storage import LeaveRequestStorage
 from utils.user_cache import get_cached_user_info
+from utils.message_service import MessageService
 from .utils import LeaveRequestValidator, LeaveRequestDepartmentDetector
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class LeaveRequestModal(ui.Modal):
@@ -43,6 +48,7 @@ class LeaveRequestModal(ui.Modal):
           label="Статик",
           placeholder=static_placeholder,
           default=static_value,
+          min_length=1,
           max_length=20,
           required=True
         )
@@ -89,7 +95,7 @@ class LeaveRequestModal(ui.Modal):
             user_data = await get_cached_user_info(user_id)
             return cls(user_id=user_id, user_data=user_data)
         except Exception as e:
-            print(f"❌ Error loading user data for modal: {e}")
+            logger.warning("Error loading user data for modal: %s", e)
             # Return modal without pre-filled data if error occurs
             return cls(user_id=user_id, user_data=None)
     
@@ -124,16 +130,16 @@ class LeaveRequestModal(ui.Modal):
               
               if user_info:
                   department = user_info.get('department', 'Неизвестно')
-                  print(f"✅ LEAVE REQUEST: Получено подразделение из PostgreSQL: '{department}' для пользователя {interaction.user.id}")
+                  logger.info(f"LEAVE REQUEST: Получено подразделение из PostgreSQL: '%s' для пользователя {interaction.user.id}", department)
               else:
-                  print(f"⚠️ LEAVE REQUEST: Пользователь {interaction.user.id} не найден в PostgreSQL, используем fallback")
+                  logger.info(f" LEAVE REQUEST: Пользователь {interaction.user.id} не найден в PostgreSQL, используем fallback")
                   # Fallback to DepartmentManager if user not in PostgreSQL
                   from utils.department_manager import DepartmentManager
                   dept_manager = DepartmentManager()
                   department = dept_manager.get_user_department_name(interaction.user) or 'Неизвестно'
-                  print(f"🔄 LEAVE REQUEST: Fallback подразделение: '{department}'")
+                  logger.info("LEAVE REQUEST: Fallback подразделение: '%s'", department)
           except Exception as e:
-              print(f"❌ LEAVE REQUEST: Ошибка получения подразделения: {e}")
+              logger.warning("LEAVE REQUEST: Ошибка получения подразделения: %s", e)
               department = 'Неизвестно'
           
           # Save request
@@ -205,7 +211,7 @@ class LeaveRequestModal(ui.Modal):
         )
         
         embed.add_field(
-          name="🏷️ Статик:",
+          name="🆔 Статик:",
           value=static,
           inline=True
         )
@@ -222,7 +228,7 @@ class LeaveRequestModal(ui.Modal):
           inline=False
         )
         embed.add_field(
-          name="📝 Причина:",
+          name="📋 Причина:",
           value=reason,
           inline=False
         )
@@ -234,7 +240,7 @@ class LeaveRequestModal(ui.Modal):
         )
         
         embed.add_field(
-          name="📢 Статус:",
+          name="📊 Статус:",
           value="⏳ Ожидает рассмотрения",
           inline=True
         )
@@ -280,7 +286,7 @@ class RejectReasonModal(ui.Modal):
             user_data = await get_cached_user_info(user_id)
             return cls(user_id=user_id, user_data=user_data)
         except Exception as e:
-            print(f"❌ Error loading user data for modal: {e}")
+            logger.warning("Error loading user data for modal: %s", e)
             # Return modal without pre-filled data if error occurs
             return cls(user_id=user_id, user_data=None)
 
@@ -302,7 +308,7 @@ class RejectReasonModal(ui.Modal):
             request = LeaveRequestStorage.get_request_by_id(self.request_id)
             if not request:
                 embed = discord.Embed(
-                    title="❌ Заявка не найдена",
+                    title="📝 Заявка не найдена",
                     description="Заявка не существует или уже была обработана.",
                     color=discord.Color.red()
                 )
@@ -311,7 +317,7 @@ class RejectReasonModal(ui.Modal):
             
             if request["status"] != "pending":
                 embed = discord.Embed(
-                    title="❌ Заявка уже обработана",
+                    title="📝 Заявка уже обработана",
                     description="Эта заявка уже была рассмотрена.",
                     color=discord.Color.red()
                 )
@@ -343,7 +349,7 @@ class RejectReasonModal(ui.Modal):
                 await self._send_dm_notification(interaction, request, reason)
                 
                 embed = discord.Embed(
-                    title="✅ Заявка отклонена",
+                    title="🗑️ Заявка отклонена",
                     description=f"Заявка пользователя {request['name']} была отклонена.",
                     color=discord.Color.red()
                 )
@@ -386,7 +392,7 @@ class RejectReasonModal(ui.Modal):
           
           # Add rejection reason field
           embed.add_field(
-              name="📝 Причина отклонения:",
+              name="📋 Причина отклонения:",
               value=reason,
               inline=False
           )
@@ -397,7 +403,7 @@ class RejectReasonModal(ui.Modal):
           await interaction.message.edit(embed=embed, view=None)
           
         except Exception as e:
-          print(f"Error updating request embed: {e}")
+          logger.error("Error updating request embed: %s", e)
     
     async def _send_dm_notification(self, interaction, request, reason):
         """Send DM notification to user about rejection"""
@@ -423,13 +429,13 @@ class RejectReasonModal(ui.Modal):
           )
           
           embed.add_field(
-              name="👤 Отклонил:",
+              name="🗑️ Отклонил:",
               value=interaction.user.mention,
               inline=True
           )
           
           embed.add_field(
-              name="📝 Причина отклонения:",
+              name="📋 Причина отклонения:",
               value=reason,
               inline=False
           )
@@ -440,7 +446,41 @@ class RejectReasonModal(ui.Modal):
               inline=False
           )
           
-          await user.send(embed=embed)
+          try:
+            await MessageService.send_dm(
+                user=user,
+                title=MessageService.get_private_template(interaction.guild.id, 'leave_requests.rejection.title', '❌ Ваша заявка на отгул была отклонена'),
+                description=None,
+                fields=[
+                    {
+                        'name': MessageService.get_private_template(interaction.guild.id, 'leave_requests.rejection.details', '📋 Детали заявки:'),
+                        'value': (
+                            f"**Время:** {request['start_time']} - {request['end_time']}\n"
+                            f"**Дата:** {discord.utils.format_dt(discord.utils.utcnow(), 'd')}\n"
+                            f"**Причина отгула:** {request['reason']}"
+                        ),
+                        'inline': False
+                    },
+                    {
+                        'name': MessageService.get_private_template(interaction.guild.id, 'leave_requests.rejection.rejected_by', '👤 Отклонил:'),
+                        'value': interaction.user.mention,
+                        'inline': True
+                    },
+                    {
+                        'name': MessageService.get_private_template(interaction.guild.id, 'leave_requests.rejection.reason_field', '📝 Причина отклонения:'),
+                        'value': reason,
+                        'inline': False
+                    },
+                    {
+                        'name': MessageService.get_private_template(interaction.guild.id, 'leave_requests.rejection.info', 'ℹ️ Информация:'),
+                        'value': MessageService.get_private_template(interaction.guild.id, 'leave_requests.rejection.info_text', 'Вы можете подать новую заявку на отгул в том же дне, так как предыдущая была отклонена.'),
+                        'inline': False
+                    }
+                ],
+                color=MessageService.MessageColors.REJECTION if hasattr(MessageService, 'MessageColors') else None
+            )
+          except Exception as send_err:
+            logger.error("Error sending DM via MessageService: %s", send_err)
           
         except Exception as e:
-          print(f"Error sending DM notification: {e}")
+          logger.error("Error sending DM notification: %s", e)

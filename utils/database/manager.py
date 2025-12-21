@@ -10,6 +10,10 @@ import json
 
 from .connection import db_connection
 from .models import Personnel, Employee, Rank, Subdivision, Position, PositionSubdivision, Action, History, Blacklist
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class DatabaseManager:
@@ -36,7 +40,7 @@ class DatabaseManager:
         Replacement for GoogleSheetsManager.get_user_info_from_personal_list
         """
         try:
-            print(f"📋 DB SEARCH: Looking for Discord ID '{discord_id}' in personnel table")
+            logger.info("DB SEARCH: Looking for Discord ID '%s' in personnel table", discord_id)
             
             async with self.connection.get_session() as session:
                 # Join with employee data to get current assignment
@@ -50,7 +54,7 @@ class DatabaseManager:
                 person = result.scalar_one_or_none()
                 
                 if not person:
-                    print(f"❌ DB SEARCH: No match found for Discord ID '{discord_id}'")
+                    logger.info("DB SEARCH: No match found for Discord ID '%s'", discord_id)
                     return None
                 
                 # Get current employee record (assume latest one)
@@ -66,11 +70,11 @@ class DatabaseManager:
                     'discord_id': str(person.discord_id)
                 }
                 
-                print(f"✅ DB SEARCH: Found user data: {user_data}")
+                logger.info("DB SEARCH: Found user data: %s", user_data)
                 return user_data
                 
         except Exception as e:
-            print(f"❌ DB SEARCH: Error searching for user: {e}")
+            logger.warning("DB SEARCH: Error searching for user: %s", e)
             return None
     
     async def add_user_to_personal_list(self, discord_id: int, first_name: str, last_name: str, 
@@ -81,13 +85,13 @@ class DatabaseManager:
         Replacement for GoogleSheetsManager.add_user_to_personal_list
         """
         try:
-            print(f"📋 DB ADD: Adding Discord ID '{discord_id}' to personnel table")
+            logger.info("DB ADD: Adding Discord ID '%s' to personnel table", discord_id)
             
             async with self.connection.get_session() as session:
                 # Check if user already exists
                 existing_person = await session.get(Personnel, discord_id)
                 if existing_person:
-                    print(f"⚠️ DB ADD: User already exists, updating instead")
+                    logger.info("DB ADD: User already exists, updating instead")
                     return await self.update_user_basic_info(discord_id, first_name, last_name, static)
                 
                 # Create new personnel record
@@ -125,7 +129,7 @@ class DatabaseManager:
                 session.add(new_employee)
                 
                 await session.commit()
-                print(f"✅ DB ADD: Successfully added user {first_name} {last_name}")
+                logger.info("DB ADD: Successfully added user %s %s", first_name, last_name)
                 
                 # Log the action
                 await self._log_action(discord_id, "Принят на службу", f"Добавлен в систему", "Система")
@@ -133,7 +137,7 @@ class DatabaseManager:
                 return True
                 
         except Exception as e:
-            print(f"❌ DB ADD: Error adding user: {e}")
+            logger.warning("DB ADD: Error adding user: %s", e)
             return False
     
     async def delete_user_from_personal_list(self, discord_id: int) -> bool:
@@ -142,12 +146,12 @@ class DatabaseManager:
         Replacement for GoogleSheetsManager.delete_user_from_personal_list
         """
         try:
-            print(f"📋 DB DELETE: Marking Discord ID '{discord_id}' as dismissed")
+            logger.info("DB DELETE: Marking Discord ID '%s' as dismissed", discord_id)
             
             async with self.connection.get_session() as session:
                 person = await session.get(Personnel, discord_id)
                 if not person:
-                    print(f"❌ DB DELETE: User not found")
+                    logger.info("DB DELETE: User not found")
                     return False
                 
                 # Soft delete - mark as dismissed
@@ -155,7 +159,7 @@ class DatabaseManager:
                 person.dismissal_date = date.today()
                 
                 await session.commit()
-                print(f"✅ DB DELETE: Successfully marked user as dismissed")
+                logger.info("DB DELETE: Successfully marked user as dismissed")
                 
                 # Log the action
                 await self._log_action(discord_id, "Уволен со службы", "Помечен как уволенный", "Система")
@@ -163,7 +167,7 @@ class DatabaseManager:
                 return True
                 
         except Exception as e:
-            print(f"❌ DB DELETE: Error deleting user: {e}")
+            logger.warning("DB DELETE: Error deleting user: %s", e)
             return False
     
     async def update_user_rank(self, discord_id: int, new_rank: str) -> bool:
@@ -172,12 +176,12 @@ class DatabaseManager:
         Replacement for GoogleSheetsManager.update_user_rank
         """
         try:
-            print(f"📋 DB RANK UPDATE: Updating rank for Discord ID '{discord_id}' to '{new_rank}'")
+            logger.info("DB RANK UPDATE: Updating rank for Discord ID '%s' to '%s'", discord_id, new_rank)
             
             async with self.connection.get_session() as session:
                 person = await session.get(Personnel, discord_id)
                 if not person:
-                    print(f"❌ DB RANK UPDATE: User not found")
+                    logger.info("DB RANK UPDATE: User not found")
                     return False
                 
                 # Get or create new rank
@@ -200,7 +204,7 @@ class DatabaseManager:
                     old_rank_name = "Неизвестно"
                 
                 await session.commit()
-                print(f"✅ DB RANK UPDATE: Successfully updated rank to '{new_rank}'")
+                logger.info("DB RANK UPDATE: Successfully updated rank to '%s'", new_rank)
                 
                 # Log the action
                 await self._log_action(
@@ -212,7 +216,7 @@ class DatabaseManager:
                 return True
                 
         except Exception as e:
-            print(f"❌ DB RANK UPDATE: Error updating rank: {e}")
+            logger.warning("DB RANK UPDATE: Error updating rank: %s", e)
             return False
     
     async def update_user_position(self, discord_id: int, new_position: str) -> bool:
@@ -221,18 +225,18 @@ class DatabaseManager:
         Replacement for GoogleSheetsManager.update_user_position
         """
         try:
-            print(f"📋 DB POSITION UPDATE: Updating position for Discord ID '{discord_id}' to '{new_position}'")
+            logger.info("DB POSITION UPDATE: Updating position for Discord ID '%s' to '%s'", discord_id, new_position)
             
             async with self.connection.get_session() as session:
                 person = await session.get(Personnel, discord_id)
                 if not person:
-                    print(f"❌ DB POSITION UPDATE: User not found")
+                    logger.info("DB POSITION UPDATE: User not found")
                     return False
                 
                 # Get current employee record
                 current_employee = person.employees[-1] if person.employees else None
                 if not current_employee:
-                    print(f"❌ DB POSITION UPDATE: No employee record found")
+                    logger.info("DB POSITION UPDATE: No employee record found")
                     return False
                 
                 # Get or create new position
@@ -248,7 +252,7 @@ class DatabaseManager:
                 current_employee.position_subdivision_id = position_subdivision_obj.id
                 
                 await session.commit()
-                print(f"✅ DB POSITION UPDATE: Successfully updated position to '{new_position}'")
+                logger.info("DB POSITION UPDATE: Successfully updated position to '%s'", new_position)
                 
                 # Log the action
                 await self._log_action(
@@ -260,7 +264,7 @@ class DatabaseManager:
                 return True
                 
         except Exception as e:
-            print(f"❌ DB POSITION UPDATE: Error updating position: {e}")
+            logger.warning("DB POSITION UPDATE: Error updating position: %s", e)
             return False
     
     # =============================================================================
@@ -274,7 +278,7 @@ class DatabaseManager:
         Replacement for GoogleSheetsManager.add_dismissal_record
         """
         try:
-            print(f"📊 DB DISMISSAL: Adding dismissal record")
+            logger.info("DB DISMISSAL: Adding dismissal record")
             
             discord_id = dismissed_user.id
             name_from_form = form_data.get('name', '')
@@ -305,11 +309,11 @@ class DatabaseManager:
                 )
                 
                 await session.commit()
-                print(f"✅ DB DISMISSAL: Successfully added dismissal record")
+                logger.info("DB DISMISSAL: Successfully added dismissal record")
                 return True
                 
         except Exception as e:
-            print(f"❌ DB DISMISSAL: Error adding dismissal record: {e}")
+            logger.warning("DB DISMISSAL: Error adding dismissal record: %s", e)
             return False
     
     async def add_hiring_record(self, application_data: Dict, approved_user, approving_user, 
@@ -319,7 +323,7 @@ class DatabaseManager:
         Replacement for GoogleSheetsManager.add_hiring_record
         """
         try:
-            print(f"📊 DB HIRING: Adding hiring record")
+            logger.info("DB HIRING: Adding hiring record")
             
             discord_id = approved_user.id
             name_from_form = application_data.get('name', '')
@@ -328,7 +332,7 @@ class DatabaseManager:
             
             # Only create record for "Рядовой" rank
             if rank.lower() != 'рядовой':
-                print(f"Skipping hiring record - rank is '{rank}', not 'Рядовой'")
+                logger.info("Skipping hiring record - rank is '%s', not 'Рядовой'", rank)
                 return True
             
             approved_by_info = override_moderator_info or approving_user.display_name
@@ -344,11 +348,11 @@ class DatabaseManager:
                 approved_by_info
             )
             
-            print(f"✅ DB HIRING: Successfully added hiring record")
+            logger.info("DB HIRING: Successfully added hiring record")
             return True
             
         except Exception as e:
-            print(f"❌ DB HIRING: Error adding hiring record: {e}")
+            logger.warning("DB HIRING: Error adding hiring record: %s", e)
             return False
     
     # =============================================================================
@@ -363,7 +367,7 @@ class DatabaseManager:
         Replacement for GoogleSheetsManager.add_blacklist_record
         """
         try:
-            print(f"📊 DB BLACKLIST: Adding blacklist record")
+            logger.info("DB BLACKLIST: Adding blacklist record")
             
             discord_id = dismissed_user.id
             name_from_form = form_data.get('name', '')
@@ -377,17 +381,16 @@ class DatabaseManager:
                     start_date=dismissal_time.date(),
                     end_date=(dismissal_time + timedelta(days=14)).date(),
                     personnel_id=discord_id,
-                    added_by=approved_by_info,
-                    is_active=True
+                    added_by=approved_by_info
                 )
                 session.add(blacklist_entry)
                 
                 await session.commit()
-                print(f"✅ DB BLACKLIST: Successfully added blacklist record")
+                logger.info("DB BLACKLIST: Successfully added blacklist record")
                 return True
                 
         except Exception as e:
-            print(f"❌ DB BLACKLIST: Error adding blacklist record: {e}")
+            logger.warning("DB BLACKLIST: Error adding blacklist record: %s", e)
             return False
     
     # =============================================================================
@@ -467,7 +470,7 @@ class DatabaseManager:
                 await session.commit()
                 
         except Exception as e:
-            print(f"⚠️ Error logging action: {e}")
+            logger.warning("Error logging action: %s", e)
     
     async def _get_or_create_action(self, session, action_name: str) -> Action:
         """Get existing action or create new one"""

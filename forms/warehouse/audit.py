@@ -8,8 +8,13 @@
 
 import discord
 from datetime import datetime
+from utils.message_manager import get_warehouse_message
 from typing import Optional
 from utils.config_manager import load_config
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 # =================== PERSISTENT VIEWS для аудита склада ===================
@@ -21,7 +26,7 @@ class WarehouseAuditPinMessageView(discord.ui.View):
         super().__init__(timeout=None)
     
     @discord.ui.button(
-        label="📋 Аудит выдачи", 
+        label="📊 Аудит выдачи", 
         style=discord.ButtonStyle.primary, 
         custom_id="warehouse_audit_issue"
     )
@@ -32,8 +37,9 @@ class WarehouseAuditPinMessageView(discord.ui.View):
             from utils.config_manager import is_moderator_or_admin, load_config
             config = load_config()
             if not is_moderator_or_admin(interaction.user, config):
+                error_msg = get_warehouse_message(interaction.guild.id, "audit.error_no_permissions", "❌ У вас нет прав для выполнения этой команды.")
                 await interaction.response.send_message(
-                    "❌ У вас нет прав для создания записей аудита!\n"
+                    f"{error_msg}\n"
                     "Доступно только модераторам и администраторам.",
                     ephemeral=True
                 )
@@ -44,13 +50,14 @@ class WarehouseAuditPinMessageView(discord.ui.View):
             await interaction.response.send_modal(modal)
             
         except Exception as e:
-            print(f"Ошибка при создании аудита выдачи: {e}")
+            logger.error("Ошибка при создании аудита выдачи: %s", e)
+            error_msg = get_warehouse_message(interaction.guild.id, "audit.error_general", "❌ Произошла ошибка при обработке запроса.")
             await interaction.response.send_message(
-                "❌ Произошла ошибка при открытии формы аудита.", ephemeral=True
+                error_msg, ephemeral=True
             )
     
     @discord.ui.button(
-        label="🧹 Аудит чистки", 
+        label="📊 Аудит чистки", 
         style=discord.ButtonStyle.secondary, 
         custom_id="warehouse_audit_cleaning"
     )
@@ -61,8 +68,9 @@ class WarehouseAuditPinMessageView(discord.ui.View):
             from utils.config_manager import is_moderator_or_admin, load_config
             config = load_config()
             if not is_moderator_or_admin(interaction.user, config):
+                error_msg = get_warehouse_message(interaction.guild.id, "audit.error_no_permissions", " У вас нет прав для выполнения этой команды.")
                 await interaction.response.send_message(
-                    "❌ У вас нет прав для создания записей аудита!\n"
+                    f"{error_msg}\n"
                     "Доступно только модераторам и администраторам.",
                     ephemeral=True
                 )
@@ -73,9 +81,10 @@ class WarehouseAuditPinMessageView(discord.ui.View):
             await interaction.response.send_modal(modal)
             
         except Exception as e:
-            print(f"Ошибка при создании аудита чистки: {e}")
+            logger.error("Ошибка при создании аудита чистки: %s", e)
+            error_msg = get_warehouse_message(interaction.guild.id, "audit.error_general", " Произошла ошибка при обработке запроса.")
             await interaction.response.send_message(
-                "❌ Произошла ошибка при открытии формы аудита.", ephemeral=True
+                error_msg, ephemeral=True
             )
 
 
@@ -151,7 +160,7 @@ class WarehouseIssueAuditModal(discord.ui.Modal):
                 )
                 
         except Exception as e:
-            print(f"Ошибка при обработке аудита выдачи: {e}")
+            logger.error("Ошибка при обработке аудита выдачи: %s", e)
             await interaction.followup.send(
                 "❌ Произошла ошибка при создании записи аудита.",
                 ephemeral=True
@@ -203,14 +212,14 @@ class WarehouseCleaningAuditModal(discord.ui.Modal):
             
             if not success:
                 await interaction.followup.send(
-                    "❌ Ошибка при создании записи аудита. Проверьте настройки канала.",
+                    " Ошибка при создании записи аудита. Проверьте настройки канала.",
                     ephemeral=True
                 )
                 
         except Exception as e:
-            print(f"Ошибка при обработке аудита чистки: {e}")
+            logger.error("Ошибка при обработке аудита чистки: %s", e)
             await interaction.followup.send(
-                "❌ Произошла ошибка при создании записи аудита.",
+                " Произошла ошибка при создании записи аудита.",
                 ephemeral=True
             )
 
@@ -219,7 +228,9 @@ class WarehouseCleaningAuditModal(discord.ui.Modal):
 
 async def create_audit_record(guild: discord.Guild, audit_data: dict) -> bool:
     """
-    Создать запись аудита в канале аудита склада
+    Создать запись аудита в соответствующем канале:
+    - Выдача (issue) → канал заявок склада (warehouse_submission_channel)
+    - Чистка (cleaning) → канал аудита склада (warehouse_audit_channel)
     
     Args:
         guild: Сервер Discord
@@ -230,15 +241,27 @@ async def create_audit_record(guild: discord.Guild, audit_data: dict) -> bool:
     """
     try:
         config = load_config()
-        audit_channel_id = config.get('warehouse_audit_channel')
         
-        if not audit_channel_id:
-            print("❌ Канал аудита склада не настроен")
+        # Определяем канал в зависимости от типа аудита
+        if audit_data["type"] == "issue":
+            # Аудит выдачи отправляется в канал заявок склада
+            channel_id = config.get('warehouse_submission_channel')
+            channel_name = "заявок склада"
+        elif audit_data["type"] == "cleaning":
+            # Аудит чистки отправляется в канал аудита склада
+            channel_id = config.get('warehouse_audit_channel')
+            channel_name = "аудита склада"
+        else:
+            logger.info(f" Неизвестный тип аудита: {audit_data['type']}")
             return False
         
-        channel = guild.get_channel(audit_channel_id)
+        if not channel_id:
+            logger.info(f" Канал {channel_name} не настроен")
+            return False
+        
+        channel = guild.get_channel(channel_id)
         if not channel:
-            print(f"❌ Канал аудита склада не найден (ID: {audit_channel_id})")
+            logger.info(f" Канал {channel_name} не найден (ID: %s)", channel_id)
             return False        
         if audit_data["type"] == "issue":
             embed = await create_issue_audit_embed(audit_data)
@@ -248,22 +271,19 @@ async def create_audit_record(guild: discord.Guild, audit_data: dict) -> bool:
             # Для аудита чистки создаем content с пингами кураторов
             content = await create_cleaning_audit_content()
             await channel.send(content=content, embed=embed)
-        else:
-            print(f"❌ Неизвестный тип аудита: {audit_data['type']}")
-            return False
         
-        print(f"✅ Запись аудита создана в канале {channel.name}")
+        logger.info(f" Запись аудита создана в канале {channel.name}")
         return True
         
     except Exception as e:
-        print(f"❌ Ошибка при создании записи аудита: {e}")
+        logger.warning("Ошибка при создании записи аудита: %s", e)
         return False
 
 
 async def create_issue_audit_embed(audit_data: dict) -> discord.Embed:
     """Создать embed для записи аудита выдачи"""
     embed = discord.Embed(
-        title="📋 Аудит выдачи склада",
+        title="📊 Аудит выдачи склада",
         color=discord.Color.blue(),
         timestamp=audit_data["timestamp"]
     )
@@ -288,13 +308,13 @@ async def create_issue_audit_embed(audit_data: dict) -> discord.Embed:
         recipient_display = recipient_text
     
     embed.add_field(
-        name="👥 Получил",
+        name="👤 Выдал",
         value=recipient_display,
         inline=True
     )
     
     embed.add_field(
-        name="📦 Предметы",
+        name="👤 Выдал",
         value=audit_data["items"],
         inline=False
     )
@@ -323,13 +343,13 @@ async def create_issue_audit_embed(audit_data: dict) -> discord.Embed:
 async def create_cleaning_audit_embed(audit_data: dict) -> discord.Embed:
     """Создать embed для записи аудита чистки"""
     embed = discord.Embed(
-        title="🧹 Аудит чистки склада",
+        title="📊 Аудит чистки склада",
         color=discord.Color.orange(),
         timestamp=audit_data["timestamp"]
     )
     
     embed.add_field(
-        name="👤 Ответственный",
+        name="👤 Выдал",
         value=audit_data["cleaner"].mention,
         inline=True
     )
@@ -342,7 +362,7 @@ async def create_cleaning_audit_embed(audit_data: dict) -> discord.Embed:
     
     if audit_data.get("details"):
         embed.add_field(
-            name="📋 Подробности",
+            name="💬 Комментарий",
             value=audit_data["details"],
             inline=False
         )
@@ -388,14 +408,14 @@ async def create_automatic_audit_from_approval(
         success = await create_audit_record(guild, audit_data)
         
         if success:
-            print(f"✅ Автоматический аудит создан для выдачи {recipient.display_name}")
+            logger.info(f" Автоматический аудит создан для выдачи {recipient.display_name}")
         else:
-            print(f"❌ Не удалось создать автоматический аудит для {recipient.display_name}")
+            logger.info(f" Не удалось создать автоматический аудит для {recipient.display_name}")
         
         return success
         
     except Exception as e:
-        print(f"❌ Ошибка при создании автоматического аудита: {e}")
+        logger.warning("Ошибка при создании автоматического аудита: %s", e)
         return False
 
 
@@ -424,13 +444,13 @@ async def send_warehouse_audit_message(channel: discord.TextChannel) -> bool:
         )
         
         embed.add_field(
-            name="📋 Аудит выдачи включает:",
+            name="📊 Аудит выдачи включает:",
             value="• Кто выдал предметы\n• Кому выданы предметы\n• Список выданных предметов\n• Ссылка на заявку или причина выдачи",
             inline=False
         )
         
         embed.add_field(
-            name="🧹 Аудит чистки включает:",
+            name="📊 Аудит чистки включает:",
             value="• Кто проводил чистку\n• Выполненные действия (чистка/сортировка/удаление)",
             inline=False
         )
@@ -443,16 +463,16 @@ async def send_warehouse_audit_message(channel: discord.TextChannel) -> bool:
         # Пытаемся закрепить сообщение
         try:
             await message.pin()
-            print(f"✅ Сообщение аудита склада закреплено в {channel.name}")
+            logger.info(f" Сообщение аудита склада закреплено в {channel.name}")
         except discord.Forbidden:
-            print(f"⚠️ Нет прав для закрепления сообщения в {channel.name}")
+            logger.info(f" Нет прав для закрепления сообщения в {channel.name}")
         except discord.HTTPException as e:
-            print(f"⚠️ Ошибка при закреплении сообщения в {channel.name}: {e}")
+            logger.warning("Ошибка при закреплении сообщения в {channel.name}: %s", e)
         
         return True
         
     except Exception as e:
-        print(f"❌ Ошибка при отправке сообщения аудита склада: {e}")
+        logger.warning("Ошибка при отправке сообщения аудита склада: %s", e)
         return False
 
 
@@ -467,7 +487,7 @@ async def restore_warehouse_audit_views(channel: discord.TextChannel) -> bool:
         bool: True если views восстановлены успешно
     """
     try:
-        print(f"🔄 Восстановление views аудита склада в {channel.name}")
+        logger.info(f" Восстановление views аудита склада в {channel.name}")
         
         # Ищем все сообщения аудита склада (не только закрепленное)
         restored_count = 0
@@ -484,24 +504,24 @@ async def restore_warehouse_audit_views(channel: discord.TextChannel) -> bool:
                     view = WarehouseAuditPinMessageView()
                     try:
                         await message.edit(view=view)
-                        print(f"✅ View восстановлен для сообщения аудита склада (ID: {message.id})")
+                        logger.info("View восстановлен для сообщения аудита склада (ID: {message.id})")
                         restored_count += 1
                     except discord.NotFound:
-                        print(f"⚠️ Сообщение аудита склада не найдено для восстановления (ID: {message.id})")
+                        logger.info("Сообщение аудита склада не найдено для восстановления (ID: {message.id})")
                     except Exception as e:
-                        print(f"❌ Ошибка при восстановлении view аудита склада (ID: {message.id}): {e}")
+                        logger.warning("Ошибка при восстановлении view аудита склада (ID: {message.id}): %s", e)
                 else:
-                    print(f"ℹ️ Сообщение аудита склада уже имеет view (ID: {message.id})")
+                    logger.info("Сообщение аудита склада уже имеет view (ID: {message.id})")
         
         if restored_count > 0:
-            print(f"✅ Восстановлено {restored_count} view(s) для сообщений аудита склада")
+            logger.info("Восстановлено %s view(s) для сообщений аудита склада", restored_count)
         else:
-            print(f"ℹ️ Сообщения аудита склада с отсутствующими views не найдены в {channel.name}")
+            logger.info(f" Сообщения аудита склада с отсутствующими views не найдены в {channel.name}")
         
         return True
         
     except Exception as e:
-        print(f"❌ Ошибка при восстановлении views аудита склада: {e}")
+        logger.warning("Ошибка при восстановлении views аудита склада: %s", e)
         return False
 
 
@@ -531,10 +551,10 @@ async def restore_warehouse_audit_pinned_message(channel: discord.TextChannel) -
                     # Восстанавливаем view для закрепленного сообщения
                     view = WarehouseAuditPinMessageView()
                     await message.edit(view=view)
-                    print(f"✅ Восстановлен view для закрепленного сообщения аудита склада (ID: {message.id})")
+                    logger.info("Восстановлен view для закрепленного сообщения аудита склада (ID: {message.id})")
                     return True
                 else:
-                    print(f"✅ Закрепленное сообщение аудита склада уже имеет view (ID: {message.id})")
+                    logger.info("Закрепленное сообщение аудита склада уже имеет view (ID: {message.id})")
                     return True
         
         # Если среди закрепленных не найдено, ищем в истории канала
@@ -550,38 +570,38 @@ async def restore_warehouse_audit_pinned_message(channel: discord.TextChannel) -
                     # Восстанавливаем view для сообщения аудита
                     view = WarehouseAuditPinMessageView()
                     await message.edit(view=view)
-                    print(f"✅ Восстановлен view для сообщения аудита склада в истории (ID: {message.id})")
+                    logger.info("Восстановлен view для сообщения аудита склада в истории (ID: {message.id})")
                     
                     # Пытаемся закрепить сообщение
                     if not message.pinned:
                         try:
                             await message.pin()
-                            print(f"✅ Сообщение аудита склада закреплено (ID: {message.id})")
+                            logger.info("Сообщение аудита склада закреплено (ID: {message.id})")
                         except discord.Forbidden:
-                            print(f"⚠️ Нет прав для закрепления сообщения аудита")
+                            logger.info("Нет прав для закрепления сообщения аудита")
                         except discord.HTTPException as e:
-                            print(f"⚠️ Ошибка при закреплении сообщения аудита: {e}")
+                            logger.warning("Ошибка при закреплении сообщения аудита: %s", e)
                     
                     return True
                 else:
-                    print(f"✅ Сообщение аудита склада в истории уже имеет view (ID: {message.id})")
+                    logger.info("Сообщение аудита склада в истории уже имеет view (ID: {message.id})")
                     
                     # Пытаемся закрепить сообщение если оно не закреплено
                     if not message.pinned:
                         try:
                             await message.pin()
-                            print(f"✅ Сообщение аудита склада закреплено (ID: {message.id})")
+                            logger.info("Сообщение аудита склада закреплено (ID: {message.id})")
                         except discord.Forbidden:
-                            print(f"⚠️ Нет прав для закрепления сообщения аудита")
+                            logger.info("Нет прав для закрепления сообщения аудита")
                         except discord.HTTPException as e:
-                            print(f"⚠️ Ошибка при закреплении сообщения аудита: {e}")
+                            logger.warning("Ошибка при закреплении сообщения аудита: %s", e)
                     
                     return True
         
         return False
         
     except Exception as e:
-        print(f"❌ Ошибка при восстановлении сообщения аудита склада: {e}")
+        logger.warning("Ошибка при восстановлении сообщения аудита склада: %s", e)
         return False
 
 

@@ -3,6 +3,11 @@ Views и модалы для управления статусом заявок 
 """
 
 import discord
+from utils.message_manager import get_warehouse_message
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class WarehouseStatusView(discord.ui.View):
@@ -77,7 +82,7 @@ class DeletionConfirmView(discord.ui.View):
             # Удаляем оригинальное сообщение
             try:
                 await self.original_message.delete()
-                print(f"✅ DELETE: Запрос склада удален пользователем {interaction.user.display_name}")
+                logger.info(f" DELETE: Запрос склада удален пользователем {interaction.user.display_name}")
             except discord.NotFound:
                 # Сообщение уже удалено
                 pass
@@ -88,9 +93,9 @@ class DeletionConfirmView(discord.ui.View):
                 )
             
         except Exception as e:
-            print(f"Ошибка при удалении запроса склада: {e}")
+            logger.error("Ошибка при удалении запроса склада: %s", e)
             await interaction.response.send_message(
-                "❌ Произошла ошибка при удалении запроса.", ephemeral=True
+                " Произошла ошибка при удалении запроса.", ephemeral=True
             )
     
     @discord.ui.button(label="❌ Отмена", style=discord.ButtonStyle.secondary)
@@ -149,9 +154,9 @@ class RejectionReasonModal(discord.ui.Modal):
             await interaction.response.edit_message(content="", embed=embed, view=status_view)
             
         except Exception as e:
-            print(f"Ошибка при отклонении запроса склада: {e}")
+            logger.error("Ошибка при отклонении запроса склада: %s", e)
             await interaction.response.send_message(
-                "❌ Произошла ошибка при обработке отказа.", ephemeral=True
+                " Произошла ошибка при обработке отказа.", ephemeral=True
             )
 
 

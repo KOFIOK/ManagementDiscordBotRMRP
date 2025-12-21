@@ -3,6 +3,10 @@ Leave request system main file
 """
 import discord
 from forms.leave_requests.views import LeaveRequestButton, LeaveRequestApprovalView
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 async def send_leave_request_button_message(channel: discord.TextChannel):
@@ -21,20 +25,20 @@ async def send_leave_request_button_message(channel: discord.TextChannel):
                 view = LeaveRequestButton()
                 try:
                     await message.edit(view=view)
-                    print(f"✅ Updated existing pinned leave request message {message.id}")
+                    logger.info(f" Updated existing pinned leave request message {message.id}")
                     return message
                 except Exception as e:
-                    print(f"❌ Error updating pinned leave request message: {e}")
+                    logger.warning("Error updating pinned leave request message: %s", e)
                     # If update fails, unpin and delete old message, create new one
                     try:
                         await message.unpin()
                         await message.delete()
-                        print(f"🗑️ Removed old pinned leave request message {message.id}")
+                        logger.info(f" Removed old pinned leave request message {message.id}")
                     except:
                         pass
                     break
     except Exception as e:
-        print(f"❌ Error checking pinned messages for leave requests: {e}")
+        logger.warning("Error checking pinned messages for leave requests: %s", e)
         
     # Create new message if none exists or old one couldn't be updated
     try:
@@ -71,22 +75,22 @@ async def send_leave_request_button_message(channel: discord.TextChannel):
         # Pin the new message for easy access
         try:
             await message.pin()
-            print(f"📌 Pinned new leave request message {message.id}")
+            logger.info(f" Pinned new leave request message {message.id}")
         except Exception as e:
-            print(f"❌ Error pinning leave request message: {e}")
+            logger.warning("Error pinning leave request message: %s", e)
         
-        print(f"✅ Leave request button message sent to #{channel.name}")
+        logger.info(f" Leave request button message sent to #{channel.name}")
         return message
         
     except Exception as e:
-        print(f"❌ Error sending leave request button message: {e}")
+        logger.warning("Error sending leave request button message: %s", e)
         return None
 
 
 async def restore_leave_request_views(bot):
     """Restore leave request views on bot startup"""
     try:
-        print("🔄 Restoring leave request views...")
+        logger.info("Restoring leave request views...")
         
         # First restore button view for pinned message
         from utils.config_manager import load_config
@@ -109,12 +113,12 @@ async def restore_leave_request_views(bot):
                             view = LeaveRequestButton()
                             try:
                                 await message.edit(view=view)
-                                print(f"✅ Restored leave request button view for pinned message {message.id}")
+                                logger.info(f" Restored leave request button view for pinned message {message.id}")
                             except Exception as e:
-                                print(f"❌ Error restoring pinned message view: {e}")
+                                logger.warning("Error restoring pinned message view: %s", e)
                             break
                 except Exception as e:
-                    print(f"❌ Error checking pinned messages: {e}")
+                    logger.warning("Error checking pinned messages: %s", e)
                 
                 # Restore approval views for pending requests
                 await restore_leave_request_approval_views(bot, channel)
@@ -129,10 +133,10 @@ async def restore_leave_request_views(bot):
             view = LeaveRequestApprovalView(request["id"])
             bot.add_view(view)
         
-        print(f"✅ Leave request views restored: {len(pending_requests)} approval views")
+        logger.info(f"Leave request views restored: {len(pending_requests)} approval views")
         
     except Exception as e:
-        print(f"❌ Error restoring leave request views: {e}")
+        logger.warning("Error restoring leave request views: %s", e)
 
 
 async def restore_leave_request_approval_views(bot, channel):
@@ -170,16 +174,16 @@ async def restore_leave_request_approval_views(bot, channel):
                         try:
                             await message.edit(view=view)
                             approval_views_restored += 1
-                            print(f"✅ Restored approval view for leave request {request_id}")
+                            logger.info("Restored approval view for leave request %s", request_id)
                         except discord.NotFound:
                             continue
                         except Exception as e:
-                            print(f"❌ Error restoring view for message {message.id}: {e}")
+                            logger.warning(f"Error restoring view for message {message.id}: %s", e)
         
-        print(f"🔄 Restoring {approval_views_restored} leave request approval views...")
+        logger.info("Restoring %s leave request approval views...", approval_views_restored)
         
     except Exception as e:
-        print(f"❌ Error restoring leave request approval views: {e}")
+        logger.warning("Error restoring leave request approval views: %s", e)
 
 
 # Export main components

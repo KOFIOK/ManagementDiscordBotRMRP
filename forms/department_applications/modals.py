@@ -11,11 +11,11 @@ from datetime import datetime, timezone, timedelta
 
 from utils.database_manager import personnel_manager
 from utils.ping_manager import ping_manager
+from utils.logging_setup import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
-
-class DepartmentApplicationStage1Modal(ui.Modal):
+class DepartmentApplicationICModal(discord.ui.Modal):
     """Stage 1: IC Information modal for department applications"""
     
     def __init__(self, department_code: str, application_type: str, user_id: int, skip_data_loading: bool = False):
@@ -42,6 +42,13 @@ class DepartmentApplicationStage1Modal(ui.Modal):
         
         # Создаем поля с данными (если загрузились) или пустые
         self._setup_fields_with_data()
+
+
+class DepartmentApplicationStage1Modal(DepartmentApplicationICModal):
+    """Совместимость со старым именем модалки этапа 1."""
+
+    def __init__(self, department_code: str, application_type: str, user_id: int, skip_data_loading: bool = False):
+        super().__init__(department_code, application_type, user_id, skip_data_loading)
     
     def _try_load_from_cache_only(self):
         """Быстрая загрузка ТОЛЬКО из кэша - мгновенная операция"""
@@ -52,11 +59,11 @@ class DepartmentApplicationStage1Modal(ui.Modal):
                 self.user_ic_data = cache_data
                 logger.info(f"⚡ User data loaded from cache for {self.user_id} - form will be autofilled")
             else:
-                logger.info(f"ℹ️  No cached data for {self.user_id} - form will be empty (can load async later)")
+                logger.info(f"  No cached data for {self.user_id} - form will be empty (can load async later)")
                 self.user_ic_data = None
                 
         except Exception as e:
-            logger.error(f"💥 Error in cache-only loading for {self.user_id}: {e}")
+            logger.error(f" Error in cache-only loading for {self.user_id}: {e}")
             self.user_ic_data = None
 
     def _try_load_user_data_sync(self):
@@ -66,7 +73,7 @@ class DepartmentApplicationStage1Modal(ui.Modal):
             cache_data = self._try_load_from_cache()
             if cache_data:
                 self.user_ic_data = cache_data
-                logger.info(f"✅ User data loaded from cache for {self.user_id} - form will be autofilled")
+                logger.info(f" User data loaded from cache for {self.user_id} - form will be autofilled")
                 return
             
             # Шаг 2: Если в кэше нет - проверяем, можем ли загрузить из базы
@@ -74,16 +81,16 @@ class DepartmentApplicationStage1Modal(ui.Modal):
                 loop = asyncio.get_running_loop()
                 # Если loop уже запущен - не можем делать синхронную загрузку из базы
                 # Оставляем поля пустыми, пользователь заполнит вручную
-                logger.info(f"ℹ️  No cached data for {self.user_id}, event loop running - form will be empty")
+                logger.info(f"  No cached data for {self.user_id}, event loop running - form will be empty")
                 self.user_ic_data = None
                 return
             except RuntimeError:
                 # Нет активного loop - можем попробовать загрузить из базы
-                logger.info(f"ℹ️  No cached data for {self.user_id}, trying database load...")
+                logger.info(f"  No cached data for {self.user_id}, trying database load...")
                 self._try_load_from_database_sync()
                 
         except Exception as e:
-            logger.error(f"💥 Critical error in sync data loading for {self.user_id}: {e}")
+            logger.error(f" Critical error in sync data loading for {self.user_id}: {e}")
             self.user_ic_data = None
     
     def _try_load_from_cache_public(self) -> Optional[Dict[str, Any]]:
@@ -94,14 +101,14 @@ class DepartmentApplicationStage1Modal(ui.Modal):
             # Используем публичный синхронный API кэша
             cached_data = get_cached_user_info_sync(self.user_id)
             if cached_data:
-                logger.info(f"✅ Cache data found for user {self.user_id}")
+                logger.info(f" Cache data found for user {self.user_id}")
                 return cached_data
             else:
-                logger.info(f"ℹ️  No cached data for user {self.user_id}")
+                logger.info(f"  No cached data for user {self.user_id}")
                 return None
                 
         except Exception as e:
-            logger.warning(f"❌ Error accessing cache for {self.user_id}: {e}")
+            logger.warning(f" Error accessing cache for {self.user_id}: {e}")
             # Fallback к прямому доступу
             return self._try_load_from_cache_direct()
     
@@ -124,20 +131,20 @@ class DepartmentApplicationStage1Modal(ui.Modal):
                         if cached_data and cached_data != "NOT_FOUND":
                             return cached_data
                         else:
-                            logger.info(f"ℹ️  User {self.user_id} marked as NOT_FOUND in cache")
+                            logger.info(f"  User {self.user_id} marked as NOT_FOUND in cache")
                             return None
                     else:
-                        logger.info(f"ℹ️  Cached data for {self.user_id} expired")
+                        logger.info(f"  Cached data for {self.user_id} expired")
                         return None
                 else:
                     # Нет информации об истечении - считаем устаревшим
                     return None
             else:
-                logger.info(f"ℹ️  No cached data for user {self.user_id}")
+                logger.info(f"  No cached data for user {self.user_id}")
                 return None
                 
         except Exception as e:
-            logger.warning(f"❌ Error accessing cache for {self.user_id}: {e}")
+            logger.warning(f" Error accessing cache for {self.user_id}: {e}")
             return None
     
     def _try_load_from_database_sync(self):
@@ -157,19 +164,19 @@ class DepartmentApplicationStage1Modal(ui.Modal):
                 load_time = loop.time() - start_time
                 
                 if self.user_ic_data:
-                    logger.info(f"✅ User data loaded from database for {self.user_id} in {load_time:.3f}s - form will be autofilled")
+                    logger.info(f" User data loaded from database for {self.user_id} in {load_time:.3f}s - form will be autofilled")
                 else:
-                    logger.info(f"ℹ️  User {self.user_id} not found in database in {load_time:.3f}s - form will be empty")
+                    logger.info(f"  User {self.user_id} not found in database in {load_time:.3f}s - form will be empty")
                     
             except asyncio.TimeoutError:
                 logger.warning(f"⏰ Timeout (>3s) loading user data from database for {self.user_id} - form will be empty")
                 self.user_ic_data = None
             except Exception as e:
-                logger.warning(f"❌ Error loading user data from database for {self.user_id}: {e} - form will be empty")
+                logger.warning(f" Error loading user data from database for {self.user_id}: {e} - form will be empty")
                 self.user_ic_data = None
                 
         except Exception as e:
-            logger.error(f"💥 Critical error in database sync loading for {self.user_id}: {e}")
+            logger.error(f" Critical error in database sync loading for {self.user_id}: {e}")
             self.user_ic_data = None
     
     async def _load_user_data_fast(self):
@@ -180,7 +187,7 @@ class DepartmentApplicationStage1Modal(ui.Modal):
             cached_data = await get_cached_user_info(self.user_id)
             
             if cached_data:
-                logger.info(f"✅ User data loaded from cache for {self.user_id}")
+                logger.info(f" User data loaded from cache for {self.user_id}")
                 return cached_data
             
             # Если в кэше нет - загружаем из базы напрямую
@@ -198,11 +205,11 @@ class DepartmentApplicationStage1Modal(ui.Modal):
                     'rank': user_data.get('rank', 'Не указано'),     # Теперь есть в данных
                     'department': user_data.get('department', 'Не определено')  # Теперь есть в данных
                 }
-                logger.info(f"✅ User data loaded from database for {self.user_id}")
+                logger.info(f" User data loaded from database for {self.user_id}")
                 return formatted_data
                 
         except Exception as e:
-            logger.error(f"❌ Error loading user data for {self.user_id}: {e}")
+            logger.error(f" Error loading user data for {self.user_id}: {e}")
         
         return None
     
@@ -245,7 +252,7 @@ class DepartmentApplicationStage1Modal(ui.Modal):
             # Быстрая инициализация - показываем что данные могут загрузиться позже
             name_placeholder = "Например: Олег Дубов"
             static_placeholder = "Например: 123-456"
-            logger.info(f"ℹ️  Fast modal for {self.user_id} - autofill available on submit")
+            logger.info(f"  Fast modal for {self.user_id} - autofill available on submit")
         else:
             # Данные не найдены - поля пустые
             name_placeholder = "например: Олег Дубов"
@@ -266,6 +273,7 @@ class DepartmentApplicationStage1Modal(ui.Modal):
             label="Статик",
             placeholder=static_placeholder,
             default=default_static,
+            min_length=1,
             max_length=10,
             required=True
         )
@@ -338,14 +346,9 @@ class DepartmentApplicationStage1Modal(ui.Modal):
     
     def format_static(self, static_input: str) -> str:
         """Auto-format static number to standard format"""
-        digits_only = re.sub(r'\D', '', static_input.strip())
-        
-        if len(digits_only) == 5:
-            return f"{digits_only[:2]}-{digits_only[2:]}"
-        elif len(digits_only) == 6:
-            return f"{digits_only[:3]}-{digits_only[3:]}"
-        else:
-            return ""
+        from utils.static_validator import StaticValidator
+        is_valid, formatted = StaticValidator.validate_and_format(static_input)
+        return formatted if is_valid else ""
     
     async def on_submit(self, interaction: discord.Interaction):
         """Handle Stage 1 submission"""
@@ -377,7 +380,7 @@ class DepartmentApplicationStage1Modal(ui.Modal):
             
             # Если пользователь НЕ заполнил поля, пытаемся загрузить из базы
             if (not name_value or not static_value) and self.user_ic_data is None:
-                logger.info(f"🔄 User {self.user_id} has empty fields, trying to load from database...")
+                logger.info(f" User {self.user_id} has empty fields, trying to load from database...")
                 await self._load_user_data_async()
                 
                 # Автозаполняем пустые поля, если данные загрузились
@@ -391,11 +394,11 @@ class DepartmentApplicationStage1Modal(ui.Modal):
                     # Автозаполняем только пустые поля
                     if not name_value and full_name:
                         name_value = full_name
-                        logger.info(f"✅ Auto-filled name for {self.user_id}: {full_name}")
+                        logger.info(f" Auto-filled name for {self.user_id}: {full_name}")
                     
                     if not static_value and ic_static:
                         static_value = ic_static  
-                        logger.info(f"✅ Auto-filled static for {self.user_id}: {ic_static}")
+                        logger.info(f" Auto-filled static for {self.user_id}: {ic_static}")
             
             # Загружаем данные пользователя асинхронно (если еще не загружены)
             if self.user_ic_data is None:
@@ -405,7 +408,7 @@ class DepartmentApplicationStage1Modal(ui.Modal):
             formatted_static = self.format_static(static_value)
             if not formatted_static:
                 await interaction.followup.send(
-                    "❌ **Ошибка валидации статика**\n"
+                    " **Ошибка валидации статика**\n"
                     "Статик должен содержать ровно 5 или 6 цифр.\n"
                     "**Примеры:** `123456` → `123-456`, `12345` → `12-345`",
                     ephemeral=True
@@ -416,7 +419,7 @@ class DepartmentApplicationStage1Modal(ui.Modal):
             document_url = self.document_input.value.strip()
             if not self._validate_url(document_url):
                 await interaction.followup.send(
-                    "❌ **Ошибка валидации ссылки**\n"
+                    " **Ошибка валидации ссылки**\n"
                     "Пожалуйста, укажите корректную ссылку на документ.\n"
                     "Поддерживаются внешние ссылки на изображения.",
                     ephemeral=True
@@ -473,7 +476,7 @@ class DepartmentApplicationStage1Modal(ui.Modal):
         
         embed = discord.Embed(
             title=f"📋 Черновик: {app_type_text} в {stage1_data['department_code']}",
-            description="**Этап 1: IC Информация**",
+            description="ℹ️ **Этап 1: IC Информация**",
             color=discord.Color.orange(),
             timestamp=datetime.now(timezone(timedelta(hours=3)))
         )
@@ -490,13 +493,13 @@ class DepartmentApplicationStage1Modal(ui.Modal):
         )
         
         embed.add_field(
-            name="🏷️ Статик",
+            name="🆔 Статик",
             value=stage1_data['static'],
             inline=True
         )
         
         embed.add_field(
-            name="📄 Документ",
+            name="📋 Документ",
             value=f"[Ссылка на документ]({stage1_data['document_url']})",
             inline=False
         )
@@ -575,7 +578,7 @@ class Stage1ReviewView(ui.View):
             # Пытаемся отправить модальное окно
             try:
                 await interaction.response.send_modal(modal)
-                logger.info(f"✅ Stage 2 modal sent successfully for user {interaction.user.id}")
+                logger.info(f" Stage 2 modal sent successfully for user {interaction.user.id}")
             except discord.InteractionResponded:
                 logger.warning(f"Interaction already responded when sending Stage 2 modal for user {interaction.user.id}")
                 # Отправляем сообщение с инструкцией через followup
@@ -602,7 +605,7 @@ class Stage1ReviewView(ui.View):
                         )
                     else:
                         await interaction.followup.send(
-                            "❌ Произошла ошибка при переходе к следующему этапу. Попробуйте начать заново.",
+                            " Произошла ошибка при переходе к следующему этапу. Попробуйте начать заново.",
                             ephemeral=True
                         )
                 except:
@@ -618,7 +621,7 @@ class Stage1ReviewView(ui.View):
                     )
                 else:
                     await interaction.followup.send(
-                        "❌ Произошла ошибка при переходе к следующему этапу.",
+                        " Произошла ошибка при переходе к следующему этапу.",
                         ephemeral=True
                     )
             except:
@@ -651,7 +654,7 @@ class DepartmentApplicationStage2Modal(ui.Modal):
         
         self.age_input = ui.TextInput(
             label="Возраст",
-            placeholder="Ваш возраст (или укажите предпочитаемый диапазон)",
+            placeholder="Ваш возраст",
             max_length=20,
             required=True
         )
@@ -721,7 +724,7 @@ class DepartmentApplicationStage2Modal(ui.Modal):
         except Exception as e:
             logger.error(f"Error in Stage 2 application: {e}")
             await interaction.followup.send(
-                "❌ Произошла ошибка. Попробуйте еще раз.",
+                " Произошла ошибка. Попробуйте еще раз.",
                 ephemeral=True
             )
     
@@ -751,7 +754,7 @@ class DepartmentApplicationStage2Modal(ui.Modal):
         )
         
         embed.add_field(
-            name="💭 Причины выбора подразделения",
+            name="📋 Причины выбора подразделения",
             value=application_data['reason'],
             inline=False
         )
@@ -908,7 +911,7 @@ class FinalReviewView(ui.View):
         
         # IC Information
         embed.add_field(
-            name="📋 IC Информация",
+            name="ℹ️ IC Информация",
             value=f"**Имя Фамилия:** {application_data['name']}\n"
                   f"**Статик:** {application_data['static']}\n"
                   f"**Документ:** [Ссылка на документ]({application_data['document_url']})",
@@ -916,7 +919,7 @@ class FinalReviewView(ui.View):
         )
         
         embed.add_field(
-            name="💭 Причины выбора подразделения",
+            name="📋 Причины выбора подразделения",
             value=application_data['reason'],
             inline=False
         )
@@ -924,7 +927,7 @@ class FinalReviewView(ui.View):
         # OOC Information
         ooc_data = application_data['ooc_data']
         embed.add_field(
-            name="👤 OOC Информация",
+            name="ℹ️ OOC Информация",
             value=f"**Имя:** {ooc_data['real_name']}\n"
                   f"**Возраст:** {ooc_data['age']}\n"
                   f"**Часовой пояс:** {ooc_data['timezone']}\n"

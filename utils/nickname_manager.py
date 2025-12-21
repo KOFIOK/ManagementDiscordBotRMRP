@@ -21,14 +21,14 @@
 """
 
 import re
-import logging
 from typing import Optional, Tuple, Dict, Any
-from utils.database_manager.subdivision_mapper import SubdivisionMapper  
 from utils.database_manager.rank_manager import rank_manager
 from utils.database_manager import personnel_manager
 from utils.config_manager import load_config
+from utils.message_manager import get_military_ranks, get_role_reason
+from utils.logging_setup import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 class NicknameManager:
     """Менеджер автоматического управления никнеймами"""
@@ -37,29 +37,30 @@ class NicknameManager:
     MAX_NICKNAME_LENGTH = 32
 
     def __init__(self):
-        self.subdivision_mapper = SubdivisionMapper()
+        # Список известных рангов (fallback для случаев недоступности БД)
+        self.known_ranks = self._load_known_ranks_fallback()
         
-        # Загружаем конфигурацию
-        self.config = load_config()
-        
-        # Список известных рангов (встроенный список)
-        self.known_ranks = {
-            'Рядовой', 'Ефрейтор', 'Мл. Сержант', 'Сержант', 'Ст. Сержант', 
-            'Старшина', 'Прапорщик', 'Ст. Прапорщик', 'Мл. Лейтенант',
-            'Лейтенант', 'Ст. Лейтенант', 'Капитан', 'Майор', 'Подполковник', 'Полковник',
-            # Аббревиатуры
-            'Ефр-р', 'Мл. С-т', 'С-т', 'Ст. С-т', 'Ст-на', 'Ст. Прап-к', 'Мл. Л-т', 'Ст. Л-т', 'Подполк-к'
+    def _load_known_ranks_fallback(self) -> set:
+        """Load minimal fallback ranks for cases when database is unavailable"""
+        # Minimal fallback list - should be rarely used
+        fallback_ranks = {
+            'Рядовой', 'Ефрейтор', 'Сержант', 'Старшина',
+            'Лейтенант', 'Капитан', 'Майор', 'Полковник', 'Генерал',
+            # Common abbreviations
+            'Р-й', 'Еф-р', 'С-т', 'Ст-на', 'Л-т', 'К-н'
         }
+        logger.warning("Using fallback rank list - database ranks should be used instead")
+        return fallback_ranks
         
-        # Инициализируем паттерны с учетом кастомных настроек
-        self._init_patterns()
-        
-    def _init_patterns(self):
-        """Инициализация паттернов с учетом кастомных настроек"""
-        # Получаем кастомные шаблоны из конфига
-        custom_templates = self.config.get('nickname_auto_replacement', {}).get('custom_templates', {})
-        
-        # Базовые паттерны (могут быть переопределены кастомными)
+    def _build_patterns(self) -> Dict[str, re.Pattern]:
+        """Собирает паттерны на основе актуального конфига."""
+        try:
+            config = load_config()
+            custom_templates = config.get('nickname_auto_replacement', {}).get('custom_templates', {})
+        except Exception as e:
+            logger.error(f"Ошибка загрузки настроек шаблонов никнеймов: {e}")
+            custom_templates = {}
+
         base_patterns = {
             # Стандартный формат с подгруппами: "РОиО[ПГ] | Ст. Л-т | Виктор Верпов"
             'standard_with_subgroup': r'^([А-ЯЁA-Zа-яё]{1,15})\[([А-ЯЁA-Zа-яё]{1,10})\]\s*\|\s*([А-ЯЁа-яёA-Za-z\-\.\s]+?)\s*\|\s*(.+)$',
@@ -82,15 +83,39 @@ class NicknameManager:
             # Уволенный: "Уволен | Имя Фамилия"
             'dismissed': r'^Уволен\s*\|\s*(.+)$'
         }
-        
-        # Применяем кастомные настройки
+
         for template_id, custom_settings in custom_templates.items():
             if template_id in base_patterns:
-                pattern = self._build_custom_pattern(template_id, custom_settings, base_patterns[template_id])
-                base_patterns[template_id] = pattern
-        
-        # Компилируем паттерны
-        self.PATTERNS = {name: re.compile(pattern) for name, pattern in base_patterns.items()}
+                base_patterns[template_id] = self._build_custom_pattern(template_id, custom_settings, base_patterns[template_id])
+
+        return {name: re.compile(pattern) for name, pattern in base_patterns.items()}
+
+    def _get_format_support(self) -> Dict[str, bool]:
+        """Возвращает флаги поддерживаемых форматов."""
+        try:
+            config = load_config()
+            nickname_settings = config.get('nickname_auto_replacement', {})
+            return nickname_settings.get('format_support', {})
+        except Exception:
+            return {}
+
+    def _get_default_hiring_department(self) -> str:
+        """Подразделение по умолчанию для приёма (fallback: ВА)."""
+        try:
+            config = load_config()
+            return config.get('nickname_auto_replacement', {}).get('default_hiring_department', 'ВА')
+        except Exception:
+            return 'ВА'
+
+    def get_rank_abbreviation(self, rank_name: str) -> str:
+        """Получает аббревиатуру звания из БД (или возвращает пустую строку)."""
+        try:
+            rank_data = rank_manager.get_rank_by_name(rank_name)
+            if rank_data and rank_data.get('abbreviation'):
+                return rank_data['abbreviation']
+        except Exception:
+            pass
+        return ""
         
     def _build_custom_pattern(self, template_id: str, custom_settings: dict, base_pattern: str) -> str:
         """Создает кастомный паттерн на основе пользовательских настроек"""
@@ -143,19 +168,21 @@ class NicknameManager:
     
     def _is_position(self, text: str) -> bool:
         """Проверяет, является ли текст должностью"""
-        # Получаем список должностей из настроек
         try:
             config = load_config()
             nickname_settings = config.get('nickname_auto_replacement', {})
             custom_positions = nickname_settings.get('known_positions', [])
-            
-            # Проверяем точные совпадения с настроенными должностями
+            format_support = nickname_settings.get('format_support', {})
+            auto_detect_enabled = format_support.get('auto_detect_positions', True)
+
             if text in custom_positions:
                 return True
+
+            if not auto_detect_enabled:
+                return False
         except Exception:
-            pass
+            return False
         
-        # Fallback к старой логике
         position_keywords = ['Нач.', 'Зам.', 'Ком.', 'по', 'Отдела', 'Бриг', 'КР', 'Штаба']
         return any(keyword in text for keyword in position_keywords)
     
@@ -258,11 +285,18 @@ class NicknameManager:
         Returns:
             Dict с полями: subdivision, rank, position, name, format_type, is_special, subgroup
         """
+        patterns = self._build_patterns()
+        format_support = self._get_format_support()
+        subgroup_enabled = format_support.get('standard_with_subgroup', True) or format_support.get('positional_with_subgroup', True)
+
+        def is_enabled(flag: str) -> bool:
+            return format_support.get(flag, True)
+
         if not nickname:
             return {'subdivision': None, 'rank': None, 'position': None, 'name': None, 'format_type': 'empty', 'is_special': False, 'subgroup': None}
         
         # Проверяем сложный особый формат первым
-        match = self.PATTERNS['complex_special'].match(nickname)
+        match = patterns['complex_special'].match(nickname)
         if match:
             return {
                 'subdivision': None,
@@ -275,7 +309,7 @@ class NicknameManager:
             }
         
         # Проверяем простой особый формат
-        match = self.PATTERNS['simple_special'].match(nickname)
+        match = patterns['simple_special'].match(nickname)
         if match:
             return {
                 'subdivision': None,
@@ -288,7 +322,7 @@ class NicknameManager:
             }
         
         # НОВЫЙ: Проверяем формат с подгруппой: "РОиО[ПГ] | Ст. Л-т | Виктор Верпов"
-        match = self.PATTERNS['standard_with_subgroup'].match(nickname)
+        match = patterns['standard_with_subgroup'].match(nickname) if subgroup_enabled else None
         if match:
             subdivision = match.group(1).strip()
             subgroup = match.group(2).strip()
@@ -296,7 +330,7 @@ class NicknameManager:
             name_part = match.group(4).strip()
             
             # Определяем тип средней части
-            if self._is_rank(middle_part):
+            if self._is_rank(middle_part) and is_enabled('standard_with_subgroup'):
                 return {
                     'subdivision': subdivision,
                     'subgroup': subgroup,
@@ -306,7 +340,7 @@ class NicknameManager:
                     'format_type': 'standard_with_subgroup',
                     'is_special': False
                 }
-            elif self._is_position(middle_part):
+            elif self._is_position(middle_part) and is_enabled('positional_with_subgroup'):
                 return {
                     'subdivision': subdivision,
                     'subgroup': subgroup,
@@ -316,8 +350,8 @@ class NicknameManager:
                     'format_type': 'positional_with_subgroup',
                     'is_special': True  # Должностные никнеймы не трогаем
                 }
-            else:
-                # Неизвестный тип, считаем рангом
+            elif is_enabled('standard_with_subgroup'):
+                # Неизвестный тип, считаем рангом (если формат включён)
                 return {
                     'subdivision': subdivision,
                     'subgroup': subgroup,
@@ -329,7 +363,7 @@ class NicknameManager:
                 }
         
         # Проверяем стандартный формат
-        match = self.PATTERNS['standard'].match(nickname)
+        match = patterns['standard'].match(nickname)
         if match:
             subdivision = match.group(1).strip()
             middle_part = match.group(2).strip()
@@ -382,7 +416,7 @@ class NicknameManager:
                 }
         
         # Проверяем должностной формат
-        match = self.PATTERNS['position'].match(nickname)
+        match = patterns['position'].match(nickname)
         if match:
             return {
                 'subdivision': None,
@@ -395,7 +429,7 @@ class NicknameManager:
             }
         
         # Проверяем формат увольнения
-        match = self.PATTERNS['dismissed'].match(nickname)
+            match = patterns['dismissed'].match(nickname)
         if match:
             return {
                 'subdivision': 'Уволен',
@@ -408,7 +442,7 @@ class NicknameManager:
             }
         
         # Проверяем простой формат
-        match = self.PATTERNS['simple'].match(nickname)
+            match = patterns['simple'].match(nickname)
         if match:
             return {
                 'subdivision': None,
@@ -434,58 +468,45 @@ class NicknameManager:
     def extract_name_parts(self, full_name: str) -> Tuple[str, str]:
         """
         Извлекает имя и фамилию из полного имени
+        Если одной из них не удалось выделить, возвращает пустую строку.
         
         Returns:
-            Tuple (first_name, last_name)
+            Tuple (first_name, last_name) - пустые строки если не найдено
         """
         if not full_name:
-            return "Неизвестно", "Неизвестно"
+            return "", ""
         
-        # Очищаем имя от особых префиксов
         cleaned_name = full_name.strip()
         
-        # Удаляем префиксы ! и ![ если они есть
         if cleaned_name.startswith('!'):
-            # Удаляем все ! в начале
             cleaned_name = re.sub(r'^!+', '', cleaned_name).strip()
-            # Удаляем [должность] если есть
             cleaned_name = re.sub(r'^\[[^\]]+\]\s*', '', cleaned_name).strip()
         
-        # Убираем лишние пробелы и разбиваем
         parts = [part.strip() for part in cleaned_name.split() if part.strip()]
         
         if len(parts) == 1:
-            # Если одно слово, проверяем на формат "И.Фамилия"
             if '.' in parts[0] and len(parts[0]) > 2:
-                # "И.Фамилия" -> извлекаем фамилию
                 name_part = parts[0]
                 if name_part[1:2] == '.':
-                    return name_part[0], name_part[2:].strip()
+                    # Сохраняем точку: "Г." -> ("Г.", "")
+                    return name_part[0:2], name_part[2:].strip()
                 else:
                     return parts[0], ""
             else:
-                # Одно слово без точки - считаем фамилией
-                return "Неизвестно", parts[0]
+                return "", parts[0]
         
         elif len(parts) == 2:
-            # Два слова - имя и фамилия
+            # Имя может быть с точкой ("Г.") или без ("Иван")
             first_name = parts[0]
             last_name = parts[1]
-            
-            # Если первое слово с точкой, это сокращенное имя
-            if first_name.endswith('.'):
-                first_name = first_name[:-1]
-            
+            # НЕ обрезаем точку — сохраняем как есть
             return first_name, last_name
         
         else:
-            # Более двух слов - берем первое как имя, остальные как фамилию
             first_name = parts[0]
             last_name = ' '.join(parts[1:])
-            
             if first_name.endswith('.'):
                 first_name = first_name[:-1]
-            
             return first_name, last_name
     
     # ================================================================
@@ -494,35 +515,42 @@ class NicknameManager:
     
     def format_name_for_nickname(self, first_name: str, last_name: str, max_length: int) -> str:
         """
-        Форматирует имя и фамилию с учетом ограничения длины
+        Форматирует имя и фамилию с учетом ограничения длины.
+        Игнорирует пустые части.
         
         Args:
-            first_name: Имя
-            last_name: Фамилия
+            first_name: Имя (может быть пусто)
+            last_name: Фамилия (может быть пусто)
             max_length: Максимальная длина результата
             
         Returns:
-            Отформатированное имя
+            Отформатированное имя (пусто если обе части пусты)
         """
-        # Очищаем входные данные
         first_name = first_name.strip() if first_name else ""
         last_name = last_name.strip() if last_name else ""
         
-        # Если нет имени или фамилии
         if not first_name and not last_name:
-            return "Неизвестно"
+            return ""
         if not first_name:
-            return last_name[:max_length] if last_name else "Неизвестно"
+            return last_name[:max_length] if last_name else ""
         if not last_name:
-            return first_name[:max_length] if first_name else "Неизвестно"
+            return first_name[:max_length] if first_name else ""
         
         # Пробуем полное имя и фамилию
         full_name = f"{first_name} {last_name}"
         if len(full_name) <= max_length:
             return full_name
         
-        # Пробуем сокращенное имя (первая буква + точка)
-        short_first = f"{first_name[0]}."
+        # Если first_name уже содержит точку (сокращённое: "Г."), сохраняем как есть
+        # Иначе сокращаем до первой буквы + точка
+        if '.' in first_name:
+            # Уже сокращённое, используем как есть
+            short_first = first_name
+        elif len(first_name) == 1:
+            short_first = f"{first_name}."
+        else:
+            short_first = f"{first_name[0]}."
+        
         short_name = f"{short_first} {last_name}"
         if len(short_name) <= max_length:
             return short_name
@@ -602,8 +630,11 @@ class NicknameManager:
         
         Format: "{status_text} {separator} Имя Фамилия"
         """
-        # Получаем настройки шаблона увольнения из конфига
-        custom_templates = self.config.get('nickname_auto_replacement', {}).get('custom_templates', {})
+        try:
+            config = load_config()
+            custom_templates = config.get('nickname_auto_replacement', {}).get('custom_templates', {})
+        except Exception:
+            custom_templates = {}
         dismissed_settings = custom_templates.get('dismissed', {})
         
         # Используем кастомные настройки или дефолтные
@@ -644,8 +675,10 @@ class NicknameManager:
             Новый никнейм или None если не удалось
         """
         try:
+            default_department = self._get_default_hiring_department()
+            
             # Проверяем настройки автозамены никнеймов
-            if not self._should_update_nickname('hiring', target_department='ВА'):
+            if not self._should_update_nickname('hiring', target_department=default_department):
                 logger.info(f"Автозамена никнеймов отключена для приёма, пропускаем обновление для {member}")
                 return None
             
@@ -665,10 +698,9 @@ class NicknameManager:
             else:
                 rank_abbr = rank_data['abbreviation']
             
-            # При приёме используем "ВА" (Военная Академия)
-            new_nickname = self.build_service_nickname("ВА", rank_abbr, first_name, last_name)
+            new_nickname = self.build_service_nickname(default_department, rank_abbr, first_name, last_name)
             
-            await member.edit(nick=new_nickname, reason="Приём на службу")
+            await member.edit(nick=new_nickname, reason=get_role_reason(member.guild.id, "nickname_change.personnel_acceptance", "Приём в организацию: изменён никнейм").format(moderator="система"))
             logger.info(f"✅ Никнейм при приёме: {member} -> {new_nickname}")
             
             return new_nickname
@@ -694,14 +726,16 @@ class NicknameManager:
         """
         new_nickname = None
         try:
+            target_key = subdivision_key
+
             # Анализируем текущий никнейм для определения текущего подразделения
             current_nickname = member.display_name
             parsed = self.parse_nickname(current_nickname)
             current_department = parsed.get('subdivision', 'unknown')
             
             # Проверяем настройки автозамены никнеймов
-            if not self._should_update_nickname('transfer', current_department, subdivision_key):
-                logger.info(f"Автозамена никнеймов отключена для перевода из {current_department} в {subdivision_key}, пропускаем обновление для {member}")
+            if not self._should_update_nickname('transfer', current_department, target_key):
+                logger.info(f"Автозамена никнеймов отключена для перевода из {current_department} в {target_key}, пропускаем обновление для {member}")
                 return None
             
             # Получаем полную информацию пользователя из БД (включая звание из employees)
@@ -721,21 +755,39 @@ class NicknameManager:
                 first_name = personnel_data['first_name']
                 last_name = personnel_data['last_name']
             
-            # Получаем данные подразделения
-            subdivision_data = await self.subdivision_mapper.get_subdivision_full_data(subdivision_key)
-            if not subdivision_data or not subdivision_data.get('abbreviation'):
-                logger.warning(f"Подразделение не найдено или нет аббревиатуры: {subdivision_key}")
-                # Используем ключ как fallback если нет аббревиатуры
-                subdivision_abbr = subdivision_key.upper() if subdivision_key else "ВА"
-            else:
-                # Получаем аббревиатуру подразделения из БД
-                subdivision_abbr = subdivision_data['abbreviation']
+            # Получаем данные подразделения напрямую из БД
+            subdivision_abbr = None
+            subdivision_name = None
+            try:
+                from utils.postgresql_pool import get_db_cursor
+                from utils.config_manager import load_config
+                
+                config = load_config()
+                dept_config = config.get('departments', {}).get(target_key, {})
+                role_id = dept_config.get('role_id')
+                
+                if role_id:
+                    with get_db_cursor() as cursor:
+                        cursor.execute("""
+                            SELECT abbreviation, name FROM subdivisions WHERE role_id = %s
+                        """, (role_id,))
+                        result = cursor.fetchone()
+                        if result:
+                            subdivision_abbr = result['abbreviation']
+                            subdivision_name = result['name']
+            except Exception as e:
+                logger.warning(f"Не удалось получить данные подразделения из БД: {e}")
+            
+            if not subdivision_abbr:
+                logger.warning(f"Подразделение не найдено или нет аббревиатуры: {target_key}")
+                subdivision_abbr = target_key.upper() if target_key else "ВА"
+                subdivision_name = target_key
             
             # Если это должностной никнейм, сохраняем должность
-            if parsed.get('format_type') == 'standard_position' and parsed.get('position'):
+            if parsed.get('format_type') in ['positional', 'positional_with_subgroup'] and parsed.get('position'):
                 # Для должностных никнеймов меняем только подразделение
                 new_nickname = f"{subdivision_abbr} | {parsed['position']} | {first_name} {last_name}"
-                reason = f"Перевод в {subdivision_data.get('name', subdivision_key)} (должность сохранена)"
+                reason = f"Перевод в {subdivision_name or subdivision_key} (должность сохранена)"
             else:
                 # Обычная логика с рангом
                 # Получаем аббревиатуру звания
@@ -747,7 +799,7 @@ class NicknameManager:
                     rank_abbr = rank_data['abbreviation']
                 
                 new_nickname = self.build_service_nickname(subdivision_abbr, rank_abbr, first_name, last_name)
-                reason = f"Перевод в {subdivision_data.get('name', subdivision_key)}"
+                reason = get_role_reason(member.guild.id, "nickname_change.department_transfer", "Перевод в подразделение: изменён никнейм").format(moderator="система")
             
             await member.edit(nick=new_nickname, reason=reason)
             logger.info(f"✅ Никнейм при переводе: {member} -> {new_nickname}")
@@ -757,7 +809,7 @@ class NicknameManager:
         except Exception as e:
             logger.error(f"❌ Ошибка изменения никнейма при переводе {member}: {e}")
             if new_nickname:
-                logger.error(f"❌ Ожидаемый никнейм был: '{new_nickname}'")
+                logger.error(f" Ожидаемый никнейм был: '{new_nickname}'")
             return None
     
     async def handle_rank_change(self, member: Any, new_rank_name: str, change_type: str = "изменение") -> Optional[str]:
@@ -780,9 +832,9 @@ class NicknameManager:
             current_department = parsed.get('subdivision', 'unknown')
             
             # Проверяем настройки автозамены никнеймов
-            # Используем 'promotion' для всех изменений звания (совместимость с настройками)
-            if not self._should_update_nickname('promotion', current_department):
-                logger.info(f"Автозамена никнеймов отключена для изменения звания в подразделении {current_department}, пропускаем обновление для {member}")
+            operation = 'demotion' if change_type == 'понижение' else 'promotion'
+            if not self._should_update_nickname(operation, current_department):
+                logger.info(f"Автозамена никнеймов отключена для изменения звания ({change_type}) в подразделении {current_department}, пропускаем обновление для {member}")
                 return None
             
             # Получаем полную информацию пользователя из БД
@@ -801,10 +853,10 @@ class NicknameManager:
                 first_name = personnel_data['first_name']
                 last_name = personnel_data['last_name']
             
-            logger.info(f"� RANK_CHANGE DEBUG: Текущий никнейм: '{current_nickname}'")
-            logger.info(f"� RANK_CHANGE DEBUG: Parsed: {parsed}")
-            logger.info(f"� RANK_CHANGE DEBUG: Извлеченное имя: {first_name} {last_name}")
-            logger.info(f"🔄 RANK_CHANGE DEBUG: Тип изменения: {change_type}")
+            logger.info(f"RANK_CHANGE DEBUG: Текущий никнейм: '{current_nickname}'")
+            logger.info(f"RANK_CHANGE DEBUG: Parsed: {parsed}")
+            logger.info(f"RANK_CHANGE DEBUG: Извлеченное имя: {first_name} {last_name}")
+            logger.info(f" RANK_CHANGE DEBUG: Тип изменения: {change_type}")
             
             # Если никнейм имеет особый формат или должностной, не трогаем его
             if parsed['is_special']:
@@ -813,36 +865,36 @@ class NicknameManager:
             
             # Получаем новую аббревиатуру звания
             rank_data = rank_manager.get_rank_by_name(new_rank_name)
-            logger.info(f"� RANK_CHANGE DEBUG: Ранг '{new_rank_name}' -> данные: {rank_data}")
+            logger.info(f"RANK_CHANGE DEBUG: Ранг '{new_rank_name}' -> данные: {rank_data}")
             
             if not rank_data or not rank_data.get('abbreviation'):
                 logger.warning(f"Не найдена аббревиатура для нового звания: {new_rank_name}")
-                new_rank_abbr = ""  # Пустая аббревиатура
-            else:
-                new_rank_abbr = rank_data['abbreviation']
+                logger.info(f"Пропускаем изменение никнейма при изменении звания - аббревиатура неизвестна")
+                return None
             
-            logger.info(f"� RANK_CHANGE DEBUG: Аббревиатура ранга: '{new_rank_abbr}'")
+            new_rank_abbr = rank_data['abbreviation']
+            logger.info(f"RANK_CHANGE DEBUG: Аббревиатура ранга: '{new_rank_abbr}'")
             
             # Определяем подразделение
             subdivision_abbr = None
             if parsed['format_type'] == 'standard' and parsed['subdivision'] and parsed['subdivision'] != "None":
                 # Обновляем существующий формат
                 subdivision_abbr = parsed['subdivision']
-                logger.info(f"� RANK_CHANGE DEBUG: Используем подразделение из никнейма: '{subdivision_abbr}'")
+                logger.info(f"RANK_CHANGE DEBUG: Используем подразделение из никнейма: '{subdivision_abbr}'")
             else:
                 # Если нет подразделения в никнейме, проверяем БД
                 if personnel_data and personnel_data.get('subdivision_abbreviation'):
                     subdivision_abbr = personnel_data['subdivision_abbreviation']
-                    logger.info(f"� RANK_CHANGE DEBUG: Используем подразделение из БД: '{subdivision_abbr}'")
+                    logger.info(f"RANK_CHANGE DEBUG: Используем подразделение из БД: '{subdivision_abbr}'")
                 else:
                     # Если нигде нет подразделения, используем ВА
                     subdivision_abbr = "ВА"
-                    logger.info(f"� RANK_CHANGE DEBUG: Используем подразделение по умолчанию: '{subdivision_abbr}'")
+                    logger.info(f"RANK_CHANGE DEBUG: Используем подразделение по умолчанию: '{subdivision_abbr}'")
             
             new_nickname = self.build_service_nickname(subdivision_abbr, new_rank_abbr, first_name, last_name)
-            logger.info(f"� RANK_CHANGE DEBUG: Построенный никнейм: '{new_nickname}'")
+            logger.info(f"RANK_CHANGE DEBUG: Построенный никнейм: '{new_nickname}'")
             
-            await member.edit(nick=new_nickname, reason=f"{change_type.capitalize()} до {new_rank_name}")
+            await member.edit(nick=new_nickname, reason=get_role_reason(member.guild.id, f"rank_change.{'promotion' if change_type == 'повышение' else 'demotion' if change_type == 'понижение' else 'restoration' if change_type == 'восстановление' else 'automatic'}", "Смена ранга: {old_rank} → {new_rank}").format(old_rank="предыдущий", new_rank=new_rank_name, moderator="система"))
             logger.info(f"✅ Никнейм при изменении звания ({change_type}): {member} -> {new_nickname}")
             
             return new_nickname
@@ -850,7 +902,7 @@ class NicknameManager:
         except Exception as e:
             logger.error(f"❌ Ошибка изменения никнейма при {change_type} {member}: {e}")
             if new_nickname:
-                logger.error(f"❌ Ожидаемый никнейм был: '{new_nickname}'")
+                logger.error(f" Ожидаемый никнейм был: '{new_nickname}'")
             return None
     
     async def handle_promotion(self, member: Any, new_rank_name: str) -> Optional[str]:
@@ -892,9 +944,9 @@ class NicknameManager:
                 logger.info(f"Автозамена никнеймов отключена для изменения ФИО в подразделении {current_department}, пропускаем обновление для {member}")
                 return None
             
-            logger.info(f"🔍 NAME_CHANGE DEBUG: Текущий никнейм: '{current_nickname}'")
-            logger.info(f"🔍 NAME_CHANGE DEBUG: Parsed: {parsed}")
-            logger.info(f"🔍 NAME_CHANGE DEBUG: Новое ФИО: {new_first_name} {new_last_name}")
+            logger.info(f" NAME_CHANGE DEBUG: Текущий никнейм: '{current_nickname}'")
+            logger.info(f" NAME_CHANGE DEBUG: Parsed: {parsed}")
+            logger.info(f" NAME_CHANGE DEBUG: Новое ФИО: {new_first_name} {new_last_name}")
             
             # Если никнейм имеет особый формат или должностной, не трогаем его
             if parsed['is_special']:
@@ -908,11 +960,11 @@ class NicknameManager:
                 rank_data = rank_manager.get_rank_by_name(current_rank_name)
                 if rank_data and rank_data.get('abbreviation'):
                     rank_abbr = rank_data['abbreviation']
-                    logger.info(f"🔍 NAME_CHANGE DEBUG: Звание из параметра: '{current_rank_name}' -> '{rank_abbr}'")
+                    logger.info(f" NAME_CHANGE DEBUG: Звание из параметра: '{current_rank_name}' -> '{rank_abbr}'")
             elif parsed['format_type'] == 'standard' and parsed['rank']:
                 # Используем звание из текущего никнейма
                 rank_abbr = parsed['rank']
-                logger.info(f"🔍 NAME_CHANGE DEBUG: Звание из никнейма: '{rank_abbr}'")
+                logger.info(f" NAME_CHANGE DEBUG: Звание из никнейма: '{rank_abbr}'")
             else:
                 # Пытаемся получить звание из БД
                 try:
@@ -923,15 +975,15 @@ class NicknameManager:
                         rank_data = rank_manager.get_rank_by_name(personnel_data['current_rank'])
                         if rank_data and rank_data.get('abbreviation'):
                             rank_abbr = rank_data['abbreviation']
-                            logger.info(f"🔍 NAME_CHANGE DEBUG: Звание из БД: '{personnel_data['current_rank']}' -> '{rank_abbr}'")
+                            logger.info(f" NAME_CHANGE DEBUG: Звание из БД: '{personnel_data['current_rank']}' -> '{rank_abbr}'")
                 except Exception as db_error:
-                    logger.warning(f"Ошибка получения звания из БД: {db_error}")
+                    logger.error(f"Ошибка получения звания из БД: {db_error}")
             
             # Определяем подразделение
             subdivision_abbr = "ВА"  # По умолчанию
             if parsed['format_type'] == 'standard' and parsed['subdivision'] and parsed['subdivision'] != "None":
                 subdivision_abbr = parsed['subdivision']
-                logger.info(f"🔍 NAME_CHANGE DEBUG: Подразделение из никнейма: '{subdivision_abbr}'")
+                logger.info(f" NAME_CHANGE DEBUG: Подразделение из никнейма: '{subdivision_abbr}'")
             else:
                 # Пытаемся получить из БД
                 try:
@@ -940,15 +992,15 @@ class NicknameManager:
                     personnel_data = await pm.get_personnel_summary(member.id)
                     if personnel_data and personnel_data.get('subdivision_abbreviation'):
                         subdivision_abbr = personnel_data['subdivision_abbreviation']
-                        logger.info(f"🔍 NAME_CHANGE DEBUG: Подразделение из БД: '{subdivision_abbr}'")
+                        logger.info(f" NAME_CHANGE DEBUG: Подразделение из БД: '{subdivision_abbr}'")
                 except Exception as db_error:
-                    logger.warning(f"Ошибка получения подразделения из БД: {db_error}")
+                    logger.error(f"Ошибка получения подразделения из БД: {db_error}")
             
             # Строим новый никнейм с новым ФИО
             new_nickname = self.build_service_nickname(subdivision_abbr, rank_abbr, new_first_name, new_last_name)
-            logger.info(f"🔍 NAME_CHANGE DEBUG: Построенный никнейм: '{new_nickname}'")
+            logger.info(f" NAME_CHANGE DEBUG: Построенный никнейм: '{new_nickname}'")
             
-            await member.edit(nick=new_nickname, reason=f"Изменение ФИО: {new_first_name} {new_last_name}")
+            await member.edit(nick=new_nickname, reason=get_role_reason(member.guild.id, "nickname_change.name_change", "Изменение ФИО: {old_name} → {new_name}").format(old_name=member.display_name, new_name=new_nickname, moderator="система"))
             logger.info(f"✅ Никнейм при изменении ФИО: {member} -> {new_nickname}")
             
             return new_nickname
@@ -956,7 +1008,7 @@ class NicknameManager:
         except Exception as e:
             logger.error(f"❌ Ошибка изменения никнейма при смене ФИО {member}: {e}")
             if new_nickname:
-                logger.error(f"❌ Ожидаемый никнейм был: '{new_nickname}'")
+                logger.error(f" Ожидаемый никнейм был: '{new_nickname}'")
             return None
     
     async def handle_dismissal(self, member: Any, reason: str = None, 
@@ -1014,16 +1066,16 @@ class NicknameManager:
             # Проверяем разрешения перед изменением никнейма
             if not member.guild.me.guild_permissions.manage_nicknames:
                 logger.error(f"❌ У бота нет разрешения 'Manage Nicknames' для изменения никнейма {member}")
-                logger.error(f"❌ Ожидаемый никнейм был: '{new_nickname}'")
+                logger.error(f" Ожидаемый никнейм был: '{new_nickname}'")
                 return None
             
             # Проверяем иерархию ролей
             if member.top_role >= member.guild.me.top_role and member != member.guild.owner:
                 logger.error(f"❌ Роль бота ниже роли пользователя {member}. Невозможно изменить никнейм.")
-                logger.error(f"❌ Ожидаемый никнейм был: '{new_nickname}'")
+                logger.error(f" Ожидаемый никнейм был: '{new_nickname}'")
                 return None
             
-            await member.edit(nick=new_nickname, reason="Увольнение")
+            await member.edit(nick=new_nickname, reason=get_role_reason(member.guild.id, "nickname_change.dismissal", "Увольнение: изменён никнейм").format(moderator="система"))
             logger.info(f"✅ Никнейм при увольнении: {member} -> {new_nickname}")
             
             return new_nickname
@@ -1031,7 +1083,7 @@ class NicknameManager:
         except Exception as e:
             logger.error(f"❌ Ошибка изменения никнейма при увольнении {member}: {e}")
             if new_nickname:
-                logger.error(f"❌ Ожидаемый никнейм был: '{new_nickname}'")
+                logger.error(f" Ожидаемый никнейм был: '{new_nickname}'")
             return None
     
     # ================================================================

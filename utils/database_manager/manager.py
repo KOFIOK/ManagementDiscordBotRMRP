@@ -12,8 +12,9 @@ from typing import Optional, Dict, Any, List, Tuple
 import logging
 from ..postgresql_pool import get_db_cursor, get_connection_pool
 from ..user_cache import invalidate_user_cache
+from utils.logging_setup import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class PersonnelManager:
@@ -144,7 +145,7 @@ class PersonnelManager:
             result = cursor.fetchone()
             personnel_id = result['id'] if result else None
             
-            print(f"Создана запись personnel: {first_name} {last_name} (ID: {personnel_id})")
+            logger.info("Создана запись personnel: %s %s (ID: %s)", first_name, last_name, personnel_id)
             return personnel_id
             
         except Exception as e:
@@ -152,25 +153,27 @@ class PersonnelManager:
             return None
     
     def _format_static_for_db(self, static_raw: str) -> str:
-        """Format static to match database constraint (XX-XXX or XXX-XXX)"""
-        # Remove all non-digits
+        """Format static to match database constraint using unified validator"""
+        from utils.static_validator import StaticValidator
+        
+        # Try to validate and format with standard rules
+        is_valid, formatted = StaticValidator.validate_and_format(static_raw)
+        if is_valid:
+            return formatted
+        
+        # If validation fails, try fallback logic for edge cases
         digits_only = ''.join(filter(str.isdigit, static_raw))
         
-        if len(digits_only) >= 5:
-            # Use first 5-6 digits and format as XX-XXX or XXX-XXX
-            if len(digits_only) == 5:
-                return f"{digits_only[:2]}-{digits_only[2:]}"  # XX-XXX
-            else:
-                return f"{digits_only[:3]}-{digits_only[3:6]}"  # XXX-XXX
-        elif len(digits_only) >= 2:
-            # Pad with zeros if needed
+        if len(digits_only) >= 2:
+            # Pad with zeros if needed to make at least 5 digits
             padded = digits_only.ljust(5, '0')
-            return f"{padded[:2]}-{padded[2:]}"
-        else:
-            # Generate unique static code based on current time
-            import time
-            timestamp = str(int(time.time()))[-5:]  # Last 5 digits of timestamp
-            return f"{timestamp[:2]}-{timestamp[2:]}"
+            if len(padded) >= 5:
+                return f"{padded[:2]}-{padded[2:]}"
+        
+        # Generate unique static code based on current time as last resort
+        import time
+        timestamp = str(int(time.time()))[-5:]  # Last 5 digits of timestamp
+        return f"{timestamp[:2]}-{timestamp[2:]}"
     
     async def _update_personnel_record(self, personnel_id: int, application_data: Dict, cursor):
         """Update existing personnel record"""
@@ -190,7 +193,7 @@ class PersonnelManager:
                 WHERE id = %s;
             """, (first_name, last_name, static_id, datetime.now(timezone.utc), personnel_id))
             
-            print(f"Обновлена запись personnel: {first_name} {last_name} (ID: {personnel_id})")
+            logger.info("Обновлена запись personnel: %s %s (ID: %s)", first_name, last_name, personnel_id)
             
             # Get discord_id for cache invalidation
             cursor.execute("SELECT discord_id FROM personnel WHERE id = %s;", (personnel_id,))
@@ -200,7 +203,7 @@ class PersonnelManager:
                 # Lazy import to avoid circular dependency
                 from ..user_cache import invalidate_user_cache
                 invalidate_user_cache(discord_id)
-                print(f"🗑️ CACHE INVALIDATE: Personnel record updated for user {discord_id}")
+                logger.info("CACHE INVALIDATE: Personnel record updated for user %s", discord_id)
             
         except Exception as e:
             logger.error(f"_update_personnel_record failed: {e}")
@@ -216,15 +219,44 @@ class PersonnelManager:
                 existing = cursor.fetchone()
                 
                 if existing:
-                    print(f"Employee запись уже существует для personnel_id {personnel_id}")
+                    logger.info("Employee запись уже существует для personnel_id %s", personnel_id)
                     return True
                 
                 # Get rank ID
                 rank_name = application_data.get("rank", "Рядовой")
                 rank_id = await self._get_or_create_rank_id(rank_name, cursor)
 
-                # Get subdivision ID for Военная Академия (default for new recruits)
-                subdivision_id = await self._get_subdivision_id("Военная Академия", cursor)
+                # Получаем ID подразделения: из заявки, иначе дефолт из конфига
+                subdivision_name = application_data.get("subdivision")
+                if not subdivision_name:
+                    try:
+                        from utils.config_manager import load_config
+                        cfg = load_config().get('recruitment', {}) or {}
+                        default_id = cfg.get('default_subdivision_id')
+                        default_key = cfg.get('default_subdivision_key')
+                        if default_id:
+                            cursor.execute("SELECT name FROM subdivisions WHERE id = %s", (default_id,))
+                            r = cursor.fetchone()
+                            if r:
+                                subdivision_name = r['name']
+                        elif default_key:
+                            # Пытаемся найти по аббревиатуре (ключу)
+                            cursor.execute("SELECT name FROM subdivisions WHERE abbreviation = %s", (default_key,))
+                            r = cursor.fetchone()
+                            if r:
+                                subdivision_name = r['name']
+                    except Exception as ce:
+                        logger.error("Failed to resolve default subdivision from config: %s", ce)
+                subdivision_id = await self._get_subdivision_id(subdivision_name or "", cursor)
+                try:
+                    logger.debug(
+                        "DB MANAGER: employee create subdivision_name=%s -> id=%s (source=%s)",
+                        subdivision_name or '<none>',
+                        subdivision_id,
+                        'application' if application_data.get('subdivision') else ('config_id' if cfg.get('default_subdivision_id') else ('config_key' if cfg.get('default_subdivision_key') else 'none'))
+                    )
+                except Exception:
+                    pass
 
                 # For new recruits (Рядовой), no specific position is assigned
                 # Only officers and specialists have positions
@@ -252,7 +284,7 @@ class PersonnelManager:
                 employee_id = result['id'] if result else None
                 
                 if employee_id:
-                    print(f"Создана запись employee: {rank_name} в Военная Академия (ID: {employee_id})")
+                    logger.info("Создана запись employee: %s (subdivision_id=%s, employee_id=%s)", rank_name, subdivision_id, employee_id)
                     return True
                 
                 return False
@@ -281,7 +313,7 @@ class PersonnelManager:
             result = cursor.fetchone()
             rank_id = result['id'] if result else 1  # Fallback to ID 1
             
-            print(f"Создано новое звание: {rank_name} (ID: {rank_id})")
+            logger.info("Создано новое звание: %s (ID: %s)", rank_name, rank_id)
             return rank_id
             
         except Exception as e:
@@ -289,16 +321,42 @@ class PersonnelManager:
             return 1  # Fallback to default rank ID
     
     async def _get_subdivision_id(self, subdivision_name: str, cursor) -> int:
-        """Get subdivision ID with smart matching"""
+        """Получить ID подразделения по названию/аббревиатуре с умным сопоставлением.
+        Без жёсткого фолбэка на "Военная Академия".
+        Логируем этапы резолва.
+        """
         try:
-            # First try exact name match
+            # Пустое имя → пробуем дефолт из конфига
+            if not subdivision_name or not subdivision_name.strip():
+                try:
+                    from utils.config_manager import load_config
+                    cfg = load_config().get('recruitment', {}) or {}
+                    default_id = cfg.get('default_subdivision_id')
+                    default_key = cfg.get('default_subdivision_key')
+                    if default_id:
+                        cursor.execute("SELECT id FROM subdivisions WHERE id = %s;", (default_id,))
+                        d = cursor.fetchone()
+                        if d:
+                            logger.debug("GET SUBDIVISION ID: empty name -> config_id=%s => %s", default_id, d['id'])
+                            return d['id']
+                    elif default_key:
+                        cursor.execute("SELECT id FROM subdivisions WHERE abbreviation = %s;", (default_key,))
+                        d = cursor.fetchone()
+                        if d:
+                            logger.debug("GET SUBDIVISION ID: empty name -> config_key=%s => %s", default_key, d['id'])
+                            return d['id']
+                except Exception as ce:
+                    logger.error("_get_subdivision_id: failed to read default from config: %s", ce)
+
+            # Сначала точное совпадение по названию
             cursor.execute("SELECT id FROM subdivisions WHERE name = %s;", (subdivision_name,))
             subdivision = cursor.fetchone()
             
             if subdivision:
+                logger.debug("GET SUBDIVISION ID: exact name '%s' => %s", subdivision_name, subdivision['id'])
                 return subdivision['id']
             
-            # Try partial matching or abbreviation lookup
+            # Пытаемся частичное совпадение или по аббревиатуре
             cursor.execute("""
                 SELECT id, name, abbreviation FROM subdivisions 
                 WHERE name ILIKE %s OR abbreviation ILIKE %s;
@@ -306,24 +364,35 @@ class PersonnelManager:
             similar = cursor.fetchone()
             
             if similar:
-                print(f"📍 Найдено похожее подразделение: {similar['name']} ({similar['abbreviation']}) для запроса '{subdivision_name}'")
+                logger.debug("Найдено похожее подразделение: %s (%s) для запроса '%s'", similar['name'], similar['abbreviation'], subdivision_name)
                 return similar['id']
             
-            # Only create new subdivision if really needed
-            print(f"Подразделение '{subdivision_name}' не найдено, используем Военная Академия по умолчанию")
-            
-            # Return Военная Академия as default (ID=7)
-            cursor.execute("SELECT id FROM subdivisions WHERE name = 'Военная Академия';")
-            default = cursor.fetchone()
-            if default:
-                return default['id']
-            
-            # Fallback to first subdivision
-            return 1
+            # Если не нашли — пробуем дефолт по ключу ещё раз
+            try:
+                from utils.config_manager import load_config
+                cfg = load_config().get('recruitment', {}) or {}
+                default_id = cfg.get('default_subdivision_id')
+                default_key = cfg.get('default_subdivision_key')
+                if default_id:
+                    cursor.execute("SELECT id FROM subdivisions WHERE id = %s;", (default_id,))
+                    d = cursor.fetchone()
+                    if d:
+                        return d['id']
+                elif default_key:
+                    cursor.execute("SELECT id FROM subdivisions WHERE abbreviation = %s;", (default_key,))
+                    d = cursor.fetchone()
+                    if d:
+                        return d['id']
+            except Exception as ce:
+                logger.error("_get_subdivision_id: failed default lookup: %s", ce)
+
+            # В крайнем случае — ничего не возвращаем валидного
+            logger.warning("GET SUBDIVISION ID: '%s' не найдено и дефолт не определён", subdivision_name)
+            return 0
             
         except Exception as e:
             logger.error(f"_get_subdivision_id failed: {e}")
-            return 7  # Fallback to Военная Академия ID
+            return 0
     
     def _generate_abbreviation(self, subdivision_name: str) -> str:
         """Generate abbreviation for subdivision"""
@@ -349,7 +418,7 @@ class PersonnelManager:
                     if exact_match:
                         position_id = exact_match['id']
                     else:
-                        print(f"Точная должность 'Курсант' не найдена, используем ID 59 по умолчанию")
+                        logger.info("Точная должность 'Курсант' не найдена, используем ID 59 по умолчанию")
                         position_id = 59
                 else:
                     # Try partial matching for other positions
@@ -357,11 +426,11 @@ class PersonnelManager:
                     similar_position = cursor.fetchone()
                     
                     if similar_position:
-                        print(f"📍 Найдена похожая должность: {similar_position['name']} для запроса '{position_name}'")
+                        logger.info("Найдена похожая должность: {similar_position['name']} для запроса '%s'", position_name)
                         position_id = similar_position['id']
                     else:
                         # Default to "Курсант" for new recruits if position not found
-                        print(f"Должность '{position_name}' не найдена, используем 'Курсант' по умолчанию")
+                        logger.info("Должность '%s' не найдена, используем 'Курсант' по умолчанию", position_name)
                         position_id = 59  # Known Курсант ID
             else:
                 position_id = position['id']
@@ -389,7 +458,7 @@ class PersonnelManager:
             cursor.execute("SELECT name FROM positions WHERE id = %s;", (position_id,))
             pos_name = cursor.fetchone()['name']
             
-            print(f"Создана связь должность-подразделение: {pos_name} → subdivision_id {subdivision_id} (PS_ID: {ps_link['id']})")
+            logger.info("Создана связь должность-подразделение: %s → subdivision_id %s (PS_ID: {ps_link['id']})", pos_name, subdivision_id)
             return ps_link['id']
             
         except Exception as e:
@@ -405,7 +474,7 @@ class PersonnelManager:
                 # СТРОГИЙ поиск модератора по discord_id
                 if moderator_discord_id == 0:
                     # Fallback для случаев, когда moderator_discord_id недоступен
-                    print(f"Warning: moderator_discord_id = 0, using fallback personnel ID 1")
+                    logger.warning("Warning: moderator_discord_id = 0, using fallback personnel ID 1")
                     performed_by_id = 0  # Используем первую запись как fallback
                 else:
                     cursor.execute("SELECT id FROM personnel WHERE discord_id = %s;", (moderator_discord_id,))
@@ -421,7 +490,19 @@ class PersonnelManager:
                 
                 # ГРОМОЗДКИЙ JSON для changes (как требуется)
                 rank_name = application_data.get('rank', 'Рядовой')
-                subdivision_name = application_data.get('subdivision', 'Военная Академия')
+                subdivision_name = application_data.get('subdivision')
+                if not subdivision_name:
+                    try:
+                        from utils.config_manager import load_config
+                        cfg = load_config().get('recruitment', {}) or {}
+                        default_key = cfg.get('default_subdivision_key')
+                        if default_key:
+                            cursor.execute("SELECT name FROM subdivisions WHERE abbreviation = %s;", (default_key,))
+                            r = cursor.fetchone()
+                            if r:
+                                subdivision_name = r['name']
+                    except Exception as ce:
+                        logger.error("_log_approval_action: failed default subdivision resolve: %s", ce)
                 
                 changes = {
                     "rank": {
@@ -452,7 +533,7 @@ class PersonnelManager:
                     json.dumps(changes)  # changes (громоздкий JSON)
                 ))
                 
-                print(f"Логирование в history для personnel_id {personnel_id} (действие выполнил: {performed_by_id})")
+                logger.info("Логирование в history для personnel_id %s (действие выполнил: %s)", personnel_id, performed_by_id)
                 
         except Exception as e:
             # Non-critical error, just log it
@@ -504,7 +585,7 @@ class PersonnelManager:
                         'has_employee_record': result['employee_id'] is not None
                     }
                 
-                logger.warning(f"⚠️ No personnel record found for Discord ID: {user_discord_id}")
+                logger.warning(f" No personnel record found for Discord ID: {user_discord_id}")
                 return None
                 
         except Exception as e:
@@ -712,7 +793,7 @@ class PersonnelManager:
                     VALUES (%s, %s, %s, %s, false, CURRENT_DATE);
                 """, (discord_id, first_name, last_name, static))
                 
-                logger.info(f"✅ Добавлен персонал: {first_name} {last_name} (ID: {discord_id})")
+                logger.info(f" Добавлен персонал: {first_name} {last_name} (ID: {discord_id})")
                 return True, f"Персонал {first_name} {last_name} добавлен успешно"
                 
         except Exception as e:
@@ -746,7 +827,7 @@ class PersonnelManager:
                 # Если уже уволен, возвращаем успех
                 if personnel['is_dismissal']:
                     full_name = f"{personnel['first_name']} {personnel['last_name']}"
-                    logger.info(f"✅ Персонал уже уволен: {full_name} (ID: {discord_id})")
+                    logger.info(f" Персонал уже уволен: {full_name} (ID: {discord_id})")
                     return True, f"Персонал {full_name} уже уволен"
                 
                 # Увольняем сотрудника
@@ -761,7 +842,7 @@ class PersonnelManager:
                 
                 if cursor.rowcount > 0:
                     full_name = f"{personnel['first_name']} {personnel['last_name']}"
-                    logger.info(f"✅ Уволен персонал: {full_name} (ID: {discord_id})")
+                    logger.info(f" Уволен персонал: {full_name} (ID: {discord_id})")
                     return True, f"Персонал {full_name} уволен успешно"
                 else:
                     return False, "Не удалось обновить статус увольнения"
@@ -795,7 +876,7 @@ class PersonnelManager:
                 """, (first_name, last_name, discord_id))
                 
                 if cursor.rowcount > 0:
-                    logger.info(f"✅ Обновлены данные персонала: {first_name} {last_name} (ID: {discord_id})")
+                    logger.info(f" Обновлены данные персонала: {first_name} {last_name} (ID: {discord_id})")
                     return True, f"Данные персонала обновлены: {first_name} {last_name}"
                 else:
                     return False, f"Активный персонал с ID {discord_id} не найден"
@@ -847,12 +928,12 @@ class PersonnelManager:
                     message = f"Данные персонала обновлены: {first_name} {last_name}"
                 
                 if cursor.rowcount > 0:
-                    logger.info(f"✅ {message} (ID: {discord_id})")
+                    logger.info(f" {message} (ID: {discord_id})")
                     # Invalidate user cache after profile update
                     # Lazy import to avoid circular dependency
                     from ..user_cache import invalidate_user_cache
                     invalidate_user_cache(discord_id)
-                    print(f"🗑️ CACHE INVALIDATE: Personnel profile updated for user {discord_id}")
+                    logger.info("CACHE INVALIDATE: Personnel profile updated for user %s", discord_id)
                     return True, message
                 else:
                     return False, f"Активный персонал с ID {discord_id} не найден"
@@ -907,7 +988,7 @@ class PersonnelManager:
                 if result:
                     moderator_personnel_id = result['id']
                 else:
-                    print(f"⚠️ Moderator {moderator_discord_id} not found in personnel table, using 0")
+                    logger.info("Moderator %s not found in personnel table, using 0", moderator_discord_id)
                     moderator_personnel_id = 0
             
             # Prepare changes as JSON - only include fields that actually changed
@@ -976,47 +1057,71 @@ class PersonnelManager:
                     psycopg2.extras.Json(changes)
                 ))
             
-            print(f"✅ History logged: Name change for personnel_id={personnel_id}, action_id=9")
+            logger.info("History logged: Name change for personnel_id=%s, action_id=9", personnel_id)
             return True
             
         except Exception as e:
-            print(f"❌ Ошибка логирования изменения ФИО в историю: {e}")
+            logger.error("Ошибка логирования изменения ФИО в историю: %s", e)
             import traceback
             traceback.print_exc()
             return False
 
-    # Blacklist cache - prevents repeated DB queries for same user
-    _blacklist_cache: Dict[int, Optional[Dict[str, Any]]] = {}
-    _blacklist_cache_timestamps: Dict[int, datetime] = {}
+    # Blacklist cache - keyed по static, чтобы избегать лишних запросов
+    _blacklist_cache: Dict[str, Optional[Dict[str, Any]]] = {}
+    _blacklist_cache_timestamps: Dict[str, datetime] = {}
     _blacklist_cache_ttl = 60  # 60 seconds TTL
 
-    async def check_active_blacklist(self, discord_id: int) -> Optional[Dict[str, Any]]:
+    async def _resolve_static_for_blacklist(self, static_or_discord: Any) -> Optional[str]:
+        """Приводит вход к stаtic: принимает static или discord_id (int)."""
+        if static_or_discord is None:
+            return None
+        try:
+            # Discord ID (int) → достаём static из personnel
+            if isinstance(static_or_discord, int):
+                with get_db_cursor() as cursor:
+                    cursor.execute(
+                        """
+                        SELECT static
+                        FROM personnel
+                        WHERE discord_id = %s
+                        ORDER BY id DESC
+                        LIMIT 1;
+                        """,
+                        (static_or_discord,)
+                    )
+                    row = cursor.fetchone()
+                    return row['static'] if row and row['static'] else None
+            # Уже string → просто чистим
+            static_str = str(static_or_discord).strip()
+            return static_str or None
+        except Exception as e:
+            logger.error("Error resolving static for blacklist: %s", e)
+            return None
+
+    async def check_active_blacklist(self, static_or_discord: Any) -> Optional[Dict[str, Any]]:
         """
-        Check if user has an active blacklist entry (with caching).
-        
-        Cache TTL: 60 seconds - reduces DB load for frequent checks.
-        Cache is automatically invalidated when blacklist is added/removed.
-        
-        Args:
-            discord_id: Discord ID of user to check
-            
-        Returns:
-            Dict with blacklist info if active blacklist exists, None otherwise.
-            Dict contains: id, reason, start_date, end_date, full_name, static
+        Проверка активного ЧС по static или discord_id (с кэшем).
+
+        Активный ЧС: end_date IS NULL (бессрочно) или end_date > today.
+        Cache TTL: 60 секунд.
         """
         try:
-            # Check cache first
+            resolved_static = await self._resolve_static_for_blacklist(static_or_discord)
+            if not resolved_static:
+                logger.info("Blacklist check skipped: static not resolved (input=%s)", static_or_discord)
+                return None
+
             now = datetime.now()
-            if discord_id in self._blacklist_cache:
-                cache_age = (now - self._blacklist_cache_timestamps.get(discord_id, now)).total_seconds()
+            if resolved_static in self._blacklist_cache:
+                cache_age = (now - self._blacklist_cache_timestamps.get(resolved_static, now)).total_seconds()
                 if cache_age < self._blacklist_cache_ttl:
-                    cached_result = self._blacklist_cache[discord_id]
-                    print(f"✅ Blacklist check (CACHED): discord_id={discord_id}, active={cached_result is not None}")
+                    cached_result = self._blacklist_cache[resolved_static]
+                    logger.info("Blacklist check (CACHED): static=%s, active=%s", resolved_static, cached_result is not None)
                     return cached_result
-            
-            # Optimized query - fetch individual columns instead of string concatenation
+
             with get_db_cursor() as cursor:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT 
                         bl.id,
                         bl.reason,
@@ -1027,67 +1132,60 @@ class PersonnelManager:
                         p.static
                     FROM blacklist bl
                     INNER JOIN personnel p ON bl.personnel_id = p.id
-                    WHERE p.discord_id = %s 
-                      AND bl.is_active = true
+                    WHERE p.static = %s 
+                      AND (bl.end_date IS NULL OR bl.end_date > CURRENT_DATE)
                     ORDER BY bl.start_date DESC
                     LIMIT 1;
-                """, (discord_id,))
-                
+                    """,
+                    (resolved_static,),
+                )
+
                 result = cursor.fetchone()
-                
+
                 if result:
-                    # Construct full_name in Python (faster than SQL concatenation)
                     full_name = f"{result['first_name']} {result['last_name']}".strip()
-                    
+
                     blacklist_info = {
                         'id': result['id'],
                         'reason': result['reason'],
                         'start_date': result['start_date'],
                         'end_date': result['end_date'],
                         'full_name': full_name,
-                        'static': result['static']
+                        'static': result['static'],
                     }
-                    
-                    # Cache the positive result
-                    self._blacklist_cache[discord_id] = blacklist_info
-                    self._blacklist_cache_timestamps[discord_id] = now
-                    
-                    print(f"✅ Blacklist check (DB): discord_id={discord_id}, active=True")
+
+                    self._blacklist_cache[resolved_static] = blacklist_info
+                    self._blacklist_cache_timestamps[resolved_static] = now
+
+                    logger.info("Blacklist check (DB): static=%s, active=True", resolved_static)
                     return blacklist_info
                 else:
-                    # Cache negative result too (prevents repeated queries for clean users)
-                    self._blacklist_cache[discord_id] = None
-                    self._blacklist_cache_timestamps[discord_id] = now
-                    
-                    print(f"✅ Blacklist check (DB): discord_id={discord_id}, active=False")
+                    self._blacklist_cache[resolved_static] = None
+                    self._blacklist_cache_timestamps[resolved_static] = now
+
+                    logger.info("Blacklist check (DB): static=%s, active=False", resolved_static)
                     return None
-                    
+
         except Exception as e:
-            print(f"❌ Error checking active blacklist: {e}")
+            logger.error("Error checking active blacklist: %s", e)
             import traceback
             traceback.print_exc()
-            # Don't cache errors - allow retry on next call
             return None
 
-    def invalidate_blacklist_cache(self, discord_id: int = None):
-        """
-        Invalidate blacklist cache for a specific user or all users.
-        
-        Call this after:
-        - Adding someone to blacklist (/чс)
-        - Removing someone from blacklist (/чс-удалить)
-        
-        Args:
-            discord_id: Specific user to invalidate, or None for full cache clear
-        """
-        if discord_id is not None:
-            self._blacklist_cache.pop(discord_id, None)
-            self._blacklist_cache_timestamps.pop(discord_id, None)
-            print(f"🔄 Blacklist cache invalidated for discord_id={discord_id}")
+    def invalidate_blacklist_cache(self, static: Optional[str] = None, discord_id: int = None):
+        """Инвалидирует кэш ЧС: по static, discord_id или целиком."""
+        cache_key = static
+        if cache_key is None and discord_id is not None:
+            cache_key = str(discord_id)
+
+        if cache_key:
+            self._blacklist_cache.pop(cache_key, None)
+            self._blacklist_cache_timestamps.pop(cache_key, None)
+            logger.info("Blacklist cache invalidated for key=%s", cache_key)
         else:
             self._blacklist_cache.clear()
             self._blacklist_cache_timestamps.clear()
-            print("🔄 Blacklist cache fully cleared")
+            logger.info("Blacklist cache fully cleared")
 
     async def calculate_total_service_time(self, personnel_id: int) -> int:
         """
@@ -1142,7 +1240,7 @@ class PersonnelManager:
                 return service_days
                 
         except Exception as e:
-            print(f"❌ Error calculating service time: {e}")
+            logger.error("Error calculating service time: %s", e)
             import traceback
             traceback.print_exc()
             return 0
@@ -1162,19 +1260,6 @@ class PersonnelManager:
         """
         try:
             from datetime import timedelta
-            
-            # Check if user already has active blacklist
-            existing_blacklist = await self.check_active_blacklist(discord_id)
-            if existing_blacklist:
-                return False, (
-                    f"❌ Пользователь **{existing_blacklist['full_name']}** "
-                    f"уже находится в чёрном списке.\n\n"
-                    f"**Текущая запись:**\n"
-                    f"• Причина: {existing_blacklist['reason']}\n"
-                    f"• Период: {existing_blacklist['start_date'].strftime('%d.%m.%Y')} - "
-                    f"{existing_blacklist['end_date'].strftime('%d.%m.%Y')}\n\n"
-                    f"Используйте функцию удаления для снятия существующей записи."
-                ), None
             
             # Get target user's personnel_id and data
             personnel_id = None
@@ -1201,6 +1286,20 @@ class PersonnelManager:
                         f"Добавление в чёрный список возможно только для пользователей, "
                         f"имеющих запись в базе данных."
                     ), None
+
+            # Check if user already has active blacklist (using static when доступен)
+            resolved_key = personnel_data.get('static') or discord_id
+            existing_blacklist = await self.check_active_blacklist(resolved_key)
+            if existing_blacklist:
+                return False, (
+                    f"❌ Пользователь **{existing_blacklist['full_name']}** "
+                    f"уже находится в чёрном списке.\n\n"
+                    f"**Текущая запись:**\n"
+                    f"• Причина: {existing_blacklist['reason']}\n"
+                    f"• Период: {existing_blacklist['start_date'].strftime('%d.%m.%Y')} - "
+                    f"{existing_blacklist['end_date'].strftime('%d.%m.%Y')}\n\n"
+                    f"Используйте функцию удаления для снятия существующей записи."
+                ), None
             
             # Get moderator's personnel_id for "added_by"
             moderator_personnel_id = None
@@ -1222,16 +1321,15 @@ class PersonnelManager:
             with get_db_cursor() as cursor:
                 cursor.execute("""
                     INSERT INTO blacklist (
-                        reason, start_date, end_date, last_updated, 
-                        is_active, personnel_id, added_by
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        reason, start_date, end_date, last_updated,
+                        personnel_id, added_by
+                    ) VALUES (%s, %s, %s, %s, %s, %s)
                     RETURNING id;
                 """, (
                     reason,  # reason from parameter
                     start_date,  # start_date
                     end_date,  # end_date
                     start_date,  # last_updated
-                    True,  # is_active
                     personnel_id,  # personnel_id (target user)
                     moderator_personnel_id  # added_by (moderator)
                 ))
@@ -1239,11 +1337,11 @@ class PersonnelManager:
                 blacklist_id = cursor.fetchone()['id']
                 
                 # Invalidate cache for this user
-                self.invalidate_blacklist_cache(discord_id)
+                self.invalidate_blacklist_cache(static=personnel_data.get('static'), discord_id=discord_id)
                 # Lazy import to avoid circular dependency
                 from ..user_cache import invalidate_user_cache
                 invalidate_user_cache(discord_id)
-                print(f"🗑️ CACHE INVALIDATE: User added to blacklist, cache invalidated for {discord_id}")
+                logger.info("CACHE INVALIDATE: User added to blacklist, cache invalidated for %s", discord_id)
                 
                 blacklist_data = {
                     'id': blacklist_id,
@@ -1255,11 +1353,11 @@ class PersonnelManager:
                     'moderator_personnel_id': moderator_personnel_id
                 }
                 
-                print(f"✅ Added blacklist record #{blacklist_id} for personnel {personnel_id}")
+                logger.info("Added blacklist record #%s for personnel %s", blacklist_id, personnel_id)
                 return True, f"Пользователь успешно добавлен в чёрный список", blacklist_data
             
         except Exception as e:
-            print(f"❌ Error adding to blacklist: {e}")
+            logger.error("Error adding to blacklist: %s", e)
             import traceback
             traceback.print_exc()
             return False, f"❌ Ошибка при добавлении в чёрный список: {e}", None
@@ -1289,16 +1387,20 @@ class PersonnelManager:
                 """, (blacklist_info['id'],))
             
             # Invalidate cache for this user
-            self.invalidate_blacklist_cache(discord_id)
+            self.invalidate_blacklist_cache(static=blacklist_info.get('static'), discord_id=discord_id)
+            
+            # Also invalidate general user cache since blacklist status changed
+            from ..user_cache import invalidate_user_cache
+            invalidate_user_cache(discord_id)
             
             removed_data = blacklist_info.copy()
             
-            print(f"✅ Blacklist DELETED for discord_id={discord_id}")
+            logger.info("Blacklist DELETED for discord_id=%s", discord_id)
             return True, f"Пользователь успешно удалён из чёрного списка.", removed_data
             
         except Exception as e:
             error_msg = f"❌ Ошибка при удалении из чёрного списка: {e}"
-            print(error_msg)
+            logger.error("%s", error_msg)
             import traceback
             traceback.print_exc()
             return False, error_msg, None
@@ -1353,7 +1455,7 @@ class PersonnelManager:
             return None
             
         except Exception as e:
-            print(f"❌ Error getting personnel by Discord ID: {e}")
+            logger.error("Error getting personnel by Discord ID: %s", e)
             import traceback
             traceback.print_exc()
             return None
@@ -1538,7 +1640,7 @@ class PersonnelManager:
                     # Lazy import to avoid circular dependency
                     from ..user_cache import invalidate_user_cache
                     invalidate_user_cache(discord_id)
-                    print(f"🗑️ CACHE INVALIDATE: Employee subdivision updated for user {discord_id}")
+                    logger.info("CACHE INVALIDATE: Employee subdivision updated for user %s", discord_id)
                 
                 return True
         except Exception as e:

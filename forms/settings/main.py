@@ -5,6 +5,10 @@ import discord
 from discord import ui
 from utils.config_manager import load_config
 from .base import BaseSettingsView, ConfigDisplayHelper
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class MainSettingsSelect(ui.Select):
@@ -44,15 +48,9 @@ class MainSettingsSelect(ui.Select):
             ),
             discord.SelectOption(
                 label="Роли должностей",
-                description="Настроить связывание должностей с ролями на сервере",
-                emoji="📋",
+                description="Иерархическая настройка должностей по подразделениям",
+                emoji="💼",
                 value="position_roles"
-            ),
-            discord.SelectOption(
-                label="Настройки склада",
-                description="Настроить систему запросов и выдачи складского имущества",
-                emoji="📦",
-                value="warehouse_settings"
             ),
             discord.SelectOption(
                 label="Система поставок",
@@ -65,6 +63,12 @@ class MainSettingsSelect(ui.Select):
                 description="Настройка автоматической замены никнеймов при кадровых операциях",
                 emoji="🏷️",
                 value="nickname_settings"
+            ),
+            discord.SelectOption(
+                label="Электронные заявки",
+                description="Настройка системы электронных заявок на вступление/восстановление",
+                emoji="📋",
+                value="electronic_applications"
             ),
             discord.SelectOption(
                 label="Настройки команд",
@@ -83,6 +87,7 @@ class MainSettingsSelect(ui.Select):
         )
     
     async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer()
         selected_option = self.values[0]
         
         if selected_option == "channels":
@@ -101,6 +106,8 @@ class MainSettingsSelect(ui.Select):
             await self.show_warehouse_settings_menu(interaction)
         elif selected_option == "supplies_settings":
             await self.show_supplies_settings_menu(interaction)
+        elif selected_option == "electronic_applications":
+            await self.show_electronic_applications_menu(interaction)
         elif selected_option == "commands_settings":
             await self.show_commands_settings_menu(interaction)
         elif selected_option == "nickname_settings":
@@ -138,7 +145,7 @@ class MainSettingsSelect(ui.Select):
         )
         
         view = ChannelsConfigView()
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
     
     async def show_ping_settings_menu(self, interaction: discord.Interaction):
         """Show modern ping settings configuration menu"""
@@ -176,7 +183,7 @@ class MainSettingsSelect(ui.Select):
         embed.add_field(name="Текущие роли-исключения:", value=excluded_text, inline=False)
         
         embed.add_field(
-            name="ℹ️ Действия:",
+            name="ℹ️ Инструкция:",
             value=(
                 "• **Добавить роли** - добавить новые роли в список исключений\n"
                 "• **Удалить роли** - убрать роли из списка исключений\n"
@@ -185,7 +192,7 @@ class MainSettingsSelect(ui.Select):
             inline=False
         )        
         view = ExcludedRolesView()
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
     async def show_rank_roles_config(self, interaction: discord.Interaction):
         """Show interface for managing rank roles"""
@@ -193,21 +200,37 @@ class MainSettingsSelect(ui.Select):
         await show_rank_roles_config(interaction)
 
     async def show_position_roles_config(self, interaction: discord.Interaction):
-        """Show interface for managing position roles"""
-        from .position_roles import PositionSettingsView, create_position_settings_embed
+        """Show interface for managing position roles with hierarchical navigation"""
+        try:
+            from .positions import PositionNavigationView
+            from .positions.navigation import create_main_navigation_embed
+
+            view = PositionNavigationView()
+            await view.update_subdivision_options(interaction.guild)
+            embed = create_main_navigation_embed()
+
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        except Exception as e:
+            logger.warning("Error in show_position_roles_config: %s", e)
+            import traceback
+            traceback.print_exc()
+            try:
+                await interaction.followup.send(f"❌ Ошибка открытия настроек должностей: {str(e)}", ephemeral=True)
+            except Exception as e2:
+                logger.warning("Failed to send error message: %s", e2)
+    
+    async def show_electronic_applications_menu(self, interaction: discord.Interaction):
+        """Show electronic applications settings menu"""
+        from .electronic_applications import show_electronic_applications_menu
         
-        view = PositionSettingsView()
-        await view.update_position_options(interaction.guild)
-        embed = await create_position_settings_embed()
-        
-        await interaction.response.edit_message(embed=embed, view=view)
+        await show_electronic_applications_menu(interaction)
 
     async def show_warehouse_settings_menu(self, interaction: discord.Interaction):
         """Show warehouse settings configuration menu"""
         from .warehouse_settings import WarehouseSettingsView
         
         embed = discord.Embed(
-            title="📦 Настройки склада",
+            title="⚙️ Настройки склада",
             description="Управление системой запросов и выдачи складского имущества",
             color=discord.Color.blue(),
             timestamp=discord.utils.utcnow()
@@ -225,7 +248,7 @@ class MainSettingsSelect(ui.Select):
         )
         
         embed.add_field(
-            name="ℹ️ Описание системы:",
+            name="📋 Доступные каналы:",
             value=(
                 "Система склада позволяет пользователям запрашивать складское имущество "
                 "с учетом их должности или звания. Модераторы могут одобрять или отклонять "
@@ -235,7 +258,7 @@ class MainSettingsSelect(ui.Select):
         )
         
         view = WarehouseSettingsView()
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
     async def show_supplies_settings_menu(self, interaction: discord.Interaction):
         """Show supplies settings menu"""
@@ -243,22 +266,22 @@ class MainSettingsSelect(ui.Select):
             from .supplies import SuppliesSettingsView
             view = SuppliesSettingsView()
             embed = view.create_embed()
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
             
         except Exception as e:
-            print(f"❌ Error in show_supplies_settings_menu: {e}")
+            logger.warning("Error in show_supplies_settings_menu: %s", e)
             import traceback
             traceback.print_exc()
             
             try:
                 if interaction.response.is_done():
                     await interaction.followup.send(
-                        f"❌ Ошибка открытия настроек поставок: {str(e)}",
+                        f" Ошибка открытия настроек поставок: {str(e)}",
                         ephemeral=True
                     )
                 else:
                     await interaction.response.send_message(
-                        f"❌ Ошибка открытия настроек поставок: {str(e)}",
+                        f" Ошибка открытия настроек поставок: {str(e)}",
                         ephemeral=True
                     )
             except:
@@ -295,22 +318,22 @@ class MainSettingsSelect(ui.Select):
                 inline=False
             )
             
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
             
         except Exception as e:
-            print(f"❌ Error in show_commands_settings_menu: {e}")
+            logger.warning("Error in show_commands_settings_menu: %s", e)
             import traceback
             traceback.print_exc()
             
             try:
                 if interaction.response.is_done():
                     await interaction.followup.send(
-                        f"❌ Ошибка открытия настроек команд: {str(e)}",
+                        f" Ошибка открытия настроек команд: {str(e)}",
                         ephemeral=True
                     )
                 else:
                     await interaction.response.send_message(
-                        f"❌ Ошибка открытия настроек команд: {str(e)}",
+                        f" Ошибка открытия настроек команд: {str(e)}",
                         ephemeral=True
                     )
             except:
@@ -321,7 +344,7 @@ class MainSettingsSelect(ui.Select):
         from .departments_management import DepartmentsManagementView
         
         embed = discord.Embed(
-            title="🏛️ Управление подразделениями",
+            title="🏢 Управление подразделениями",
             description="Добавление, редактирование и удаление подразделений системы",
             color=discord.Color.blue(),
             timestamp=discord.utils.utcnow()
@@ -332,7 +355,7 @@ class MainSettingsSelect(ui.Select):
             value=(
                 "• **➕ Добавить подразделение** - создать новое подразделение\n"
                 "• **✏️ Редактировать подразделение** - изменить существующее подразделение\n"
-                "• **🗑️ Удалить подразделение** - удалить подразделение из системы\n"
+                "• ** Удалить подразделение** - удалить подразделение из системы\n"
                 "• **📋 Список подразделений** - просмотр всех подразделений"
             ),
             inline=False
@@ -349,7 +372,7 @@ class MainSettingsSelect(ui.Select):
         )
         
         embed.add_field(
-            name="⚠️ Важно:",
+            name="ℹ️ Инструкция:",
             value=(
                 "• Базовые подразделения можно редактировать, но рекомендуется сохранять их\n"
                 "• При удалении подразделения все связанные настройки будут удалены\n"
@@ -359,7 +382,7 @@ class MainSettingsSelect(ui.Select):
         )
         
         view = DepartmentsManagementView()
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
     
     async def show_nickname_settings_menu(self, interaction: discord.Interaction):
         """Show nickname auto-replacement settings menu"""
@@ -391,7 +414,7 @@ async def send_settings_message(interaction: discord.Interaction):
     )
     
     embed.add_field(
-        name="📝 Доступные категории:",
+        name="📋 Доступные категории:",
         value=(
             "• **📂 Настройка каналов** - настроить каналы для различных систем\n"
             "• **🛡️ Роли-исключения** - роли, не снимаемые при увольнении\n"
@@ -401,7 +424,7 @@ async def send_settings_message(interaction: discord.Interaction):
     )
     
     embed.add_field(
-        name="ℹ️ Как использовать:",
+        name="📝 Доступные категории:",
         value="1. Выберите категорию из главного меню\n2. Используйте подменю для настройки конкретных параметров\n3. Бот автоматически сохранит изменения",
         inline=False
     )

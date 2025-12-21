@@ -6,6 +6,11 @@ import discord
 from discord import ui
 from .modals import MilitaryApplicationModal, CivilianApplicationModal, SupplierApplicationModal
 from utils.config_manager import load_config
+from utils.message_manager import get_role_assignment_message, get_military_term, get_message_with_params
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class RoleAssignmentView(ui.View):
@@ -47,7 +52,7 @@ class RoleAssignmentView(ui.View):
                 return {"has_roles": False, "role_list": ""}
                 
         except Exception as e:
-            print(f"Error checking existing supplier roles: {e}")
+            logger.error("Error checking existing supplier roles: %s", e)
             # On error, allow application to proceed
             return {"has_roles": False, "role_list": ""}
 
@@ -71,7 +76,7 @@ class RoleAssignmentView(ui.View):
                 f"📋 **Ваша текущая информация:**\n"
                 f"> • **Имя, Фамилия:** `{full_name}`\n"
                 f"> • **Звание:** `{rank}`\n"
-                f"> • **Подразделение:** `{department}`\n"
+                f"> • **{get_military_term(interaction.guild.id, 'subdivision').capitalize()}:** `{department}`\n"
                 f"> • **Должность:** `{position}`\n\n"
                 f"💡 **Если вам нужно изменить данные, используйте:**\n"
                 f"• **Общее редактирование** - для изменения личных данных\n"
@@ -80,27 +85,8 @@ class RoleAssignmentView(ui.View):
             )
             return
         
-        # Check if user has active blacklist entry (CACHED - should be fast)
-        from utils.database_manager import personnel_manager
-        
-        blacklist_info = await personnel_manager.check_active_blacklist(interaction.user.id)
-        
-        if blacklist_info:
-            # User is blacklisted, deny application
-            start_date_str = blacklist_info['start_date'].strftime('%d.%m.%Y')
-            end_date_str = blacklist_info['end_date'].strftime('%d.%m.%Y') if blacklist_info['end_date'] else 'Бессрочно'
-            
-            await interaction.response.send_message(
-                f"❌ **Вам запрещен приём на службу**\n\n"
-                f"📋 **Вы находитесь в Чёрном списке ВС РФ**\n"
-                f"> **Причина:** {blacklist_info['reason']}\n"
-                f"> **Период:** {start_date_str} - {end_date_str}\n\n"
-                f"*Обратитесь к руководству бригады для снятия с чёрного списка.*",
-                ephemeral=True
-            )
-            return
-        
-        # No issues, proceed with application
+        # Открываем модаль с формой заявки (Select для ранга внутри Modal через ui.Label)
+        from .modals import MilitaryApplicationModal
         modal = MilitaryApplicationModal()
         await interaction.response.send_modal(modal)
     
@@ -111,7 +97,7 @@ class RoleAssignmentView(ui.View):
         role_check = await self._check_existing_supplier_roles(interaction)
         if role_check["has_roles"]:
             await interaction.response.send_message(
-                f"❌ **У вас уже есть доступ к поставкам**\n"
+                f"{get_role_assignment_message(interaction.guild.id, 'application.error_already_has_supplies_access', '❌ **У вас уже есть доступ к поставкам**')}\n"
                 f"> - **Ваши роли:**\n{role_check['role_list']}\n\n"
                 f"> *Подача дополнительной заявки не требуется.*",
                 ephemeral=True

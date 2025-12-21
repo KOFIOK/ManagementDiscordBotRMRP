@@ -4,14 +4,19 @@
 Централизованная логика для всех уведомлений модераторов/администраторов
 """
 import discord
+from utils.message_manager import get_private_messages
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 async def send_moderator_welcome_dm(user: discord.Member) -> bool:
     """Отправить приветственное сообщение модератору в ЛС"""
     try:
         embed = discord.Embed(
-            title="🎖️ Добро пожаловать в команду модераторов!",
-            description="Вы были назначены **модератором** в системе кадрового управления Вашей Фракции",
+            title=get_private_messages(user.guild.id, 'moderator_notifications.moderator_welcome.title'),
+            description=get_private_messages(user.guild.id, 'moderator_notifications.moderator_welcome.description'),
             color=discord.Color.blue(),
             timestamp=discord.utils.utcnow()
         )
@@ -38,24 +43,21 @@ async def send_moderator_welcome_dm(user: discord.Member) -> bool:
         
         embed.add_field(
             name="❓ Узнайте больше",
-            value=(
-                "Введите команду `/help` на дискорд-сервере для получения полной справки по системе\n"
-                "> - Подробнее о системе можно узнать в документации [GitHub](https://github.com/KOFIOK/ManagementDiscordBotRMRP)"
-            ),
+            value=get_private_messages(user.guild.id, 'moderator_notifications.moderator_welcome.help_command'),
             inline=False
         )
         
-        embed.set_footer(text="💡 Система кадрового управления")
+        embed.set_footer(text=get_private_messages(user.guild.id, 'moderator_notifications.moderator_welcome.footer'))
         embed.set_thumbnail(url=user.avatar.url if user.avatar else user.default_avatar.url)
         
         await user.send(embed=embed)
         return True
         
     except discord.Forbidden:
-        print(f"⚠️ Не удалось отправить DM модератору {user.display_name} - закрыты личные сообщения")
+        logger.info(f" Не удалось отправить DM модератору {user.display_name} - закрыты личные сообщения")
         return False
     except Exception as e:
-        print(f"❌ Ошибка при отправке DM модератору {user.display_name}: {e}")
+        logger.error("Ошибка при отправке DM модератору {user.display_name}: %s", e)
         return False
 
 
@@ -63,8 +65,8 @@ async def send_administrator_welcome_dm(user: discord.Member) -> bool:
     """Отправить приветственное сообщение администратору в ЛС"""
     try:
         embed = discord.Embed(
-            title="👑 Добро пожаловать в команду администраторов!",
-            description="Вы были назначены **администратором** в системе кадрового управления Вашей Фракции",
+            title=get_private_messages(user.guild.id, 'moderator_notifications.admin_welcome.title'),
+            description=get_private_messages(user.guild.id, 'moderator_notifications.admin_welcome.description'),
             color=discord.Color.gold(),
             timestamp=discord.utils.utcnow()
         )
@@ -97,24 +99,21 @@ async def send_administrator_welcome_dm(user: discord.Member) -> bool:
         
         embed.add_field(
             name="❓ Узнайте больше",
-            value=(
-                "Введите команду `/help` на дискорд-сервере для получения полной справки по системе\n"
-                "> - Подробнее о системе можно узнать в документации [GitHub](https://github.com/KOFIOK/ManagementDiscordBotRMRP)"
-            ),
+            value=get_private_messages(user.guild.id, 'moderator_notifications.admin_welcome.help_command'),
             inline=False
         )
         
-        embed.set_footer(text="🔐 Система кадрового управления")
+        embed.set_footer(text=get_private_messages(user.guild.id, 'moderator_notifications.admin_welcome.footer'))
         embed.set_thumbnail(url=user.avatar.url if user.avatar else user.default_avatar.url)
         
         await user.send(embed=embed)
         return True
         
     except discord.Forbidden:
-        print(f"⚠️ Не удалось отправить DM администратору {user.display_name} - закрыты личные сообщения")
+        logger.info(f" Не удалось отправить DM администратору {user.display_name} - закрыты личные сообщения")
         return False
     except Exception as e:
-        print(f"❌ Ошибка при отправке DM администратору {user.display_name}: {e}")
+        logger.error("Ошибка при отправке DM администратору {user.display_name}: %s", e)
         return False
 
 

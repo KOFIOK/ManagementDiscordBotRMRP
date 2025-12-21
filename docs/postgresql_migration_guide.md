@@ -95,7 +95,6 @@
 | start_date | date | Дата начала блокировки |
 | end_date | date | Дата окончания блокировки (опционально) |
 | last_updated | timestamp | Время последнего обновления записи |
-| is_active | boolean | Флаг активности записи |
 | personnel_id | integer (FK -> personnel.id) | Ссылка на personnel для удобства |
 
 _Примечание:_ это краткий справочник по основным сущностям. Полная схема и дополнительные справочники (например таблицы настроек, audit logs, supplies и т.д.) описаны в `utils/database/models.py`.

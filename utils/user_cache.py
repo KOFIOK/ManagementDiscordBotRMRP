@@ -15,6 +15,10 @@ Features:
 import asyncio
 from datetime import datetime, timedelta
 from typing import Dict, Optional, Any, Tuple, List
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class UserDataCache:
@@ -67,31 +71,31 @@ class UserDataCache:
         
         # АВТОМАТИЧЕСКАЯ ПРЕДЗАГРУЗКА только при первом запросе (оптимизировано)
         if not self._bulk_preloaded and not self._loading.get('__bulk_preload__', False):
-            print(f"🔄 AUTO BULK PRELOAD: Запускаем автоматическую предзагрузку (только первый раз)")
+            logger.info("AUTO BULK PRELOAD: Запускаем автоматическую предзагрузку (только первый раз)")
             self._loading['__bulk_preload__'] = True
             try:
                 # Запускаем предзагрузку в фоне (не блокируем текущий запрос)
                 asyncio.create_task(self._auto_bulk_preload())
             except Exception as e:
-                print(f"❌ AUTO BULK PRELOAD ERROR: {e}")
+                logger.error("AUTO BULK PRELOAD ERROR: %s", e)
             finally:
                 self._loading.pop('__bulk_preload__', None)
         
         # Защита от рекурсивных вызовов
         if self._loading.get(user_id, False):
-            print(f"🔄 RECURSIVE PROTECTION: Обнаружен рекурсивный вызов для {user_id}, возвращаем None")
+            logger.info("RECURSIVE PROTECTION: Обнаружен рекурсивный вызов для %s, возвращаем None", user_id)
             return None
         
         # Проверяем, нужно ли принудительное обновление
         if not force_refresh and self._is_cached(user_id):
             self._stats['hits'] += 1
-            print(f"📋 CACHE HIT: Данные пользователя {user_id} получены из кэша")
+            logger.info("CACHE HIT: Данные пользователя %s получены из кэша", user_id)
             cached_data = self._cache[user_id]
             return cached_data.copy() if cached_data is not None else None
         
         # Кэш пропуск - загружаем данные
         self._stats['misses'] += 1
-        print(f"🔄 CACHE MISS: Загружаем данные пользователя {user_id} из базы")
+        logger.info("CACHE MISS: Загружаем данные пользователя %s из базы", user_id)
         
         # Устанавливаем флаг загрузки
         self._loading[user_id] = True
@@ -100,7 +104,7 @@ class UserDataCache:
             # Если предзагрузка прошла, но пользователь не найден - это может быть новый пользователь
             # Поэтому загружаем из PostgreSQL, а не возвращаем None
             if self._bulk_preloaded and user_id not in self._cache:
-                print(f"� BULK MISS: Пользователь {user_id} не найден в предзагруженных данных, загружаем из PostgreSQL")
+                logger.info("BULK MISS: Пользователь %s не найден в предзагруженных данных, загружаем из PostgreSQL", user_id)
             
             # Пытаемся использовать оптимизированный запрос только если он не будет вызывать рекурсию
             user_data = None
@@ -112,29 +116,29 @@ class UserDataCache:
                 user_data = await personnel_manager.get_personnel_summary(user_id)
                 if user_data:
                     # Данные уже в правильном формате, не нужно переопределять с fallback значениями
-                    print(f"🔍 DATABASE_MANAGER: Получены ПОЛНЫЕ данные для {user_id} - {user_data.get('rank', 'N/A')} {user_data.get('full_name', 'N/A')} ({user_data.get('department', 'N/A')})")
+                    logger.info(f" DATABASE_MANAGER: Получены ПОЛНЫЕ данные для {user_id} - {user_data.get('rank', 'N/A')} {user_data.get('full_name', 'N/A')} ({user_data.get('department', 'N/A')})")
                 else:
-                    print(f"⚠️ DATABASE_MANAGER: Данные для {user_id} не найдены")
+                    logger.info("DATABASE_MANAGER: Данные для %s не найдены", user_id)
             except Exception as e:
-                print(f"⚠️ DATABASE_MANAGER FALLBACK: {e}")
+                logger.info("DATABASE_MANAGER FALLBACK: %s", e)
                 user_data = None
             
             if user_data:
                 # Сохраняем в кэш
                 self._store_in_cache(user_id, user_data)
-                print(f"✅ CACHE STORE: Данные пользователя {user_id} сохранены в кэш")
+                logger.info("CACHE STORE: Данные пользователя %s сохранены в кэш", user_id)
                 return user_data.copy() if user_data is not None else None
             else:
                 # Сохраняем отрицательный результат (чтобы не запрашивать повторно)
                 self._store_in_cache(user_id, None)
-                print(f"⚠️ CACHE STORE: Пользователь {user_id} не найден, сохранен отрицательный результат")
+                logger.info("CACHE STORE: Пользователь %s не найден, сохранен отрицательный результат", user_id)
                 return None
                 
         except Exception as e:
-            print(f"❌ CACHE ERROR: Ошибка загрузки данных пользователя {user_id}: {e}")
+            logger.error("CACHE ERROR: Ошибка загрузки данных пользователя %s: %s", user_id, e)
             # Возвращаем устаревшие данные из кэша, если есть
             if user_id in self._cache:
-                print(f"🔄 CACHE FALLBACK: Используем устаревшие данные для {user_id}")
+                logger.info("CACHE FALLBACK: Используем устаревшие данные для %s", user_id)
                 return self._cache[user_id].copy()
             return None
         finally:
@@ -144,14 +148,14 @@ class UserDataCache:
     async def _auto_bulk_preload(self):
         """Автоматическая предзагрузка в фоне"""
         try:
-            print(f"🔄 AUTO BULK PRELOAD: Запуск фоновой предзагрузки")
+            logger.info("AUTO BULK PRELOAD: Запуск фоновой предзагрузки")
             result = await self.bulk_preload_all_users()
             if result.get('success', False):
-                print(f"✅ AUTO BULK PRELOAD: Фоновая предзагрузка завершена успешно")
+                logger.info("AUTO BULK PRELOAD: Фоновая предзагрузка завершена успешно")
             else:
-                print(f"❌ AUTO BULK PRELOAD: Фоновая предзагрузка не удалась: {result.get('error', 'Unknown error')}")
+                logger.error(f" AUTO BULK PRELOAD: Фоновая предзагрузка не удалась: {result.get('error', 'Unknown error')}")
         except Exception as e:
-            print(f"❌ AUTO BULK PRELOAD ERROR: {e}")
+            logger.error("AUTO BULK PRELOAD ERROR: %s", e)
     
     def _is_cached(self, user_id: int) -> bool:
         """Проверить, есть ли действительные данные в кэше"""
@@ -170,13 +174,13 @@ class UserDataCache:
         """
         # Проверяем кэш без увеличения счетчика
         if self._is_cached(user_id):
-            print(f"📋 INTERNAL CACHE HIT: Данные пользователя {user_id} получены из кэша")
+            logger.info("INTERNAL CACHE HIT: Данные пользователя %s получены из кэша", user_id)
             cached_data = self._cache[user_id]
             return cached_data.copy() if cached_data is not None else None
         
         # Защита от рекурсивных вызовов
         if self._loading.get(user_id, False):
-            print(f"🔄 INTERNAL RECURSIVE PROTECTION: Обнаружен рекурсивный вызов для {user_id}")
+            logger.info("INTERNAL RECURSIVE PROTECTION: Обнаружен рекурсивный вызов для %s", user_id)
             return None
         
         # Устанавливаем флаг загрузки
@@ -190,24 +194,24 @@ class UserDataCache:
             
             if user_data:
                 # Данные уже в правильном формате от PersonnelManager, не переопределяем
-                print(f"🔍 INTERNAL DATABASE_MANAGER: Получены ПОЛНЫЕ данные для {user_id} - {user_data.get('rank', 'N/A')} {user_data.get('full_name', 'N/A')} ({user_data.get('department', 'N/A')})")
+                logger.info(f" INTERNAL DATABASE_MANAGER: Получены ПОЛНЫЕ данные для {user_id} - {user_data.get('rank', 'N/A')} {user_data.get('full_name', 'N/A')} ({user_data.get('department', 'N/A')})")
             else:
-                print(f"⚠️ INTERNAL DATABASE_MANAGER: Данные для {user_id} не найдены")
+                logger.info("INTERNAL DATABASE_MANAGER: Данные для %s не найдены", user_id)
                 user_data = None
             
             if user_data:
                 # Сохраняем в кэш
                 self._store_in_cache(user_id, user_data)
-                print(f"✅ INTERNAL CACHE STORE: Данные пользователя {user_id} сохранены в кэш")
+                logger.info("INTERNAL CACHE STORE: Данные пользователя %s сохранены в кэш", user_id)
                 return user_data.copy()
             else:
                 # Сохраняем отрицательный результат
                 self._store_in_cache(user_id, None)
-                print(f"⚠️ INTERNAL CACHE STORE: Пользователь {user_id} не найден")
+                logger.info("INTERNAL CACHE STORE: Пользователь %s не найден", user_id)
                 return None
                 
         except Exception as e:
-            print(f"❌ INTERNAL CACHE ERROR: {e}")
+            logger.error("INTERNAL CACHE ERROR: %s", e)
             return None
         finally:
             # Всегда очищаем флаг загрузки
@@ -241,7 +245,7 @@ class UserDataCache:
             self._expiry.pop(user_id, None)
         
         if expired_keys:
-            print(f"🧹 CACHE CLEANUP: Удалено {len(expired_keys)} истекших записей")
+            logger.info("CACHE CLEANUP: Удалено {len(expired_keys)} истекших записей")
         
         self._stats['cache_size'] = len(self._cache)
         self._stats['last_cleanup'] = now
@@ -259,7 +263,7 @@ class UserDataCache:
             self._cache.pop(user_id, None)
             self._expiry.pop(user_id, None)
         
-        print(f"🧹 CACHE EVICTION: Удалено {min(count, len(sorted_entries))} старых записей")
+        logger.info("CACHE EVICTION: Удалено {min(count, len(sorted_entries))} старых записей")
         self._stats['cache_size'] = len(self._cache)
     
     def invalidate_user(self, user_id: int):
@@ -267,7 +271,7 @@ class UserDataCache:
         self._cache.pop(user_id, None)
         self._expiry.pop(user_id, None)
         self._stats['cache_size'] = len(self._cache)
-        print(f"🗑️ CACHE INVALIDATE: Данные пользователя {user_id} удалены из кэша")
+        logger.info("CACHE INVALIDATE: Данные пользователя %s удалены из кэша", user_id)
     
     def clear_cache(self):
         """Полностью очистить кэш"""
@@ -277,7 +281,7 @@ class UserDataCache:
         # ВАЖНО: Сбрасываем флаг bulk preload при очистке кэша
         self._bulk_preloaded = False
         self._bulk_preload_time = None
-        print("🗑️ CACHE CLEAR: Кэш полностью очищен, bulk preload сброшен")
+        logger.info("CACHE CLEAR: Кэш полностью очищен, bulk preload сброшен")
     
     def get_cache_stats(self) -> Dict[str, Any]:
         """Получить статистику кэша"""
@@ -312,7 +316,7 @@ class UserDataCache:
         Returns:
             Dict {user_id: user_data} с результатами предзагрузки
         """
-        print(f"🔄 CACHE PRELOAD: Предзагрузка данных для {len(user_ids)} пользователей")
+        logger.info("CACHE PRELOAD: Предзагрузка данных для {len(user_ids)} пользователей")
         
         results = {}
         tasks = []
@@ -332,8 +336,8 @@ class UserDataCache:
                 # Batch-оптимизация удалена после миграции на PostgreSQL
                 # Используем стандартную параллельную загрузку
                 batch_error = Exception("Batch optimization not available with PostgreSQL")
-                print(f"⚠️ BATCH FALLBACK: {batch_error}")
-                print(f"📋 STANDARD PRELOAD: Используем стандартные параллельные запросы")
+                logger.error("BATCH FALLBACK: %s", batch_error)
+                logger.info("STANDARD PRELOAD: Используем стандартные параллельные запросы")
                 # Fallback на стандартную параллельную загрузку
                 # Ограничиваем количество одновременных запросов
                 semaphore = asyncio.Semaphore(5)  # Максимум 5 одновременных запросов
@@ -349,15 +353,15 @@ class UserDataCache:
                 for i, result in enumerate(task_results):
                     user_id = missing_user_ids[i]
                     if isinstance(result, Exception):
-                        print(f"❌ PRELOAD ERROR для {user_id}: {result}")
+                        logger.error("PRELOAD ERROR для %s: %s", user_id, result)
                         results[user_id] = None
                     else:
                         results[user_id] = result
                         
             except Exception as e:
-                print(f"❌ PRELOAD BATCH ERROR: {e}")
+                logger.error("PRELOAD BATCH ERROR: %s", e)
         
-        print(f"✅ CACHE PRELOAD завершена: {len(results)} пользователей обработано")
+        logger.info("CACHE PRELOAD завершена: {len(results)} пользователей обработано")
         return results
     
     async def bulk_preload_all_users(self, force_refresh: bool = False) -> Dict[str, Any]:
@@ -376,7 +380,7 @@ class UserDataCache:
         async with self._bulk_preload_lock:
             # Проверяем, нужна ли предзагрузка
             if not force_refresh and self._is_bulk_preload_valid():
-                print(f"📋 BULK PRELOAD: Данные свежие, пропускаем предзагрузку")
+                logger.info("BULK PRELOAD: Данные свежие, пропускаем предзагрузку")
                 return {
                     'success': True,
                     'users_loaded': len(self._cache),
@@ -384,7 +388,7 @@ class UserDataCache:
                     'message': 'Данные свежие, пропускаем предзагрузку'
                 }
             
-            print(f"🚀 BULK PRELOAD: Начинаем массовую предзагрузку из PostgreSQL")
+            logger.info("BULK PRELOAD: Начинаем массовую предзагрузку из PostgreSQL")
             start_time = datetime.now()
             
             try:
@@ -412,7 +416,7 @@ class UserDataCache:
                         all_users.append(formatted_user)
                 
                 if not all_users:
-                    print(f"⚠️ BULK PRELOAD: Нет пользователей в database_manager")
+                    logger.info("BULK PRELOAD: Нет пользователей в database_manager")
                     return {
                         'success': False,
                         'users_loaded': 0,
@@ -445,10 +449,18 @@ class UserDataCache:
                 
                 load_time = (datetime.now() - start_time).total_seconds()
                 
-                print(f"✅ BULK PRELOAD: Завершена за {load_time:.2f}s")
-                print(f"   📦 Предзагружено: {preloaded_count} пользователей")
-                print(f"   ❌ Ошибок: {error_count}")
-                print(f"   📊 Размер кэша: {len(self._cache)} записей")
+                # Логируем статистику одним многострочным сообщением без лишних уровней
+                preload_summary = (
+                    "\nBULK PRELOAD: Завершена"
+                    f" за {load_time:.2f}s\n"
+                    f"   • Предзагружено: {preloaded_count} пользователей\n"
+                    f"   • Ошибок: {error_count}\n"
+                    f"   • Размер кэша: {len(self._cache)} записей"
+                )
+                if error_count > 0:
+                    logger.warning(preload_summary)
+                else:
+                    logger.info(preload_summary)
                 
                 return {
                     'success': True,
@@ -459,7 +471,7 @@ class UserDataCache:
                 }
                 
             except Exception as e:
-                print(f"❌ BULK PRELOAD ERROR: {e}")
+                logger.error("BULK PRELOAD ERROR: %s", e)
                 import traceback
                 traceback.print_exc()
                 return {
@@ -499,10 +511,10 @@ class UserDataCache:
                     self._cleanup_expired()
                     
             except asyncio.CancelledError:
-                print("🛑 CACHE CLEANUP TASK: Задача очистки остановлена")
+                logger.info("CACHE CLEANUP TASK: Задача очистки остановлена")
                 break
             except Exception as e:
-                print(f"❌ CACHE CLEANUP ERROR: {e}")
+                logger.error("CACHE CLEANUP ERROR: %s", e)
 
 
 # Глобальный экземпляр кэша
@@ -525,7 +537,7 @@ async def initialize_user_cache(force_refresh: bool = False) -> bool:
     Returns:
         bool: True если инициализация прошла успешно
     """
-    print(f"🚀 CACHE INIT: Инициализация кэша пользователей")
+    logger.info("CACHE INIT: Инициализация кэша пользователей")
     result = await _global_cache.bulk_preload_all_users(force_refresh)
     return result.get('success', False)
 
@@ -537,7 +549,7 @@ async def refresh_user_cache() -> bool:
     Returns:
         bool: True если обновление прошло успешно
     """
-    print(f"🔄 CACHE REFRESH: Принудительное обновление кэша")
+    logger.info("CACHE REFRESH: Принудительное обновление кэша")
     result = await _global_cache.bulk_preload_all_users(force_refresh=True)
     return result.get('success', False)
 
@@ -596,7 +608,7 @@ def invalidate_user_cache(user_id: int) -> None:
         del _global_cache._cache[user_id]
         del _global_cache._expiry[user_id]
         _global_cache._stats['cache_size'] = len(_global_cache._cache)
-        print(f"🗑️ CACHE INVALIDATE: Пользователь {user_id} удален из кэша")
+        logger.info("CACHE INVALIDATE: Пользователь %s удален из кэша", user_id)
 
 
 async def preload_user_data(user_ids: List[int]) -> Dict[int, Optional[Dict[str, Any]]]:
@@ -614,7 +626,7 @@ async def preload_user_data(user_ids: List[int]) -> Dict[int, Optional[Dict[str,
         user_data = await _global_cache.get_user_info(user_id)
         results[user_id] = user_data
     
-    print(f"📦 CACHE PRELOAD: Предзагружено {len(user_ids)} пользователей")
+    logger.info("CACHE PRELOAD: Предзагружено {len(user_ids)} пользователей")
     return results
 
 
@@ -761,7 +773,7 @@ async def prepare_modal_data(user_id: int) -> Dict[str, str]:
             }
             
     except Exception as e:
-        print(f"❌ MODAL PREP ERROR: {e}")
+        logger.error("MODAL PREP ERROR: %s", e)
         return {
             'name_value': '',
             'static_value': '',
@@ -789,41 +801,23 @@ def print_cache_status():
     try:
         stats = _global_cache.get_cache_stats()
         
-        print("\n📊 СТАТИСТИКА КЭША ПОЛЬЗОВАТЕЛЕЙ")
-        print("=" * 50)
-        print(f"🎯 Производительность:")
-        print(f"   • Всего запросов: {stats.get('total_requests', 0)}")
-        print(f"   • Попаданий в кэш: {stats.get('hits', 0)}")
-        print(f"   • Промахов кэша: {stats.get('misses', 0)}")
-        print(f"   • Hit Rate: {stats.get('hit_rate_percent', 0)}%")
-        print(f"   • Размер кэша: {len(_global_cache._cache)}")
-        print("=" * 50)
+        stats_block = (
+            "\nСТАТИСТИКА КЭША ПОЛЬЗОВАТЕЛЕЙ\n"
+            + "=" * 50 + "\n"
+            f" Производительность:\n"
+            f"   • Всего запросов: {stats.get('total_requests', 0)}\n"
+            f"   • Попаданий в кэш: {stats.get('hits', 0)}\n"
+            f"   • Промахов кэша: {stats.get('misses', 0)}\n"
+            f"   • Hit Rate: {stats.get('hit_rate_percent', 0)}%\n"
+            f"   • Размер кэша: {len(_global_cache._cache)}\n"
+            + "=" * 50
+        )
+        logger.info(stats_block)
     except Exception as e:
-        print(f"❌ ERROR in print_cache_status: {e}")
+        logger.error("ERROR in print_cache_status: %s", e)
         import traceback
         traceback.print_exc()
 
 async def force_refresh_user_cache(user_id: int) -> Optional[Dict[str, Any]]:
     """Принудительное обновление конкретного пользователя"""
     return await _global_cache.force_refresh_user(user_id)
-
-
-def invalidate_user_cache(user_id: int) -> None:
-    """
-    Удалить конкретного пользователя из кэша
-    
-    Args:
-        user_id: Discord ID пользователя для удаления
-    """
-    if user_id in _global_cache._cache:
-        del _global_cache._cache[user_id]
-        del _global_cache._expiry[user_id]
-        _global_cache._stats['cache_size'] = len(_global_cache._cache)
-        print(f"🗑️ CACHE INVALIDATE: Пользователь {user_id} удален из кэша")
-
-
-def clear_user_cache() -> None:
-    """
-    Очистить весь кэш пользователей
-    """
-    _global_cache.clear_cache()

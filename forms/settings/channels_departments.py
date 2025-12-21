@@ -6,6 +6,10 @@ from discord import ui
 from typing import Dict, List
 from utils.config_manager import load_config, save_config
 from .base import BaseSettingsView, BaseSettingsModal
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 def auto_reload_config():
@@ -14,7 +18,7 @@ def auto_reload_config():
         from utils.ping_manager import ping_manager
         ping_manager.reload_config()
     except Exception as e:
-        print(f"Warning: Could not auto-reload config: {e}")
+        logger.warning("Warning: Could not auto-reload config: %s", e)
 
 
 async def show_department_channels_config(interaction: discord.Interaction):
@@ -197,7 +201,7 @@ async def show_department_config(interaction: discord.Interaction, department_co
         channel_text = "❌ Не настроен"
     
     embed.add_field(
-        name="📋 Канал заявлений",
+        name="📂 Канал заявлений",
         value=channel_text,
         inline=False
     )
@@ -210,7 +214,7 @@ async def show_department_config(interaction: discord.Interaction, department_co
         role_text = "❌ Не настроена"
     
     embed.add_field(
-        name="👤 Роль подразделения",
+        name="🏢 Роль подразделения",
         value=role_text,
         inline=False
     )
@@ -238,7 +242,7 @@ async def show_department_config(interaction: discord.Interaction, department_co
     
     # Add note about ping settings
     embed.add_field(
-        name="📢 Настройки пингов",
+        name="⚙️ Настройки пингов",
         value="Пинги для этого подразделения настраиваются через `/settings - Настройки пингов`",
         inline=False
     )
@@ -260,7 +264,7 @@ class DepartmentConfigActionsView(BaseSettingsView):
         self.add_item(DepartmentConfigButton("Настроить канал", "channel", department_code))
         self.add_item(DepartmentConfigButton("Настроить роль", "role", department_code))
         self.add_item(DepartmentConfigButton("Должности при одобрении", "assignable_positions", department_code))
-        self.add_item(DepartmentConfigButton("◀️ Назад", "back", department_code))
+        self.add_item(DepartmentConfigButton("Назад", "back", department_code))
 
 
 class DepartmentConfigButton(ui.Button):
@@ -302,7 +306,7 @@ class DepartmentConfigButton(ui.Button):
                 
         except Exception as e:
             await interaction.response.send_message(
-                f"❌ Ошибка: {e}",
+                f" Ошибка: {e}",
                 ephemeral=True
             )
 
@@ -328,35 +332,29 @@ class DepartmentChannelModal(BaseSettingsModal):
         self.add_item(self.channel_input)
     
     async def on_submit(self, interaction: discord.Interaction):
-        """Handle modal submission"""
+        """Обработка отправки модального окна"""
         try:
             channel_text = self.channel_input.value.strip()
             
-            # Parse channel
-            channel = await self.parse_channel(interaction.guild, channel_text)
+            # Используем централизованный ChannelParser
+            from .base import ChannelParser
+            from .settings_utils import validate_channel_permissions
+            
+            channel = ChannelParser.parse_channel_input(channel_text, interaction.guild)
             if not channel:
                 await interaction.response.send_message(
-                    "❌ Канал не найден. Убедитесь, что вы указали правильное название или ID канала.",
+                    " Канал не найден. Убедитесь, что вы указали правильное название или ID канала.",
                     ephemeral=True
                 )
                 return
             
-            # Validate permissions
+            # Валидация прав через validate_channel_permissions
             bot_member = interaction.guild.get_member(interaction.client.user.id)
-            permissions = channel.permissions_for(bot_member)
+            is_valid, message = validate_channel_permissions(channel, bot_member)
             
-            missing_perms = []
-            if not permissions.send_messages:
-                missing_perms.append("Отправка сообщений")
-            if not permissions.embed_links:
-                missing_perms.append("Встраивание ссылок")
-            if not permissions.manage_messages:
-                missing_perms.append("Управление сообщениями")
-            
-            if missing_perms:
+            if not is_valid:
                 await interaction.response.send_message(
-                    f"❌ Боту не хватает следующих разрешений в канале {channel.mention}:\n" +
-                    "\n".join(f"• {perm}" for perm in missing_perms),
+                    message,
                     ephemeral=True
                 )
                 return
@@ -385,26 +383,6 @@ class DepartmentChannelModal(BaseSettingsModal):
                 f"❌ Ошибка при сохранении настроек: {e}",
                 ephemeral=True
             )
-    
-    async def parse_channel(self, guild: discord.Guild, channel_text: str) -> discord.TextChannel:
-        """Parse channel from text input"""
-        # Remove # if present
-        if channel_text.startswith('#'):
-            channel_text = channel_text[1:]
-        
-        # Try to parse as ID
-        try:
-            channel_id = int(channel_text)
-            return guild.get_channel(channel_id)
-        except ValueError:
-            pass
-        
-        # Try to find by name
-        for channel in guild.text_channels:
-            if channel.name == channel_text:
-                return channel
-        
-        return None
 
 
 class DepartmentRoleModal(BaseSettingsModal):
@@ -428,32 +406,29 @@ class DepartmentRoleModal(BaseSettingsModal):
         self.add_item(self.role_input)
     
     async def on_submit(self, interaction: discord.Interaction):
-        """Handle modal submission"""
+        """Обработка отправки модального окна"""
         try:
             role_text = self.role_input.value.strip()
             
-            # Parse role
-            role = await self.parse_role(interaction.guild, role_text)
+            # Используем централизованный RoleParser
+            from .base import RoleParser
+            from .settings_utils import validate_role_hierarchy
+            
+            role = RoleParser.parse_role_input(role_text, interaction.guild)
             if not role:
                 await interaction.response.send_message(
-                    "❌ Роль не найдена. Убедитесь, что вы указали правильное название или ID роли.",
+                    " Роль не найдена. Убедитесь, что вы указали правильное название или ID роли.",
                     ephemeral=True
                 )
                 return
             
-            # Validate role hierarchy
+            # Валидация иерархии через validate_role_hierarchy
             bot_member = interaction.guild.get_member(interaction.client.user.id)
-            if role.position >= bot_member.top_role.position:
-                await interaction.response.send_message(
-                    f"❌ Роль {role.mention} находится выше роли бота в иерархии.\n"
-                    f"Бот не сможет управлять этой ролью.",
-                    ephemeral=True
-                )
-                return
+            is_valid, message = validate_role_hierarchy(role, bot_member)
             
-            if role.managed:
+            if not is_valid:
                 await interaction.response.send_message(
-                    f"❌ Роль {role.mention} управляется интеграцией и не может быть изменена ботом.",
+                    message,
                     ephemeral=True
                 )
                 return
@@ -479,7 +454,7 @@ class DepartmentRoleModal(BaseSettingsModal):
             
         except Exception as e:
             await interaction.response.send_message(
-                f"❌ Ошибка при сохранении настроек: {e}",
+                f" Ошибка при сохранении настроек: {e}",
                 ephemeral=True
             )
     
@@ -532,7 +507,7 @@ class DepartmentAssignablePositionsModal(BaseSettingsModal):
         self.add_item(self.roles_input)
     
     async def on_submit(self, interaction: discord.Interaction):
-        """Handle assignable position roles configuration"""
+        """Обработка настройки выдаваемых должностей"""
         try:
             await interaction.response.defer()
             
@@ -540,10 +515,12 @@ class DepartmentAssignablePositionsModal(BaseSettingsModal):
             role_ids = []
             
             if roles_text:
-                # Parse roles
+                # Используем централизованный RoleParser
+                from .base import RoleParser
+                
                 lines = [line.strip() for line in roles_text.split('\n') if line.strip()]
                 for line in lines:
-                    role = await self.parse_role(interaction.guild, line)
+                    role = RoleParser.parse_role_input(line, interaction.guild)
                     if role:
                         role_ids.append(role.id)
                     else:
@@ -574,7 +551,7 @@ class DepartmentAssignablePositionsModal(BaseSettingsModal):
                 f"✅ **Должности при одобрении для {self.department_code} обновлены!**\n"
                 f"📝 Количество ролей: {len(role_ids)}\n"
                 f"⭐ Роли: {', '.join(roles_mention) if roles_mention else 'Нет ролей'}\n"
-                f"� Эти роли будут автоматически выдаваться при одобрении заявлений.",
+                f"Эти роли будут автоматически выдаваться при одобрении заявлений.",
                 ephemeral=True
             )
             
@@ -611,7 +588,7 @@ class DepartmentAssignablePositionsModal(BaseSettingsModal):
             channel_text = "❌ Не настроен"
         
         embed.add_field(
-            name="📋 Канал заявлений",
+            name="📂 Канал заявлений",
             value=channel_text,
             inline=False
         )
@@ -624,7 +601,7 @@ class DepartmentAssignablePositionsModal(BaseSettingsModal):
             role_text = "❌ Не настроена"
         
         embed.add_field(
-            name="👤 Роль подразделения",
+            name="🏢 Роль подразделения",
             value=role_text,
             inline=False
         )
@@ -651,7 +628,7 @@ class DepartmentAssignablePositionsModal(BaseSettingsModal):
         
         # Add note about ping settings
         embed.add_field(
-            name="📢 Настройки пингов",
+            name="⚙️ Настройки пингов",
             value="Пинги для этого подразделения настраиваются через `/settings - Настройки пингов`",
             inline=False
         )

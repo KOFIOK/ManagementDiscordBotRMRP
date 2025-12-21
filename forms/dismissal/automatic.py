@@ -6,9 +6,13 @@ Handles creation of automatic dismissal reports when members leave the server
 import discord
 from utils.config_manager import load_config
 from utils.user_cache import get_cached_user_info
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
-async def create_automatic_dismissal_report(guild, member, target_role_name="Военнослужащий ВС РФ"):
+async def create_automatic_dismissal_report(guild, member, target_role_name="Сотрудник"):
     """
     Create automatic dismissal report for member who left the server.
     
@@ -22,12 +26,12 @@ async def create_automatic_dismissal_report(guild, member, target_role_name="В�
         dismissal_channel_id = config.get('dismissal_channel')
         
         if not dismissal_channel_id:
-            print(f"Dismissal channel not configured, skipping automatic report for {member.name}")
+            logger.info(f"Dismissal channel not configured, skipping automatic report for {member.name}")
             return False
             
         channel = guild.get_channel(dismissal_channel_id)
         if not channel:
-            print(f"Dismissal channel {dismissal_channel_id} not found, skipping automatic report for {member.name}")
+            logger.info(f"Dismissal channel %s not found, skipping automatic report for {member.name}", dismissal_channel_id)
             return False
         
         # Try to get user data from personnel database first using PersonnelManager
@@ -43,10 +47,10 @@ async def create_automatic_dismissal_report(guild, member, target_role_name="В�
             static_value = user_data.get('static', 'Не найден в реестре')
             user_department = user_data.get('department', 'Неизвестно')
             user_rank = user_data.get('rank', 'Неизвестно')
-            print(f"✅ Auto-filled data from personnel database for {member.name}")
+            logger.info(f" Auto-filled data from personnel database for {member.name}")
         else:
             # Fallback to extracting from roles and nickname
-            print(f"⚠️ User {member.name} not found in personnel database, using fallback")
+            logger.info(f" User {member.name} not found in personnel database, using fallback")
             
             # Extract name from last 2 words of display name
             display_name = getattr(member, 'display_name', member.name)
@@ -77,13 +81,13 @@ async def create_automatic_dismissal_report(guild, member, target_role_name="В�
                     departments = DepartmentManager.get_all_departments()
                     dept_data = departments.get(dept_code, {})
                     user_department = dept_data.get('name', dept_code.upper())
-                    print(f"📍 Determined department from ping roles: {user_department} (code: {dept_code})")
+                    logger.info("Determined department from ping roles: %s (code: %s)", user_department, dept_code)
                 else:
                     # Fallback: use first ping role name as department
                     user_department = ping_roles_list[0].name
-                    print(f"📍 Using first ping role as department: {user_department}")
+                    logger.info("Using first ping role as department: %s", user_department)
             else:
-                print(f"⚠️ No ping roles found for user, department remains unknown")
+                logger.info("No ping roles found for user, department remains unknown")
             
             # Get rank from database cache
             user_data = await get_cached_user_info(member.id)
@@ -128,15 +132,15 @@ async def create_automatic_dismissal_report(guild, member, target_role_name="В�
         # Send the automatic report with department pings
         message = await channel.send(content=ping_content, embed=embed, view=approval_view)
         
-        print(f"✅ Created automatic dismissal report for {member.name} (ID: {member.id})")
+        logger.info("Created automatic dismissal report for {member.name} (ID: {member.id})")
         return True
         
     except Exception as e:
-        print(f"❌ Error creating automatic dismissal report for {member.name}: {e}")
+        logger.warning("Error creating automatic dismissal report for {member.name}: %s", e)
         return False
 
 
-async def should_create_automatic_dismissal(member, target_role_name="Военнослужащий ВС РФ"):
+async def should_create_automatic_dismissal(member, target_role_name="Сотрудник"):
     """
     Check if member who left should get automatic dismissal report.
     
@@ -155,5 +159,5 @@ async def should_create_automatic_dismissal(member, target_role_name="Военн
                     return True
         return False
     except Exception as e:
-        print(f"Error checking if {member.name} should get automatic dismissal: {e}")
+        logger.error("Error checking if {member.name} should get automatic dismissal: %s", e)
         return False

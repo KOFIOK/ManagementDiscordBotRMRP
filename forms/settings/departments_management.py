@@ -8,14 +8,16 @@ from discord import ui
 from typing import Dict, Any, Optional
 import logging
 from utils.department_manager import DepartmentManager # Убедитесь, что это правильный путь к вашему DepartmentManager
+from .base import SectionSettingsView
+from utils.logging_setup import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
-class DepartmentsManagementView(ui.View):
+class DepartmentsManagementView(SectionSettingsView):
     """Основное меню управления подразделениями"""
 
     def __init__(self):
-        super().__init__(timeout=300)
+        super().__init__(title="🏛️ Управление подразделениями", description="Добавление, редактирование и удаление подразделений системы", timeout=300)
 
     @ui.button(label="➕ Добавить подразделение", style=discord.ButtonStyle.success, row=0)
     async def add_department(self, interaction: discord.Interaction, button: ui.Button):
@@ -129,7 +131,7 @@ class AddDepartmentModal(ui.Modal):
         super().__init__(title="➕ Добавить подразделение")
 
     department_id = ui.TextInput(
-        label="ID подразделения",
+        label="🏢 ID подразделения",
         placeholder="Например: genshtab"
     )
 
@@ -145,11 +147,11 @@ class AddDepartmentModal(ui.Modal):
 
     department_color = ui.TextInput(
         label="Цвет подразделения",
-        placeholder="#3498db"
+        placeholder="Красный, Blue, #FF0000 или ff0000"
     )
 
     role_id = ui.TextInput(
-        label="ID основной роли подразделения",
+        label="🏢 ID основной роли подразделения",
         placeholder="Например: 123456789012345678"
     )
 
@@ -166,7 +168,7 @@ class AddDepartmentModal(ui.Modal):
             if not dept_id or not dept_name:
                 embed = discord.Embed(
                     title="❌ Ошибка",
-                    description="ID и название подразделения обязательны!",
+                    description="🏢 ID и название подразделения обязательны!",
                     color=discord.Color.red()
                 )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -209,8 +211,8 @@ class AddDepartmentModal(ui.Modal):
                             title="❌ Ошибка",
                             description=(
                                 "Недопустимый цвет. Укажите:\n"
-                                "• Название цвета: Синий, Зелёный, Красный...\n"
-                                "• HEX код: #ffffff или ffffff"
+                                "• Название цвета: Синий, Красный, Blue, Red...\n"
+                                "• HEX код: #ffffff, #fff, ffffff или fff"
                             ),
                             color=discord.Color.red()
                         )
@@ -235,7 +237,7 @@ class AddDepartmentModal(ui.Modal):
                 except ValueError:
                     embed = discord.Embed(
                         title="❌ Ошибка",
-                        description="ID основной роли должен быть числом.",
+                        description="🆔 ID основной роли должен быть числом.",
                         color=discord.Color.red()
                     )
                     await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -310,7 +312,7 @@ class EditDepartmentSelect(ui.Select):
                 label=name,
                 value=dept_id,
                 emoji=emoji,
-                description=f"ID: {dept_id}"
+                description=f"🆔 ID: {dept_id}"
             ))
 
         super().__init__(
@@ -348,11 +350,19 @@ class EditDepartmentModal(ui.Modal):
             color_placeholder = f"#{color_value:06x}"
 
         emoji_placeholder = dept_data.get('emoji', '')
+        abbreviation_placeholder = dept_data.get('abbreviation', dept_id.lower())
         
         role_id = dept_data.get('role_id')
         role_placeholder = str(role_id) if role_id else ""
 
         # Создаем поля с placeholder и default значениями
+        self.department_abbreviation = ui.TextInput(
+            label="Аббревиатура подразделения",
+            placeholder=abbreviation_placeholder,
+            default=abbreviation_placeholder,
+            max_length=10
+        )
+
         self.department_name = ui.TextInput(
             label="Название подразделения",
             placeholder=name_placeholder,
@@ -372,7 +382,7 @@ class EditDepartmentModal(ui.Modal):
         )
 
         self.role_id = ui.TextInput(
-            label="ID основной роли подразделения",
+            label="🏢 ID основной роли подразделения",
             placeholder=role_placeholder,
             default=role_placeholder
         )
@@ -380,6 +390,7 @@ class EditDepartmentModal(ui.Modal):
         super().__init__(title=f"✏️ Редактировать {dept_data.get('name', dept_id)}")
         
         # Добавляем поля в модальное окно
+        self.add_item(self.department_abbreviation)
         self.add_item(self.department_name)
         self.add_item(self.department_emoji)
         self.add_item(self.department_color)
@@ -443,7 +454,7 @@ class EditDepartmentModal(ui.Modal):
                 except ValueError:
                     embed = discord.Embed(
                         title="❌ Ошибка",
-                        description="ID основной роли должен быть числом.",
+                        description="🆔 ID основной роли должен быть числом.",
                         color=discord.Color.red()
                     )
                     await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -452,6 +463,7 @@ class EditDepartmentModal(ui.Modal):
             # Обновление подразделения
             success = DepartmentManager.edit_department(
                 dept_id=self.dept_id,
+                abbreviation=self.department_abbreviation.value.strip() if self.department_abbreviation.value else None,
                 name=self.department_name.value.strip(),
                 emoji=self.department_emoji.value.strip() if self.department_emoji.value else None,
                 color=color_to_pass_to_manager, # Передаем название цвета
@@ -465,9 +477,10 @@ class EditDepartmentModal(ui.Modal):
                     color=discord.Color.green()
                 )
                 embed.add_field(
-                    name="📋 Новые значения:",
+                    name="📋 Данные подразделения:",
                     value=(
                         f"**ID:** {self.dept_id}\n"
+                        f"**Аббревиатура:** {self.department_abbreviation.value.strip() or self.dept_id.lower()}\n"
                         f"**Название:** {self.department_name.value.strip()}\n"
                         f"**Эмодзи:** {self.department_emoji.value.strip() or '🏛️'}\n"
                         f"**Цвет:** {display_color_name}\n" # Отображаем найденное название
@@ -518,7 +531,7 @@ class DeleteDepartmentSelect(ui.Select):
                 label=name,
                 value=dept_id,
                 emoji=emoji,
-                description=f"ID: {dept_id}"
+                description=f"🆔 ID: {dept_id}"
             ))
 
         super().__init__(
@@ -535,7 +548,7 @@ class DeleteDepartmentSelect(ui.Select):
         view = DeleteConfirmationView(dept_id, dept_data)
 
         embed = discord.Embed(
-            title="⚠️ Подтверждение удаления",
+            title="🗑️ Подтверждение удаления",
             description=f"Вы действительно хотите удалить подразделение **{dept_data.get('name', dept_id)}**?",
             color=discord.Color.orange()
         )
@@ -565,7 +578,7 @@ class DeleteDepartmentSelect(ui.Select):
                 color_display = f"#{color_value:06x}"
 
         embed.add_field(
-            name="📋 Информация о подразделении:",
+            name="ℹ️ Информация о подразделении:",
             value=(
                 f"**ID:** {dept_id}\n"
                 f"**Название:** {dept_data.get('name', dept_id)}\n"

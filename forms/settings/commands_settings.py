@@ -6,6 +6,10 @@ from discord import ui
 from utils.config_manager import load_config, save_config
 from .base import BaseSettingsView
 from utils.postgresql_pool import get_db_cursor
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class CommandsBaseView(BaseSettingsView):
@@ -137,7 +141,7 @@ class AuditActionsSelect(ui.Select):
                 self.max_values = actual_max
             
         except Exception as e:
-            print(f"Error setting up audit actions options: {e}")
+            logger.error("Error setting up audit actions options: %s", e)
             self.options = [discord.SelectOption(
                 label="Ошибка загрузки",
                 description="Не удалось загрузить действия из базы данных",
@@ -216,7 +220,7 @@ class AuditActionsSelect(ui.Select):
                 )
                 
         except Exception as e:
-            print(f"Error updating audit actions: {e}")
+            logger.error("Error updating audit actions: %s", e)
             await interaction.response.send_message(
                 "❌ Произошла ошибка при обновлении настроек.",
                 ephemeral=True
@@ -277,7 +281,7 @@ async def display_audit_command_settings(interaction: discord.Interaction):
         
         if disabled_actions:
             embed.add_field(
-                name="❌ Отключенные действия",
+                name="✅ Включенные действия",
                 value="\n".join(f"• {action}" for action in disabled_actions[:10]) +
                      (f"\n... и ещё {len(disabled_actions) - 10}" if len(disabled_actions) > 10 else ""),
                 inline=True
@@ -296,11 +300,10 @@ async def display_audit_command_settings(interaction: discord.Interaction):
         await view.display(interaction, embed)
         
     except Exception as e:
-        print(f"Error displaying audit command settings: {e}")
+        logger.error("Error displaying audit command settings: %s", e)
         embed = discord.Embed(
             title="❌ Ошибка",
             description="Не удалось загрузить настройки команды /аудит.",
             color=discord.Color.red()
         )
         await interaction.response.edit_message(embed=embed)
-

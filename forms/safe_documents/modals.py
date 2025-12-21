@@ -2,7 +2,12 @@ import discord
 from typing import Optional
 
 from utils.user_cache import get_cached_user_info
+from utils.message_manager import get_safe_documents_message
 from .manager import SafeDocumentsManager
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class SafeDocumentsModal(discord.ui.Modal):
@@ -28,6 +33,7 @@ class SafeDocumentsModal(discord.ui.Modal):
             label="Статик",
             placeholder="Введите ваш статик",
             required=True,
+            min_length=1,
             max_length=100,
             default=self.existing_data.get('static', '')
         )
@@ -81,7 +87,7 @@ class SafeDocumentsModal(discord.ui.Modal):
                 
         except Exception as e:
             await interaction.response.send_message(
-                f"❌ Произошла ошибка при обработке формы: {str(e)}",
+                get_safe_documents_message(interaction.guild.id, "modal.error_processing", "❌ Произошла ошибка при обработке формы: {0}").format(str(e)),
                 ephemeral=True
             )
 
@@ -110,18 +116,18 @@ class SafeDocumentsModal(discord.ui.Modal):
             
             # Если нет данных в user_cache, используем fallback значения
             if not cached_data:
-                print(f"Warning: No cached data found for user {user_id} in safe documents form")
+                logger.warning("Warning: No cached data found for user %s in safe documents form", user_id)
                 # Оставляем поля пустыми для ручного заполнения
                             
         except Exception as e:
             # Если автозаполнение не удалось, просто продолжаем с пустыми полями
-            print(f"Warning: Could not autofill safe documents form for user {user_id}: {e}")
+            logger.warning("Warning: Could not autofill safe documents form for user %s: %s", user_id, e)
 
 
 class SafeDocumentsRejectionModal(discord.ui.Modal):
     def __init__(self, application_data: dict):
         super().__init__(
-            title="❌ Причина отклонения",
+            title="📋 Причина отклонения",
             timeout=300
         )
         
@@ -147,7 +153,7 @@ class SafeDocumentsRejectionModal(discord.ui.Modal):
             
         except Exception as e:
             await interaction.response.send_message(
-                f"❌ Произошла ошибка при отклонении заявки: {str(e)}",
+                get_safe_documents_message(interaction.guild.id, "modal.error_rejection", "❌ Произошла ошибка при отклонении заявки: {0}").format(str(e)),
                 ephemeral=True
             )
 
@@ -174,6 +180,7 @@ class SafeDocumentsEditModal(discord.ui.Modal):
             label="Статик",
             placeholder="Введите статик",
             required=True,
+            min_length=1,
             max_length=100,
             default=application_data.get('static', '')
         )
@@ -225,6 +232,6 @@ class SafeDocumentsEditModal(discord.ui.Modal):
             
         except Exception as e:
             await interaction.response.send_message(
-                f"❌ Произошла ошибка при редактировании заявки: {str(e)}",
+                get_safe_documents_message(interaction.guild.id, "modal.error_edit", "❌ Произошла ошибка при редактировании заявки: {0}").format(str(e)),
                 ephemeral=True
             )

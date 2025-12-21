@@ -1,4 +1,9 @@
 import discord
+from utils.message_manager import get_safe_documents_message
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 class SafeDocumentsPinView(discord.ui.View):
     """Постоянный view для закрепленного сообщения с кнопкой подачи заявки"""
@@ -10,7 +15,7 @@ class SafeDocumentsPinView(discord.ui.View):
         label="Подать заявку",
         style=discord.ButtonStyle.primary,
         custom_id="safe_documents:submit_application",
-        emoji="📋"
+        emoji="📑"
     )
     async def submit_application(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Кнопка подачи заявки на безопасные документы"""
@@ -28,7 +33,7 @@ class SafeDocumentsPinView(discord.ui.View):
             
         except Exception as e:
             await interaction.response.send_message(
-                f"❌ Произошла ошибка при открытии формы: {str(e)}",
+                get_safe_documents_message(interaction.guild.id, "approval.error_general", "❌ Произошла ошибка при открытии формы").format(str(e)),
                 ephemeral=True
             )
 
@@ -55,12 +60,12 @@ class SafeDocumentsApplicationView(discord.ui.View):
             for field in embed.fields:
                 if field.name == "👤 Имя Фамилия":
                     application_data['name'] = field.value if field.value != 'Не указано' else ''
-                elif field.name == "🎭 Статик":
-                    application_data['static'] = field.value if field.value != 'Не указано' else ''
-                elif field.name == "📞 Игровой телефон":
-                    application_data['phone'] = field.value if field.value != 'Не указано' else ''
                 elif field.name == "📧 Почта":
                     application_data['email'] = field.value if field.value != 'Не указано' else ''
+                elif field.name == "📞 Игровой телефон":
+                    application_data['phone'] = field.value if field.value != 'Не указано' else ''
+                elif field.name == "🎭 Статик":
+                    application_data['static'] = field.value if field.value != 'Не указано' else ''
                 elif field.name == "📎 Копия всех документов":
                     application_data['documents'] = field.value if field.value != 'Не указано' else ''
             
@@ -72,7 +77,7 @@ class SafeDocumentsApplicationView(discord.ui.View):
                         user_id_str = footer_text.split("ID: ")[1].strip()
                         application_data['user_id'] = int(user_id_str)
                     except (IndexError, ValueError):
-                        print(f"Warning: Could not extract user_id from footer: {footer_text}")
+                        logger.warning("Warning: Could not extract user_id from footer: %s", footer_text)
             
             # Определяем статус из заголовка
             if embed.title:
@@ -90,7 +95,7 @@ class SafeDocumentsApplicationView(discord.ui.View):
             return application_data
             
         except Exception as e:
-            print(f"Error extracting application data from embed: {e}")
+            logger.error("Error extracting application data from embed: %s", e)
             return {}
     
     def _get_application_data(self, interaction: discord.Interaction) -> dict:
@@ -118,7 +123,7 @@ class SafeDocumentsApplicationView(discord.ui.View):
             application_data = self._get_application_data(interaction)
             if not application_data:
                 await interaction.response.send_message(
-                    "❌ Не удалось получить данные заявки!",
+                    get_safe_documents_message(interaction.guild.id, "approval.error_not_found", "❌ Не удалось получить данные заявки!"),
                     ephemeral=True
                 )
                 return
@@ -129,7 +134,7 @@ class SafeDocumentsApplicationView(discord.ui.View):
             
         except Exception as e:
             await interaction.response.send_message(
-                f"❌ Произошла ошибка при одобрении заявки: {str(e)}",
+                get_safe_documents_message(interaction.guild.id, "approval.error_approval_failed", "❌ Произошла ошибка при одобрении заявки").format(str(e)),
                 ephemeral=True
             )
     
@@ -146,7 +151,7 @@ class SafeDocumentsApplicationView(discord.ui.View):
             application_data = self._get_application_data(interaction)
             if not application_data:
                 await interaction.response.send_message(
-                    "❌ Не удалось получить данные заявки!",
+                    get_safe_documents_message(interaction.guild.id, "approval.error_not_found", " Не удалось получить данные заявки!"),
                     ephemeral=True
                 )
                 return
@@ -159,7 +164,7 @@ class SafeDocumentsApplicationView(discord.ui.View):
             
         except Exception as e:
             await interaction.response.send_message(
-                f"❌ Произошла ошибка при отклонении заявки: {str(e)}",
+                get_safe_documents_message(interaction.guild.id, "approval.error_rejection_failed", "❌ Произошла ошибка при отклонении заявки").format(str(e)),
                 ephemeral=True
             )
     
@@ -194,7 +199,7 @@ class SafeDocumentsApplicationView(discord.ui.View):
             
             if not can_edit:
                 await interaction.response.send_message(
-                    "❌ У вас нет прав для редактирования этой заявки!",
+                    get_safe_documents_message(interaction.guild.id, "approval.error_no_edit_permissions", "❌ У вас нет прав для редактирования этой заявки!"),
                     ephemeral=True
                 )
                 return
@@ -205,7 +210,7 @@ class SafeDocumentsApplicationView(discord.ui.View):
             
         except Exception as e:
             await interaction.response.send_message(
-                f"❌ Произошла ошибка при редактировании заявки: {str(e)}",
+                get_safe_documents_message(interaction.guild.id, "approval.error_edit_failed", "❌ Произошла ошибка при редактировании заявки: {0}").format(str(e)),
                 ephemeral=True
             )
 
@@ -251,7 +256,7 @@ class SafeDocumentsApprovedView(discord.ui.View):
             application_data = self._get_application_data(interaction)
             if not application_data:
                 await interaction.response.send_message(
-                    "❌ Не удалось получить данные заявки!",
+                    get_safe_documents_message(interaction.guild.id, "approval.error_not_found", " Не удалось получить данные заявки!"),
                     ephemeral=True
                 )
                 return
@@ -262,7 +267,7 @@ class SafeDocumentsApprovedView(discord.ui.View):
             # Только модераторы могут редактировать одобренные заявки
             if not await manager.check_moderator_permissions(interaction.user, application_data.get('department')):
                 await interaction.response.send_message(
-                    "❌ Только модераторы могут редактировать одобренные заявки!",
+                    get_safe_documents_message(interaction.guild.id, "approval.error_only_moderators_can_edit_approved", "❌ Только модераторы могут редактировать одобренные заявки!"),
                     ephemeral=True
                 )
                 return
@@ -273,7 +278,7 @@ class SafeDocumentsApprovedView(discord.ui.View):
             
         except Exception as e:
             await interaction.response.send_message(
-                f"❌ Произошла ошибка при редактировании заявки: {str(e)}",
+                get_safe_documents_message(interaction.guild.id, "approval.error_edit_failed", " Произошла ошибка при редактировании заявки: {0}").format(str(e)),
                 ephemeral=True
             )
 

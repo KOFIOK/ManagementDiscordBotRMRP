@@ -9,13 +9,22 @@ import re
 from utils.config_manager import load_config, has_pending_dismissal_report
 
 from utils.user_cache import get_cached_user_info
+from utils.logging_setup import get_logger
+
+# Initialize logger
+logger = get_logger(__name__)
 
 
 class SimplifiedDismissalModal(ui.Modal):
     """Simplified modal for dismissal reports with auto-filled data"""
     
     def __init__(self, prefilled_name: str = "", prefilled_static: str = "", dismissal_reason: str = ""):
-        super().__init__(title=f"Рапорт на увольнение - {dismissal_reason}")
+        # Формируем заголовок модального окна с ограничением 45 символов
+        base_title = "📋 Рапорт на увольнение"
+        full_title = f"{base_title} — {dismissal_reason}" if dismissal_reason else base_title
+        if len(full_title) > 45:
+            full_title = full_title[:45]
+        super().__init__(title=full_title)
         self.dismissal_reason = dismissal_reason
         
         # Create text inputs with prefilled data
@@ -30,9 +39,9 @@ class SimplifiedDismissalModal(ui.Modal):
         
         self.static_input = ui.TextInput(
             label="Статик", 
-            placeholder="123-456 или 12-345",
+            placeholder="123-456 (допускается 1-6 цифр)",
             default=prefilled_static,
-            min_length=5,
+            min_length=1,
             max_length=7,
             required=True
         )
@@ -57,23 +66,18 @@ class SimplifiedDismissalModal(ui.Modal):
                 prefilled_name = user_info.get('full_name', '')
                 prefilled_static = user_info.get('static', '')
             else:
-                print(f"⚠️ No data found in PersonnelManager for user {user_discord_id}")
+                logger.info("No data found in PersonnelManager for user %s", user_discord_id)
                 
         except Exception as e:
-            print(f"❌ Error getting user data for auto-fill: {e}")
+            logger.warning("Error getting user data for auto-fill: %s", e)
         
         return cls(prefilled_name, prefilled_static, dismissal_reason)
     
     def format_static(self, static_input: str) -> str:
         """Auto-format static number to standard format"""
-        digits_only = re.sub(r'\D', '', static_input.strip())
-        
-        if len(digits_only) == 5:
-            return f"{digits_only[:2]}-{digits_only[2:]}"
-        elif len(digits_only) == 6:
-            return f"{digits_only[:3]}-{digits_only[3:]}"
-        else:
-            return ""
+        from utils.static_validator import StaticValidator
+        is_valid, formatted = StaticValidator.validate_and_format(static_input)
+        return formatted if is_valid else ""
     
     async def on_submit(self, interaction: discord.Interaction):
         """Handle simplified dismissal report submission"""
@@ -124,7 +128,7 @@ class SimplifiedDismissalModal(ui.Modal):
                     if position and position != 'Не назначено':
                         embed.add_field(name="Должность", value=position, inline=True)
             except Exception as e:
-                print(f"❌ Error getting additional user data: {e}")
+                logger.warning("Error getting additional user data: %s", e)
             
             embed.add_field(name="Причина увольнения", value=self.dismissal_reason, inline=False)
 
@@ -156,7 +160,7 @@ class SimplifiedDismissalModal(ui.Modal):
                             ping_roles = [role.mention for role in ping_roles_list]
                             ping_content = f"-# {' '.join(ping_roles)}"
                     except Exception as e:
-                        print(f"⚠️ Error getting ping roles: {e}")
+                        logger.warning("Error getting ping roles: %s", e)
                     
                     ping_content += f"\n-# **Новый рапорт на увольнение от {interaction.user.mention}**"
                     
@@ -181,7 +185,7 @@ class SimplifiedDismissalModal(ui.Modal):
                 )
                 
         except Exception as e:
-            print(f"❌ Error in simplified dismissal submission: {e}")
+            logger.warning("Error in simplified dismissal submission: %s", e)
             await interaction.response.send_message(
                 "❌ Произошла ошибка при отправке рапорта. Обратитесь к администратору.",
                 ephemeral=True
@@ -194,7 +198,7 @@ class StaticRequestModal(ui.Modal, title="Укажите статик уволь
     static_input = ui.TextInput(
         label="Статик (123-456)",
         placeholder="Введите статик покинувшего пользователя",
-        min_length=5,
+        min_length=1,
         max_length=7,
         required=True
     )
@@ -207,14 +211,9 @@ class StaticRequestModal(ui.Modal, title="Укажите статик уволь
     
     def format_static(self, static_input: str) -> str:
         """Auto-format static number to standard format"""
-        digits_only = re.sub(r'\D', '', static_input.strip())
-        
-        if len(digits_only) == 5:
-            return f"{digits_only[:2]}-{digits_only[2:]}"
-        elif len(digits_only) == 6:
-            return f"{digits_only[:3]}-{digits_only[3:]}"
-        else:
-            return ""
+        from utils.static_validator import StaticValidator
+        is_valid, formatted = StaticValidator.validate_and_format(static_input)
+        return formatted if is_valid else ""
     
     async def on_submit(self, interaction: discord.Interaction):
         try:
@@ -222,7 +221,7 @@ class StaticRequestModal(ui.Modal, title="Укажите статик уволь
             formatted_static = self.format_static(self.static_input.value)
             if not formatted_static:
                 await interaction.response.send_message(
-                    "❌ **Ошибка валидации статика**\n"
+                    " **Ошибка валидации статика**\n"
                     "Статик должен содержать ровно 5 или 6 цифр.\n"
                     "**Примеры:** `123456` → `123-456`, `12345` → `12-345`",
                     ephemeral=True
@@ -241,7 +240,7 @@ class StaticRequestModal(ui.Modal, title="Укажите статик уволь
                 await self.callback_func(interaction, formatted_static, *self.callback_args, **self.callback_kwargs)
                 
         except Exception as e:
-            print(f"Error in StaticRequestModal: {e}")
+            logger.error("Error in StaticRequestModal: %s", e)
             await interaction.followup.send(
                 "❌ Произошла ошибка при обработке статика.",
                 ephemeral=True
@@ -314,7 +313,7 @@ class RejectionReasonModal(ui.Modal, title="Причина отказа"):
                                             self.guild_permissions = discord.Permissions.none()  # No permissions
                                     target_user = MockUser(user_id)
                     except Exception as e:
-                        print(f"Error extracting target user for rejection: {e}")
+                        logger.error("Error extracting target user for rejection: %s", e)
                 
                 await interaction.response.defer(ephemeral=True)
                 
@@ -327,7 +326,7 @@ class RejectionReasonModal(ui.Modal, title="Причина отказа"):
                 )
                 
         except Exception as e:
-            print(f"Error in RejectionReasonModal: {e}")
+            logger.error("Error in RejectionReasonModal: %s", e)
             # Check if we already responded to avoid errors
             if not interaction.response.is_done():
                 await interaction.response.send_message(
@@ -336,12 +335,12 @@ class RejectionReasonModal(ui.Modal, title="Причина отказа"):
                 )
             else:
                 await interaction.followup.send(
-                    "❌ Произошла ошибка при обработке причины отказа.",
+                    " Произошла ошибка при обработке причины отказа.",
                     ephemeral=True
                 )
     
     async def on_error(self, interaction: discord.Interaction, error: Exception):
-        print(f"RejectionReasonModal error: {error}")
+        logger.error("RejectionReasonModal error: %s", error)
         try:
             if not interaction.response.is_done():
                 await interaction.response.send_message(
@@ -354,7 +353,7 @@ class RejectionReasonModal(ui.Modal, title="Причина отказа"):
                     ephemeral=True
                 )
         except Exception as follow_error:
-            print(f"Failed to send error message in RejectionReasonModal.on_error: {follow_error}")
+            logger.error("Failed to send error message in RejectionReasonModal.on_error: %s", follow_error)
 
 
 class AutomaticDismissalEditModal(ui.Modal, title="Редактирование автоматического рапорта"):
@@ -380,7 +379,7 @@ class AutomaticDismissalEditModal(ui.Modal, title="Редактирование 
             label="Статик",
             placeholder="Например: 123-456",
             default=current_data.get('static', ''),
-            min_length=5,
+            min_length=1,
             max_length=20,
             required=True
         )
@@ -407,14 +406,9 @@ class AutomaticDismissalEditModal(ui.Modal, title="Редактирование 
     
     def format_static(self, static_input: str) -> str:
         """Auto-format static number to standard format"""
-        digits_only = re.sub(r'\D', '', static_input.strip())
-        
-        if len(digits_only) == 5:
-            return f"{digits_only[:2]}-{digits_only[2:]}"
-        elif len(digits_only) == 6:
-            return f"{digits_only[:3]}-{digits_only[3:]}"
-        else:
-            return static_input.strip()  # Return as-is if can't format
+        from utils.static_validator import StaticValidator
+        is_valid, formatted = StaticValidator.validate_and_format(static_input)
+        return formatted if is_valid else static_input.strip()  # Return as-is if can't format
     
     async def on_submit(self, interaction: discord.Interaction):
         try:
@@ -466,7 +460,7 @@ class AutomaticDismissalEditModal(ui.Modal, title="Редактирование 
             await self.original_message.edit(embed=embed, view=self.view_instance)
             
         except Exception as e:
-            print(f"Error in AutomaticDismissalEditModal: {e}")
+            logger.error("Error in AutomaticDismissalEditModal: %s", e)
             if not interaction.response.is_done():
                 await interaction.response.send_message(
                     "❌ Произошла ошибка при обработке изменений.",
@@ -474,7 +468,7 @@ class AutomaticDismissalEditModal(ui.Modal, title="Редактирование 
                 )
     
     async def on_error(self, interaction: discord.Interaction, error: Exception):
-        print(f"AutomaticDismissalEditModal error: {error}")
+        logger.error("AutomaticDismissalEditModal error: %s", error)
         try:
             if not interaction.response.is_done():
                 await interaction.response.send_message(
@@ -482,4 +476,4 @@ class AutomaticDismissalEditModal(ui.Modal, title="Редактирование 
                     ephemeral=True
                 )
         except Exception as follow_error:
-            print(f"Failed to send error message in AutomaticDismissalEditModal.on_error: {follow_error}")
+            logger.error("Failed to send error message in AutomaticDismissalEditModal.on_error: %s", follow_error)

@@ -109,7 +109,8 @@ class RoleApplicationApprovalView(ui.View):
             )
             return
         
-        # Get current application data (including applicant user_id)
+        # Получаем АКТУАЛЬНЫЕ данные из embed (не оригинальные!)
+        # Это важно для случаев когда заявка была отредактирована
         current_data = self._get_current_application_data(interaction)
         applicant_user_id = current_data.get('user_id')
         
@@ -123,8 +124,9 @@ class RoleApplicationApprovalView(ui.View):
         # Check if APPLICANT has active blacklist entry
         from utils.database_manager import personnel_manager
         
-        # Предпочитаем статик из заявки; если его нет, падаем обратно на discord_id
-        blacklist_lookup = self.application_data.get('static') or applicant_user_id
+        # Используем АКТУАЛЬНЫЙ статик из current_data (он же в embed'е)
+        # Если статик был отредактирован, будет использован новый статик
+        blacklist_lookup = current_data.get('static') or applicant_user_id
         blacklist_info = await personnel_manager.check_active_blacklist(blacklist_lookup)
         
         if blacklist_info:
@@ -143,7 +145,7 @@ class RoleApplicationApprovalView(ui.View):
             return
         
         # Check for static duplication (only for military applications with static)
-        if self.application_data.get('type') == 'military' and self.application_data.get('static'):
+        if current_data.get('type') == 'military' and current_data.get('static'):
             from utils.postgresql_pool import get_db_cursor
             try:
                 with get_db_cursor() as cursor:
@@ -152,7 +154,7 @@ class RoleApplicationApprovalView(ui.View):
                         FROM personnel
                         WHERE static = %s AND discord_id != %s
                         LIMIT 1;
-                    """, (self.application_data['static'], applicant_user_id))
+                    """, (current_data['static'], applicant_user_id))
                     
                     existing_record = cursor.fetchone()
                     
@@ -1055,27 +1057,83 @@ class StaticConflictConfirmationView(ui.View):
             processing_view = ProcessingApplicationView()
             await self.original_message.edit(content="", embed=embed, view=processing_view)
             
-            # Step 2: Replace old discord_id with new one in personnel table
+            # Step 2: Replace old discord_id with new one in personnel table (с транзакцией)
             from utils.postgresql_pool import get_db_cursor
             from datetime import datetime, timezone
             
-            with get_db_cursor() as cursor:
-                # Update the personnel record: change discord_id and reset dismissal status
-                cursor.execute("""
-                    UPDATE personnel
-                    SET discord_id = %s,
-                        is_dismissal = false,
-                        dismissal_date = NULL,
-                        last_updated = %s
-                    WHERE discord_id = %s;
-                """, (self.new_user_id, datetime.now(timezone.utc), self.old_discord_id))
+            try:
+                with get_db_cursor() as cursor:
+                    # BEGIN транзакция
+                    cursor.execute("BEGIN;")
+                    
+                    try:
+                        # Update the personnel record: change discord_id and reset dismissal status
+                        cursor.execute("""
+                            UPDATE personnel
+                            SET discord_id = %s,
+                                is_dismissal = false,
+                                dismissal_date = NULL,
+                                last_updated = %s
+                            WHERE discord_id = %s;
+                        """, (self.new_user_id, datetime.now(timezone.utc), self.old_discord_id))
+                        
+                        # COMMIT если всё прошло успешно
+                        cursor.execute("COMMIT;")
+                        
+                        logger.info(
+                            "STATIC CONFLICT: Replaced discord_id %s with %s for static %s",
+                            self.old_discord_id,
+                            self.new_user_id,
+                            self.application_data.get('static')
+                        )
+                    except Exception as update_error:
+                        # ROLLBACK при ошибке
+                        try:
+                            cursor.execute("ROLLBACK;")
+                        except:
+                            pass
+                        raise update_error
+            except Exception as db_error:
+                logger.error("STATIC CONFLICT: Database error during replacement: %s", db_error)
+                import traceback
+                traceback.print_exc()
                 
-                logger.info(
-                    "STATIC CONFLICT: Replaced discord_id %s with %s for static %s",
-                    self.old_discord_id,
-                    self.new_user_id,
-                    self.application_data.get('static')
+                # Restore original message with error status
+                try:
+                    embed.color = discord.Color.red()
+                    # Find and update status field - ищем по нескольким вариантам имени
+                    status_updated = False
+                    for i, field in enumerate(embed.fields):
+                        # Проверяем оба варианта: исходное имя и если уже переименовано
+                        if field.name in ["🔄 Статус", "❌ Ошибка замены"]:
+                            embed.set_field_at(
+                                i,
+                                name="❌ Ошибка замены",
+                                value=f"Ошибка базы данных. Возможно, пользователь уже привязан к другому статику.",
+                                inline=False
+                            )
+                            status_updated = True
+                            break
+                    
+                    # Если поле статуса не найдено - добавляем новое (на случай, если был удален)
+                    if not status_updated:
+                        embed.add_field(
+                            name="❌ Ошибка замены",
+                            value=f"Ошибка базы данных. Возможно, пользователь уже привязан к другому статику.",
+                            inline=False
+                        )
+                    
+                    original_view = RoleApplicationApprovalView(self.application_data)
+                    await self.original_message.edit(embed=embed, view=original_view)
+                except Exception as restore_error:
+                    logger.error("STATIC CONFLICT: Failed to restore message after error: %s", restore_error)
+                
+                await interaction.followup.send(
+                    "❌ Ошибка при замене записи: пользователь __явно__ привязан к другому статику. "
+                    "Обратитесь к администратору.",
+                    ephemeral=True
                 )
+                return
             
             # Step 3: Update application_data with new user_id
             self.application_data['user_id'] = self.new_user_id
@@ -1092,12 +1150,16 @@ class StaticConflictConfirmationView(ui.View):
                 )
                 # Restore original message
                 embed.color = discord.Color.red()
-                embed.set_field_at(
-                    len(embed.fields) - 1,
-                    name="❌ Ошибка",
-                    value="Пользователь не найден на сервере",
-                    inline=False
-                )
+                # Правильно найти и обновить поле статуса
+                for i, field in enumerate(embed.fields):
+                    if field.name == "🔄 Статус":
+                        embed.set_field_at(
+                            i,
+                            name="❌ Ошибка",
+                            value="Пользователь не найден на сервере",
+                            inline=False
+                        )
+                        break
                 original_view = RoleApplicationApprovalView(self.application_data)
                 await self.original_message.edit(embed=embed, view=original_view)
                 return
@@ -1123,8 +1185,41 @@ class StaticConflictConfirmationView(ui.View):
             logger.error("Error confirming static conflict resolution: %s", e)
             import traceback
             traceback.print_exc()
+            
+            # Restore original message with error status if possible
+            try:
+                embed = self.original_message.embeds[0]
+                embed.color = discord.Color.red()
+                
+                # Find and update status field - ищем по нескольким вариантам имени
+                status_updated = False
+                for i, field in enumerate(embed.fields):
+                    # Проверяем оба варианта: исходное имя и если уже переименовано
+                    if field.name in ["🔄 Статус", "❌ Ошибка обработки", "❌ Ошибка замены"]:
+                        embed.set_field_at(
+                            i,
+                            name="❌ Ошибка обработки",
+                            value="Произошла ошибка при обработке. Заявка отменена.",
+                            inline=False
+                        )
+                        status_updated = True
+                        break
+                
+                # Если поле статуса не найдено - добавляем новое
+                if not status_updated:
+                    embed.add_field(
+                        name="❌ Ошибка обработки",
+                        value="Произошла ошибка при обработке. Заявка отменена.",
+                        inline=False
+                    )
+                
+                original_view = RoleApplicationApprovalView(self.application_data)
+                await self.original_message.edit(embed=embed, view=original_view)
+            except Exception as restore_error:
+                logger.error("STATIC CONFLICT: Failed to restore message after error: %s", restore_error)
+            
             await interaction.followup.send(
-                "❌ Произошла ошибка при подтверждении замены.",
+                "❌ Произошла ошибка при подтверждении замены. Заявка отменена.",
                 ephemeral=True
             )
     

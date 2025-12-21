@@ -720,42 +720,73 @@ def is_blacklisted_user(user, config, module=None):
 
 async def has_pending_dismissal_report(bot, user_id, dismissal_channel_id):
     """
-    Check if user has a pending dismissal report (not yet processed).
-    Returns True if user has pending report, False otherwise.
+    Проверка наличия у пользователя незавершённого (pending) рапорта на увольнение.
+    Совместима с новым форматом сообщений (embed title/description) и старым контентом.
+    Возвращает True, если рапорт найден и он ещё не обработан; иначе False.
     """
     if not dismissal_channel_id:
         return False
-        
+    
     try:
         channel = bot.get_channel(dismissal_channel_id)
         if not channel:
             return False
-            
-        # Search through recent messages (last 100)
-        async for message in channel.history(limit=100):
-            # Check if message is from bot and has dismissal report embed
-            if (message.author == bot.user and 
-                message.embeds and
-                message.embeds[0].description and
-                "подал рапорт на увольнение!" in message.embeds[0].description):
-                
-                embed = message.embeds[0]
-                
-                # Check if this report is from the specific user
-                user_mention = f"<@{user_id}>"
-                if user_mention in embed.description:
-                    # Check if report is still pending (not approved/rejected)
-                    status_pending = True
-                    for field in embed.fields:
-                        if field.name == "✅ Обработано":
-                            status_pending = False
-                            break
-                    
-                    if status_pending:
-                        return True
-                        
-        return False
         
+        # Проверяем последние 100 сообщений в канале
+        async for message in channel.history(limit=100):
+            if message.author != bot.user:
+                continue
+            
+            has_embeds = bool(message.embeds)
+            embed = message.embeds[0] if has_embeds else None
+            content = message.content or ""
+            
+            # Определяем, что сообщение — рапорт на увольнение
+            is_dismissal_report = False
+            if embed:
+                title = (embed.title or "")
+                desc = (embed.description or "")
+                if "Рапорт на увольнение" in title:
+                    is_dismissal_report = True
+                elif ("подал рапорт на увольнение!" in desc) or ("Отправитель" in desc):
+                    is_dismissal_report = True
+            
+            # Fallback: старый формат — фраза в content
+            if not is_dismissal_report and content:
+                if "Новый рапорт на увольнение" in content:
+                    is_dismissal_report = True
+            
+            if not is_dismissal_report:
+                continue
+            
+            # Проверяем, что этот рапорт принадлежит конкретному пользователю
+            user_mention = f"<@{user_id}>"
+            mention_in_embed = bool(embed and embed.description and user_mention in embed.description)
+            mention_in_content = user_mention in content
+            if not (mention_in_embed or mention_in_content):
+                continue
+            
+            # Определяем, обработан ли рапорт
+            status_pending = True
+            if embed and embed.fields:
+                for field in embed.fields:
+                    name = (field.name or "")
+                    # Считаем обработанным, если есть поле "Обработано" или "Отказано"
+                    if (
+                        "Обработано" in name or
+                        "✅ Обработано" in name or
+                        "Отказано" in name or
+                        "❌ Отказано" in name or
+                        "Approved" in name or
+                        "Rejected" in name
+                    ):
+                        status_pending = False
+                        break
+            
+            if status_pending:
+                return True
+        
+        return False
     except Exception as e:
         logger.error("Error checking pending dismissal reports: %s", e)
         return False

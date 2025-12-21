@@ -19,7 +19,12 @@ class SimplifiedDismissalModal(ui.Modal):
     """Simplified modal for dismissal reports with auto-filled data"""
     
     def __init__(self, prefilled_name: str = "", prefilled_static: str = "", dismissal_reason: str = ""):
-        super().__init__(title=f"Рапорт на увольнение - {dismissal_reason}")
+        # Формируем заголовок модального окна с ограничением 45 символов
+        base_title = "📋 Рапорт на увольнение"
+        full_title = f"{base_title} — {dismissal_reason}" if dismissal_reason else base_title
+        if len(full_title) > 45:
+            full_title = full_title[:45]
+        super().__init__(title=full_title)
         self.dismissal_reason = dismissal_reason
         
         # Create text inputs with prefilled data

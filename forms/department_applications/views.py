@@ -288,7 +288,7 @@ class DepartmentApplicationModerationView(discord.ui.View):
             
             # Check if this is a transfer application first
             if self.application_data.get('application_type') != 'transfer':
-                error_msg = get_department_applications_message(interaction.guild.id, "transfer.error_not_transfer_application", "❌ Эта кнопка доступна только для заявлений на перевод.")
+                error_msg = get_department_applications_message(interaction.guild.id, "not_transfer", "❌ Эта кнопка доступна только для заявлений на перевод.")
                 await interaction.response.send_message(
                     error_msg,
                     ephemeral=True
@@ -321,10 +321,12 @@ class DepartmentApplicationModerationView(discord.ui.View):
                 return
             
             # Check specific permissions for moderators with roles from second line
-            if not await self._check_permission_permissions(interaction):
-                error_message = self._get_permission_error_message(interaction)
-                await interaction.response.send_message(error_message, ephemeral=True)
-                return
+            # Администраторы пропускают эту проверку
+            if not is_admin:
+                if not await self._check_permission_permissions(interaction):
+                    error_message = self._get_permission_error_message(interaction)
+                    await interaction.response.send_message(error_message, ephemeral=True)
+                    return
             
             # Extract current transfer state from embed
             current_state = self._extract_transfer_state_from_embed(interaction.message.embeds[0])
@@ -359,7 +361,7 @@ class DepartmentApplicationModerationView(discord.ui.View):
                 
                 # Send feedback message
                 await interaction.followup.send(
-                    get_department_applications_message(interaction.guild.id, "transfer.success_permission_granted", "✅ Разрешение на перевод выдано! Ожидаем одобрения руководства нового подразделения."),
+                    get_department_applications_message(interaction.guild.id, "transfer_permission_granted", "✅ Разрешение на перевод выдано! Ожидаем одобрения руководства нового подразделения."),
                     ephemeral=True
                 )
             
@@ -475,7 +477,7 @@ class DepartmentApplicationModerationView(discord.ui.View):
                 
                 # Send success message
                 await interaction.followup.send(
-                    get_department_applications_message(interaction.guild.id, "transfer.success_transfer_completed", "✅ Перевод пользователя выполнен! Роли подразделения и должности назначены автоматически.").replace("пользователя", f"пользователя {target_user.mention}"),
+                    get_department_applications_message(interaction.guild.id, "transfer_completed", "✅ Перевод пользователя выполнен! Роли подразделения и должности назначены автоматически.").replace("пользователя", f"пользователя {target_user.mention}"),
                     ephemeral=True
                 )
                 
@@ -1147,9 +1149,10 @@ class DepartmentApplicationModerationView(discord.ui.View):
     async def _process_database_operation(self, interaction: discord.Interaction, target_user: discord.Member, dept_code: str):
         """Process department application in PostgreSQL database"""
         try:
-            from utils.database_manager import PersonnelManager, SubdivisionMapper
+            from utils.database_manager import PersonnelManager
             from utils.audit_logger import audit_logger, AuditAction
             from utils.config_manager import load_config
+            from utils.user_cache import invalidate_user_cache
             
             # Initialize managers
             pm = PersonnelManager()
@@ -1256,6 +1259,11 @@ class DepartmentApplicationModerationView(discord.ui.View):
             
             if success:
                 logger.info(f"Successfully processed department application: {message}")
+                # Инвалидация кэша пользователя после изменения данных в БД
+                try:
+                    invalidate_user_cache(target_user.id)
+                except Exception as cache_err:
+                    logger.warning(f"CACHE INVALIDATE ERROR: Не удалось удалить пользователя из кэша {target_user.id}: {cache_err}")
             else:
                 logger.warning(f"Database operation completed with issues: {message}")
                 

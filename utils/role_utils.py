@@ -67,7 +67,27 @@ class RoleUtils:
             List[str]: Список удаленных ролей
         """
         removed_roles = []
+        
+        # Получаем все роли должностей из конфига (assignable роли подразделений)
         all_position_role_ids = ping_manager.get_all_position_role_ids()
+        
+        # Также получаем все индивидуальные роли должностей из БД
+        try:
+            from utils.postgresql_pool import get_db_cursor
+            with get_db_cursor() as cursor:
+                cursor.execute("""
+                    SELECT DISTINCT p.role_id 
+                    FROM position_subdivision ps
+                    JOIN positions p ON ps.position_id = p.id
+                    WHERE p.role_id IS NOT NULL
+                """)
+                db_position_roles = cursor.fetchall()
+                # Добавляем роли из БД к списку
+                for row in db_position_roles:
+                    if row['role_id'] and row['role_id'] not in all_position_role_ids:
+                        all_position_role_ids.append(row['role_id'])
+        except Exception as e:
+            logger.warning("Не удалось получить роли должностей из БД: %s", e)
 
         for role_id in all_position_role_ids:
             role = user.guild.get_role(role_id)

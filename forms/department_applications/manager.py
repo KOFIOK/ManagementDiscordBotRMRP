@@ -15,6 +15,9 @@ from utils.department_manager import DepartmentManager
 from .views import DepartmentSelectView
 from utils.logging_setup import get_logger
 
+# Московский часовой пояс (UTC+3)
+MSK_TIMEZONE = timezone(timedelta(hours=3))
+
 logger = get_logger(__name__)
 
 class DepartmentApplicationManager:

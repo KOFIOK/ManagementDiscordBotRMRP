@@ -729,6 +729,8 @@ class MilitaryEditModal(ui.Modal):
     def __init__(self, application_data: dict):
         super().__init__(title="✏️ Редактирование военной заявки")
         self.application_data = application_data
+        self.recruitment_cfg = get_recruitment_config()
+        self.allow_rank_selection = self.recruitment_cfg.get('allow_user_rank_selection', False)
         
         # Предзаполняем поля текущими данными
         self.name_input = ui.TextInput(
@@ -751,7 +753,13 @@ class MilitaryEditModal(ui.Modal):
         )
         self.add_item(self.static_input)
         
-        # Rank is always default recruit rank for military personnel, no need for input field
+        # Если включен выбор ранга - добавляем Select через ui.Label
+        if self.allow_rank_selection:
+            self.rank_dropdown = ui.Label(
+                text='🎖️ Выберите желаемое звание:',
+                component=RankDropdown(self.recruitment_cfg)
+            )
+            self.add_item(self.rank_dropdown)
     
     async def on_submit(self, interaction: discord.Interaction):
         """Обработка редактирования военной заявки"""
@@ -767,11 +775,17 @@ class MilitaryEditModal(ui.Modal):
                 )
                 return
             
+            # Получаем ранг из Select если включен выбор ранга
+            rank = rank_manager.get_default_recruit_rank_sync()
+            if self.allow_rank_selection and hasattr(self, 'rank_dropdown'):
+                if self.rank_dropdown.component.values:
+                    rank = self.rank_dropdown.component.values[0]
+            
             # Собираем новые данные
             updated_data = {
                 'name': self.name_input.value.strip(),
                 'static': formatted_static,
-                'rank': rank_manager.get_default_recruit_rank_sync(),  # Always set rank as default for military personnel
+                'rank': rank,
                 # Сохраняем оригинальные данные
                 'type': self.application_data['type'],
                 'user_id': self.application_data['user_id'],
@@ -800,16 +814,17 @@ class MilitaryEditModal(ui.Modal):
             embed = interaction.message.embeds[0]
             embed.color = discord.Color.blue()  # Оставляем синий цвет для военных
             
-            # Обновляем поля и удаляем старое поле "Отредактировано" если есть
+            # Обновляем поля правильно - по названию поля
             fields_to_remove = []
             for i, field in enumerate(embed.fields):
                 if field.name == "📝 Имя Фамилия":
                     embed.set_field_at(i, name="📝 Имя Фамилия", value=updated_data['name'], inline=True)
-                elif field.name == "✏️ Отредактировано":
-                    embed.set_field_at(i, name="🔢 Статик", value=updated_data['static'], inline=True)
                 elif field.name == "🔢 Статик":
+                    embed.set_field_at(i, name="🔢 Статик", value=updated_data['static'], inline=True)
+                elif field.name == "🎖️ Звание":
                     embed.set_field_at(i, name="🎖️ Звание", value=updated_data['rank'], inline=True)
                 elif field.name == "✏️ Отредактировано":
+                    # Помечаем старое поле для удаления
                     fields_to_remove.append(i)
             
             # Удаляем старые поля "Отредактировано" (в обратном порядке, чтобы не сбить индексы)

@@ -8,7 +8,7 @@ from discord.ext import commands
 import functools
 import traceback
 
-from utils.config_manager import load_config, is_moderator_or_admin, is_administrator, can_moderate_user
+from utils.config_manager import load_config, is_moderator_or_admin, is_administrator, can_moderate_user, get_recruitment_config
 from utils.database_manager import PersonnelManager
 from utils.database_manager.position_service import position_service
 from utils.nickname_manager import nickname_manager
@@ -217,7 +217,17 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
         )
         self.add_item(self.static_input)
         
-        # Rank is always "Рядовой" for new recruits, no need for input field
+        # Если включен выбор ранга - добавляем Select через ui.Label
+        self.recruitment_cfg = get_recruitment_config()
+        self.allow_rank_selection = self.recruitment_cfg.get('allow_user_rank_selection', False)
+        
+        if self.allow_rank_selection:
+            from forms.role_assignment.modals import RankDropdown
+            self.rank_dropdown = ui.Label(
+                text='🎖️ Выберите желаемое звание:',
+                component=RankDropdown(self.recruitment_cfg)
+            )
+            self.add_item(self.rank_dropdown)
     
     async def on_submit(self, interaction: discord.Interaction):
         """Process recruitment submission using PersonnelManager"""
@@ -310,12 +320,18 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
             # All validation passed, defer for processing
             await interaction.response.defer(ephemeral=True)
             
+            # Получаем ранг из Select если включен выбор ранга
+            rank = "Рядовой"  # Дефолтный ранг
+            if self.allow_rank_selection and hasattr(self, 'rank_dropdown'):
+                if self.rank_dropdown.component.values:
+                    rank = self.rank_dropdown.component.values[0]
+            
             # Process recruitment using PersonnelManager
             success = await self._process_recruitment_with_personnel_manager(
                 interaction,
                 full_name,
                 formatted_static,
-                "Рядовой"  # Always set rank as "Рядовой" for new recruits
+                rank
             )
             
             if success:
@@ -330,7 +346,7 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                         f"**Имя:** {first_name}\n"
                         f"**Фамилия:** {last_name}\n"
                         f"**Статик:** {formatted_static}\n"
-                        f"**Звание:** Рядовой"
+                        f"**Звание:** {rank}"
                     ),
                     inline=False
                 )
@@ -541,13 +557,17 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
     async def _assign_military_roles(self, guild, config, moderator, application_data):
         """Assign military roles and set nickname using RoleUtils"""
         try:
-            # Use RoleUtils to assign default recruit rank and military roles
-            recruit_assigned = await role_utils.assign_default_recruit_rank(self.target_user, moderator)
-            if not recruit_assigned:
-                logger.error(f" RECRUITMENT: Failed to assign recruit rank to {self.target_user}")
-                return
-
-            # Assign military roles using RoleUtils
+            # Если выбранный ранг не "Рядовой", напрямую используем assign_military_roles
+            selected_rank = application_data.get('rank', 'Рядовой')
+            
+            if selected_rank == 'Рядовой':
+                # Для рядового используем стандартную функцию
+                recruit_assigned = await role_utils.assign_default_recruit_rank(self.target_user, moderator)
+                if not recruit_assigned:
+                    logger.error(f"RECRUITMENT: Failed to assign recruit rank to {self.target_user}")
+                    return
+            
+            # Assign military roles using RoleUtils (работает для любого ранга)
             military_assigned = await role_utils.assign_military_roles(self.target_user, application_data, moderator)
             if not military_assigned:
                 logger.error(f"RECRUITMENT: Failed to assign military roles to {self.target_user}")

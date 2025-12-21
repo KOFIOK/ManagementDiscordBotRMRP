@@ -44,7 +44,7 @@ async def handle_moderator_assignment(guild: discord.Guild, target: discord.Memb
         dm_sent = await send_moderator_welcome_dm(user)
         
         status = "✅" if dm_sent else "❌"
-        logger.info("%s Уведомление модератору {user.display_name}: DM %s", status, status)
+        logger.info(f"%s Уведомление модератору {user.display_name}: DM %s", status, status)
 
 
 async def handle_administrator_assignment(guild: discord.Guild, target: discord.Member | discord.Role, old_config: dict) -> None:
@@ -68,7 +68,7 @@ async def handle_administrator_assignment(guild: discord.Guild, target: discord.
         dm_sent = await send_administrator_welcome_dm(user)
         
         status = "✅" if dm_sent else "❌"
-        logger.info("%s Уведомление администратору {user.display_name}: DM %s", status, status)
+        logger.info(f"%s Уведомление администратору {user.display_name}: DM %s", status, status)
 
 
 # ===================== ОСНОВНОЙ COG =====================

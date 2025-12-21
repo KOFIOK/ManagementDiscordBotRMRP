@@ -207,7 +207,7 @@ def test_complete_setup():
     logger.info("•  Automatic recovery from corrupted config files")
     logger.info("•  Unified settings interface for all configurations")
     logger.info("•  Moderator authorization with PostgreSQL integration")
-    logger.info("• � Automatic personnel data management in PostgreSQL database")
+    logger.info("• Automatic personnel data management in PostgreSQL database")
     logger.info("•  Simplified access management system")
     
     return True

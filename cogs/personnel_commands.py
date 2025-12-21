@@ -70,7 +70,7 @@ class PersonnelNameChangeModal(discord.ui.Modal, title="Изменение ФИ�
             last_name = self.last_name_input.value.strip().capitalize()
             static = self.static_input.value.strip() or None
             
-            logger.info("MODAL SUBMIT: Изменение ФИО {self.target_member.display_name} -> %s %s", first_name, last_name)
+            logger.info(f"MODAL SUBMIT: Изменение ФИО {self.target_member.display_name} -> %s %s", first_name, last_name)
             
             # Сначала откладываем ответ (defer), чтобы потом можно было редактировать
             await interaction.response.defer(ephemeral=True)
@@ -295,7 +295,7 @@ class PersonnelCommands(commands.Cog):
             self._cached_settings = settings
             self._cache_timestamp = current_time
             
-            logger.info("PostgreSQL settings loaded: {len(settings['actions'])} actions, {len(settings['ranks'])} ranks, {len(settings['departments'])} subdivisions, {len(settings['positions'])} positions")
+            logger.info(f"PostgreSQL settings loaded: {len(settings['actions'])} actions, {len(settings['ranks'])} ranks, {len(settings['departments'])} subdivisions, {len(settings['positions'])} positions")
             return settings
             
         except Exception as e:
@@ -530,7 +530,7 @@ class PersonnelCommands(commands.Cog):
                         await interaction.followup.send(embed=embed, ephemeral=True)
                         return
 
-                    logger.info("AUDIT COMMAND: Повышение в звании {сотрудник.display_name} -> %s", звание)
+                    logger.info(f"AUDIT COMMAND: Повышение в звании {сотрудник.display_name} -> %s", звание)
 
                     # Get current rank BEFORE changing it in database
                     from utils.postgresql_pool import get_db_cursor
@@ -677,7 +677,7 @@ class PersonnelCommands(commands.Cog):
                         await interaction.followup.send(embed=embed, ephemeral=True)
                         return
 
-                    logger.info("AUDIT COMMAND: Разжалование в звании {сотрудник.display_name} -> %s", звание)
+                    logger.info(f"AUDIT COMMAND: Разжалование в звании {сотрудник.display_name} -> %s", звание)
 
                     # Get current rank BEFORE changing it in database
                     from utils.postgresql_pool import get_db_cursor
@@ -827,7 +827,7 @@ class PersonnelCommands(commands.Cog):
                     # Получить дефолтные значения из базы данных
                     defaults = await self._get_default_values_from_db()
                     
-                    logger.info("AUDIT COMMAND: Перевод {сотрудник.display_name} -> %s", подразделение)
+                    logger.info(f"AUDIT COMMAND: Перевод {сотрудник.display_name} -> %s", подразделение)
                     
                     # Используем название подразделения напрямую как ключ
                     subdivision_key = подразделение

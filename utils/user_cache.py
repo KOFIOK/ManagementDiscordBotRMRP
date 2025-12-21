@@ -104,7 +104,7 @@ class UserDataCache:
             # Если предзагрузка прошла, но пользователь не найден - это может быть новый пользователь
             # Поэтому загружаем из PostgreSQL, а не возвращаем None
             if self._bulk_preloaded and user_id not in self._cache:
-                logger.info("� BULK MISS: Пользователь %s не найден в предзагруженных данных, загружаем из PostgreSQL", user_id)
+                logger.info("BULK MISS: Пользователь %s не найден в предзагруженных данных, загружаем из PostgreSQL", user_id)
             
             # Пытаемся использовать оптимизированный запрос только если он не будет вызывать рекурсию
             user_data = None

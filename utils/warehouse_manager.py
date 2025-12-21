@@ -426,14 +426,14 @@ class WarehouseManager:
         
         # Информация о пользователе - объединяем имя и статик
         embed.add_field(
-            name="� Имя | Статик", 
+            name="Имя | Статик", 
             value=f"{name or 'Не указано'} | {static or 'Не указан'}", 
             inline=False
         )
         
         # Подразделение, должность, звание в правильном порядке
-        embed.add_field(name="� Подразделение", value=department or "Не определено", inline=True)
-        embed.add_field(name="� Должность", value=position or "Не указано", inline=True)
+        embed.add_field(name="Подразделение", value=department or "Не определено", inline=True)
+        embed.add_field(name="Должность", value=position or "Не указано", inline=True)
         embed.add_field(name="🎖️ Звание", value=rank or "Не указано", inline=True)
         
         # Добавляем пустое поле для разделения

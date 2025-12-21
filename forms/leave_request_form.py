@@ -133,7 +133,7 @@ async def restore_leave_request_views(bot):
             view = LeaveRequestApprovalView(request["id"])
             bot.add_view(view)
         
-        logger.info("Leave request views restored: {len(pending_requests)} approval views")
+        logger.info(f"Leave request views restored: {len(pending_requests)} approval views")
         
     except Exception as e:
         logger.warning("Error restoring leave request views: %s", e)
@@ -178,7 +178,7 @@ async def restore_leave_request_approval_views(bot, channel):
                         except discord.NotFound:
                             continue
                         except Exception as e:
-                            logger.warning("Error restoring view for message {message.id}: %s", e)
+                            logger.warning(f"Error restoring view for message {message.id}: %s", e)
         
         logger.info("Restoring %s leave request approval views...", approval_views_restored)
         

@@ -279,12 +279,12 @@ class PsychologistModal(BaseMedicalModal):
 async def send_medical_registration_message(channel):
     """Send medical registration message with buttons to channel (called from settings)"""
     try:
-        logger.info("[DEBUG] Attempting to send medical registration message to channel: {channel.name} (ID: {channel.id})")
+        logger.info(f"[DEBUG] Attempting to send medical registration message to channel: {channel.name} (ID: {channel.id})")
           # Check if pinned message already exists
         pinned_messages = await channel.pins()
         existing_message = None
         
-        logger.info("[DEBUG] Found {len(pinned_messages)} pinned messages")
+        logger.info(f"[DEBUG] Found {len(pinned_messages)} pinned messages")
         
         for message in pinned_messages:
             if (message.author == channel.guild.me and 

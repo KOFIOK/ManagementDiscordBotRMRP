@@ -110,17 +110,24 @@ class RoleUtils:
                 return False
 
             # Получить имя подразделения для причины
-            dept_info = ping_manager.get_department_info(dept_code)
-            dept_name = dept_info.get('name', dept_code) if dept_info else dept_code
+            try:
+                dept_info = ping_manager.get_department_info(dept_code)
+                if isinstance(dept_info, dict):
+                    dept_name = dept_info.get('name', dept_code)
+                else:
+                    dept_name = dept_code
+            except Exception as dept_info_error:
+                logger.warning("Не удалось получить информацию о подразделении %s: %s", dept_code, dept_info_error)
+                dept_name = dept_code
 
             reason = get_role_reason(
                 user.guild.id,
                 "department_application.approved",
                 f"Заявка в подразделение: одобрена ({dept_name})"
-            ).format(moderator=moderator.display_name)
+            ).format(moderator=moderator.display_name, department_name=dept_name)
 
             await user.add_roles(dept_role, reason=reason)
-            logger.info("Назначена роль подразделения {dept_role.name} пользователю %s", user)
+            logger.info("Назначена роль подразделения %s пользователю %s", dept_role.name, user)
             return True
 
         except Exception as e:
@@ -246,7 +253,11 @@ class RoleUtils:
                             position_data = position_service.get_position_by_id(new_position_id)
                             position_name = position_data['name'] if position_data else f"Должность ID {new_position_id}"
                             
-                            reason = get_role_reason(guild.id, "position_assignment.assigned", "Назначение должности").format(position=position_name)
+                            reason = get_role_reason(
+                                guild.id,
+                                "position_assignment.assigned",
+                                "Назначение должности"
+                            ).format(position=position_name, moderator=moderator_display)
                             await user.add_roles(new_role, reason=reason)
                             role_changes.append(f"+{position_name}")
                         except Exception as e:
@@ -260,7 +271,7 @@ class RoleUtils:
             if role_changes:
                 logger.info(f"Изменения ролей: {', '.join(role_changes)}")
             else:
-                logger.info(f" Изменения ролей не требуются для {user.display_name}")
+                logger.info(f"Изменения ролей не требуются для {user.display_name}")
             
             return True
             

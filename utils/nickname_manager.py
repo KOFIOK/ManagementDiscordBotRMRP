@@ -853,9 +853,9 @@ class NicknameManager:
                 first_name = personnel_data['first_name']
                 last_name = personnel_data['last_name']
             
-            logger.info(f"� RANK_CHANGE DEBUG: Текущий никнейм: '{current_nickname}'")
-            logger.info(f"� RANK_CHANGE DEBUG: Parsed: {parsed}")
-            logger.info(f"� RANK_CHANGE DEBUG: Извлеченное имя: {first_name} {last_name}")
+            logger.info(f"RANK_CHANGE DEBUG: Текущий никнейм: '{current_nickname}'")
+            logger.info(f"RANK_CHANGE DEBUG: Parsed: {parsed}")
+            logger.info(f"RANK_CHANGE DEBUG: Извлеченное имя: {first_name} {last_name}")
             logger.info(f" RANK_CHANGE DEBUG: Тип изменения: {change_type}")
             
             # Если никнейм имеет особый формат или должностной, не трогаем его
@@ -865,34 +865,34 @@ class NicknameManager:
             
             # Получаем новую аббревиатуру звания
             rank_data = rank_manager.get_rank_by_name(new_rank_name)
-            logger.info(f"� RANK_CHANGE DEBUG: Ранг '{new_rank_name}' -> данные: {rank_data}")
+            logger.info(f"RANK_CHANGE DEBUG: Ранг '{new_rank_name}' -> данные: {rank_data}")
             
             if not rank_data or not rank_data.get('abbreviation'):
                 logger.warning(f"Не найдена аббревиатура для нового звания: {new_rank_name}")
-                new_rank_abbr = ""  # Пустая аббревиатура
-            else:
-                new_rank_abbr = rank_data['abbreviation']
+                logger.info(f"Пропускаем изменение никнейма при изменении звания - аббревиатура неизвестна")
+                return None
             
-            logger.info(f"� RANK_CHANGE DEBUG: Аббревиатура ранга: '{new_rank_abbr}'")
+            new_rank_abbr = rank_data['abbreviation']
+            logger.info(f"RANK_CHANGE DEBUG: Аббревиатура ранга: '{new_rank_abbr}'")
             
             # Определяем подразделение
             subdivision_abbr = None
             if parsed['format_type'] == 'standard' and parsed['subdivision'] and parsed['subdivision'] != "None":
                 # Обновляем существующий формат
                 subdivision_abbr = parsed['subdivision']
-                logger.info(f"� RANK_CHANGE DEBUG: Используем подразделение из никнейма: '{subdivision_abbr}'")
+                logger.info(f"RANK_CHANGE DEBUG: Используем подразделение из никнейма: '{subdivision_abbr}'")
             else:
                 # Если нет подразделения в никнейме, проверяем БД
                 if personnel_data and personnel_data.get('subdivision_abbreviation'):
                     subdivision_abbr = personnel_data['subdivision_abbreviation']
-                    logger.info(f"� RANK_CHANGE DEBUG: Используем подразделение из БД: '{subdivision_abbr}'")
+                    logger.info(f"RANK_CHANGE DEBUG: Используем подразделение из БД: '{subdivision_abbr}'")
                 else:
                     # Если нигде нет подразделения, используем ВА
                     subdivision_abbr = "ВА"
-                    logger.info(f"� RANK_CHANGE DEBUG: Используем подразделение по умолчанию: '{subdivision_abbr}'")
+                    logger.info(f"RANK_CHANGE DEBUG: Используем подразделение по умолчанию: '{subdivision_abbr}'")
             
             new_nickname = self.build_service_nickname(subdivision_abbr, new_rank_abbr, first_name, last_name)
-            logger.info(f"� RANK_CHANGE DEBUG: Построенный никнейм: '{new_nickname}'")
+            logger.info(f"RANK_CHANGE DEBUG: Построенный никнейм: '{new_nickname}'")
             
             await member.edit(nick=new_nickname, reason=get_role_reason(member.guild.id, f"rank_change.{'promotion' if change_type == 'повышение' else 'demotion' if change_type == 'понижение' else 'restoration' if change_type == 'восстановление' else 'automatic'}", "Смена ранга: {old_rank} → {new_rank}").format(old_rank="предыдущий", new_rank=new_rank_name, moderator="система"))
             logger.info(f"✅ Никнейм при изменении звания ({change_type}): {member} -> {new_nickname}")

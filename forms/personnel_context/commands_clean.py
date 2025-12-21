@@ -480,7 +480,6 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                         'rank': rank,
                         'department': 'Военная Академия'
                     }
-                    logger.error("RECRUITMENT ERROR: %s", e)
                     await audit_logger.send_personnel_audit(
                         guild=interaction.guild,
                         action=await AuditAction.HIRING(),
@@ -522,7 +521,7 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                 # Step: Assign Discord roles and set nickname (like button approval does)
                 try:
                     config = load_config()
-                    await self._assign_military_roles(interaction.guild, config, interaction.user)
+                    await self._assign_military_roles(interaction.guild, config, interaction.user, application_data)
                     logger.info("RECRUITMENT: Role assignment process completed")
                 except Exception as role_error:
                     logger.error("RECRUITMENT: Failed to assign roles: %s", role_error)
@@ -539,7 +538,7 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
             traceback.print_exc()
             return False
     
-    async def _assign_military_roles(self, guild, config, moderator):
+    async def _assign_military_roles(self, guild, config, moderator, application_data):
         """Assign military roles and set nickname using RoleUtils"""
         try:
             # Use RoleUtils to assign default recruit rank and military roles
@@ -549,9 +548,9 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                 return
 
             # Assign military roles using RoleUtils
-            military_assigned = await role_utils.assign_military_roles(self.target_user, moderator)
-            if military_assigned:
-                logger.error("DISMISSAL ERROR: %s", e)
+            military_assigned = await role_utils.assign_military_roles(self.target_user, application_data, moderator)
+            if not military_assigned:
+                logger.error(f"RECRUITMENT: Failed to assign military roles to {self.target_user}")
             
             # Set military nickname
             await self._set_military_nickname()
@@ -563,13 +562,10 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
     async def _set_military_nickname(self):
         """Set nickname for military recruit using nickname_manager"""
         try:
-            full_name = self.name_input.value.strip()
+            first_name = self.first_name_input.value.strip()
+            last_name = self.last_name_input.value.strip()
             static = self.static_input.value.strip()
-            
-            # Extract first and last name
-            name_parts = full_name.split()
-            first_name = name_parts[0] if name_parts else "Неизвестно"
-            last_name = name_parts[-1] if len(name_parts) > 1 else "Неизвестно"
+            full_name = f"{first_name} {last_name}"
             
             # Use nickname_manager for consistent formatting
             new_nickname = await nickname_manager.handle_hiring(
@@ -581,7 +577,7 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
             )
             
             if new_nickname:
-                logger.info("RECRUITMENT: Set nickname using nickname_manager: {self.target_user.display_name} -> %s", new_nickname)
+                logger.info(f"RECRUITMENT: Set nickname using nickname_manager: {self.target_user.display_name} -> %s", new_nickname)
             else:
                 # Fallback to old logic if nickname_manager fails
                 full_nickname = f"ВА | {full_name}"
@@ -1010,7 +1006,7 @@ class DismissalModal(ui.Modal, title="Увольнение"):
             )
 
             if roles_cleared:
-                logger.info("DISMISSAL: Cleared all roles from {self.target_user.display_name}: {', '.join(roles_cleared)}")
+                logger.info(f"DISMISSAL: Cleared all roles from {self.target_user.display_name}: {', '.join(roles_cleared)}")
             else:
                 logger.info(f" DISMISSAL: No roles to clear for {self.target_user.display_name}")
             
@@ -1448,6 +1444,13 @@ class PositionSelect(ui.Select):
                 # Update Discord roles for position change
                 if user_member:
                     try:
+                        # Refresh member object to get current roles
+                        try:
+                            user_member = await user_member.guild.fetch_member(user_member.id)
+                            logger.info("🔄 Refreshed member object before position role update (old method)")
+                        except Exception as fetch_error:
+                            logger.warning("Could not refresh member: %s", fetch_error)
+                        
                         new_position_id = int(position_id) if position_id.isdigit() else None
                         from utils.role_utils import role_utils
                         await role_utils.smart_update_user_position_roles(
@@ -1662,17 +1665,35 @@ class PositionSelect(ui.Select):
                     logger.info("Could not get personnel data for department transfer audit notification")
             except Exception as e:
                 logger.error("Error sending department transfer audit notification: %s", e)
+
+            # Update nickname for department change via nickname_manager
+            try:
+                # Fetch fresh personnel summary to get current rank after department update
+                personnel_summary = await manager.get_personnel_summary(self.target_user.id)
+                rank_name = personnel_summary.get('rank', 'Не назначено') if personnel_summary else 'Не назначено'
+
+                new_nickname = await nickname_manager.handle_transfer(
+                    member=self.target_user,
+                    subdivision_key=self.dept_key,
+                    rank_name=rank_name
+                )
+
+                if new_nickname:
+                    logger.info("DEPARTMENT CHANGE NICKNAME: Никнейм обновлён через nickname_manager: %s -> %s", self.target_user.display_name, new_nickname)
+                else:
+                    logger.info("DEPARTMENT CHANGE NICKNAME: Автозамена никнейма пропущена или не изменилась для %s", self.target_user.display_name)
+            except Exception as e:
+                logger.error("DEPARTMENT CHANGE NICKNAME ERROR: Не удалось обновить никнейм через nickname_manager: %s", e)
             
             # Assign position if selected (this will log its own history record)
             position_assigned = False
             if selected_position_id not in ["no_position", "default"] and position_name:
-                position_assigned = await self._assign_position_in_db(
-                    self.target_user.id, 
-                    selected_position_id, 
-                    position_name, 
-                    interaction.user.id,
-                    old_position_name,  # Pass the old position for history tracking
-                    interaction.user  # Pass moderator member
+                position_assigned = await assign_position_in_db(
+                    user_member=self.target_user,
+                    position_id=selected_position_id,
+                    position_name=position_name,
+                    moderator_member=interaction.user,
+                    old_position_name=old_position_name
                 )
                 logger.info("DEPARTMENT CHANGE: Position assignment result: %s", position_assigned)
                 
@@ -1778,6 +1799,13 @@ class PositionSelect(ui.Select):
                 
                 # Update Discord roles using RoleUtils - remove position role
                 try:
+                    # Refresh member object to get current roles
+                    try:
+                        self.target_user = await self.target_user.guild.fetch_member(self.target_user.id)
+                        logger.info("🔄 Refreshed member object before removing old position role")
+                    except Exception as fetch_error:
+                        logger.warning("Could not refresh member: %s", fetch_error)
+                    
                     await role_utils.clear_all_position_roles(
                         self.target_user,
                         reason="Снятие должности"
@@ -1801,7 +1829,7 @@ class PositionSelect(ui.Select):
             
             success_message = f"Пользователь **{self.target_user.display_name}** успешно {action_text} в **{self.dept_name}**{position_text}!"
             
-            logger.info(f" DEPARTMENT CHANGE: Successfully completed for user {self.target_user.id}")
+            logger.info(f"DEPARTMENT CHANGE: Successfully completed for user {self.target_user.id}")
             return True, success_message
             
         except Exception as e:
@@ -2198,12 +2226,22 @@ class PositionOnlySelect(ui.Select):
                 # Update Discord roles using RoleUtils after position removal
                 if user_member:
                     try:
-                        # Remove all position roles
-                        await role_utils.clear_all_position_roles(
+                        # Refresh member object to get current roles from Discord API
+                        try:
+                            user_member = await user_member.guild.fetch_member(user_member.id)
+                            logger.info("🔄 Refreshed member object before removing position roles")
+                        except Exception as fetch_error:
+                            logger.warning("Could not refresh member: %s", fetch_error)
+                        
+                        # Remove all position roles via smart updater
+                        from utils.role_utils import role_utils
+                        await role_utils.smart_update_user_position_roles(
+                            user_member.guild,
                             user_member,
-                            reason="Снятие должности"
+                            None,
+                            None
                         )
-                        logger.info(f" Position role removed for {user_member.display_name}")
+                        logger.info(f" Position roles removed for {user_member.display_name}")
                     except Exception as role_error:
                         logger.error("Warning: Failed to remove position role: %s", role_error)
                 
@@ -2219,13 +2257,12 @@ class PositionOnlySelect(ui.Select):
             await interaction.response.defer(ephemeral=True)
             
             # Use the same assignment logic from department change
-            success = await self._assign_position_in_db(
-                self.target_user.id, 
-                position_id, 
-                position_name, 
-                interaction.user.id,
-                None,  # old_position_name
-                interaction.user  # moderator_member
+            success = await assign_position_in_db(
+                user_member=self.target_user,
+                position_id=position_id,
+                position_name=position_name,
+                moderator_member=interaction.user,
+                old_position_name=None
             )
             
             if not success:
@@ -2369,133 +2406,149 @@ class PositionOnlySelect(ui.Select):
             logger.error("Error in position assignment: %s", e)
             await interaction.followup.send(f" **Ошибка:** {str(e)}", ephemeral=True)
     
-    async def _assign_position_in_db(self, user_discord_id: int, position_id: str, position_name: str, moderator_discord_id: int, moderator_member: discord.Member = None) -> bool:
-        """Assign position to user in database and create history record (reuse existing logic)"""
-        try:
-            from utils.postgresql_pool import get_db_cursor
-            from datetime import datetime, timezone, timedelta
-            
-            # Get old position name for history tracking
-            old_position_name = None
+async def assign_position_in_db(user_member: discord.Member, position_id: str, position_name: str, moderator_member: discord.Member, old_position_name: str | None = None) -> bool:
+    """Общая логика назначения должности в БД и обновления ролей.
+    Используется как при переводе в подразделение, так и при отдельном назначении должности.
+    """
+    try:
+        from utils.postgresql_pool import get_db_cursor
+        from datetime import datetime, timezone, timedelta
+        import json
+
+        user_discord_id = user_member.id
+        moderator_discord_id = moderator_member.id
+
+        # Получаем прошлую должность, если не передана
+        if old_position_name is None:
             with get_db_cursor() as cursor:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT pos.name as position_name
                     FROM personnel p
                     JOIN employees e ON p.id = e.personnel_id
                     LEFT JOIN position_subdivision ps ON e.position_subdivision_id = ps.id
                     LEFT JOIN positions pos ON ps.position_id = pos.id
                     WHERE p.discord_id = %s AND p.is_dismissal = false
-                """, (user_discord_id,))
+                    """,
+                    (user_discord_id,)
+                )
                 old_pos_result = cursor.fetchone()
-                if old_pos_result and old_pos_result['position_name']:
+                if old_pos_result and old_pos_result.get('position_name'):
                     old_position_name = old_pos_result['position_name']
-            
-            # Get user as member for role updates
-            user_member = None
-            try:
-                # Get user as member for role updates
-                if hasattr(self, 'target_user'):
-                    user_member = self.target_user
-            except Exception as e:
-                logger.warning("Warning: Could not get user member for role update: %s", e)
-            
-            with get_db_cursor() as cursor:
-                # Get personnel ID
-                cursor.execute("SELECT id FROM personnel WHERE discord_id = %s AND is_dismissal = false;", (user_discord_id,))
-                personnel_result = cursor.fetchone()
-                if not personnel_result:
-                    return False
-                personnel_id = personnel_result['id']
-                
-                # Get position_subdivision_id for the current user's subdivision
-                cursor.execute("""
-                    SELECT ps.id FROM position_subdivision ps
-                    JOIN employees e ON ps.subdivision_id = e.subdivision_id
-                    WHERE e.personnel_id = %s AND ps.position_id = %s
-                    LIMIT 1;
-                """, (personnel_id, position_id))
-                
-                ps_result = cursor.fetchone()
-                if not ps_result:
-                    return False
-                position_subdivision_id = ps_result['id']
-                
-                # Update employee with new position
-                cursor.execute("""
-                    UPDATE employees 
-                    SET position_subdivision_id = %s
-                    WHERE personnel_id = %s;
-                """, (position_subdivision_id, personnel_id))
-                
-                # Get moderator personnel ID for history
-                cursor.execute("SELECT id FROM personnel WHERE discord_id = %s;", (moderator_discord_id,))
-                moderator_result = cursor.fetchone()
-                if not moderator_result:
-                    return False
-                moderator_personnel_id = moderator_result['id']
-                
-                # Create history record for position assignment (action_id = 5)
-                import json
-                changes = {
-                    "rank": {
-                        "new": None,
-                        "previous": None
-                    },
-                    "position": {
-                        "new": position_name,
-                        "previous": old_position_name  # Now tracking previous position
-                    },
-                    "subdivision": {
-                        "new": None,
-                        "previous": None
-                    }
-                }
-                
-                cursor.execute("""
-                    INSERT INTO history (personnel_id, action_id, performed_by, details, changes, action_date)
-                    VALUES (%s, %s, %s, %s, %s, %s);
-                """, (
-                    personnel_id,
-                    5,  # Position assignment action_id
-                    moderator_personnel_id,
-                    None,  # details = NULL
-                    json.dumps(changes, ensure_ascii=False),
-                    datetime.now(timezone(timedelta(hours=3)))  # Moscow time
-                ))
-                
-                # Update Discord roles using RoleUtils for position change
-                if user_member:
-                    try:
-                        # Get department code from subdivision name
-                        from utils.config_manager import load_config
-                        config = load_config()
-                        dept_code = None
-                        for code, dept_info in config.get('departments', {}).items():
-                            if dept_info.get('name') == self.subdivision_name:
-                                dept_code = code
-                                break
 
-                        if dept_code:
-                            # Clear old position roles and assign new ones
-                            await role_utils.clear_all_position_roles(
-                                user_member,
-                                reason="Смена должности"
-                            )
-                            await role_utils.assign_position_roles(
-                                user_member,
-                                dept_code,
-                                moderator_member
-                            )
-                        else:
-                            logger.info(f" Could not find department code for {self.subdivision_name}")
-                    except Exception as e:
-                        logger.error("Error updating position roles: %s", e)
-                
-                return True
-                
-        except Exception as e:
-            logger.error("Error in _assign_position_in_db: %s", e)
-            return False
+        with get_db_cursor() as cursor:
+            # Ищем personnel_id пользователя
+            cursor.execute("SELECT id FROM personnel WHERE discord_id = %s AND is_dismissal = false;", (user_discord_id,))
+            personnel_result = cursor.fetchone()
+            if not personnel_result:
+                return False
+            personnel_id = personnel_result['id']
+
+            # Определяем текущий subdivision пользователя и позицию для него
+            cursor.execute(
+                """
+                SELECT e.subdivision_id
+                FROM employees e
+                WHERE e.personnel_id = %s
+                LIMIT 1;
+                """,
+                (personnel_id,)
+            )
+            emp_sub_result = cursor.fetchone()
+            if not emp_sub_result or not emp_sub_result.get('subdivision_id'):
+                return False
+            subdivision_id = emp_sub_result['subdivision_id']
+
+            # Берём связку position_subdivision
+            cursor.execute(
+                """
+                SELECT ps.id FROM position_subdivision ps
+                WHERE ps.subdivision_id = %s AND ps.position_id = %s
+                LIMIT 1;
+                """,
+                (subdivision_id, position_id)
+            )
+            ps_result = cursor.fetchone()
+            if not ps_result:
+                return False
+            position_subdivision_id = ps_result['id']
+
+            # Обновляем должность сотрудника
+            cursor.execute(
+                """
+                UPDATE employees
+                SET position_subdivision_id = %s
+                WHERE personnel_id = %s;
+                """,
+                (position_subdivision_id, personnel_id)
+            )
+
+            # Получаем personnel_id модератора для истории
+            cursor.execute("SELECT id FROM personnel WHERE discord_id = %s;", (moderator_discord_id,))
+            moderator_result = cursor.fetchone()
+            if not moderator_result:
+                return False
+            moderator_personnel_id = moderator_result['id']
+
+            # Пишем историю (action_id = 5 — назначение должности)
+            changes = {
+                "rank": {"new": None, "previous": None},
+                "position": {"new": position_name, "previous": old_position_name},
+                "subdivision": {"new": None, "previous": None},
+            }
+
+            cursor.execute(
+                """
+                INSERT INTO history (personnel_id, action_id, performed_by, details, changes, action_date)
+                VALUES (%s, %s, %s, %s, %s, %s);
+                """,
+                (
+                    personnel_id,
+                    5,
+                    moderator_personnel_id,
+                    None,
+                    json.dumps(changes, ensure_ascii=False),
+                    datetime.now(timezone(timedelta(hours=3))),
+                ),
+            )
+
+        # Обновляем роли должности через умную систему позиций
+        try:
+            # Refresh member object to get current roles from Discord API
+            try:
+                user_member = await user_member.guild.fetch_member(user_member.id)
+                logger.info("🔄 Refreshed member object before assigning position roles")
+            except Exception as fetch_error:
+                logger.warning("Could not refresh member: %s", fetch_error)
+            
+            from utils.role_utils import role_utils
+            new_position_id_int = int(position_id) if isinstance(position_id, (int, str)) and str(position_id).isdigit() else None
+            
+            logger.info("POSITION ROLES DEBUG: position_id=%s, type=%s, int_value=%s", position_id, type(position_id), new_position_id_int)
+            
+            # Используем smart_update для корректного назначения ролей
+            success = await role_utils.smart_update_user_position_roles(
+                user_member.guild,
+                user_member,
+                new_position_id_int,
+                moderator_member
+            )
+            
+            if success:
+                logger.info("POSITION ROLES: Обновлены роли должности для %s (position_id=%s)", user_member.display_name, new_position_id_int)
+            else:
+                logger.warning("POSITION ROLES: Не удалось обновить роли для %s", user_member.display_name)
+        except Exception as role_err:
+            logger.error("POSITION ROLES ERROR: %s", role_err)
+            import traceback
+            traceback.print_exc()
+
+        return True
+
+    except Exception as e:
+        logger.error("Error in assign_position_in_db: %s", e)
+        return False
+
 
 class RankChangeView(ui.View):
     """View for rank change with confirmation for promotion type"""
@@ -2698,6 +2751,13 @@ class RankChangeView(ui.View):
                 
                 # Update Discord roles using RoleUtils
                 try:
+                    # Refresh member object to get current roles
+                    try:
+                        self.target_user = await self.target_user.guild.fetch_member(self.target_user.id)
+                        logger.info("🔄 Refreshed member object before updating rank roles")
+                    except Exception as fetch_error:
+                        logger.warning("Could not refresh member: %s", fetch_error)
+                    
                     rank_assigned = await role_utils.assign_rank_role(
                         self.target_user,
                         self.new_rank,
@@ -2707,7 +2767,7 @@ class RankChangeView(ui.View):
                     if not rank_assigned:
                         logger.error(f"Warning: Failed to assign rank role {self.new_rank}")
                     else:
-                        logger.info("Discord roles updated: %s -> {self.new_rank}", old_rank)
+                        logger.info(f"Discord roles updated: %s -> {self.new_rank}", old_rank)
                 except Exception as role_error:
                     logger.error("Warning: Failed to update Discord roles: %s", role_error)
                     
@@ -2716,7 +2776,7 @@ class RankChangeView(ui.View):
             
             # Update nickname using nickname_manager
             try:
-                logger.info("CONTEXT RANK CHANGE: %s {self.target_user.display_name} -> {self.new_rank}", action_name)
+                logger.info(f"CONTEXT RANK CHANGE: %s {self.target_user.display_name} -> {self.new_rank}", action_name)
                 
                 # Используем универсальный метод для всех изменений звания
                 change_type_map = {
@@ -2733,7 +2793,7 @@ class RankChangeView(ui.View):
                 )
                 
                 if new_nickname:
-                    logger.info("CONTEXT RANK NICKNAME: Никнейм обновлён через nickname_manager: {self.target_user.display_name} -> %s", new_nickname)
+                    logger.info(f"CONTEXT RANK NICKNAME: Никнейм обновлён через nickname_manager: {self.target_user.display_name} -> %s", new_nickname)
                 else:
                     # Вычисляем предполагаемый никнейм для логирования ошибки
                     expected_nickname = nickname_manager.preview_nickname_change(

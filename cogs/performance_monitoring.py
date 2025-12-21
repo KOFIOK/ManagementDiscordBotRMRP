@@ -57,7 +57,7 @@ class PerformanceMonitoringCog(commands.Cog):
         )
         
         # Тест 1: Прямые запросы к PostgreSQL
-        logger.info("PERFORMANCE TEST: Тестирование {len(test_users)} пользователей...")
+        logger.info(f"PERFORMANCE TEST: Тестирование {len(test_users)} пользователей...")
         
         start_time = time.time()
         direct_successes = 0

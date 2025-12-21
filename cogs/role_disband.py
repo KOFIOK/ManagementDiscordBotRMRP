@@ -151,7 +151,7 @@ class RoleDisbandView(discord.ui.View):
                 logger.info(f"Removed {len(roles_to_remove)} roles from {user.display_name}")
             
         except Exception as e:
-            logger.warning("Failed to remove roles from {user.display_name}: %s", e)
+            logger.warning(f"Failed to remove roles from {user.display_name}: %s", e)
             failed_users.append(user.id)
     
     async def _send_audit_log(self, guild: discord.Guild, successful_count: int):

@@ -58,10 +58,10 @@ class SuppliesRestoreManager:
             )
             
             if not has_message:
-                logger.info(f" Создаем сообщение управления поставками в #{channel.name}")
+                logger.info(f"Создаем сообщение управления поставками в #{channel.name}")
                 await send_supplies_control_message(channel)
             else:
-                logger.info(f" Сообщение управления поставками уже существует в #{channel.name}")
+                logger.info(f"Сообщение управления поставками уже существует в #{channel.name}")
                 
         except Exception as e:
             logger.warning("Ошибка восстановления сообщения управления: %s", e)
@@ -86,10 +86,10 @@ class SuppliesRestoreManager:
             )
             
             if not has_message:
-                logger.info(f" Создаем сообщение подписки на поставки в #{channel.name}")
+                logger.info(f"Создаем сообщение подписки на поставки в #{channel.name}")
                 await send_supplies_subscription_message(channel)
             else:
-                logger.info(f" Сообщение подписки на поставки уже существует в #{channel.name}")
+                logger.info(f"Сообщение подписки на поставки уже существует в #{channel.name}")
                 
         except Exception as e:
             logger.warning("Ошибка восстановления сообщения подписки: %s", e)
@@ -106,7 +106,7 @@ class SuppliesRestoreManager:
                             return True
             return False
         except Exception as e:
-            logger.warning("Ошибка проверки сообщений в #{channel.name}: %s", e)
+            logger.warning(f"Ошибка проверки сообщений в #{channel.name}: %s", e)
             return False
     
     async def update_control_message_timers(self):

@@ -132,7 +132,7 @@ class LeaveRequestModal(ui.Modal):
                   department = user_info.get('department', 'Неизвестно')
                   logger.info(f"LEAVE REQUEST: Получено подразделение из PostgreSQL: '%s' для пользователя {interaction.user.id}", department)
               else:
-                  logger.info(f" LEAVE REQUEST: Пользователь {interaction.user.id} не найден в PostgreSQL, используем fallback")
+                  logger.info(f"LEAVE REQUEST: Пользователь {interaction.user.id} не найден в PostgreSQL, используем fallback")
                   # Fallback to DepartmentManager if user not in PostgreSQL
                   from utils.department_manager import DepartmentManager
                   dept_manager = DepartmentManager()
@@ -381,10 +381,10 @@ class RejectReasonModal(ui.Modal):
           
           # Update status field
           for i, field in enumerate(embed.fields):
-              if field.name == "📢 Статус:":
+              if field.name == "📊 Статус:":
                   embed.set_field_at(
                       i, 
-                      name="📢 Статус:",
+                      name="📊 Статус:",
                       value=f"❌ ОТКЛОНЕНА пользователем {interaction.user.mention}\n⏰ {discord.utils.format_dt(discord.utils.utcnow(), 'f')}",
                       inline=True
                   )

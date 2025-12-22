@@ -129,7 +129,7 @@ class PromotionNotificationScheduler:
                         continue
                     
                     sent_count += 1
-                    logger.info("Уведомление отправлено в {channel.name} (%s)", dept_code)
+                    logger.info(f"Уведомление отправлено в {channel.name} (%s)", dept_code)
                     
                 except Exception as e:
                     logger.warning("Ошибка отправки уведомления для %s: %s", dept_code, e)

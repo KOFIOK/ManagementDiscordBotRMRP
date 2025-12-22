@@ -106,7 +106,7 @@ class RankHierarchy:
             return None  # No higher rank exists
         except KeyError as e:
             logger.warning("RANK ERROR: Missing key %s in rank data for '%s'", e, current_rank)
-            logger.info(f" Rank data: {rank_roles[current_rank]}")
+            logger.info(f"Rank data: {rank_roles[current_rank]}")
             return None
     
     @staticmethod
@@ -134,7 +134,7 @@ class RankHierarchy:
             return None  # No lower rank exists
         except KeyError as e:
             logger.warning("RANK ERROR: Missing key %s in rank data for '%s'", e, current_rank)
-            logger.info(f" Rank data: {rank_roles[current_rank]}")
+            logger.info(f"Rank data: {rank_roles[current_rank]}")
             return None
     
     @staticmethod
@@ -274,7 +274,7 @@ def fix_rank_level_keys():
         logger.info("Fixed rank_level keys in config!")
         return True
     else:
-        logger.info(" No rank key fixes needed.")
+        logger.info("No rank key fixes needed.")
         return False
 
 

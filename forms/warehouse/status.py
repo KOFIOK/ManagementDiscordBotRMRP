@@ -82,7 +82,7 @@ class DeletionConfirmView(discord.ui.View):
             # Удаляем оригинальное сообщение
             try:
                 await self.original_message.delete()
-                logger.info(f" DELETE: Запрос склада удален пользователем {interaction.user.display_name}")
+                logger.info(f"DELETE: Запрос склада удален пользователем {interaction.user.display_name}")
             except discord.NotFound:
                 # Сообщение уже удалено
                 pass

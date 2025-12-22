@@ -215,9 +215,9 @@ class SimplifiedDismissalApprovalView(ui.View):
                         dm_embed.add_field(name=get_private_messages(interaction.guild.id, 'private_messages.dismissal.fields.dismissed_by'), value=interaction.user.display_name, inline=False)
                         
                         await target_user.send(embed=dm_embed)
-                        logger.info(f" DISMISSAL: DM sent to {target_user.display_name}")
+                        logger.info(f"DISMISSAL: DM sent to {target_user.display_name}")
                     except discord.Forbidden:
-                        logger.info("DISMISSAL: Could not send DM to {target_user.display_name} (DMs disabled)")
+                        logger.info(f"DISMISSAL: Could not send DM to {target_user.display_name} (DMs disabled)")
                     except Exception as dm_error:
                         logger.warning("DISMISSAL: Failed to send DM: %s", dm_error)
             
@@ -343,17 +343,17 @@ class SimplifiedDismissalApprovalView(ui.View):
                         )
 
                         await target_user_member.send(embed=dm_embed)
-                        logger.info(f" DISMISSAL REJECTION: DM sent to {target_user_member.display_name}")
+                        logger.info(f"DISMISSAL REJECTION: DM sent to {target_user_member.display_name}")
                     except discord.Forbidden:
-                        logger.info("DISMISSAL REJECTION: Could not send DM to {target_user_member.display_name} (DMs disabled)")
+                        logger.info(f"DISMISSAL REJECTION: Could not send DM to {target_user_member.display_name} (DMs disabled)")
                     except Exception as dm_error:
                         logger.warning("DISMISSAL REJECTION: Failed to send DM: %s", dm_error)
             
             # Логирование
             if is_automatic:
-                logger.info("AUTO-REJECT: {target_user.display_name} ({target_user.id}) - %s", reason)
+                logger.info(f"AUTO-REJECT: {target_user.display_name} ({target_user.id}) - %s", reason)
             else:
-                logger.info("MANUAL REJECT: {target_user.display_name} ({target_user.id}) by {interaction.user.display_name} - %s", reason)
+                logger.info(f"MANUAL REJECT: {target_user.display_name} ({target_user.id}) by {interaction.user.display_name} - %s", reason)
                         
         except Exception as e:
             logger.warning("Error in finalize_rejection_universal: %s", e)
@@ -470,7 +470,7 @@ class SimplifiedDismissalApprovalView(ui.View):
                 if roles_cleared:
                     logger.info(f"DISMISSAL: Cleared all roles from {target_user.display_name}: {', '.join(roles_cleared)}")
                 else:
-                    logger.info(f" DISMISSAL: No roles to clear for {target_user.display_name}")
+                    logger.info(f"DISMISSAL: No roles to clear for {target_user.display_name}")
             
             # 3. Change nickname using nickname_manager (if user still on server)
             if not user_has_left_server:
@@ -478,7 +478,7 @@ class SimplifiedDismissalApprovalView(ui.View):
                     reason = form_data.get('reason', 'Уволен')
                     provided_name = form_data.get('name', target_user.display_name)
                     
-                    logger.info("NICKNAME INTEGRATION: Увольнение {target_user.display_name} -> %s (причина: %s)", provided_name, reason)
+                    logger.info(f"NICKNAME INTEGRATION: Увольнение {target_user.display_name} -> %s (причина: %s)", provided_name, reason)
                     
                     # Используем nickname_manager для автоматической обработки никнейма
                     new_nickname = await nickname_manager.handle_dismissal(
@@ -564,9 +564,9 @@ class SimplifiedDismissalApprovalView(ui.View):
                         )
                         
                         if was_blacklisted:
-                            logger.info(f" Auto-blacklist triggered for {personnel_data.get('name')}")
+                            logger.info(f"Auto-blacklist triggered for {personnel_data.get('name')}")
                     else:
-                        logger.info(f" Personnel not found in DB for auto-blacklist check: {target_user.id}")
+                        logger.info(f"Personnel not found in DB for auto-blacklist check: {target_user.id}")
                         
             except Exception as blacklist_error:
                 logger.warning("Error in auto-blacklist check: %s", blacklist_error)
@@ -1010,7 +1010,7 @@ class AutomaticDismissalApprovalView(ui.View):
     async def _process_automatic_dismissal_approval(self, interaction, target_user, config):
         """Process automatic dismissal approval (similar to standard approval but simplified)"""
         try:
-            logger.info("Starting automatic dismissal approval for {target_user.display_name} (ID: {target_user.id})")
+            logger.info(f"Starting automatic dismissal approval for {target_user.display_name} (ID: {target_user.id})")
             
             # Processing state already shown by caller, no need to defer again
             
@@ -1113,7 +1113,7 @@ class AutomaticDismissalApprovalView(ui.View):
                 interaction, target_user, form_data, user_rank_for_audit, 
                 user_unit_for_audit, current_time, config, user_position_for_audit
             )
-            logger.info(f" Automatic dismissal approval completed successfully for {target_user.display_name}")
+            logger.info(f"Automatic dismissal approval completed successfully for {target_user.display_name}")
             
         except Exception as e:
             logger.warning("Error processing automatic dismissal approval: %s", e)
@@ -1131,7 +1131,7 @@ class AutomaticDismissalApprovalView(ui.View):
                                          current_time, config, user_position_for_audit=""):
         """Finalize automatic dismissal approval"""
         try:
-            logger.info(f" Starting finalization for {target_user.display_name}")
+            logger.info(f"Starting finalization for {target_user.display_name}")
             
             # Remove user from personnel database using PersonnelManager
             try:
@@ -1182,7 +1182,7 @@ class AutomaticDismissalApprovalView(ui.View):
                         invalidate_user_cache(user_id)
                         logger.info("CACHE INVALIDATE: User cache cleared for dismissed user %s", user_id)
                 else:
-                    logger.info(f" Could not get user ID for {target_user.display_name}")
+                    logger.info(f"Could not get user ID for {target_user.display_name}")
             except asyncio.TimeoutError:
                 logger.info("Personnel database operation timed out after 15 seconds")
                 try:
@@ -1266,11 +1266,11 @@ class AutomaticDismissalApprovalView(ui.View):
                             )
                             
                             if was_blacklisted:
-                                logger.info(f" Auto-blacklist triggered for {personnel_data.get('name')}")
+                                logger.info(f"Auto-blacklist triggered for {personnel_data.get('name')}")
                             else:
-                                logger.info(f" No auto-blacklist triggered for {personnel_data.get('name')}")
+                                logger.info(f"No auto-blacklist triggered for {personnel_data.get('name')}")
                         else:
-                            logger.info(f" Personnel not found in DB for auto-blacklist check: {target_user.id}")
+                            logger.info(f"Personnel not found in DB for auto-blacklist check: {target_user.id}")
                             
                 except asyncio.TimeoutError:
                     logger.info("Auto-blacklist check timed out")

@@ -292,11 +292,11 @@ async def send_medical_registration_message(channel):
                 len(message.embeds) > 0 and
                 "Медицинская рота | Регистратура" in message.embeds[0].title):
                 existing_message = message
-                logger.info("[DEBUG] Found existing medical registration message (ID: {message.id})")
+                logger.info(f"[DEBUG] Found existing medical registration message (ID: {message.id})")
                 break
         
         if existing_message:
-            logger.info("[DEBUG] Medical registration message already exists (ID: {existing_message.id}), skipping creation")
+            logger.info(f"[DEBUG] Medical registration message already exists (ID: {existing_message.id}), skipping creation")
             return  # Message already exists and is pinned
         
         logger.info("[DEBUG] Creating new medical registration message")
@@ -324,7 +324,7 @@ async def send_medical_registration_message(channel):
         view = MedicalRegistrationView()
         message = await channel.send(embed=embed, view=view)
         
-        logger.info("[DEBUG] Medical registration message sent (ID: {message.id})")
+        logger.info(f"[DEBUG] Medical registration message sent (ID: {message.id})")
         
         # Pin the message
         try:

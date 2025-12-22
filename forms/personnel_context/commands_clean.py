@@ -39,6 +39,7 @@ async def get_user_status(user_discord_id: int) -> dict:
         - position: str|None - current position if active
         - full_name: str|None - full name from personnel table
         - static: str|None - static number
+        - join_date: datetime|None - date of joining service
     """
     try:
         from utils.database_manager import personnel_manager
@@ -52,7 +53,8 @@ async def get_user_status(user_discord_id: int) -> dict:
             'department': None,
             'position': None,
             'full_name': None,
-            'static': None
+            'static': None,
+            'join_date': None
         }
         
         # First, try to get data from cache
@@ -74,7 +76,7 @@ async def get_user_status(user_discord_id: int) -> dict:
                 # Need to check dismissal status from database
                 with get_db_cursor() as cursor:
                     cursor.execute("""
-                        SELECT is_dismissal
+                        SELECT is_dismissal, join_date
                         FROM personnel 
                         WHERE discord_id = %s
                         ORDER BY id DESC
@@ -84,15 +86,31 @@ async def get_user_status(user_discord_id: int) -> dict:
                     personnel_result = cursor.fetchone()
                     if personnel_result:
                         status['is_dismissed'] = personnel_result['is_dismissal']
+                        status['join_date'] = personnel_result['join_date']
                         if not status['is_dismissed']:
                             # User has personnel record but no active service - might be inactive
                             status['is_active'] = False
+            
+            # ALWAYS get join_date from database (cache doesn't contain it)
+            if not status['join_date']:
+                with get_db_cursor() as cursor:
+                    cursor.execute("""
+                        SELECT join_date
+                        FROM personnel 
+                        WHERE discord_id = %s
+                        ORDER BY id DESC
+                        LIMIT 1;
+                    """, (user_discord_id,))
+                    
+                    result = cursor.fetchone()
+                    if result:
+                        status['join_date'] = result['join_date']
         else:
             # No cached data, check database directly
             with get_db_cursor() as cursor:
                 # Check if user has any personnel record
                 cursor.execute("""
-                    SELECT id, first_name, last_name, static, is_dismissal
+                    SELECT id, first_name, last_name, static, is_dismissal, join_date
                     FROM personnel 
                     WHERE discord_id = %s
                     ORDER BY id DESC
@@ -104,6 +122,7 @@ async def get_user_status(user_discord_id: int) -> dict:
                     status['is_dismissed'] = personnel_result['is_dismissal']
                     status['full_name'] = f"{personnel_result['first_name']} {personnel_result['last_name']}".strip() if personnel_result['first_name'] and personnel_result['last_name'] else None
                     status['static'] = personnel_result['static']
+                    status['join_date'] = personnel_result['join_date']
                     
                     # If not dismissed, get active service info
                     if not personnel_result['is_dismissal']:
@@ -140,7 +159,8 @@ async def get_user_status(user_discord_id: int) -> dict:
             'department': None,
             'position': None,
             'full_name': None,
-            'static': None
+            'static': None,
+            'join_date': None
         }
 
 
@@ -174,7 +194,7 @@ def handle_context_errors(func):
             logger.info(f"Context menu '{func.__name__}' called by {interaction.user.display_name} for {user.display_name}")
             return await func(interaction, user)
         except Exception as e:
-            logger.error("Error in {func.__name__}: %s", e)
+            logger.error(f"Error in {func.__name__}: %s", e)
             traceback.print_exc()
             # Don't try to respond if interaction is already done or invalid
             # Just log the error - the user will see the modal or message from the main function
@@ -476,7 +496,7 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
     async def _process_recruitment_with_personnel_manager(self, interaction: discord.Interaction, full_name: str, static: str, rank: str, subdivision: str = None) -> bool:
         """Process recruitment using PersonnelManager"""
         try:
-            logger.info(f" RECRUITMENT: Starting recruitment via PersonnelManager for {self.target_user.id}")
+            logger.info(f"RECRUITMENT: Starting recruitment via PersonnelManager for {self.target_user.id}")
             logger.info("RECRUITMENT: Data - Name: '%s', Static: '%s', Rank: '%s'", full_name, static, rank)
             # Prepare application data for PersonnelManager
             application_data = {
@@ -560,9 +580,9 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                     dm_embed.add_field(name="Подразделение", value=subdivision or "Не назначено", inline=False)
                     
                     await self.target_user.send(embed=dm_embed)
-                    logger.info(f" RECRUITMENT: DM sent to {self.target_user.display_name}")
+                    logger.info(f"RECRUITMENT: DM sent to {self.target_user.display_name}")
                 except discord.Forbidden:
-                    logger.info("RECRUITMENT: Could not send DM to {self.target_user.display_name} (DMs disabled)")
+                    logger.info(f"RECRUITMENT: Could not send DM to {self.target_user.display_name} (DMs disabled)")
                 except Exception as dm_error:
                     logger.error("RECRUITMENT: Failed to send DM: %s", dm_error)
                 
@@ -643,7 +663,7 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                 logger.info("RECRUITMENT: Fallback nickname set: %s", new_nickname)
             
         except discord.Forbidden:
-            logger.info("RECRUITMENT: No permission to change nickname for {self.target_user.display_name} to \"%s\"", new_nickname)
+            logger.info(f"RECRUITMENT: No permission to change nickname for {self.target_user.display_name} to \"{new_nickname}\"")
         except Exception as e:
             logger.error("RECRUITMENT: Error setting nickname: %s", e)
 
@@ -713,7 +733,7 @@ async def recruit_user(interaction: discord.Interaction, user: discord.Member):
     # Проверка ЧС теперь в модальном окне после ввода static
     modal = RecruitmentModal(user, interaction.guild.id)
     await interaction.response.send_modal(modal)
-    logger.info(f" Recruitment modal sent for {user.display_name}")
+    logger.info(f"Recruitment modal sent for {user.display_name}")
 
 
 class DismissalModal(ui.Modal, title="Увольнение"):
@@ -812,7 +832,7 @@ class DismissalModal(ui.Modal, title="Увольнение"):
             perform_blacklist_check: skip auto-blacklist if False
         """
         try:
-            logger.info(f" DISMISSAL: Starting dismissal for {self.target_user.id}")
+            logger.info(f"DISMISSAL: Starting dismissal for {self.target_user.id}")
             logger.info("DISMISSAL: Reason: '%s'", reason)
             
             # Get personnel data first
@@ -996,9 +1016,9 @@ class DismissalModal(ui.Modal, title="Увольнение"):
                                     )
                                     
                                     if was_blacklisted:
-                                        logger.info(f" DISMISSAL: Auto-blacklist triggered for {audit_personnel_data.get('name')}")
+                                        logger.info(f"DISMISSAL: Auto-blacklist triggered for {audit_personnel_data.get('name')}")
                                 else:
-                                    logger.info(f" DISMISSAL: Personnel not found in DB for auto-blacklist check: {self.target_user.id}")
+                                    logger.info(f"DISMISSAL: Personnel not found in DB for auto-blacklist check: {self.target_user.id}")
                                     
                         except Exception as blacklist_error:
                             logger.error("DISMISSAL: Error in auto-blacklist check: %s", blacklist_error)
@@ -1021,9 +1041,9 @@ class DismissalModal(ui.Modal, title="Увольнение"):
                     dm_embed.add_field(name="Уволил", value=interaction.user.display_name, inline=False)
                     
                     await self.target_user.send(embed=dm_embed)
-                    logger.info(f" DISMISSAL: DM sent to {self.target_user.display_name}")
+                    logger.info(f"DISMISSAL: DM sent to {self.target_user.display_name}")
                 except discord.Forbidden:
-                    logger.info("DISMISSAL: Could not send DM to {self.target_user.display_name} (DMs disabled)")
+                    logger.info(f"DISMISSAL: Could not send DM to {self.target_user.display_name} (DMs disabled)")
                 except Exception as dm_error:
                     logger.error("DISMISSAL: Failed to send DM: %s", dm_error)
                 
@@ -1060,7 +1080,7 @@ class DismissalModal(ui.Modal, title="Увольнение"):
             if roles_cleared:
                 logger.info(f"DISMISSAL: Cleared all roles from {self.target_user.display_name}: {', '.join(roles_cleared)}")
             else:
-                logger.info(f" DISMISSAL: No roles to clear for {self.target_user.display_name}")
+                logger.info(f"DISMISSAL: No roles to clear for {self.target_user.display_name}")
             
             # Set dismissal nickname using nickname_manager
             try:
@@ -1069,7 +1089,7 @@ class DismissalModal(ui.Modal, title="Увольнение"):
                     reason=self.reason_input.value if hasattr(self, 'reason_input') else "Увольнение через ПКМ"
                 )
                 if dismissal_nickname:
-                    logger.info("DISMISSAL: Set dismissal nickname: {self.target_user.display_name} -> %s", dismissal_nickname)
+                    logger.info(f"DISMISSAL: Set dismissal nickname: {self.target_user.display_name} -> %s", dismissal_nickname)
                 else:
                     logger.error("DISMISSAL: Failed to set dismissal nickname, keeping current")
             except Exception as nickname_error:
@@ -1086,7 +1106,7 @@ async def dismiss_user(interaction: discord.Interaction, user: discord.User):
     """Context menu command to dismiss user using PersonnelManager"""
     # Prevent double-clicks and invalid interactions
     if interaction.response.is_done():
-        logger.info(f" Dismiss command ignored for {user.display_name} - interaction already responded")
+        logger.info(f"Dismiss command ignored for {user.display_name} - interaction already responded")
         return
         
     # Check permissions
@@ -1142,10 +1162,10 @@ async def dismiss_user(interaction: discord.Interaction, user: discord.User):
     modal = DismissalModal(target_user, interaction.guild.id)
     try:
         await interaction.response.send_modal(modal)
-        logger.info(f" Dismissal modal sent for {target_user.display_name}")
+        logger.info(f"Dismissal modal sent for {target_user.display_name}")
     except discord.errors.HTTPException as e:
         if e.code == 40060:  # Interaction has already been acknowledged
-            logger.info("Dismissal modal already sent for {target_user.display_name} (interaction already acknowledged)")
+            logger.info(f"Dismissal modal already sent for {target_user.display_name} (interaction already acknowledged)")
         else:
             logger.error("Error sending dismissal modal: %s", e)
             raise
@@ -1527,7 +1547,7 @@ class PositionSelect(ui.Select):
             tuple[bool, str]: (success, message)
         """
         try:
-            logger.info("EXECUTE DEPARTMENT CHANGE: Starting for user {self.target_user.id}, action_type={self.action_type}, dept_key={self.dept_key}, position=%s", position_name)
+            logger.info(f"EXECUTE DEPARTMENT CHANGE: Starting for user {self.target_user.id}, action_type={self.action_type}, dept_key={self.dept_key}, position=%s", position_name)
             
             # Import required modules
             from utils.database_manager import PersonnelManager
@@ -1862,7 +1882,7 @@ class PositionSelect(ui.Select):
                         self.target_user,
                         reason="Снятие должности"
                     )
-                    logger.info(f" Removed position role for {self.target_user.display_name}")
+                    logger.info(f"Removed position role for {self.target_user.display_name}")
                 except Exception as e:
                     logger.error("Error removing position role: %s", e)
             
@@ -2068,7 +2088,7 @@ class PositionOnlySelect(ui.Select):
                 personnel_data = None
                 
                 # ПОПЫТКА 1: Получить из кэша
-                logger.info("AUDIT (demotion): Checking cache for user {self.target_user.id}...")
+                logger.info(f"AUDIT (demotion): Checking cache for user {self.target_user.id}...")
                 cached_data = await get_cached_user_info(self.target_user.id)
                 
                 if cached_data and cached_data.get('full_name') and cached_data.get('rank'):
@@ -2293,7 +2313,7 @@ class PositionOnlySelect(ui.Select):
                             None,
                             None
                         )
-                        logger.info(f" Position roles removed for {user_member.display_name}")
+                        logger.info(f"Position roles removed for {user_member.display_name}")
                     except Exception as role_error:
                         logger.error("Warning: Failed to remove position role: %s", role_error)
                 
@@ -2339,7 +2359,7 @@ class PositionOnlySelect(ui.Select):
                 personnel_data = None
                 
                 # ПОПЫТКА 1: Получить из кэша (БЫСТРО)
-                logger.info("AUDIT (PositionOnly): Checking cache for user {self.target_user.id}...")
+                logger.info(f"AUDIT (PositionOnly): Checking cache for user {self.target_user.id}...")
                 cached_data = await get_cached_user_info(self.target_user.id)
                 
                 if cached_data and cached_data.get('full_name') and cached_data.get('rank'):
@@ -2681,7 +2701,7 @@ class RankChangeView(ui.View):
                 personnel_data = None
                 
                 # ПОПЫТКА 1: Получить из кэша
-                logger.info("AUDIT (rank): Checking cache for user {self.target_user.id}...")
+                logger.info(f"AUDIT (rank): Checking cache for user {self.target_user.id}...")
                 cached_data = await get_cached_user_info(self.target_user.id)
                 
                 if cached_data and cached_data.get('full_name'):
@@ -3166,7 +3186,7 @@ async def quick_promote(interaction: discord.Interaction, user: discord.Member):
     """Context menu command to quickly promote user by +1 rank"""
     # Prevent double-clicks and invalid interactions
     if interaction.response.is_done():
-        logger.info(f" Quick promote command ignored for {user.display_name} - interaction already responded")
+        logger.info(f"Quick promote command ignored for {user.display_name} - interaction already responded")
         return
         
     # Check permissions
@@ -3242,7 +3262,7 @@ async def general_edit(interaction: discord.Interaction, user: discord.Member):
     """Context menu command for general editing (rank, department, position)"""
     # Prevent double-clicks and invalid interactions
     if interaction.response.is_done():
-        logger.info(f" General edit command ignored for {user.display_name} - interaction already responded")
+        logger.info(f"General edit command ignored for {user.display_name} - interaction already responded")
         return
         
     # Check permissions
@@ -3291,7 +3311,7 @@ async def general_edit(interaction: discord.Interaction, user: discord.Member):
                 if history_result and history_result['details']:
                     dismissal_reason = history_result['details']
         except Exception as e:
-            logger.warning("Warning: Could not get dismissal reason for {user.id}: %s", e)
+            logger.warning(f"Warning: Could not get dismissal reason for {user.id}: %s", e)
 
         # Check blacklist
         blacklist_text = ""
@@ -3365,6 +3385,11 @@ async def general_edit(interaction: discord.Interaction, user: discord.Member):
         if not static:
             static = 'Не указано'
         
+        # Format join date
+        join_date_str = "Не указано"
+        if user_status['join_date']:
+            join_date_str = user_status['join_date'].strftime('%d.%m.%Y')
+        
         # Send general editing view with current information
         view = GeneralEditView(user)
         await interaction.response.send_message(
@@ -3374,7 +3399,8 @@ async def general_edit(interaction: discord.Interaction, user: discord.Member):
             f"> • **Статик:** `{static}`\n"
             f"> • **Звание:** `{current_rank}`\n"
             f"> • **Подразделение:** `{department_name}`\n"
-            f"> • **Должность:** `{position_name}`{blacklist_warning}\n\n"
+            f"> • **Должность:** `{position_name}`\n"
+            f"> • **Дата приёма:** `{join_date_str}`{blacklist_warning}\n\n"
             f"Выберите что хотите изменить:",
             view=view,
             ephemeral=True

@@ -315,10 +315,10 @@ class LeaveRequestApprovalView(ui.View):
             
             # Update status field
             for i, field in enumerate(embed.fields):
-                if field.name == "📢 Статус:":
+                if field.name == "📊 Статус:":
                     embed.set_field_at(
                         i, 
-                        name="📢 Статус:",
+                        name="📊 Статус:",
                         value=f"✅ ОДОБРЕНА пользователем {interaction.user.mention}\n⏰ {discord.utils.format_dt(discord.utils.utcnow(), 'f')}",
                         inline=True
                     )

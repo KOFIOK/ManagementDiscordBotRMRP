@@ -394,11 +394,11 @@ class MessageService:
 
             # Send both embeds
             await member.send(embeds=[embed, embed_ticket])
-            logger.info("Sent welcome message to {member.display_name} ({member.id})")
+            logger.info(f"Sent welcome message to {member.display_name} ({member.id})")
             return True
 
         except discord.Forbidden:
-            logger.info(f" MessageService: Cannot send welcome DM to {member.display_name} - DMs disabled")
+            logger.info(f"MessageService: Cannot send welcome DM to {member.display_name} - DMs disabled")
             return False
         except Exception as e:
             logger.error("MessageService.send_welcome_dm error for %s: %s", member, e)

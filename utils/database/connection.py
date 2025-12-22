@@ -38,7 +38,7 @@ class DatabaseConnection:
         # Use direct IP to avoid DNS issues
         direct_host = "127.0.0.1" if self.host in ["localhost", "127.0.0.1"] else self.host
         self.async_url = f"postgresql+asyncpg://{self.username}:{self.password}@{direct_host}:{self.port}/{self.database}"
-        logger.info(f" Using PostgreSQL database: {self.database}@{self.host}")
+        logger.info(f"Using PostgreSQL database: {self.database}@{self.host}")
     
     async def initialize(self) -> bool:
         """Initialize database connections"""

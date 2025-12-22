@@ -63,7 +63,7 @@ class DepartmentApplicationStage1Modal(DepartmentApplicationICModal):
                 self.user_ic_data = None
                 
         except Exception as e:
-            logger.error(f" Error in cache-only loading for {self.user_id}: {e}")
+            logger.error(f"Error in cache-only loading for {self.user_id}: {e}")
             self.user_ic_data = None
 
     def _try_load_user_data_sync(self):
@@ -73,7 +73,7 @@ class DepartmentApplicationStage1Modal(DepartmentApplicationICModal):
             cache_data = self._try_load_from_cache()
             if cache_data:
                 self.user_ic_data = cache_data
-                logger.info(f" User data loaded from cache for {self.user_id} - form will be autofilled")
+                logger.info(f"User data loaded from cache for {self.user_id} - form will be autofilled")
                 return
             
             # Шаг 2: Если в кэше нет - проверяем, можем ли загрузить из базы
@@ -90,7 +90,7 @@ class DepartmentApplicationStage1Modal(DepartmentApplicationICModal):
                 self._try_load_from_database_sync()
                 
         except Exception as e:
-            logger.error(f" Critical error in sync data loading for {self.user_id}: {e}")
+            logger.error(f"Critical error in sync data loading for {self.user_id}: {e}")
             self.user_ic_data = None
     
     def _try_load_from_cache_public(self) -> Optional[Dict[str, Any]]:
@@ -101,14 +101,14 @@ class DepartmentApplicationStage1Modal(DepartmentApplicationICModal):
             # Используем публичный синхронный API кэша
             cached_data = get_cached_user_info_sync(self.user_id)
             if cached_data:
-                logger.info(f" Cache data found for user {self.user_id}")
+                logger.info(f"Cache data found for user {self.user_id}")
                 return cached_data
             else:
                 logger.info(f"  No cached data for user {self.user_id}")
                 return None
                 
         except Exception as e:
-            logger.warning(f" Error accessing cache for {self.user_id}: {e}")
+            logger.warning(f"Error accessing cache for {self.user_id}: {e}")
             # Fallback к прямому доступу
             return self._try_load_from_cache_direct()
     
@@ -144,7 +144,7 @@ class DepartmentApplicationStage1Modal(DepartmentApplicationICModal):
                 return None
                 
         except Exception as e:
-            logger.warning(f" Error accessing cache for {self.user_id}: {e}")
+            logger.warning(f"Error accessing cache for {self.user_id}: {e}")
             return None
     
     def _try_load_from_database_sync(self):
@@ -164,7 +164,7 @@ class DepartmentApplicationStage1Modal(DepartmentApplicationICModal):
                 load_time = loop.time() - start_time
                 
                 if self.user_ic_data:
-                    logger.info(f" User data loaded from database for {self.user_id} in {load_time:.3f}s - form will be autofilled")
+                    logger.info(f"User data loaded from database for {self.user_id} in {load_time:.3f}s - form will be autofilled")
                 else:
                     logger.info(f"  User {self.user_id} not found in database in {load_time:.3f}s - form will be empty")
                     
@@ -172,11 +172,11 @@ class DepartmentApplicationStage1Modal(DepartmentApplicationICModal):
                 logger.warning(f"⏰ Timeout (>3s) loading user data from database for {self.user_id} - form will be empty")
                 self.user_ic_data = None
             except Exception as e:
-                logger.warning(f" Error loading user data from database for {self.user_id}: {e} - form will be empty")
+                logger.warning(f"Error loading user data from database for {self.user_id}: {e} - form will be empty")
                 self.user_ic_data = None
                 
         except Exception as e:
-            logger.error(f" Critical error in database sync loading for {self.user_id}: {e}")
+            logger.error(f"Critical error in database sync loading for {self.user_id}: {e}")
             self.user_ic_data = None
     
     async def _load_user_data_fast(self):
@@ -187,7 +187,7 @@ class DepartmentApplicationStage1Modal(DepartmentApplicationICModal):
             cached_data = await get_cached_user_info(self.user_id)
             
             if cached_data:
-                logger.info(f" User data loaded from cache for {self.user_id}")
+                logger.info(f"User data loaded from cache for {self.user_id}")
                 return cached_data
             
             # Если в кэше нет - загружаем из базы напрямую
@@ -205,11 +205,11 @@ class DepartmentApplicationStage1Modal(DepartmentApplicationICModal):
                     'rank': user_data.get('rank', 'Не указано'),     # Теперь есть в данных
                     'department': user_data.get('department', 'Не определено')  # Теперь есть в данных
                 }
-                logger.info(f" User data loaded from database for {self.user_id}")
+                logger.info(f"User data loaded from database for {self.user_id}")
                 return formatted_data
                 
         except Exception as e:
-            logger.error(f" Error loading user data for {self.user_id}: {e}")
+            logger.error(f"Error loading user data for {self.user_id}: {e}")
         
         return None
     
@@ -380,7 +380,7 @@ class DepartmentApplicationStage1Modal(DepartmentApplicationICModal):
             
             # Если пользователь НЕ заполнил поля, пытаемся загрузить из базы
             if (not name_value or not static_value) and self.user_ic_data is None:
-                logger.info(f" User {self.user_id} has empty fields, trying to load from database...")
+                logger.info(f"User {self.user_id} has empty fields, trying to load from database...")
                 await self._load_user_data_async()
                 
                 # Автозаполняем пустые поля, если данные загрузились
@@ -394,11 +394,11 @@ class DepartmentApplicationStage1Modal(DepartmentApplicationICModal):
                     # Автозаполняем только пустые поля
                     if not name_value and full_name:
                         name_value = full_name
-                        logger.info(f" Auto-filled name for {self.user_id}: {full_name}")
+                        logger.info(f"Auto-filled name for {self.user_id}: {full_name}")
                     
                     if not static_value and ic_static:
                         static_value = ic_static  
-                        logger.info(f" Auto-filled static for {self.user_id}: {ic_static}")
+                        logger.info(f"Auto-filled static for {self.user_id}: {ic_static}")
             
             # Загружаем данные пользователя асинхронно (если еще не загружены)
             if self.user_ic_data is None:
@@ -578,7 +578,7 @@ class Stage1ReviewView(ui.View):
             # Пытаемся отправить модальное окно
             try:
                 await interaction.response.send_modal(modal)
-                logger.info(f" Stage 2 modal sent successfully for user {interaction.user.id}")
+                logger.info(f"Stage 2 modal sent successfully for user {interaction.user.id}")
             except discord.InteractionResponded:
                 logger.warning(f"Interaction already responded when sending Stage 2 modal for user {interaction.user.id}")
                 # Отправляем сообщение с инструкцией через followup

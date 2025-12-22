@@ -29,13 +29,13 @@ def connect_to_database():
         )
         return conn
     except Exception as e:
-        logger.error(" Connection failed: %s", e)
+        logger.error("Connection failed: %s", e)
         return None
 
 
 def test_database_structure():
     """Test and display database structure"""
-    logger.info(" Testing Database Structure")
+    logger.info("Testing Database Structure")
     logger.info("=" * 50)
     
     conn = connect_to_database()
@@ -69,7 +69,7 @@ def test_database_structure():
                 
             nullable = "NULL" if col_info['is_nullable'] == 'YES' else "NOT NULL"
             default = f" DEFAULT {col_info['column_default']}" if col_info['column_default'] else ""
-            logger.info("  - {col_info['column_name']}: {col_info['data_type']} %s%s", nullable, default)
+            logger.info(f"  - {col_info['column_name']}: {col_info['data_type']} %s%s", nullable, default)
         
         cursor.close()
         conn.close()
@@ -77,7 +77,7 @@ def test_database_structure():
         return True
         
     except Exception as e:
-        logger.error(" Structure test failed: %s", e)
+        logger.error("Structure test failed: %s", e)
         conn.close()
         return False
 
@@ -132,7 +132,7 @@ def test_data_integrity():
         duplicates = cursor.fetchall()
         
         if duplicates:
-            logger.info("   Found {len(duplicates)} duplicate Discord IDs:")
+            logger.info(f"   Found {len(duplicates)} duplicate Discord IDs:")
             for dup in duplicates[:5]:  # Show first 5
                 logger.info(f"    Discord ID {dup['discord_id']}: {dup['count']} records")
         else:
@@ -143,7 +143,7 @@ def test_data_integrity():
         return True
         
     except Exception as e:
-        logger.error(" Data integrity test failed: %s", e)
+        logger.error("Data integrity test failed: %s", e)
         conn.close()
         return False
 
@@ -219,7 +219,7 @@ def test_personnel_operations():
         return True
         
     except Exception as e:
-        logger.error(" Personnel operations test failed: %s", e)
+        logger.error("Personnel operations test failed: %s", e)
         conn.close()
         return False
 
@@ -263,7 +263,7 @@ def test_sample_queries():
             position = user['position_name'] or 'No position'
             subdivision = user['subdivision_name'] or 'No subdivision'
             rank = user['rank_name'] or 'No rank'
-            logger.info("  {user['first_name']} {user['last_name']} ({user['discord_id']})")
+            logger.info(f"  {user['first_name']} {user['last_name']} ({user['discord_id']})")
             logger.info("    Position: %s | Subdivision: %s | Rank: %s", position, subdivision, rank)
         
         # Query 2: Get all personnel for roster
@@ -287,14 +287,14 @@ def test_sample_queries():
         return True
         
     except Exception as e:
-        logger.error(" Sample queries test failed: %s", e)
+        logger.error("Sample queries test failed: %s", e)
         conn.close()
         return False
 
 
 def main():
     """Run comprehensive database tests"""
-    logger.info(" Comprehensive PostgreSQL Database Test")
+    logger.info("Comprehensive PostgreSQL Database Test")
     logger.info("Testing existing database with 281 personnel records")
     logger.info("=" * 60)
     
@@ -324,7 +324,7 @@ def main():
     
     if all_passed:
         logger.info("\n All tests passed! Your existing database is fully functional!")
-        logger.info(" Database contains:")
+        logger.info("Database contains:")
         logger.info("  • 281 personnel records")
         logger.info("  • Complete table structure with relationships")
         logger.info("  • Ready for Discord bot integration")

@@ -553,11 +553,11 @@ async def ensure_safe_documents_pin_message(bot, channel_id: int = None) -> bool
                     if not message.pinned:
                         await message.pin()
                     
-                    logger.info(f" Safe documents pin message updated in {channel.name}")
+                    logger.info(f"Safe documents pin message updated in {channel.name}")
                     return True
                     
                 except discord.Forbidden:
-                    logger.info(f" No permission to edit/pin message in {channel.name}")
+                    logger.info(f"No permission to edit/pin message in {channel.name}")
                     return False
                 except Exception as e:
                     logger.warning("Error updating safe documents message: %s", e)
@@ -568,11 +568,11 @@ async def ensure_safe_documents_pin_message(bot, channel_id: int = None) -> bool
             message = await channel.send(embed=embed, view=view)
             await message.pin()
             
-            logger.info(f" Safe documents pin message created in {channel.name}")
+            logger.info(f"Safe documents pin message created in {channel.name}")
             return True
             
         except discord.Forbidden:
-            logger.info(f" No permission to send/pin message in {channel.name}")
+            logger.info(f"No permission to send/pin message in {channel.name}")
             return False
         except Exception as e:
             logger.warning("Error creating safe documents pin message: %s", e)

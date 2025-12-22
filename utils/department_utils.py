@@ -103,12 +103,12 @@ async def restore_department_pinned_message(channel: discord.TextChannel, dept_c
                     if not message.pinned:
                         try:
                             await message.pin()
-                            logger.info("Pinned message for %s (ID: {message.id})", dept_code)
+                            logger.info(f"Pinned message for %s (ID: {message.id})", dept_code)
                         except Exception as pin_error:
                             logger.warning("Could not pin message for %s: %s", dept_code, pin_error)
                     
                     logger.info(f"✅ Restored view for {dept_code} by persistent_message_id (ID: {message.id})")
-                    logger.info("Restored view for %s from config (ID: {message.id})", dept_code)
+                    logger.info(f"Restored view for %s from config (ID: {message.id})", dept_code)
                     return True
             except discord.NotFound:
                 logger.info("Message ID %s for %s not found, clearing from config", persistent_message_id, dept_code)
@@ -136,7 +136,7 @@ async def restore_department_pinned_message(channel: discord.TextChannel, dept_c
                 bot.add_view(view, message_id=message.id)
                 
                 logger.info(f"✅ Restored view for {dept_code} pinned message (ID: {message.id})")
-                logger.info("Restored view for %s from pinned messages (ID: {message.id})", dept_code)
+                logger.info(f"Restored view for %s from pinned messages (ID: {message.id})", dept_code)
                 
                 # Обновляем конфигурацию с message_id
                 await manager._save_department_message_info(dept_code, channel.id, message.id)
@@ -166,7 +166,7 @@ async def check_department_message_exists(channel: discord.TextChannel, dept_cod
                 message = await channel.fetch_message(persistent_message_id)
                 if message and message.author == channel.guild.me:
                     logger.info(f"Found existing message for {dept_code} by ID (ID: {message.id}, pinned: {message.pinned})")
-                    logger.info("Found existing message for %s by ID: '{message.embeds[0].title if message.embeds else 'No title'}' (ID: {message.id})", dept_code)
+                    logger.info(f"Found existing message for %s by ID: '{message.embeds[0].title if message.embeds else 'No title'}' (ID: {message.id})", dept_code)
                     return True
             except discord.NotFound:
                 logger.info("Message ID %s for %s not found in channel, will clear from config", persistent_message_id, dept_code)
@@ -188,7 +188,7 @@ async def check_department_message_exists(channel: discord.TextChannel, dept_cod
                 if (dept_code_lower in title and 
                     ("заявление" in title or "подразделение" in title)):
                     logger.info(f"Found existing message for {dept_code} by search (ID: {message.id}, pinned: {message.pinned})")
-                    logger.info("Found existing message for %s by search: f'{message.embeds[0].title}' (ID: {message.id})", dept_code)
+                    logger.info(f"Found existing message for %s by search: f'{message.embeds[0].title}' (ID: {message.id})", dept_code)
                     return True
         
         logger.info(f"No existing message found for {dept_code}")
@@ -224,7 +224,7 @@ async def try_pin_existing_message(channel: discord.TextChannel, dept_code: str,
                     if not message.pinned:
                         try:
                             await message.pin()
-                            logger.info("Pinned existing message for %s (ID: {message.id})", dept_code)
+                            logger.info(f"Pinned existing message for %s (ID: {message.id})", dept_code)
                             logger.info(f"✅ Pinned existing message for {dept_code} (ID: {message.id})")
                         except discord.Forbidden:
                             logger.warning(f"⚠️ Could not pin message for {dept_code} - insufficient permissions")
@@ -232,7 +232,7 @@ async def try_pin_existing_message(channel: discord.TextChannel, dept_code: str,
                             logger.warning(f"⚠️ Could not pin message for {dept_code}: {e}")
                     
                     logger.info(f"✅ Restored and updated existing message for {dept_code} by ID (ID: {message.id})")
-                    logger.info("Restored existing message for %s from config (ID: {message.id})", dept_code)
+                    logger.info(f"Restored existing message for %s from config (ID: {message.id})", dept_code)
                     return True
             except discord.NotFound:
                 logger.info("Message ID %s for %s not found, will search manually", persistent_message_id, dept_code)
@@ -259,18 +259,18 @@ async def try_pin_existing_message(channel: discord.TextChannel, dept_code: str,
                 if not message.pinned:
                     try:
                         await message.pin()
-                        logger.info(f" Pinned existing message for {dept_code} (ID: {message.id})")
-                        logger.info("Pinned existing message for %s (ID: {message.id})", dept_code)
+                        logger.info(f"Pinned existing message for {dept_code} (ID: {message.id})")
+                        logger.info(f"Pinned existing message for %s (ID: {message.id})", dept_code)
                     except discord.Forbidden:
-                        logger.warning(f" Could not pin message for {dept_code} - insufficient permissions")
+                        logger.warning(f"Could not pin message for {dept_code} - insufficient permissions")
                     except discord.HTTPException as e:
-                        logger.warning(f" Could not pin message for {dept_code}: {e}")
+                        logger.warning(f"Could not pin message for {dept_code}: {e}")
                 
                 # Обновляем конфигурацию с message_id
                 await manager._save_department_message_info(dept_code, channel.id, message.id)
                 
                 logger.info(f"✅ Restored and updated existing message for {dept_code} by search (ID: {message.id})")
-                logger.info("Restored existing message for %s by search (ID: {message.id})", dept_code)
+                logger.info(f"Restored existing message for %s by search (ID: {message.id})", dept_code)
                 return True
         
         logger.info(f"⚠️ No existing message found for {dept_code} to pin")

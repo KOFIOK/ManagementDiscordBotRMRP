@@ -78,7 +78,7 @@ class PostgreSQLConnectionPool:
             )
             self._stats['total_connections_created'] = self.min_connections
             logger.info(f"PostgreSQL pool создан: {self.min_connections}-{self.max_connections} соединений")
-            logger.info("PostgreSQL connection pool инициализирован ({self.min_connections}-{self.max_connections})")
+            logger.info(f"PostgreSQL connection pool инициализирован ({self.min_connections}-{self.max_connections})")
             
         except Exception as e:
             logger.error(f"Ошибка создания пула соединений: {e}")

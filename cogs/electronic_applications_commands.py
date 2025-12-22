@@ -112,6 +112,102 @@ class ElectronicApplicationsCommands(commands.Cog):
                 ephemeral=True
             )
             logger.error(f"ELEC_APP EDIT ERROR: {e}")
+    
+    @app_commands.command(
+        name="message_request_download",
+        description="📥 Скачать текущий шаблон сообщения электронных заявок"
+    )
+    @app_commands.describe(
+        application_type="Тип заявки: 'вступление' или 'восстановление'"
+    )
+    async def message_request_download(
+        self,
+        interaction: discord.Interaction,
+        application_type: str = "вступление"
+    ):
+        """
+        Скачивание текущего шаблона сообщения для электронных заявок
+        
+        Отправляет файл в формате .md
+        """
+        
+        # Проверка прав
+        config = load_config()
+        if not is_administrator(interaction.user, config):
+            await interaction.response.send_message(
+                "❌ У вас нет прав для скачивания шаблонов. Требуются права администратора.",
+                ephemeral=True
+            )
+            return
+        
+        # Проверка типа заявки
+        app_type = application_type.lower().strip()
+        if app_type not in ['вступление', 'восстановление']:
+            await interaction.response.send_message(
+                "❌ Неверный тип заявки. Используйте: 'вступление' или 'восстановление'",
+                ephemeral=True
+            )
+            return
+        
+        try:
+            await interaction.response.defer(ephemeral=True)
+            
+            # Определяем путь к шаблону
+            config = load_config()
+            ea_config = config.get('electronic_applications', {})
+            
+            if app_type == 'вступление':
+                template_path = ea_config.get('template_path', 'data/electronic_applications.md')
+            else:  # восстановление
+                templates = ea_config.get('templates', {})
+                restore_config = templates.get('восстановление', {})
+                template_path = restore_config.get('path', 'data/electronic_applications_restore.md')
+            
+            # Проверка существования файла
+            path = Path(template_path)
+            if not path.exists():
+                await interaction.followup.send(
+                    f"❌ Шаблон не найден по пути: `{template_path}`\n"
+                    f"Создайте шаблон с помощью `/message_request_edit`",
+                    ephemeral=True
+                )
+                return
+            
+            # Читаем файл
+            with open(path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # Создаём discord.File для отправки
+            file_name = f"template_{app_type}.md"
+            discord_file = discord.File(
+                fp=path,
+                filename=file_name
+            )
+            
+            logger.info(f"ELEC_APP DOWNLOAD: Шаблон '{app_type}' скачан пользователем {interaction.user.display_name}")
+            
+            await interaction.followup.send(
+                f"✅ Шаблон для заявок на **{app_type}**\n"
+                f"📄 Файл: `{file_name}`\n"
+                f"📝 Размер: {len(content)} символов\n"
+                f"📍 Путь: `{template_path}`",
+                file=discord_file,
+                ephemeral=True
+            )
+        
+        except UnicodeDecodeError:
+            await interaction.followup.send(
+                "❌ Ошибка чтения файла. Файл повреждён или имеет неверную кодировку.",
+                ephemeral=True
+            )
+            logger.error(f"ELEC_APP DOWNLOAD: Ошибка декодирования файла для {interaction.user.display_name}")
+        
+        except Exception as e:
+            await interaction.followup.send(
+                f"❌ Ошибка при скачивании файла: {str(e)[:100]}",
+                ephemeral=True
+            )
+            logger.error(f"ELEC_APP DOWNLOAD ERROR: {e}")
 
 
 async def setup(bot: commands.Bot):

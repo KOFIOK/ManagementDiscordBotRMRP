@@ -418,7 +418,7 @@ class SuppliesManager:
                     logger.info("Канал уведомлений %s не найден", channel_id)
                     return
             
-            logger.info(f" Канал получен: {channel.id}")
+            logger.info(f"Канал получен: {channel.id}")
             
             # Получаем название объекта для поиска
             object_info = self.objects.get(object_key, {})
@@ -443,7 +443,7 @@ class SuppliesManager:
                                     logger.info(f"Удалено старое сообщение для %s: {message.id}", object_name)
                                     break  # Переходим к следующему сообщению
                                 except (discord.NotFound, discord.HTTPException) as e:
-                                    logger.info("Не удалось удалить сообщение {message.id}: %s", e)
+                                    logger.info(f"Не удалось удалить сообщение {message.id}: %s", e)
                                     
             except Exception as e:
                 logger.warning("Ошибка при получении истории канала: %s", e)

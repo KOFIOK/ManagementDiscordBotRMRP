@@ -40,7 +40,7 @@ async def safe_interaction_response(interaction: discord.Interaction, content: s
             await interaction.followup.send(**kwargs)
     except discord.NotFound as e:
         if e.code == 10062:  # Unknown interaction
-            logger.info(f" INTERACTION EXPIRED: Истекла интеракция для {interaction.user.display_name}")
+            logger.info(f"INTERACTION EXPIRED: Истекла интеракция для {interaction.user.display_name}")
             return False
         else:
             raise
@@ -58,14 +58,14 @@ async def safe_modal_response(interaction: discord.Interaction, modal: discord.u
     """
     try:
         if modal is None:
-            logger.error(f" MODAL ERROR: Модальное окно равно None для {interaction.user.display_name}")
+            logger.error(f"MODAL ERROR: Модальное окно равно None для {interaction.user.display_name}")
             return False
             
         if not interaction.response.is_done():
             await interaction.response.send_modal(modal)
             return True
         else:
-            logger.info(f" INTERACTION: Интеракция уже была обработана для {interaction.user.display_name}")
+            logger.info(f"INTERACTION: Интеракция уже была обработана для {interaction.user.display_name}")
             # Для модальных окон followup не работает, отправляем уведомление
             try:
                 await interaction.followup.send(
@@ -77,7 +77,7 @@ async def safe_modal_response(interaction: discord.Interaction, modal: discord.u
             return False
     except discord.NotFound as e:
         if e.code == 10062:  # Unknown interaction
-            logger.info(f" INTERACTION EXPIRED: Истекла интеракция для {interaction.user.display_name}")
+            logger.info(f"INTERACTION EXPIRED: Истекла интеракция для {interaction.user.display_name}")
             return False
         else:
             raise
@@ -206,7 +206,7 @@ class WarehouseCategorySelect(discord.ui.Select):
                 logger.info("Отправлен выбор предметов для категории %s", selected_category)
             except discord.NotFound as e:
                 if e.code == 10062:  # Unknown interaction
-                    logger.info(f" INTERACTION EXPIRED: Истекла интеракция для {interaction.user.display_name}")
+                    logger.info(f"INTERACTION EXPIRED: Истекла интеракция для {interaction.user.display_name}")
                     logger.info("Не удалось отправить выбор предметов для категории %s", selected_category)
                 else:
                     raise
@@ -276,7 +276,7 @@ class WarehouseItemSelectView(discord.ui.View):
                 except Exception as e:
                     logger.error("Ошибка создания кнопки для предмета '%s': %s", item, e)
         
-        logger.info("VIEW_CREATED: Добавлено {len(self.children)} элементов в view")
+        logger.info(f"VIEW_CREATED: Добавлено {len(self.children)} элементов в view")
 
     def _create_item_callback(self, item_name: str):
         """Создать callback для кнопки предмета"""        # ВАЖНО: захватываем значения по значению, а не по ссылке!
@@ -285,7 +285,7 @@ class WarehouseItemSelectView(discord.ui.View):
         
         async def callback(interaction: discord.Interaction):
             # ОТЛАДКА: выводим что именно открываем
-            logger.info("CALLBACK: Пользователь {interaction.user.display_name} нажал '%s' в категории '%s'", item_name, category)
+            logger.info(f"CALLBACK: Пользователь {interaction.user.display_name} нажал '%s' в категории '%s'", item_name, category)
             
             # Специальная обработка для кастомного предмета "Прочее"
             if item_name == "Прочее":
@@ -394,7 +394,7 @@ class WarehouseCartView(discord.ui.View):
                     static=modal_data['static_value'],
                     parent_view=self
                 )
-                logger.info(f" FAST MODAL: Создано модальное окно с данными из {modal_data['source']} для {interaction.user.display_name}")
+                logger.info(f"FAST MODAL: Создано модальное окно с данными из {modal_data['source']} для {interaction.user.display_name}")
                 await interaction.response.send_modal(modal)
                 return
             except Exception as e:
@@ -407,7 +407,7 @@ class WarehouseCartView(discord.ui.View):
                 from .modals import WarehouseFinalDetailsModal
                 modal = WarehouseFinalDetailsModal(self.cart, self.warehouse_manager, interaction, parent_view=self)
                 await interaction.response.send_modal(modal)
-                logger.info(f" FALLBACK MODAL: Создано модальное окно без предзагрузки для {interaction.user.display_name}")
+                logger.info(f"FALLBACK MODAL: Создано модальное окно без предзагрузки для {interaction.user.display_name}")
             except Exception as modal_error:
                 logger.error("Критическая ошибка с модальным окном: %s", modal_error)
                 await interaction.response.send_message(
@@ -546,12 +546,12 @@ class ConfirmClearCartView(discord.ui.View):
                 try:
                     # Сразу удаляем сообщение корзины БЕЗ обновления и задержек
                     await cart_message.delete()
-                    logger.info(f" CART: Сообщение корзины удалено для пользователя {interaction.user.id}")
+                    logger.info(f"CART: Сообщение корзины удалено для пользователя {interaction.user.id}")
                         
                 except (discord.NotFound, discord.HTTPException) as e:
                     logger.info("Не удалось удалить сообщение корзины: %s", e)
             else:
-                logger.info(f" CART: Сообщение корзины не найдено для пользователя {interaction.user.id}")
+                logger.info(f"CART: Сообщение корзины не найдено для пользователя {interaction.user.id}")
             
             # В конце очищаем отслеживание
             clear_user_cart_safe(interaction.user.id, "пользователь подтвердил очистку")

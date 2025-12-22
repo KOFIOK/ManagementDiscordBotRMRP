@@ -25,7 +25,7 @@ async def send_leave_request_button_message(channel: discord.TextChannel):
                 view = LeaveRequestButton()
                 try:
                     await message.edit(view=view)
-                    logger.info(f" Updated existing pinned leave request message {message.id}")
+                    logger.info(f"Updated existing pinned leave request message {message.id}")
                     return message
                 except Exception as e:
                     logger.warning("Error updating pinned leave request message: %s", e)
@@ -33,7 +33,7 @@ async def send_leave_request_button_message(channel: discord.TextChannel):
                     try:
                         await message.unpin()
                         await message.delete()
-                        logger.info(f" Removed old pinned leave request message {message.id}")
+                        logger.info(f"Removed old pinned leave request message {message.id}")
                     except:
                         pass
                     break
@@ -75,11 +75,11 @@ async def send_leave_request_button_message(channel: discord.TextChannel):
         # Pin the new message for easy access
         try:
             await message.pin()
-            logger.info(f" Pinned new leave request message {message.id}")
+            logger.info(f"Pinned new leave request message {message.id}")
         except Exception as e:
             logger.warning("Error pinning leave request message: %s", e)
         
-        logger.info(f" Leave request button message sent to #{channel.name}")
+        logger.info(f"Leave request button message sent to #{channel.name}")
         return message
         
     except Exception as e:
@@ -113,7 +113,7 @@ async def restore_leave_request_views(bot):
                             view = LeaveRequestButton()
                             try:
                                 await message.edit(view=view)
-                                logger.info(f" Restored leave request button view for pinned message {message.id}")
+                                logger.info(f"Restored leave request button view for pinned message {message.id}")
                             except Exception as e:
                                 logger.warning("Error restoring pinned message view: %s", e)
                             break

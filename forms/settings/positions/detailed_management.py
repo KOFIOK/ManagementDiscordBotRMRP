@@ -101,7 +101,7 @@ class EditPositionModal(ui.Modal):
     async def on_submit(self, interaction: discord.Interaction):
         """Handle submission"""
         try:
-            logger.info(f" EditPositionModal.on_submit called for position {self.position_id}")
+            logger.info(f"EditPositionModal.on_submit called for position {self.position_id}")
             
             position_name = self.name_input.value.strip()
             role_input = self.role_input.value.strip() if self.role_input.value else None
@@ -144,7 +144,7 @@ class EditPositionModal(ui.Modal):
                         )
                         return
                     
-                    logger.info("Role parsed: %s ({role.name})", role_id)
+                    logger.info(f"Role parsed: %s ({role.name})", role_id)
 
                 except ValueError:
                     await interaction.response.send_message(

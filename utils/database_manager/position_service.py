@@ -75,7 +75,7 @@ class PositionService:
                     }
                     self._roles_cache_timestamp = current_time
                     self._cache_stats['refreshes'] += 1
-                    logger.info("Refreshed position roles cache: {len(role_to_position)} roles")
+                    logger.info(f"Refreshed position roles cache: {len(role_to_position)} roles")
             except Exception as e:
                 logger.warning("Failed to refresh position roles cache: %s", e)
                 if self._position_roles_cache is None:
@@ -323,7 +323,7 @@ class PositionService:
                             f"UPDATE employees SET position_subdivision_id = NULL WHERE position_subdivision_id IN ({placeholders})",
                             ps_ids
                         )
-                        logger.info(f" Cleared position assignments for {dependencies['active_employees']} employees")
+                        logger.info(f"Cleared position assignments for {dependencies['active_employees']} employees")
 
                 # Remove from position_subdivision first (FK constraint)
                 cursor.execute("DELETE FROM position_subdivision WHERE position_id = %s", (position_id,))

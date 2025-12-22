@@ -64,7 +64,7 @@ class AuditAction:
                 for row in rows:
                     actions[row['name']] = row['id']
             
-            logger.info("Loaded {len(actions)} actions from database")
+            logger.info(f"Loaded {len(actions)} actions from database")
             return actions
             
         except Exception as e:
@@ -599,7 +599,7 @@ class PersonnelAuditLogger:
                     if result:
                         moderator_personnel_id = result['id']
                     else:
-                        logger.info(f" Moderator not found in personnel DB: {moderator.id}")
+                        logger.info(f"Moderator not found in personnel DB: {moderator.id}")
             except Exception as e:
                 logger.error("Error getting moderator personnel_id: %s", e)
             
@@ -788,7 +788,7 @@ class PersonnelAuditLogger:
                 has_hiring_records = hiring_result['hiring_count'] > 0 if hiring_result else False
             
             if not has_hiring_records:
-                logger.info(f" No hiring records found for {personnel_data.get('name')} - skipping auto-blacklist check")
+                logger.info(f"No hiring records found for {personnel_data.get('name')} - skipping auto-blacklist check")
                 return False
             
             # Calculate total service time
@@ -796,7 +796,7 @@ class PersonnelAuditLogger:
             
             # Check if served less than 5 days
             if total_days < 5:
-                logger.info(f" Auto-blacklist triggered: {personnel_data.get('name')} served only {total_days} days")
+                logger.info(f"Auto-blacklist triggered: {personnel_data.get('name')} served only {total_days} days")
                 
                 # Prepare blacklist reason
                 reason = f"Ранний роспуск (отслужил {total_days} из 5 обязательных дней)"
@@ -815,7 +815,7 @@ class PersonnelAuditLogger:
                 )
                 
                 if blacklist_url:
-                    logger.info(f" Auto-blacklist successful for {personnel_data.get('name')}")
+                    logger.info(f"Auto-blacklist successful for {personnel_data.get('name')}")
                     # Invalidate cache for this user
                     from utils.database_manager import personnel_manager
                     personnel_manager.invalidate_blacklist_cache(target_user.id)
@@ -824,10 +824,10 @@ class PersonnelAuditLogger:
                     invalidate_user_cache(target_user.id)
                     return True
                 else:
-                    logger.error(f" Auto-blacklist failed for {personnel_data.get('name')}")
+                    logger.error(f"Auto-blacklist failed for {personnel_data.get('name')}")
                     return False
             else:
-                logger.info(f" No auto-blacklist: {personnel_data.get('name')} served {total_days} days")
+                logger.info(f"No auto-blacklist: {personnel_data.get('name')} served {total_days} days")
                 return False
                 
         except Exception as e:
@@ -942,7 +942,7 @@ class PersonnelAuditLogger:
         Returns:
             str: Отформатированный статик
         """
-        logger.info("FORMAT_STATIC: Входной статик: '%s' (type: {type(static)})", static)
+        logger.info(f"FORMAT_STATIC: Входной статик: '%s' (type: {type(static)})", static)
         
         if not static:
             print(f" FORMAT_STATIC: Статик пустой, возвращаем пустую строку")
@@ -1107,7 +1107,7 @@ class PersonnelAuditLogger:
                 blacklist_config['success']['view_link'].format(link=blacklist_message.jump_url)
             )
             
-            logger.info(f" Manual blacklist successful for {personnel_data['name']}")
+            logger.info(f"Manual blacklist successful for {personnel_data['name']}")
             return True, success_message
             
         except Exception as e:
@@ -1192,7 +1192,7 @@ class PersonnelAuditLogger:
                 return False, f"Пользователь с Discord ID {discord_id} не найден в базе данных"
 
             logger.info("AUDIT: current_data получен: %s", current_data is not None)
-            logger.info(f" AUDIT: Старые данные: {current_data['first_name']} {current_data['last_name']} | {current_data['static']}")
+            logger.info(f"AUDIT: Старые данные: {current_data['first_name']} {current_data['last_name']} | {current_data['static']}")
             logger.info("AUDIT: Новые данные: %s %s | %s", first_name, last_name, static)
 
             # Format static
@@ -1201,8 +1201,8 @@ class PersonnelAuditLogger:
             formatted_static = pm._format_static_for_db(static)
             logger.info("AUDIT: Форматируем статик '%s'...", static)
             print(f" FORMAT_STATIC: Входной статик: '{static}' (type: {type(static)})")
-            logger.info("FORMAT_STATIC: Только цифры: '{''.join(filter(str.isdigit, static))}' (длина: {len(''.join(filter(str.isdigit, static)))})")
-            logger.info("FORMAT_STATIC: {len(''.join(filter(str.isdigit, static)))} цифр -> XXX-XXX: '%s'", formatted_static)
+            logger.info(f"FORMAT_STATIC: Только цифры: '{''.join(filter(str.isdigit, static))}' (длина: {len(''.join(filter(str.isdigit, static)))})")
+            logger.info(f"FORMAT_STATIC: {len(''.join(filter(str.isdigit, static)))} цифр -> XXX-XXX: '%s'", formatted_static)
             logger.info("AUDIT: Отформатированный статик: '%s'", formatted_static)
 
             # Update personnel profile

@@ -770,6 +770,173 @@ class ChannelManagementCog(commands.Cog):
             )
             logger.error("List blacklist error: %s", e)
 
+    # Blacklist management command group
+    blacklist = app_commands.Group(name="blacklist", description="🚫 Управление чёрным списком пользователей")
+
+    @blacklist.command(name="add", description="➕ Добавить пользователя или роль в чёрный список")
+    @app_commands.describe(target="Пользователь или роль для добавления в чёрный список")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def add_to_blacklist(self, interaction: discord.Interaction, target: discord.Member | discord.Role):
+        """Add a user or role to the blacklist"""
+        try:
+            config = load_config()
+            blacklist = config.get('blacklist', {'users': [], 'roles': []})
+            
+            if isinstance(target, discord.Member):
+                if target.id not in blacklist.get('users', []):
+                    blacklist['users'].append(target.id)
+                    config['blacklist'] = blacklist
+                    save_config(config)
+                    
+                    await interaction.response.send_message(
+                        f"✅ Пользователь {target.mention} добавлен в чёрный список.",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.response.send_message(
+                        f"⚠️ Пользователь {target.mention} уже в чёрном списке.",
+                        ephemeral=True
+                    )
+            
+            elif isinstance(target, discord.Role):
+                if target.id not in blacklist.get('roles', []):
+                    blacklist['roles'].append(target.id)
+                    config['blacklist'] = blacklist
+                    save_config(config)
+                    
+                    await interaction.response.send_message(
+                        f"✅ Роль {target.mention} добавлена в чёрный список.",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.response.send_message(
+                        f"⚠️ Роль {target.mention} уже в чёрном списке.",
+                        ephemeral=True
+                    )
+        
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Ошибка при добавлении в чёрный список: {e}",
+                ephemeral=True
+            )
+            print(f"Add to blacklist error: {e}")
+
+    @blacklist.command(name="remove", description="➖ Убрать пользователя или роль из чёрного списка")
+    @app_commands.describe(target="Пользователь или роль для удаления из чёрного списка")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def remove_from_blacklist(self, interaction: discord.Interaction, target: discord.Member | discord.Role):
+        """Remove a user or role from the blacklist"""
+        try:
+            config = load_config()
+            blacklist = config.get('blacklist', {'users': [], 'roles': []})
+            
+            if isinstance(target, discord.Member):
+                if target.id in blacklist.get('users', []):
+                    blacklist['users'].remove(target.id)
+                    config['blacklist'] = blacklist
+                    save_config(config)
+                    
+                    await interaction.response.send_message(
+                        f"✅ Пользователь {target.mention} удалён из чёрного списка.",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.response.send_message(
+                        f"⚠️ Пользователь {target.mention} не в чёрном списке.",
+                        ephemeral=True
+                    )
+            
+            elif isinstance(target, discord.Role):
+                if target.id in blacklist.get('roles', []):
+                    blacklist['roles'].remove(target.id)
+                    config['blacklist'] = blacklist
+                    save_config(config)
+                    
+                    await interaction.response.send_message(
+                        f"✅ Роль {target.mention} удалена из чёрного списка.",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.response.send_message(
+                        f"⚠️ Роль {target.mention} не в чёрном списке.",
+                        ephemeral=True
+                    )
+        
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Ошибка при удалении из чёрного списка: {e}",
+                ephemeral=True
+            )
+            print(f"Remove from blacklist error: {e}")
+
+    @blacklist.command(name="list", description="📋 Показать чёрный список")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def list_blacklist(self, interaction: discord.Interaction):
+        """List all blacklisted users and roles"""
+        try:
+            config = load_config()
+            blacklist = config.get('blacklist', {'users': [], 'roles': []})
+            
+            embed = discord.Embed(
+                title="🚫 Чёрный список",
+                description="Пользователи и роли, ограниченные в доступе к модулям бота",
+                color=discord.Color.red(),
+                timestamp=discord.utils.utcnow()
+            )
+            
+            # Blacklisted users
+            user_list = []
+            for user_id in blacklist.get('users', []):
+                user = interaction.guild.get_member(user_id)
+                if user:
+                    user_list.append(f"• {user.mention} ({user.display_name})")
+                else:
+                    user_list.append(f"• <@{user_id}> (пользователь не найден)")
+            
+            if user_list:
+                embed.add_field(
+                    name="👤 Заблокированные пользователи",
+                    value="\n".join(user_list),
+                    inline=False
+                )
+            else:
+                embed.add_field(
+                    name="👤 Заблокированные пользователи",
+                    value="Нет заблокированных пользователей",
+                    inline=False
+                )
+            
+            # Blacklisted roles
+            role_list = []
+            for role_id in blacklist.get('roles', []):
+                role = interaction.guild.get_role(role_id)
+                if role:
+                    role_list.append(f"• {role.mention}")
+                else:
+                    role_list.append(f"• <@&{role_id}> (роль не найдена)")
+            
+            if role_list:
+                embed.add_field(
+                    name="🛡️ Заблокированные роли",
+                    value="\n".join(role_list),
+                    inline=False
+                )
+            else:
+                embed.add_field(
+                    name="🛡️ Заблокированные роли",
+                    value="Нет заблокированных ролей",
+                    inline=False
+                )
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Ошибка при получении чёрного списка: {e}",
+                ephemeral=True
+            )
+            print(f"List blacklist error: {e}")
+
     @app_commands.command(name="send_welcome_message", description="📨 Отправить приветственное сообщение пользователю")
     @app_commands.describe(user="Пользователь, которому отправить приветственное сообщение")
     async def send_welcome_message(self, interaction: discord.Interaction, user: discord.Member):

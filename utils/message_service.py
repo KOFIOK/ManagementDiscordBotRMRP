@@ -398,7 +398,7 @@ class MessageService:
             return True
 
         except discord.Forbidden:
-            logger.info(f" MessageService: Cannot send welcome DM to {member.display_name} - DMs disabled")
+            logger.info(f"MessageService: Cannot send welcome DM to {member.display_name} - DMs disabled")
             return False
         except Exception as e:
             logger.error("MessageService.send_welcome_dm error for %s: %s", member, e)

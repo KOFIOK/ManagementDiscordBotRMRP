@@ -191,7 +191,7 @@ class PromotionModal(ui.Modal, title="Повышение в звании"):
                 if sheet_update_success:
                     logger.info("PROMOTION: Mock database update for new rank: %s", new_rank)
                 else:
-                    logger.error(f" PROMOTION: Mock database update failed for user {self.target_user.id}")
+                    logger.error(f"PROMOTION: Mock database update failed for user {self.target_user.id}")
             except Exception as e:
                 logger.error("PROMOTION: Error updating database: %s", e)
             
@@ -359,7 +359,7 @@ class DemotionModal(ui.Modal, title="Разжалование в звании"):
                 if sheet_update_success:
                     logger.info("DEMOTION: Mock database update for new rank: %s", new_rank)
                 else:
-                    logger.error(f" DEMOTION: Mock database update failed for user {self.target_user.id}")
+                    logger.error(f"DEMOTION: Mock database update failed for user {self.target_user.id}")
             except Exception as e:
                 logger.error("DEMOTION: Error updating database: %s", e)
             
@@ -690,7 +690,7 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
     async def _process_recruitment_direct(self, interaction: discord.Interaction, full_name: str, static: str, rank: str) -> bool:
         """Process recruitment using PersonnelManager"""
         try:
-            logger.info(f" RECRUITMENT: Starting recruitment via PersonnelManager for {self.target_user.id}")
+            logger.info(f"RECRUITMENT: Starting recruitment via PersonnelManager for {self.target_user.id}")
             logger.info("RECRUITMENT: Data - Name: '%s', Static: '%s', Rank: '%s'", full_name, static, rank)
             
             # Prepare application data for PersonnelManager
@@ -804,9 +804,9 @@ class PersonalDataModal(ui.Modal, title="Изменить личные данн�
                 if static:
                     self.static.default = static
                     
-                logger.info(f" AUTO-FILL: Данные для {self.target_user.id} успешно загружены из кэша")
+                logger.info(f"AUTO-FILL: Данные для {self.target_user.id} успешно загружены из кэша")
             else:
-                logger.info(f" AUTO-FILL: Данные для {self.target_user.id} не найдены в кэше")
+                logger.info(f"AUTO-FILL: Данные для {self.target_user.id} не найдены в кэше")
                 
                 # Fallback to database query
                 try:
@@ -839,9 +839,9 @@ class PersonalDataModal(ui.Modal, title="Изменить личные данн�
                         if static:
                             self.static.default = static
                             
-                        logger.info(f" AUTO-FILL: Данные для {self.target_user.id} загружены из БД и закэшированы")
+                        logger.info(f"AUTO-FILL: Данные для {self.target_user.id} загружены из БД и закэшированы")
                     else:
-                        logger.info(f" AUTO-FILL: Пользователь {self.target_user.id} не найден в БД или уволен")
+                        logger.info(f"AUTO-FILL: Пользователь {self.target_user.id} не найден в БД или уволен")
                         
                 except Exception as db_error:
                     logger.error(f"AUTO-FILL: Ошибка запроса к БД для {self.target_user.id}: %s", db_error)
@@ -1035,7 +1035,7 @@ class PersonalDataModal(ui.Modal, title="Изменить личные данн�
                     await interaction.followup.send(embed=embed, ephemeral=True)
 
                     # Log to console
-                    logger.info(f" PERSONAL DATA UPDATE: {self.target_user.id} updated by {interaction.user.id}")
+                    logger.info(f"PERSONAL DATA UPDATE: {self.target_user.id} updated by {interaction.user.id}")
                     logger.info(f"New data: %s %s, static: %s", first_name, last_name, formatted_static)
 
                 else:

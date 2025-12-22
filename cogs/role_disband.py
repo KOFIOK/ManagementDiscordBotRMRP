@@ -193,7 +193,7 @@ class RoleDisbandView(discord.ui.View):
             audit_embed.timestamp = discord.utils.utcnow()
             
             await audit_channel.send(embed=audit_embed)
-            logger.info(f" Sent audit log for role disband by {self.admin_user.display_name}")
+            logger.info(f"Sent audit log for role disband by {self.admin_user.display_name}")
             
         except Exception as e:
             logger.warning("Error sending audit log: %s", e)
@@ -283,7 +283,7 @@ class RoleDisband(commands.Cog):
         роль10: discord.Role = None
     ):
         """Disband specified roles from all users"""
-        logger.info(f" /расформ command called by {interaction.user}")
+        logger.info(f"/расформ command called by {interaction.user}")
         try:
             # Check admin permissions - ONLY ADMINISTRATORS can use this command
             config = load_config()
@@ -310,7 +310,7 @@ class RoleDisband(commands.Cog):
             
             roles_to_disband = unique_roles
             
-            logger.info(f" Roles to disband: {[role.name for role in roles_to_disband]}")
+            logger.info(f"Roles to disband: {[role.name for role in roles_to_disband]}")
             
             if not roles_to_disband:
                 embed = discord.Embed(

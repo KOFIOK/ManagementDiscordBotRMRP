@@ -418,7 +418,7 @@ class SuppliesManager:
                     logger.info("Канал уведомлений %s не найден", channel_id)
                     return
             
-            logger.info(f" Канал получен: {channel.id}")
+            logger.info(f"Канал получен: {channel.id}")
             
             # Получаем название объекта для поиска
             object_info = self.objects.get(object_key, {})

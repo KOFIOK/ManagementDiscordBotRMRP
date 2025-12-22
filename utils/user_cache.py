@@ -116,7 +116,7 @@ class UserDataCache:
                 user_data = await personnel_manager.get_personnel_summary(user_id)
                 if user_data:
                     # Данные уже в правильном формате, не нужно переопределять с fallback значениями
-                    logger.info(f" DATABASE_MANAGER: Получены ПОЛНЫЕ данные для {user_id} - {user_data.get('rank', 'N/A')} {user_data.get('full_name', 'N/A')} ({user_data.get('department', 'N/A')})")
+                    logger.info(f"DATABASE_MANAGER: Получены ПОЛНЫЕ данные для {user_id} - {user_data.get('rank', 'N/A')} {user_data.get('full_name', 'N/A')} ({user_data.get('department', 'N/A')})")
                 else:
                     logger.info("DATABASE_MANAGER: Данные для %s не найдены", user_id)
             except Exception as e:
@@ -153,7 +153,7 @@ class UserDataCache:
             if result.get('success', False):
                 logger.info("AUTO BULK PRELOAD: Фоновая предзагрузка завершена успешно")
             else:
-                logger.error(f" AUTO BULK PRELOAD: Фоновая предзагрузка не удалась: {result.get('error', 'Unknown error')}")
+                logger.error(f"AUTO BULK PRELOAD: Фоновая предзагрузка не удалась: {result.get('error', 'Unknown error')}")
         except Exception as e:
             logger.error("AUTO BULK PRELOAD ERROR: %s", e)
     
@@ -194,7 +194,7 @@ class UserDataCache:
             
             if user_data:
                 # Данные уже в правильном формате от PersonnelManager, не переопределяем
-                logger.info(f" INTERNAL DATABASE_MANAGER: Получены ПОЛНЫЕ данные для {user_id} - {user_data.get('rank', 'N/A')} {user_data.get('full_name', 'N/A')} ({user_data.get('department', 'N/A')})")
+                logger.info(f"INTERNAL DATABASE_MANAGER: Получены ПОЛНЫЕ данные для {user_id} - {user_data.get('rank', 'N/A')} {user_data.get('full_name', 'N/A')} ({user_data.get('department', 'N/A')})")
             else:
                 logger.info("INTERNAL DATABASE_MANAGER: Данные для %s не найдены", user_id)
                 user_data = None

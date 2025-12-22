@@ -29,13 +29,13 @@ def connect_to_database():
         )
         return conn
     except Exception as e:
-        logger.error(" Connection failed: %s", e)
+        logger.error("Connection failed: %s", e)
         return None
 
 
 def test_database_structure():
     """Test and display database structure"""
-    logger.info(" Testing Database Structure")
+    logger.info("Testing Database Structure")
     logger.info("=" * 50)
     
     conn = connect_to_database()
@@ -77,7 +77,7 @@ def test_database_structure():
         return True
         
     except Exception as e:
-        logger.error(" Structure test failed: %s", e)
+        logger.error("Structure test failed: %s", e)
         conn.close()
         return False
 
@@ -143,7 +143,7 @@ def test_data_integrity():
         return True
         
     except Exception as e:
-        logger.error(" Data integrity test failed: %s", e)
+        logger.error("Data integrity test failed: %s", e)
         conn.close()
         return False
 
@@ -219,7 +219,7 @@ def test_personnel_operations():
         return True
         
     except Exception as e:
-        logger.error(" Personnel operations test failed: %s", e)
+        logger.error("Personnel operations test failed: %s", e)
         conn.close()
         return False
 
@@ -287,14 +287,14 @@ def test_sample_queries():
         return True
         
     except Exception as e:
-        logger.error(" Sample queries test failed: %s", e)
+        logger.error("Sample queries test failed: %s", e)
         conn.close()
         return False
 
 
 def main():
     """Run comprehensive database tests"""
-    logger.info(" Comprehensive PostgreSQL Database Test")
+    logger.info("Comprehensive PostgreSQL Database Test")
     logger.info("Testing existing database with 281 personnel records")
     logger.info("=" * 60)
     
@@ -324,7 +324,7 @@ def main():
     
     if all_passed:
         logger.info("\n All tests passed! Your existing database is fully functional!")
-        logger.info(" Database contains:")
+        logger.info("Database contains:")
         logger.info("  • 281 personnel records")
         logger.info("  • Complete table structure with relationships")
         logger.info("  • Ready for Discord bot integration")

@@ -541,7 +541,7 @@ class RoleApplicationApprovalView(ui.View):
         try:
             from utils.role_utils import role_utils
             
-            logger.debug(f" ROLE ASSIGNMENT: Начинаем обработку ролей для {user.display_name} (тип: {self.application_data['type']})")
+            logger.debug(f"ROLE ASSIGNMENT: Начинаем обработку ролей для {user.display_name} (тип: {self.application_data['type']})")
             # Диагностика: показываем subdivision из application_data
             try:
                 logger.debug(
@@ -569,11 +569,11 @@ class RoleApplicationApprovalView(ui.View):
             )
             
             if removed_dept:
-                logger.info(f" Очищены роли подразделений: {', '.join(removed_dept)}")
+                logger.info(f"Очищены роли подразделений: {', '.join(removed_dept)}")
             if removed_pos:
-                logger.info(f" Очищены роли должностей: {', '.join(removed_pos)}")
+                logger.info(f"Очищены роли должностей: {', '.join(removed_pos)}")
             if removed_ranks:
-                logger.info(f" Очищены роли рангов: {', '.join(removed_ranks)}")
+                logger.info(f"Очищены роли рангов: {', '.join(removed_ranks)}")
             
             # Шаг 2: Назначить соответствующие роли в зависимости от типа
             assigned_roles = []
@@ -601,7 +601,7 @@ class RoleApplicationApprovalView(ui.View):
             if assigned_roles:
                 logger.info(f"Назначены роли: {', '.join(assigned_roles)}")
             else:
-                logger.info(f" Не удалось назначить роли для типа {self.application_data['type']}")
+                logger.info(f"Не удалось назначить роли для типа {self.application_data['type']}")
                         
         except Exception as e:
             logger.warning("Error in role assignment: %s", e)

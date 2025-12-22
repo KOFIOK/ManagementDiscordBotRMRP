@@ -585,7 +585,7 @@ class PersonnelManager:
                         'has_employee_record': result['employee_id'] is not None
                     }
                 
-                logger.warning(f" No personnel record found for Discord ID: {user_discord_id}")
+                logger.warning(f"No personnel record found for Discord ID: {user_discord_id}")
                 return None
                 
         except Exception as e:
@@ -793,7 +793,7 @@ class PersonnelManager:
                     VALUES (%s, %s, %s, %s, false, CURRENT_DATE);
                 """, (discord_id, first_name, last_name, static))
                 
-                logger.info(f" Добавлен персонал: {first_name} {last_name} (ID: {discord_id})")
+                logger.info(f"Добавлен персонал: {first_name} {last_name} (ID: {discord_id})")
                 return True, f"Персонал {first_name} {last_name} добавлен успешно"
                 
         except Exception as e:
@@ -827,7 +827,7 @@ class PersonnelManager:
                 # Если уже уволен, возвращаем успех
                 if personnel['is_dismissal']:
                     full_name = f"{personnel['first_name']} {personnel['last_name']}"
-                    logger.info(f" Персонал уже уволен: {full_name} (ID: {discord_id})")
+                    logger.info(f"Персонал уже уволен: {full_name} (ID: {discord_id})")
                     return True, f"Персонал {full_name} уже уволен"
                 
                 # Увольняем сотрудника
@@ -842,7 +842,7 @@ class PersonnelManager:
                 
                 if cursor.rowcount > 0:
                     full_name = f"{personnel['first_name']} {personnel['last_name']}"
-                    logger.info(f" Уволен персонал: {full_name} (ID: {discord_id})")
+                    logger.info(f"Уволен персонал: {full_name} (ID: {discord_id})")
                     return True, f"Персонал {full_name} уволен успешно"
                 else:
                     return False, "Не удалось обновить статус увольнения"
@@ -876,7 +876,7 @@ class PersonnelManager:
                 """, (first_name, last_name, discord_id))
                 
                 if cursor.rowcount > 0:
-                    logger.info(f" Обновлены данные персонала: {first_name} {last_name} (ID: {discord_id})")
+                    logger.info(f"Обновлены данные персонала: {first_name} {last_name} (ID: {discord_id})")
                     return True, f"Данные персонала обновлены: {first_name} {last_name}"
                 else:
                     return False, f"Активный персонал с ID {discord_id} не найден"
@@ -928,7 +928,7 @@ class PersonnelManager:
                     message = f"Данные персонала обновлены: {first_name} {last_name}"
                 
                 if cursor.rowcount > 0:
-                    logger.info(f" {message} (ID: {discord_id})")
+                    logger.info(f"{message} (ID: {discord_id})")
                     # Invalidate user cache after profile update
                     # Lazy import to avoid circular dependency
                     from ..user_cache import invalidate_user_cache

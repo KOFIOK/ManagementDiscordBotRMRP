@@ -187,11 +187,11 @@ async def send_warehouse_message(channel):
         return True
         
     except discord.Forbidden:
-        logger.info(f" Нет прав для отправки/закрепления сообщений в канале {channel.name}")
+        logger.info(f"Нет прав для отправки/закрепления сообщений в канале {channel.name}")
         raise Exception("Бот не имеет прав для отправки или закрепления сообщений в этом канале")
     except discord.HTTPException as e:
         if e.code == 30003:
-            logger.info(f" Слишком много закрепленных сообщений в канале {channel.name}")
+            logger.info(f"Слишком много закрепленных сообщений в канале {channel.name}")
             raise Exception("В канале слишком много закрепленных сообщений (лимит 50)")
         else:
             logger.warning("HTTP ошибка: %s", e)

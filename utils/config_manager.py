@@ -194,7 +194,7 @@ def create_backup(reason: str = "auto") -> str:
             
             return backup_path
         else:
-            logger.info(" No config file to backup")
+            logger.info("No config file to backup")
             return ""
     except Exception as e:
         logger.error("Failed to create backup: %s", e)
@@ -218,7 +218,7 @@ def cleanup_old_backups(keep_count: int = 10):
                 old_backup_path = os.path.join(BACKUP_DIR, old_backup)
                 try:
                     os.remove(old_backup_path)
-                    logger.info(" Removed old backup: %s", old_backup)
+                    logger.info("Removed old backup: %s", old_backup)
                 except Exception as e:
                     logger.error("Failed to remove old backup %s: %s", old_backup, e)
                     
@@ -341,7 +341,7 @@ def attempt_recovery() -> Dict[Any, Any]:
     backups = list_backups()
     
     if not backups:
-        logger.info(" No backups found, using default configuration")
+        logger.info("No backups found, using default configuration")
         safe_save_config(default_config)
         return default_config.copy()
     
@@ -611,7 +611,7 @@ def import_config(import_path: str) -> bool:
         # Check if it's an export file with metadata
         if 'config' in import_data and 'exported_at' in import_data:
             config = import_data['config']
-            logger.info(f" Importing configuration exported at: {import_data['exported_at']}")
+            logger.info(f"Importing configuration exported at: {import_data['exported_at']}")
         else:
             # Assume it's a raw config file
             config = import_data

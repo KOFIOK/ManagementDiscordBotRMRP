@@ -259,12 +259,12 @@ async def try_pin_existing_message(channel: discord.TextChannel, dept_code: str,
                 if not message.pinned:
                     try:
                         await message.pin()
-                        logger.info(f" Pinned existing message for {dept_code} (ID: {message.id})")
+                        logger.info(f"Pinned existing message for {dept_code} (ID: {message.id})")
                         logger.info(f"Pinned existing message for %s (ID: {message.id})", dept_code)
                     except discord.Forbidden:
-                        logger.warning(f" Could not pin message for {dept_code} - insufficient permissions")
+                        logger.warning(f"Could not pin message for {dept_code} - insufficient permissions")
                     except discord.HTTPException as e:
-                        logger.warning(f" Could not pin message for {dept_code}: {e}")
+                        logger.warning(f"Could not pin message for {dept_code}: {e}")
                 
                 # Обновляем конфигурацию с message_id
                 await manager._save_department_message_info(dept_code, channel.id, message.id)

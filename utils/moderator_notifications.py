@@ -54,7 +54,7 @@ async def send_moderator_welcome_dm(user: discord.Member) -> bool:
         return True
         
     except discord.Forbidden:
-        logger.info(f" Не удалось отправить DM модератору {user.display_name} - закрыты личные сообщения")
+        logger.info(f"Не удалось отправить DM модератору {user.display_name} - закрыты личные сообщения")
         return False
     except Exception as e:
         logger.error(f"Ошибка при отправке DM модератору {user.display_name}: %s", e)
@@ -110,7 +110,7 @@ async def send_administrator_welcome_dm(user: discord.Member) -> bool:
         return True
         
     except discord.Forbidden:
-        logger.info(f" Не удалось отправить DM администратору {user.display_name} - закрыты личные сообщения")
+        logger.info(f"Не удалось отправить DM администратору {user.display_name} - закрыты личные сообщения")
         return False
     except Exception as e:
         logger.error(f"Ошибка при отправке DM администратору {user.display_name}: %s", e)

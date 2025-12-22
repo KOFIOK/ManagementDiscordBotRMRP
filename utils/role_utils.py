@@ -255,7 +255,7 @@ class RoleUtils:
                     reason = get_role_reason(guild.id, "role_removal.position_change", "Смена должности: снята роль").format(moderator=moderator_display)
                     await user.remove_roles(*roles_to_remove, reason=reason)
                     for role in roles_to_remove:
-                        logger.info(f" Удалена роль должности: {role.name}")
+                        logger.info(f"Удалена роль должности: {role.name}")
                         role_changes.append(f"-{role.name}")
                 except Exception as e:
                     logger.error("Ошибка при удалении ролей: %s", e)
@@ -756,9 +756,9 @@ class RoleUtils:
                         f"Смена ранга: {old_rank_name} → {new_rank_name}"
                     ).format(moderator=moderator_display)
                     await user.remove_roles(old_role, reason=reason)
-                    logger.info(f" Удалена старая роль ранга {old_role.name} у {user.display_name}")
+                    logger.info(f"Удалена старая роль ранга {old_role.name} у {user.display_name}")
                 else:
-                    logger.info(f" Старая роль ранга не найдена или не назначена: role_id={old_rank_data.get('role_id')}")
+                    logger.info(f"Старая роль ранга не найдена или не назначена: role_id={old_rank_data.get('role_id')}")
             else:
                 logger.info("Нет данных о старом ранге для удаления: %s", old_rank_name)
 
@@ -772,11 +772,11 @@ class RoleUtils:
                         f"Смена ранга: {old_rank_name or 'нет'} → {new_rank_name}"
                     ).format(moderator=moderator_display)
                     await user.add_roles(new_role, reason=reason)
-                    logger.info(f" Назначена новая роль ранга {new_role.name} пользователю {user.display_name}")
+                    logger.info(f"Назначена новая роль ранга {new_role.name} пользователю {user.display_name}")
 
                     return True, f"Ранг обновлен: {old_rank_name or 'нет'} → {new_rank_name}"
                 elif new_role:
-                    logger.info(f" Новая роль ранга уже назначена: {new_role.name}")
+                    logger.info(f"Новая роль ранга уже назначена: {new_role.name}")
                     return True, f"Роль ранга уже назначена: {new_rank_name}"
                 else:
                     return False, f"Роль для ранга '{new_rank_name}' не найдена на сервере (ID: {new_rank_data['role_id']})"

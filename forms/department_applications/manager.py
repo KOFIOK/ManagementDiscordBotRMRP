@@ -170,19 +170,19 @@ class DepartmentApplicationManager:
                 
                 channel_id = dept_config.get('application_channel_id')
                 if not channel_id:
-                    logger.info(f" No application_channel_id for %s", dept_code)
+                    logger.info(f"No application_channel_id for %s", dept_code)
                     continue
                 
-                logger.info(f" Looking for channel ID: %s", channel_id)
+                logger.info(f"Looking for channel ID: %s", channel_id)
                 
                 if not self.bot:
-                    logger.info(f" Bot not available")
+                    logger.info(f"Bot not available")
                     continue
                     
                 channel = self.bot.get_channel(channel_id)
                 if not channel:
                     logger.warning(f"Channel {channel_id} for {dept_code} not found")
-                    logger.info(f" Channel %s not found", channel_id)
+                    logger.info(f"Channel %s not found", channel_id)
                     continue
                 
                 logger.info(f"    Found channel: {channel.name}")
@@ -197,16 +197,13 @@ class DepartmentApplicationManager:
                     await self._update_message_with_fresh_view(persistent_message, dept_code)
                     restored_count += 1
                     logger.info(f"✅ Restored persistent view for {dept_code} in {channel.name}")
-                    logger.info(f" Restored persistent view for %s", dept_code)
                 else:
                     logger.warning(f"❌ Failed to restore persistent message for {dept_code}")
-                    logger.warning("   Failed to restore persistent message for %s", dept_code)
             
             # Also restore application moderation views
             await self._restore_application_views()
             
             logger.info(f"Restored {restored_count} department application channels")
-            logger.info("Department applications: restored %s views", restored_count)
             
         except Exception as e:
             logger.error(f"Error restoring persistent views: {e}")
@@ -237,7 +234,7 @@ class DepartmentApplicationManager:
             
             # Note: View is already globally registered in app.py
             # No need to add it again here to prevent duplicates
-            logger.info(f" View {view.custom_id} uses global registration from app.py")
+            logger.info(f"View {view.custom_id} uses global registration from app.py")
             
             logger.info(f"Updated message {message.id} for {dept_code} with fresh view")
             
@@ -286,7 +283,6 @@ class DepartmentApplicationManager:
                             logger.info(f"           Actual title: {message.embeds[0].title}")
                 except discord.NotFound:
                     logger.info(f"Stored message for {dept_code} not found, will create new")
-                    logger.info(f"     Stored message %s not found", stored_message_id)
             
             # Look for pinned messages from bot in channel
             logger.info(f"        Searching pinned messages in {channel.name}")

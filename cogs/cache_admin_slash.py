@@ -345,7 +345,7 @@ class CacheAdminSlashCommands(commands.Cog):
             # Получаем статистику до обновления
             old_stats = get_cache_statistics()
             
-            logger.info(f" MANUAL CACHE REFRESH: Запрос от {interaction.user}")
+            logger.info(f"MANUAL CACHE REFRESH: Запрос от {interaction.user}")
             success = await refresh_user_cache()
             
             # Получаем статистику после обновления
@@ -443,7 +443,7 @@ class CacheAdminSlashCommands(commands.Cog):
         try:
             await interaction.response.defer(ephemeral=True)
             
-            logger.info(f" MANUAL BULK INIT: Запрос от {interaction.user}")
+            logger.info(f"MANUAL BULK INIT: Запрос от {interaction.user}")
             
             import time
             start_time = time.time()

@@ -496,7 +496,7 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
     async def _process_recruitment_with_personnel_manager(self, interaction: discord.Interaction, full_name: str, static: str, rank: str, subdivision: str = None) -> bool:
         """Process recruitment using PersonnelManager"""
         try:
-            logger.info(f" RECRUITMENT: Starting recruitment via PersonnelManager for {self.target_user.id}")
+            logger.info(f"RECRUITMENT: Starting recruitment via PersonnelManager for {self.target_user.id}")
             logger.info("RECRUITMENT: Data - Name: '%s', Static: '%s', Rank: '%s'", full_name, static, rank)
             # Prepare application data for PersonnelManager
             application_data = {
@@ -580,7 +580,7 @@ class RecruitmentModal(ui.Modal, title="Принятие на службу"):
                     dm_embed.add_field(name="Подразделение", value=subdivision or "Не назначено", inline=False)
                     
                     await self.target_user.send(embed=dm_embed)
-                    logger.info(f" RECRUITMENT: DM sent to {self.target_user.display_name}")
+                    logger.info(f"RECRUITMENT: DM sent to {self.target_user.display_name}")
                 except discord.Forbidden:
                     logger.info(f"RECRUITMENT: Could not send DM to {self.target_user.display_name} (DMs disabled)")
                 except Exception as dm_error:
@@ -733,7 +733,7 @@ async def recruit_user(interaction: discord.Interaction, user: discord.Member):
     # Проверка ЧС теперь в модальном окне после ввода static
     modal = RecruitmentModal(user, interaction.guild.id)
     await interaction.response.send_modal(modal)
-    logger.info(f" Recruitment modal sent for {user.display_name}")
+    logger.info(f"Recruitment modal sent for {user.display_name}")
 
 
 class DismissalModal(ui.Modal, title="Увольнение"):
@@ -832,7 +832,7 @@ class DismissalModal(ui.Modal, title="Увольнение"):
             perform_blacklist_check: skip auto-blacklist if False
         """
         try:
-            logger.info(f" DISMISSAL: Starting dismissal for {self.target_user.id}")
+            logger.info(f"DISMISSAL: Starting dismissal for {self.target_user.id}")
             logger.info("DISMISSAL: Reason: '%s'", reason)
             
             # Get personnel data first
@@ -1016,9 +1016,9 @@ class DismissalModal(ui.Modal, title="Увольнение"):
                                     )
                                     
                                     if was_blacklisted:
-                                        logger.info(f" DISMISSAL: Auto-blacklist triggered for {audit_personnel_data.get('name')}")
+                                        logger.info(f"DISMISSAL: Auto-blacklist triggered for {audit_personnel_data.get('name')}")
                                 else:
-                                    logger.info(f" DISMISSAL: Personnel not found in DB for auto-blacklist check: {self.target_user.id}")
+                                    logger.info(f"DISMISSAL: Personnel not found in DB for auto-blacklist check: {self.target_user.id}")
                                     
                         except Exception as blacklist_error:
                             logger.error("DISMISSAL: Error in auto-blacklist check: %s", blacklist_error)
@@ -1041,7 +1041,7 @@ class DismissalModal(ui.Modal, title="Увольнение"):
                     dm_embed.add_field(name="Уволил", value=interaction.user.display_name, inline=False)
                     
                     await self.target_user.send(embed=dm_embed)
-                    logger.info(f" DISMISSAL: DM sent to {self.target_user.display_name}")
+                    logger.info(f"DISMISSAL: DM sent to {self.target_user.display_name}")
                 except discord.Forbidden:
                     logger.info(f"DISMISSAL: Could not send DM to {self.target_user.display_name} (DMs disabled)")
                 except Exception as dm_error:
@@ -1080,7 +1080,7 @@ class DismissalModal(ui.Modal, title="Увольнение"):
             if roles_cleared:
                 logger.info(f"DISMISSAL: Cleared all roles from {self.target_user.display_name}: {', '.join(roles_cleared)}")
             else:
-                logger.info(f" DISMISSAL: No roles to clear for {self.target_user.display_name}")
+                logger.info(f"DISMISSAL: No roles to clear for {self.target_user.display_name}")
             
             # Set dismissal nickname using nickname_manager
             try:
@@ -1106,7 +1106,7 @@ async def dismiss_user(interaction: discord.Interaction, user: discord.User):
     """Context menu command to dismiss user using PersonnelManager"""
     # Prevent double-clicks and invalid interactions
     if interaction.response.is_done():
-        logger.info(f" Dismiss command ignored for {user.display_name} - interaction already responded")
+        logger.info(f"Dismiss command ignored for {user.display_name} - interaction already responded")
         return
         
     # Check permissions
@@ -1162,7 +1162,7 @@ async def dismiss_user(interaction: discord.Interaction, user: discord.User):
     modal = DismissalModal(target_user, interaction.guild.id)
     try:
         await interaction.response.send_modal(modal)
-        logger.info(f" Dismissal modal sent for {target_user.display_name}")
+        logger.info(f"Dismissal modal sent for {target_user.display_name}")
     except discord.errors.HTTPException as e:
         if e.code == 40060:  # Interaction has already been acknowledged
             logger.info(f"Dismissal modal already sent for {target_user.display_name} (interaction already acknowledged)")
@@ -1882,7 +1882,7 @@ class PositionSelect(ui.Select):
                         self.target_user,
                         reason="Снятие должности"
                     )
-                    logger.info(f" Removed position role for {self.target_user.display_name}")
+                    logger.info(f"Removed position role for {self.target_user.display_name}")
                 except Exception as e:
                     logger.error("Error removing position role: %s", e)
             
@@ -2313,7 +2313,7 @@ class PositionOnlySelect(ui.Select):
                             None,
                             None
                         )
-                        logger.info(f" Position roles removed for {user_member.display_name}")
+                        logger.info(f"Position roles removed for {user_member.display_name}")
                     except Exception as role_error:
                         logger.error("Warning: Failed to remove position role: %s", role_error)
                 
@@ -3186,7 +3186,7 @@ async def quick_promote(interaction: discord.Interaction, user: discord.Member):
     """Context menu command to quickly promote user by +1 rank"""
     # Prevent double-clicks and invalid interactions
     if interaction.response.is_done():
-        logger.info(f" Quick promote command ignored for {user.display_name} - interaction already responded")
+        logger.info(f"Quick promote command ignored for {user.display_name} - interaction already responded")
         return
         
     # Check permissions
@@ -3262,7 +3262,7 @@ async def general_edit(interaction: discord.Interaction, user: discord.Member):
     """Context menu command for general editing (rank, department, position)"""
     # Prevent double-clicks and invalid interactions
     if interaction.response.is_done():
-        logger.info(f" General edit command ignored for {user.display_name} - interaction already responded")
+        logger.info(f"General edit command ignored for {user.display_name} - interaction already responded")
         return
         
     # Check permissions

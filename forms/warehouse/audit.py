@@ -252,16 +252,16 @@ async def create_audit_record(guild: discord.Guild, audit_data: dict) -> bool:
             channel_id = config.get('warehouse_audit_channel')
             channel_name = "аудита склада"
         else:
-            logger.info(f" Неизвестный тип аудита: {audit_data['type']}")
+            logger.info(f"Неизвестный тип аудита: {audit_data['type']}")
             return False
         
         if not channel_id:
-            logger.info(f" Канал {channel_name} не настроен")
+            logger.info(f"Канал {channel_name} не настроен")
             return False
         
         channel = guild.get_channel(channel_id)
         if not channel:
-            logger.info(f" Канал {channel_name} не найден (ID: %s)", channel_id)
+            logger.info(f"Канал {channel_name} не найден (ID: %s)", channel_id)
             return False        
         if audit_data["type"] == "issue":
             embed = await create_issue_audit_embed(audit_data)
@@ -272,7 +272,7 @@ async def create_audit_record(guild: discord.Guild, audit_data: dict) -> bool:
             content = await create_cleaning_audit_content()
             await channel.send(content=content, embed=embed)
         
-        logger.info(f" Запись аудита создана в канале {channel.name}")
+        logger.info(f"Запись аудита создана в канале {channel.name}")
         return True
         
     except Exception as e:
@@ -408,9 +408,9 @@ async def create_automatic_audit_from_approval(
         success = await create_audit_record(guild, audit_data)
         
         if success:
-            logger.info(f" Автоматический аудит создан для выдачи {recipient.display_name}")
+            logger.info(f"Автоматический аудит создан для выдачи {recipient.display_name}")
         else:
-            logger.info(f" Не удалось создать автоматический аудит для {recipient.display_name}")
+            logger.info(f"Не удалось создать автоматический аудит для {recipient.display_name}")
         
         return success
         
@@ -463,9 +463,9 @@ async def send_warehouse_audit_message(channel: discord.TextChannel) -> bool:
         # Пытаемся закрепить сообщение
         try:
             await message.pin()
-            logger.info(f" Сообщение аудита склада закреплено в {channel.name}")
+            logger.info(f"Сообщение аудита склада закреплено в {channel.name}")
         except discord.Forbidden:
-            logger.info(f" Нет прав для закрепления сообщения в {channel.name}")
+            logger.info(f"Нет прав для закрепления сообщения в {channel.name}")
         except discord.HTTPException as e:
             logger.warning(f"Ошибка при закреплении сообщения в {channel.name}: %s", e)
         
@@ -487,7 +487,7 @@ async def restore_warehouse_audit_views(channel: discord.TextChannel) -> bool:
         bool: True если views восстановлены успешно
     """
     try:
-        logger.info(f" Восстановление views аудита склада в {channel.name}")
+        logger.info(f"Восстановление views аудита склада в {channel.name}")
         
         # Ищем все сообщения аудита склада (не только закрепленное)
         restored_count = 0
@@ -516,7 +516,7 @@ async def restore_warehouse_audit_views(channel: discord.TextChannel) -> bool:
         if restored_count > 0:
             logger.info("Восстановлено %s view(s) для сообщений аудита склада", restored_count)
         else:
-            logger.info(f" Сообщения аудита склада с отсутствующими views не найдены в {channel.name}")
+            logger.info(f"Сообщения аудита склада с отсутствующими views не найдены в {channel.name}")
         
         return True
         

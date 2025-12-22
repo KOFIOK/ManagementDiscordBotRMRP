@@ -47,10 +47,10 @@ async def create_automatic_dismissal_report(guild, member, target_role_name="С�
             static_value = user_data.get('static', 'Не найден в реестре')
             user_department = user_data.get('department', 'Неизвестно')
             user_rank = user_data.get('rank', 'Неизвестно')
-            logger.info(f" Auto-filled data from personnel database for {member.name}")
+            logger.info(f"Auto-filled data from personnel database for {member.name}")
         else:
             # Fallback to extracting from roles and nickname
-            logger.info(f" User {member.name} not found in personnel database, using fallback")
+            logger.info(f"User {member.name} not found in personnel database, using fallback")
             
             # Extract name from last 2 words of display name
             display_name = getattr(member, 'display_name', member.name)

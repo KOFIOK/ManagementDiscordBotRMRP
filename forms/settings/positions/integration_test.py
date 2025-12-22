@@ -57,10 +57,10 @@ def test_position_management_integration():
         # Test UI components
         logger.info("\n Testing UI components...")
         embed = create_position_embed("Test Title", "Test Description")
-        logger.info(f" create_position_embed works: {embed.title}")
+        logger.info(f"create_position_embed works: {embed.title}")
 
         paginated_embed = create_paginated_embed("Test", [], 1, 1)
-        logger.info(f" create_paginated_embed works: {paginated_embed.title}")
+        logger.info(f"create_paginated_embed works: {paginated_embed.title}")
 
         # Test view instantiation (without Discord context)
         logger.info("\n Testing view instantiation...")

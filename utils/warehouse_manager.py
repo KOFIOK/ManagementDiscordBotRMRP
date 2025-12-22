@@ -191,7 +191,7 @@ class WarehouseManager:
                 
                 if time_since < timedelta(hours=cooldown_hours):
                     next_time_moscow = message_time_moscow + timedelta(hours=cooldown_hours)
-                    logger.info(f" COOLDOWN CHECK: Кулдаун активен! Следующий запрос: {next_time_moscow.strftime('%Y-%m-%d %H:%M:%S')} МСК")
+                    logger.info(f"COOLDOWN CHECK: Кулдаун активен! Следующий запрос: {next_time_moscow.strftime('%Y-%m-%d %H:%M:%S')} МСК")
                     return False, next_time_moscow
             
         except asyncio.TimeoutError:
@@ -258,7 +258,7 @@ class WarehouseManager:
                     # Возвращаем что есть, но предупреждаем
                     return full_name or 'Неизвестно', static or 'Не указан', position, rank
             else:
-                logger.info(f" WAREHOUSE USER INFO: Данные пользователя {user.id} не найдены в БД")
+                logger.info(f"WAREHOUSE USER INFO: Данные пользователя {user.id} не найдены в БД")
                 return 'Неизвестно', 'Не указан', 'Не указано', 'Не указано'
                 
         except Exception as e:
@@ -504,12 +504,12 @@ class WarehouseManager:
             
             # Администраторы могут всегда обходить кулдаун
             if is_administrator(user, config):
-                logger.info(f" COOLDOWN BYPASS: Администратор {user.display_name} обходит кулдаун")
+                logger.info(f"COOLDOWN BYPASS: Администратор {user.display_name} обходит кулдаун")
                 return True
             
             # Модераторы могут всегда обходить кулдаун  
             elif is_moderator_or_admin(user, config):
-                logger.info(f" COOLDOWN BYPASS: Модератор {user.display_name} обходит кулдаун")
+                logger.info(f"COOLDOWN BYPASS: Модератор {user.display_name} обходит кулдаун")
                 return True
             
             return False

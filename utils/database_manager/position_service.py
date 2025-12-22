@@ -323,7 +323,7 @@ class PositionService:
                             f"UPDATE employees SET position_subdivision_id = NULL WHERE position_subdivision_id IN ({placeholders})",
                             ps_ids
                         )
-                        logger.info(f" Cleared position assignments for {dependencies['active_employees']} employees")
+                        logger.info(f"Cleared position assignments for {dependencies['active_employees']} employees")
 
                 # Remove from position_subdivision first (FK constraint)
                 cursor.execute("DELETE FROM position_subdivision WHERE position_id = %s", (position_id,))

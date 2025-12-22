@@ -144,7 +144,7 @@ class EditPositionModal(ui.Modal):
                         )
                         return
                     
-                    logger.info("Role parsed: %s ({role.name})", role_id)
+                    logger.info(f"Role parsed: %s ({role.name})", role_id)
 
                 except ValueError:
                     await interaction.response.send_message(

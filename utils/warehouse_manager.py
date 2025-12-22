@@ -231,7 +231,7 @@ class WarehouseManager:
                     if "429" in str(e) or "Quota exceeded" in str(e):
                         # Rate limiting - ждем и повторяем
                         wait_time = 2 ** attempt  # Exponential backoff
-                        logger.info("⏳ RATE LIMIT в get_user_info: ждем %ss, попытка {attempt + 1}/%s", wait_time, max_retries)
+                        logger.info(f"⏳ RATE LIMIT в get_user_info: ждем %ss, попытка {attempt + 1}/%s", wait_time, max_retries)
                         await asyncio.sleep(wait_time)
                         if attempt == max_retries - 1:
                             logger.info("Не удалось получить данные пользователя после %s попыток", max_retries)
@@ -249,7 +249,7 @@ class WarehouseManager:
                 department = user_data.get('department', '')
                 position = user_data.get('position', '')
                 
-                logger.info("WAREHOUSE USER INFO: {user.id} -> '%s' | '%s' | должность='%s' | звание='%s' | подразделение='%s'", full_name, static, position, rank, department)
+                logger.info(f"WAREHOUSE USER INFO: {user.id} -> '%s' | '%s' | должность='%s' | звание='%s' | подразделение='%s'", full_name, static, position, rank, department)
                 
                 if full_name and static:
                     return full_name, static, position, rank

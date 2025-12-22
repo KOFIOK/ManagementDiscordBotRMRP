@@ -467,7 +467,7 @@ async def send_warehouse_audit_message(channel: discord.TextChannel) -> bool:
         except discord.Forbidden:
             logger.info(f" Нет прав для закрепления сообщения в {channel.name}")
         except discord.HTTPException as e:
-            logger.warning("Ошибка при закреплении сообщения в {channel.name}: %s", e)
+            logger.warning(f"Ошибка при закреплении сообщения в {channel.name}: %s", e)
         
         return True
         
@@ -504,14 +504,14 @@ async def restore_warehouse_audit_views(channel: discord.TextChannel) -> bool:
                     view = WarehouseAuditPinMessageView()
                     try:
                         await message.edit(view=view)
-                        logger.info("View восстановлен для сообщения аудита склада (ID: {message.id})")
+                        logger.info(f"View восстановлен для сообщения аудита склада (ID: {message.id})")
                         restored_count += 1
                     except discord.NotFound:
-                        logger.info("Сообщение аудита склада не найдено для восстановления (ID: {message.id})")
+                        logger.info(f"Сообщение аудита склада не найдено для восстановления (ID: {message.id})")
                     except Exception as e:
-                        logger.warning("Ошибка при восстановлении view аудита склада (ID: {message.id}): %s", e)
+                        logger.warning(f"Ошибка при восстановлении view аудита склада (ID: {message.id}): %s", e)
                 else:
-                    logger.info("Сообщение аудита склада уже имеет view (ID: {message.id})")
+                    logger.info(f"Сообщение аудита склада уже имеет view (ID: {message.id})")
         
         if restored_count > 0:
             logger.info("Восстановлено %s view(s) для сообщений аудита склада", restored_count)
@@ -551,10 +551,10 @@ async def restore_warehouse_audit_pinned_message(channel: discord.TextChannel) -
                     # Восстанавливаем view для закрепленного сообщения
                     view = WarehouseAuditPinMessageView()
                     await message.edit(view=view)
-                    logger.info("Восстановлен view для закрепленного сообщения аудита склада (ID: {message.id})")
+                    logger.info(f"Восстановлен view для закрепленного сообщения аудита склада (ID: {message.id})")
                     return True
                 else:
-                    logger.info("Закрепленное сообщение аудита склада уже имеет view (ID: {message.id})")
+                    logger.info(f"Закрепленное сообщение аудита склада уже имеет view (ID: {message.id})")
                     return True
         
         # Если среди закрепленных не найдено, ищем в истории канала
@@ -570,13 +570,13 @@ async def restore_warehouse_audit_pinned_message(channel: discord.TextChannel) -
                     # Восстанавливаем view для сообщения аудита
                     view = WarehouseAuditPinMessageView()
                     await message.edit(view=view)
-                    logger.info("Восстановлен view для сообщения аудита склада в истории (ID: {message.id})")
+                    logger.info(f"Восстановлен view для сообщения аудита склада в истории (ID: {message.id})")
                     
                     # Пытаемся закрепить сообщение
                     if not message.pinned:
                         try:
                             await message.pin()
-                            logger.info("Сообщение аудита склада закреплено (ID: {message.id})")
+                            logger.info(f"Сообщение аудита склада закреплено (ID: {message.id})")
                         except discord.Forbidden:
                             logger.info("Нет прав для закрепления сообщения аудита")
                         except discord.HTTPException as e:
@@ -584,13 +584,13 @@ async def restore_warehouse_audit_pinned_message(channel: discord.TextChannel) -
                     
                     return True
                 else:
-                    logger.info("Сообщение аудита склада в истории уже имеет view (ID: {message.id})")
+                    logger.info(f"Сообщение аудита склада в истории уже имеет view (ID: {message.id})")
                     
                     # Пытаемся закрепить сообщение если оно не закреплено
                     if not message.pinned:
                         try:
                             await message.pin()
-                            logger.info("Сообщение аудита склада закреплено (ID: {message.id})")
+                            logger.info(f"Сообщение аудита склада закреплено (ID: {message.id})")
                         except discord.Forbidden:
                             logger.info("Нет прав для закрепления сообщения аудита")
                         except discord.HTTPException as e:

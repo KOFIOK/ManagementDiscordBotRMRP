@@ -123,7 +123,7 @@ async def restore_role_assignment_views(bot, channel):
                 except discord.NotFound:
                     continue
                 except Exception as e:
-                    logger.error("Error restoring view for pinned message {message.id}: %s", e)
+                    logger.error(f"Error restoring view for pinned message {message.id}: %s", e)
         
         # If no pinned message found, check recent history as fallback
         async for message in channel.history(limit=50):
@@ -141,7 +141,7 @@ async def restore_role_assignment_views(bot, channel):
                 except discord.NotFound:
                     continue
                 except Exception as e:
-                    logger.error("Error restoring view for message {message.id}: %s", e)
+                    logger.error(f"Error restoring view for message {message.id}: %s", e)
                     
     except Exception as e:
         logger.error("Error restoring role assignment views: %s", e)

@@ -64,7 +64,7 @@ class AuditAction:
                 for row in rows:
                     actions[row['name']] = row['id']
             
-            logger.info("Loaded {len(actions)} actions from database")
+            logger.info(f"Loaded {len(actions)} actions from database")
             return actions
             
         except Exception as e:
@@ -942,7 +942,7 @@ class PersonnelAuditLogger:
         Returns:
             str: Отформатированный статик
         """
-        logger.info("FORMAT_STATIC: Входной статик: '%s' (type: {type(static)})", static)
+        logger.info(f"FORMAT_STATIC: Входной статик: '%s' (type: {type(static)})", static)
         
         if not static:
             print(f" FORMAT_STATIC: Статик пустой, возвращаем пустую строку")
@@ -1201,8 +1201,8 @@ class PersonnelAuditLogger:
             formatted_static = pm._format_static_for_db(static)
             logger.info("AUDIT: Форматируем статик '%s'...", static)
             print(f" FORMAT_STATIC: Входной статик: '{static}' (type: {type(static)})")
-            logger.info("FORMAT_STATIC: Только цифры: '{''.join(filter(str.isdigit, static))}' (длина: {len(''.join(filter(str.isdigit, static)))})")
-            logger.info("FORMAT_STATIC: {len(''.join(filter(str.isdigit, static)))} цифр -> XXX-XXX: '%s'", formatted_static)
+            logger.info(f"FORMAT_STATIC: Только цифры: '{''.join(filter(str.isdigit, static))}' (длина: {len(''.join(filter(str.isdigit, static)))})")
+            logger.info(f"FORMAT_STATIC: {len(''.join(filter(str.isdigit, static)))} цифр -> XXX-XXX: '%s'", formatted_static)
             logger.info("AUDIT: Отформатированный статик: '%s'", formatted_static)
 
             # Update personnel profile

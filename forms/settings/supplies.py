@@ -32,7 +32,7 @@ class SuppliesSettingsView(SectionSettingsView):
             supplies_config['timer_duration_minutes'] = old_hours * 60
             config['supplies'] = supplies_config
             save_config(config)
-            logger.info("Мигрировали настройку таймера: %sч → {old_hours * 60}мин", old_hours)
+            logger.info(f"Мигрировали настройку таймера: %sч → {old_hours * 60}мин", old_hours)
         
         embed = discord.Embed(
             title="⚙️ Настройки системы поставок",

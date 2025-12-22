@@ -919,7 +919,7 @@ class DepartmentApplicationModerationView(discord.ui.View):
 
             dept_code = self.application_data['department_code']
 
-            logger.info("DEPT APPLICATION: Начинаем обработку для {target_user.display_name} в %s", dept_code)
+            logger.info(f"DEPT APPLICATION: Начинаем обработку для {target_user.display_name} в %s", dept_code)
 
             # Step 1: Remove ALL department roles (regardless of transfer/join)
             removed_dept = await role_utils.clear_all_department_roles(
@@ -992,7 +992,7 @@ class DepartmentApplicationModerationView(discord.ui.View):
             
             if application_type == 'transfer' or personnel_data:
                 # Перевод в подразделение (есть данные в БД)
-                logger.info("DEPT APPLICATION: Перевод {user.display_name} в %s", dept_code)
+                logger.info(f"DEPT APPLICATION: Перевод {user.display_name} в %s", dept_code)
                 
                 current_rank = personnel_data.get('rank', 'Рядовой') if personnel_data else 'Рядовой'
                 

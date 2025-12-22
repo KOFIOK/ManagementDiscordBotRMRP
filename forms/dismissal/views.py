@@ -217,7 +217,7 @@ class SimplifiedDismissalApprovalView(ui.View):
                         await target_user.send(embed=dm_embed)
                         logger.info(f" DISMISSAL: DM sent to {target_user.display_name}")
                     except discord.Forbidden:
-                        logger.info("DISMISSAL: Could not send DM to {target_user.display_name} (DMs disabled)")
+                        logger.info(f"DISMISSAL: Could not send DM to {target_user.display_name} (DMs disabled)")
                     except Exception as dm_error:
                         logger.warning("DISMISSAL: Failed to send DM: %s", dm_error)
             
@@ -345,15 +345,15 @@ class SimplifiedDismissalApprovalView(ui.View):
                         await target_user_member.send(embed=dm_embed)
                         logger.info(f" DISMISSAL REJECTION: DM sent to {target_user_member.display_name}")
                     except discord.Forbidden:
-                        logger.info("DISMISSAL REJECTION: Could not send DM to {target_user_member.display_name} (DMs disabled)")
+                        logger.info(f"DISMISSAL REJECTION: Could not send DM to {target_user_member.display_name} (DMs disabled)")
                     except Exception as dm_error:
                         logger.warning("DISMISSAL REJECTION: Failed to send DM: %s", dm_error)
             
             # Логирование
             if is_automatic:
-                logger.info("AUTO-REJECT: {target_user.display_name} ({target_user.id}) - %s", reason)
+                logger.info(f"AUTO-REJECT: {target_user.display_name} ({target_user.id}) - %s", reason)
             else:
-                logger.info("MANUAL REJECT: {target_user.display_name} ({target_user.id}) by {interaction.user.display_name} - %s", reason)
+                logger.info(f"MANUAL REJECT: {target_user.display_name} ({target_user.id}) by {interaction.user.display_name} - %s", reason)
                         
         except Exception as e:
             logger.warning("Error in finalize_rejection_universal: %s", e)
@@ -478,7 +478,7 @@ class SimplifiedDismissalApprovalView(ui.View):
                     reason = form_data.get('reason', 'Уволен')
                     provided_name = form_data.get('name', target_user.display_name)
                     
-                    logger.info("NICKNAME INTEGRATION: Увольнение {target_user.display_name} -> %s (причина: %s)", provided_name, reason)
+                    logger.info(f"NICKNAME INTEGRATION: Увольнение {target_user.display_name} -> %s (причина: %s)", provided_name, reason)
                     
                     # Используем nickname_manager для автоматической обработки никнейма
                     new_nickname = await nickname_manager.handle_dismissal(
@@ -1010,7 +1010,7 @@ class AutomaticDismissalApprovalView(ui.View):
     async def _process_automatic_dismissal_approval(self, interaction, target_user, config):
         """Process automatic dismissal approval (similar to standard approval but simplified)"""
         try:
-            logger.info("Starting automatic dismissal approval for {target_user.display_name} (ID: {target_user.id})")
+            logger.info(f"Starting automatic dismissal approval for {target_user.display_name} (ID: {target_user.id})")
             
             # Processing state already shown by caller, no need to defer again
             

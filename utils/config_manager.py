@@ -345,7 +345,7 @@ def attempt_recovery() -> Dict[Any, Any]:
         safe_save_config(default_config)
         return default_config.copy()
     
-    logger.info("Found {len(backups)} backup(s), trying to restore...")
+    logger.info(f"Found {len(backups)} backup(s), trying to restore...")
     
     for backup_file in backups:
         logger.info("Trying backup: %s", backup_file)

@@ -844,7 +844,7 @@ class PersonalDataModal(ui.Modal, title="Изменить личные данн�
                         logger.info(f" AUTO-FILL: Пользователь {self.target_user.id} не найден в БД или уволен")
                         
                 except Exception as db_error:
-                    logger.error("AUTO-FILL: Ошибка запроса к БД для {self.target_user.id}: %s", db_error)
+                    logger.error(f"AUTO-FILL: Ошибка запроса к БД для {self.target_user.id}: %s", db_error)
                 
         except Exception as e:
             logger.warning("Warning: Could not auto-fill personal data: %s", e)

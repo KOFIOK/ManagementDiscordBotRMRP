@@ -245,7 +245,7 @@ class UserDataCache:
             self._expiry.pop(user_id, None)
         
         if expired_keys:
-            logger.info("CACHE CLEANUP: Удалено {len(expired_keys)} истекших записей")
+            logger.info(f"CACHE CLEANUP: Удалено {len(expired_keys)} истекших записей")
         
         self._stats['cache_size'] = len(self._cache)
         self._stats['last_cleanup'] = now
@@ -263,7 +263,7 @@ class UserDataCache:
             self._cache.pop(user_id, None)
             self._expiry.pop(user_id, None)
         
-        logger.info("CACHE EVICTION: Удалено {min(count, len(sorted_entries))} старых записей")
+        logger.info(f"CACHE EVICTION: Удалено {min(count, len(sorted_entries))} старых записей")
         self._stats['cache_size'] = len(self._cache)
     
     def invalidate_user(self, user_id: int):
@@ -316,7 +316,7 @@ class UserDataCache:
         Returns:
             Dict {user_id: user_data} с результатами предзагрузки
         """
-        logger.info("CACHE PRELOAD: Предзагрузка данных для {len(user_ids)} пользователей")
+        logger.info(f"CACHE PRELOAD: Предзагрузка данных для {len(user_ids)} пользователей")
         
         results = {}
         tasks = []
@@ -361,7 +361,7 @@ class UserDataCache:
             except Exception as e:
                 logger.error("PRELOAD BATCH ERROR: %s", e)
         
-        logger.info("CACHE PRELOAD завершена: {len(results)} пользователей обработано")
+        logger.info(f"CACHE PRELOAD завершена: {len(results)} пользователей обработано")
         return results
     
     async def bulk_preload_all_users(self, force_refresh: bool = False) -> Dict[str, Any]:
@@ -626,7 +626,7 @@ async def preload_user_data(user_ids: List[int]) -> Dict[int, Optional[Dict[str,
         user_data = await _global_cache.get_user_info(user_id)
         results[user_id] = user_data
     
-    logger.info("CACHE PRELOAD: Предзагружено {len(user_ids)} пользователей")
+    logger.info(f"CACHE PRELOAD: Предзагружено {len(user_ids)} пользователей")
     return results
 
 

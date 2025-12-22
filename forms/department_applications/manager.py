@@ -142,7 +142,7 @@ class DepartmentApplicationManager:
             config = load_config()
             departments = config.get('departments', {})
             
-            logger.info("Found {len(departments)} departments in config")
+            logger.info(f"Found {len(departments)} departments in config")
             
             if not departments:
                 logger.info("No departments configured for applications")

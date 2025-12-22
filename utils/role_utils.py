@@ -585,9 +585,9 @@ class RoleUtils:
                         await user.remove_roles(role, reason=audit_reason)
                         removed_roles.append(role.name)
                     except discord.Forbidden:
-                        logger.info("Нет прав для удаления роли {role.name} у %s", user)
+                        logger.info(f"Нет прав для удаления роли {role.name} у %s", user)
                     except Exception as e:
-                        logger.error("Ошибка при удалении роли {role.name} у %s: %s", user, e)
+                        logger.error(f"Ошибка при удалении роли {role.name} у %s: %s", user, e)
 
         except Exception as e:
             logger.error("Ошибка при полном снятии ролей у %s: %s", user, e)

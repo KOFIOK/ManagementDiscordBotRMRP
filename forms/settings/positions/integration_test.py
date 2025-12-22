@@ -40,11 +40,11 @@ def test_position_management_integration():
 
         # Test getting positions for subdivision (should work even if empty)
         positions = position_service.get_positions_for_subdivision(1)  # Test subdivision ID
-        logger.info("get_positions_for_subdivision returned: {len(positions)} positions")
+        logger.info(f"get_positions_for_subdivision returned: {len(positions)} positions")
 
         # Test getting all positions with subdivisions
         all_positions = position_service.get_all_positions_with_subdivisions()
-        logger.info("get_all_positions_with_subdivisions returned: {len(all_positions)} positions")
+        logger.info(f"get_all_positions_with_subdivisions returned: {len(all_positions)} positions")
 
         # Test validation
         logger.info("\n Testing PositionValidator...")

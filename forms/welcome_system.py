@@ -28,16 +28,17 @@ def setup_welcome_events(bot):
     @bot.event
     async def on_member_join(member):
         """Обработчик входа нового пользователя на сервер"""
-        logger.info("New member joined: {member.display_name} ({member.id})")
+        logger.info(f"Новый пользователь присоединился: {member.display_name} ({member.id})")
         
         try:
             # Отправляем приветственное сообщение в ЛС
             dm_sent = await WelcomeSystem.send_welcome_message(member)
             
             # Логируем событие
-            logger.info("Welcome process completed for {member.display_name} (DM: %s)", '' if dm_sent else '')
+            dm_status = 'OK' if dm_sent else 'FAIL'
+            logger.info(f"Welcome process completed for {member.display_name} (DM: {dm_status})")
             
         except Exception as e:
-            logger.warning("Error in welcome process for {member.display_name}: %s", e)
+            logger.warning(f"Error in welcome process for {member.display_name}: {e}")
     
     logger.info("Welcome system events registered")

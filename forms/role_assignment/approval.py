@@ -627,7 +627,7 @@ class RoleApplicationApprovalView(ui.View):
             # Получаем статик из заявки
             static = self.application_data.get('static', '')
             
-            logger.info("NICKNAME INTEGRATION: Приём на службу {user.display_name} -> %s %s (звание: %s)", first_name, last_name, rank_name)
+            logger.info(f"NICKNAME INTEGRATION: Приём на службу {user.display_name} -> %s %s (звание: %s)", first_name, last_name, rank_name)
             
             # Используем nickname_manager для автоматической обработки никнейма
             new_nickname = await nickname_manager.handle_hiring(

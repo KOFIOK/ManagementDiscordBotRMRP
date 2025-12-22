@@ -394,7 +394,7 @@ class MessageService:
 
             # Send both embeds
             await member.send(embeds=[embed, embed_ticket])
-            logger.info("Sent welcome message to {member.display_name} ({member.id})")
+            logger.info(f"Sent welcome message to {member.display_name} ({member.id})")
             return True
 
         except discord.Forbidden:

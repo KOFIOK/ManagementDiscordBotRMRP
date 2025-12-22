@@ -132,11 +132,11 @@ async def create_automatic_dismissal_report(guild, member, target_role_name="С�
         # Send the automatic report with department pings
         message = await channel.send(content=ping_content, embed=embed, view=approval_view)
         
-        logger.info("Created automatic dismissal report for {member.name} (ID: {member.id})")
+        logger.info(f"Created automatic dismissal report for {member.name} (ID: {member.id})")
         return True
         
     except Exception as e:
-        logger.warning("Error creating automatic dismissal report for {member.name}: %s", e)
+        logger.warning(f"Error creating automatic dismissal report for {member.name}: %s", e)
         return False
 
 
@@ -159,5 +159,5 @@ async def should_create_automatic_dismissal(member, target_role_name="Сотру
                     return True
         return False
     except Exception as e:
-        logger.error("Error checking if {member.name} should get automatic dismissal: %s", e)
+        logger.error(f"Error checking if {member.name} should get automatic dismissal: %s", e)
         return False

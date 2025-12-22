@@ -426,7 +426,7 @@ class PersonnelManager:
                     similar_position = cursor.fetchone()
                     
                     if similar_position:
-                        logger.info("Найдена похожая должность: {similar_position['name']} для запроса '%s'", position_name)
+                        logger.info(f"Найдена похожая должность: {similar_position['name']} для запроса '%s'", position_name)
                         position_id = similar_position['id']
                     else:
                         # Default to "Курсант" for new recruits if position not found
@@ -458,7 +458,7 @@ class PersonnelManager:
             cursor.execute("SELECT name FROM positions WHERE id = %s;", (position_id,))
             pos_name = cursor.fetchone()['name']
             
-            logger.info("Создана связь должность-подразделение: %s → subdivision_id %s (PS_ID: {ps_link['id']})", pos_name, subdivision_id)
+            logger.info(f"Создана связь должность-подразделение: %s → subdivision_id %s (PS_ID: {ps_link['id']})", pos_name, subdivision_id)
             return ps_link['id']
             
         except Exception as e:

@@ -27,10 +27,10 @@ async def restore_warehouse_pinned_message(channel):
                     # Восстанавливаем view для закрепленного сообщения
                     view = WarehousePinMessageView()
                     await message.edit(view=view)
-                    logger.info("Восстановлен view для закрепленного сообщения склада (ID: {message.id})")
+                    logger.info(f"Восстановлен view для закрепленного сообщения склада (ID: {message.id})")
                     return True
                 else:
-                    logger.info("Закрепленное сообщение склада уже имеет view (ID: {message.id})")
+                    logger.info(f"Закрепленное сообщение склада уже имеет view (ID: {message.id})")
                     return True
         
         logger.info("Закрепленное сообщение склада не найдено")
@@ -83,7 +83,7 @@ async def restore_warehouse_request_views(channel):
                         restored_count += 1
                         
                     except Exception as e:
-                        logger.error("Ошибка при восстановлении view для сообщения {message.id}: %s", e)
+                        logger.error(f"Ошибка при восстановлении view для сообщения {message.id}: %s", e)
         
         if restored_count > 0:
             logger.info(f"Восстановлено %s warehouse views в канале {channel.name}", restored_count)
@@ -178,11 +178,11 @@ async def send_warehouse_message(channel):
     # Отправляем сообщение
     try:
         message = await channel.send(embed=embed, view=view)
-        logger.info("Сообщение склада отправлено (ID: {message.id})")
+        logger.info(f"Сообщение склада отправлено (ID: {message.id})")
         
         # Закрепляем сообщение
         await message.pin()
-        logger.info("Сообщение склада закреплено (ID: {message.id})")
+        logger.info(f"Сообщение склада закреплено (ID: {message.id})")
         
         return True
         
@@ -213,7 +213,7 @@ async def recreate_warehouse_pinned_message(channel):
                 message.embeds[0].title and
                 "Запрос складского имущества" in message.embeds[0].title):
                 
-                logger.info("Удаляем старое сообщение склада (ID: {message.id})")
+                logger.info(f"Удаляем старое сообщение склада (ID: {message.id})")
                 await message.unpin()
                 await message.delete()
                 break

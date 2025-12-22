@@ -106,7 +106,7 @@ class SuppliesRestoreManager:
                             return True
             return False
         except Exception as e:
-            logger.warning("Ошибка проверки сообщений в #{channel.name}: %s", e)
+            logger.warning(f"Ошибка проверки сообщений в #{channel.name}: %s", e)
             return False
     
     async def update_control_message_timers(self):

@@ -223,7 +223,7 @@ class LeaveRequestStorage:
                           timedelta(days=1)
                 seconds_until_midnight = (tomorrow - now).total_seconds()
                 
-                logger.info("⏰ Leave requests cleanup scheduled in {int(seconds_until_midnight/3600)}h {int((seconds_until_midnight%3600)/60)}m")
+                logger.info(f"⏰ Leave requests cleanup scheduled in {int(seconds_until_midnight/3600)}h {int((seconds_until_midnight%3600)/60)}m")
                 
                 # Wait until midnight
                 await asyncio.sleep(seconds_until_midnight)

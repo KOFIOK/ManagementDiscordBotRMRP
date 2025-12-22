@@ -276,7 +276,7 @@ class WarehouseItemSelectView(discord.ui.View):
                 except Exception as e:
                     logger.error("Ошибка создания кнопки для предмета '%s': %s", item, e)
         
-        logger.info("VIEW_CREATED: Добавлено {len(self.children)} элементов в view")
+        logger.info(f"VIEW_CREATED: Добавлено {len(self.children)} элементов в view")
 
     def _create_item_callback(self, item_name: str):
         """Создать callback для кнопки предмета"""        # ВАЖНО: захватываем значения по значению, а не по ссылке!
@@ -285,7 +285,7 @@ class WarehouseItemSelectView(discord.ui.View):
         
         async def callback(interaction: discord.Interaction):
             # ОТЛАДКА: выводим что именно открываем
-            logger.info("CALLBACK: Пользователь {interaction.user.display_name} нажал '%s' в категории '%s'", item_name, category)
+            logger.info(f"CALLBACK: Пользователь {interaction.user.display_name} нажал '%s' в категории '%s'", item_name, category)
             
             # Специальная обработка для кастомного предмета "Прочее"
             if item_name == "Прочее":

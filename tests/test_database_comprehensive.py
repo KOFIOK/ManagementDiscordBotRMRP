@@ -69,7 +69,7 @@ def test_database_structure():
                 
             nullable = "NULL" if col_info['is_nullable'] == 'YES' else "NOT NULL"
             default = f" DEFAULT {col_info['column_default']}" if col_info['column_default'] else ""
-            logger.info("  - {col_info['column_name']}: {col_info['data_type']} %s%s", nullable, default)
+            logger.info(f"  - {col_info['column_name']}: {col_info['data_type']} %s%s", nullable, default)
         
         cursor.close()
         conn.close()
@@ -132,7 +132,7 @@ def test_data_integrity():
         duplicates = cursor.fetchall()
         
         if duplicates:
-            logger.info("   Found {len(duplicates)} duplicate Discord IDs:")
+            logger.info(f"   Found {len(duplicates)} duplicate Discord IDs:")
             for dup in duplicates[:5]:  # Show first 5
                 logger.info(f"    Discord ID {dup['discord_id']}: {dup['count']} records")
         else:
@@ -263,7 +263,7 @@ def test_sample_queries():
             position = user['position_name'] or 'No position'
             subdivision = user['subdivision_name'] or 'No subdivision'
             rank = user['rank_name'] or 'No rank'
-            logger.info("  {user['first_name']} {user['last_name']} ({user['discord_id']})")
+            logger.info(f"  {user['first_name']} {user['last_name']} ({user['discord_id']})")
             logger.info("    Position: %s | Subdivision: %s | Rank: %s", position, subdivision, rank)
         
         # Query 2: Get all personnel for roster

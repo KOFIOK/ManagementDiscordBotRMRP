@@ -55,10 +55,13 @@ def parse_discord_tag_from_content(content: str, pattern: str) -> Optional[str]:
         # Сначала ищем теги с @ (более надежно)
         matches_with_at = re.findall(fallback_pattern, content)
         if matches_with_at:
-            # Берем первый найденный тег с @ (обычно это искомый пользователь)
-            tag = matches_with_at[0].strip()
-            logger.info(f"ELEC_APP: Найден Discord-тег (@tag паттерн): {tag}")
-            return tag
+            # Фильтруем служебные слова (например, @user из примеров)
+            excluded_words = {'user', 'пример', 'example', 'username', 'nickname'}
+            
+            for tag in matches_with_at:
+                if tag.lower() not in excluded_words and len(tag) > 2:
+                    logger.info(f"ELEC_APP: Найден Discord-тег (@tag паттерн): {tag}")
+                    return tag.strip()
         
         # Вариант 3: Если @ не найдены, ищем любые потенциальные теги
         simple_pattern = r'([\w.#\d-]+)'

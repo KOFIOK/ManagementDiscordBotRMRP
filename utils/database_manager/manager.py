@@ -189,9 +189,9 @@ class PersonnelManager:
             
             cursor.execute("""
                 UPDATE personnel 
-                SET first_name = %s, last_name = %s, static = %s, last_updated = %s, is_dismissal = false
+                SET first_name = %s, last_name = %s, static = %s, join_date = %s, last_updated = %s, is_dismissal = false
                 WHERE id = %s;
-            """, (first_name, last_name, static_id, datetime.now(timezone.utc), personnel_id))
+            """, (first_name, last_name, static_id, datetime.now().date(), datetime.now(timezone.utc), personnel_id))
             
             logger.info("Обновлена запись personnel: %s %s (ID: %s)", first_name, last_name, personnel_id)
             

@@ -39,6 +39,7 @@ async def get_user_status(user_discord_id: int) -> dict:
         - position: str|None - current position if active
         - full_name: str|None - full name from personnel table
         - static: str|None - static number
+        - join_date: datetime|None - date of joining service
     """
     try:
         from utils.database_manager import personnel_manager
@@ -52,7 +53,8 @@ async def get_user_status(user_discord_id: int) -> dict:
             'department': None,
             'position': None,
             'full_name': None,
-            'static': None
+            'static': None,
+            'join_date': None
         }
         
         # First, try to get data from cache
@@ -74,7 +76,7 @@ async def get_user_status(user_discord_id: int) -> dict:
                 # Need to check dismissal status from database
                 with get_db_cursor() as cursor:
                     cursor.execute("""
-                        SELECT is_dismissal
+                        SELECT is_dismissal, join_date
                         FROM personnel 
                         WHERE discord_id = %s
                         ORDER BY id DESC
@@ -84,15 +86,31 @@ async def get_user_status(user_discord_id: int) -> dict:
                     personnel_result = cursor.fetchone()
                     if personnel_result:
                         status['is_dismissed'] = personnel_result['is_dismissal']
+                        status['join_date'] = personnel_result['join_date']
                         if not status['is_dismissed']:
                             # User has personnel record but no active service - might be inactive
                             status['is_active'] = False
+            
+            # ALWAYS get join_date from database (cache doesn't contain it)
+            if not status['join_date']:
+                with get_db_cursor() as cursor:
+                    cursor.execute("""
+                        SELECT join_date
+                        FROM personnel 
+                        WHERE discord_id = %s
+                        ORDER BY id DESC
+                        LIMIT 1;
+                    """, (user_discord_id,))
+                    
+                    result = cursor.fetchone()
+                    if result:
+                        status['join_date'] = result['join_date']
         else:
             # No cached data, check database directly
             with get_db_cursor() as cursor:
                 # Check if user has any personnel record
                 cursor.execute("""
-                    SELECT id, first_name, last_name, static, is_dismissal
+                    SELECT id, first_name, last_name, static, is_dismissal, join_date
                     FROM personnel 
                     WHERE discord_id = %s
                     ORDER BY id DESC
@@ -104,6 +122,7 @@ async def get_user_status(user_discord_id: int) -> dict:
                     status['is_dismissed'] = personnel_result['is_dismissal']
                     status['full_name'] = f"{personnel_result['first_name']} {personnel_result['last_name']}".strip() if personnel_result['first_name'] and personnel_result['last_name'] else None
                     status['static'] = personnel_result['static']
+                    status['join_date'] = personnel_result['join_date']
                     
                     # If not dismissed, get active service info
                     if not personnel_result['is_dismissal']:
@@ -140,7 +159,8 @@ async def get_user_status(user_discord_id: int) -> dict:
             'department': None,
             'position': None,
             'full_name': None,
-            'static': None
+            'static': None,
+            'join_date': None
         }
 
 
@@ -3365,6 +3385,11 @@ async def general_edit(interaction: discord.Interaction, user: discord.Member):
         if not static:
             static = 'Не указано'
         
+        # Format join date
+        join_date_str = "Не указано"
+        if user_status['join_date']:
+            join_date_str = user_status['join_date'].strftime('%d.%m.%Y')
+        
         # Send general editing view with current information
         view = GeneralEditView(user)
         await interaction.response.send_message(
@@ -3374,7 +3399,8 @@ async def general_edit(interaction: discord.Interaction, user: discord.Member):
             f"> • **Статик:** `{static}`\n"
             f"> • **Звание:** `{current_rank}`\n"
             f"> • **Подразделение:** `{department_name}`\n"
-            f"> • **Должность:** `{position_name}`{blacklist_warning}\n\n"
+            f"> • **Должность:** `{position_name}`\n"
+            f"> • **Дата приёма:** `{join_date_str}`{blacklist_warning}\n\n"
             f"Выберите что хотите изменить:",
             view=view,
             ephemeral=True

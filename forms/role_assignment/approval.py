@@ -1121,9 +1121,10 @@ class StaticConflictConfirmationView(ui.View):
                             SET discord_id = %s,
                                 is_dismissal = false,
                                 dismissal_date = NULL,
+                                join_date = %s,
                                 last_updated = %s
                             WHERE discord_id = %s;
-                        """, (self.new_user_id, datetime.now(timezone.utc), self.old_discord_id))
+                        """, (self.new_user_id, datetime.now().date(), datetime.now(timezone.utc), self.old_discord_id))
                         
                         # COMMIT если всё прошло успешно
                         cursor.execute("COMMIT;")

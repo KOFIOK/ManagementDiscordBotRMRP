@@ -308,13 +308,13 @@ async def create_issue_audit_embed(audit_data: dict) -> discord.Embed:
         recipient_display = recipient_text
     
     embed.add_field(
-        name="👤 Выдал",
+        name="👥 Получил",
         value=recipient_display,
         inline=True
     )
     
     embed.add_field(
-        name="👤 Выдал",
+        name="📦 Предметы",
         value=audit_data["items"],
         inline=False
     )

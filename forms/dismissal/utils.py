@@ -92,10 +92,15 @@ async def restore_dismissal_approval_views(bot, channel):
                 embed = message.embeds[0]
                 
                 # Check if report is still pending (not approved/rejected)
-                # We check if there's no "✅ Обработано" field, which means it's still pending
+                # Check both field names AND values for approval/rejection indicators
                 status_pending = True
                 for field in embed.fields:
-                    if field.name in ["✅ Обработано", "Отказано"]:
+                    # Check field name (without emoji prefixes)
+                    if any(keyword in field.name for keyword in ["Обработано", "Отказано", "ОДОБРЕН", "ОТКЛОНЕН"]):
+                        status_pending = False
+                        break
+                    # Check field value for approval/rejection indicators
+                    if field.value and any(keyword in field.value for keyword in ["ОДОБРЕН", "ОТКЛОНЕН", "Одобрил:", "Отклонил:", "Сотрудник:"]):
                         status_pending = False
                         break
                 

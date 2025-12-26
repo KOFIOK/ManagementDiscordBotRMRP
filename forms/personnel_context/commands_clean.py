@@ -889,14 +889,28 @@ class DismissalModal(ui.Modal, title="Увольнение"):
                         cursor.execute("DELETE FROM employees WHERE id = %s", (employee_id,))
                         logger.info("DISMISSAL: Removed employee record %s", employee_id)
                     
+                    # Detect presence of dismissal_reason column (compat with older schema)
+                    cursor.execute("""
+                        SELECT COUNT(*) as cnt
+                        FROM information_schema.columns
+                        WHERE table_name = 'personnel' AND column_name = 'dismissal_reason'
+                    """)
+                    has_dismissal_reason_col = cursor.fetchone().get('cnt', 0) > 0
+
                     # Step 2: Mark personnel as dismissed
                     cursor.execute("""
                         UPDATE personnel 
                         SET is_dismissal = true, 
-                            dismissal_date = %s, 
+                            dismissal_date = %s,
                             last_updated = %s
                         WHERE id = %s
                     """, (current_time.date(), current_time, personnel_id))
+                    if has_dismissal_reason_col:
+                        cursor.execute("""
+                            UPDATE personnel
+                            SET dismissal_reason = %s
+                            WHERE id = %s
+                        """, (reason, personnel_id))
                     logger.info("DISMISSAL: Marked personnel %s as dismissed", personnel_id)
                     
                     # Step 3: Get moderator's personnel ID
@@ -963,9 +977,9 @@ class DismissalModal(ui.Modal, title="Увольнение"):
                 try:
                     from utils.user_cache import invalidate_user_cache
                     invalidate_user_cache(self.target_user.id)
-                    logger.info("DISMISSAL: Cache invalidated for user %s", self.target_user.id)
+                    logger.info("DISMISSAL: Инвалидация кэша для пользователя %s", self.target_user.id)
                 except Exception as cache_error:
-                    logger.error("DISMISSAL: Failed to invalidate cache: %s", cache_error)
+                    logger.error("DISMISSAL: Ошибка при попытке инвалидации кэша: %s", cache_error)
                 try:
                     from utils.audit_logger import audit_logger, AuditAction
                     from utils.postgresql_pool import get_db_cursor
@@ -1409,6 +1423,7 @@ class PositionSelect(ui.Select):
         try:
             from utils.postgresql_pool import get_db_cursor
             from datetime import datetime, timezone, timedelta
+            from utils.user_cache import invalidate_user_cache
             
             # Get old position ID and name for role updates and history
             old_position_id = None
@@ -1533,6 +1548,12 @@ class PositionSelect(ui.Select):
                         )
                     except Exception as e:
                         logger.error("Error updating position roles: %s", e)
+
+                try:
+                    invalidate_user_cache(user_discord_id)
+                    logger.info("POSITION ASSIGN: Инвалидация кэша для пользователя %s", user_discord_id)
+                except Exception as cache_error:
+                    logger.error("POSITION ASSIGN: Ошибка при попытке инвалидации кэша: %s", cache_error)
                 
                 return True
                 
@@ -1555,6 +1576,7 @@ class PositionSelect(ui.Select):
             from utils.audit_logger import audit_logger, AuditAction
             from utils.config_manager import load_config
             from utils.postgresql_pool import get_db_cursor
+            from utils.user_cache import invalidate_user_cache
             from datetime import datetime, timezone, timedelta
             import json
             
@@ -1902,6 +1924,11 @@ class PositionSelect(ui.Select):
             success_message = f"Пользователь **{self.target_user.display_name}** успешно {action_text} в **{self.dept_name}**{position_text}!"
             
             logger.info(f"DEPARTMENT CHANGE: Successfully completed for user {self.target_user.id}")
+            try:
+                invalidate_user_cache(self.target_user.id)
+                logger.info("DEPARTMENT CHANGE: Инвалидация кэша для пользователя %s", self.target_user.id)
+            except Exception as cache_error:
+                logger.error("DEPARTMENT CHANGE: Ошибка при попытке инвалидации кэша: %s", cache_error)
             return True, success_message
             
         except Exception as e:
@@ -2220,6 +2247,7 @@ class PositionOnlySelect(ui.Select):
         try:
             from utils.postgresql_pool import get_db_cursor
             from datetime import datetime, timezone, timedelta
+            from utils.user_cache import invalidate_user_cache
             import json
             
             # Get old position ID for role updates
@@ -2316,6 +2344,12 @@ class PositionOnlySelect(ui.Select):
                         logger.info(f"Position roles removed for {user_member.display_name}")
                     except Exception as role_error:
                         logger.error("Warning: Failed to remove position role: %s", role_error)
+
+                try:
+                    invalidate_user_cache(user_discord_id)
+                    logger.info("POSITION REMOVE: Инвалидация кэша для пользователя %s", user_discord_id)
+                except Exception as cache_error:
+                    logger.error("POSITION REMOVE: Ошибка при попытке инвалидации кэша: %s", cache_error)
                 
                 return True
                 
@@ -2485,6 +2519,7 @@ async def assign_position_in_db(user_member: discord.Member, position_id: str, p
     try:
         from utils.postgresql_pool import get_db_cursor
         from datetime import datetime, timezone, timedelta
+        from utils.user_cache import invalidate_user_cache
         import json
 
         user_discord_id = user_member.id
@@ -2614,6 +2649,12 @@ async def assign_position_in_db(user_member: discord.Member, position_id: str, p
             logger.error("POSITION ROLES ERROR: %s", role_err)
             import traceback
             traceback.print_exc()
+
+        try:
+            invalidate_user_cache(user_discord_id)
+            logger.info("POSITION ASSIGN (global): Инвалидация кэша для пользователя %s", user_discord_id)
+        except Exception as cache_error:
+            logger.error("POSITION ASSIGN (global): Ошибка при попытке инвалидации кэша: %s", cache_error)
 
         return True
 
@@ -3293,25 +3334,48 @@ async def general_edit(interaction: discord.Interaction, user: discord.Member):
         full_name = user_status['full_name'] or user.display_name
         static = user_status['static'] or 'Не указан'
 
-        # Try to get dismissal reason from history
         dismissal_reason = "Не указана"
+        dismissal_date = None
         try:
             from utils.postgresql_pool import get_db_cursor
             with get_db_cursor() as cursor:
                 cursor.execute("""
-                    SELECT details
-                    FROM history h
-                    JOIN personnel p ON h.personnel_id = p.id
-                    WHERE p.discord_id = %s AND h.action_id = 3
-                    ORDER BY h.action_date DESC
-                    LIMIT 1;
-                """, (user.id,))
+                    SELECT COUNT(*) as cnt
+                    FROM information_schema.columns
+                    WHERE table_name = 'personnel' AND column_name = 'dismissal_reason'
+                """)
+                has_reason_col = cursor.fetchone().get('cnt', 0) > 0
 
-                history_result = cursor.fetchone()
-                if history_result and history_result['details']:
-                    dismissal_reason = history_result['details']
+                select_query = """
+                    SELECT dismissal_date%s
+                    FROM personnel
+                    WHERE discord_id = %%s
+                    LIMIT 1;
+                """ % (", dismissal_reason" if has_reason_col else "")
+
+                cursor.execute(select_query, (user.id,))
+                personnel_row = cursor.fetchone()
+
+                if personnel_row:
+                    dismissal_date = personnel_row.get('dismissal_date')
+                    if has_reason_col and personnel_row.get('dismissal_reason'):
+                        dismissal_reason = personnel_row['dismissal_reason']
+
+                # Fallback to history for reason if column absent or empty
+                if dismissal_reason == "Не указана":
+                    cursor.execute("""
+                        SELECT details
+                        FROM history h
+                        JOIN personnel p ON h.personnel_id = p.id
+                        WHERE p.discord_id = %s AND h.action_id = 3
+                        ORDER BY h.action_date DESC
+                        LIMIT 1;
+                    """, (user.id,))
+                    history_result = cursor.fetchone()
+                    if history_result and history_result['details']:
+                        dismissal_reason = history_result['details']
         except Exception as e:
-            logger.warning(f"Warning: Could not get dismissal reason for {user.id}: %s", e)
+            logger.warning(f"Warning: Could not get dismissal reason/date for {user.id}: %s", e)
 
         # Check blacklist
         blacklist_text = ""
@@ -3320,12 +3384,19 @@ async def general_edit(interaction: discord.Interaction, user: discord.Member):
             end_date_str = user_status['blacklist_info']['end_date'].strftime('%d.%m.%Y') if user_status['blacklist_info']['end_date'] else 'Бессрочно'
             blacklist_text = f"\n\n⚠️ **Чёрный список:** {user_status['blacklist_info']['reason']} ({start_date_str} - {end_date_str})"
 
+        dismissal_date_text = ""
+        if 'dismissal_date' in locals() and dismissal_date:
+            dismissal_date_text = f"`{dismissal_date.strftime('%d.%m.%Y')}`"
+        else:
+            dismissal_date_text = "`Не указана`"
+
         await interaction.response.send_message(
             f" **Информация о пользователе {user.mention}**\n\n"
             f"📊 **Данные:**\n"
             f"> • **Имя, Фамилия:** `{full_name}`\n"
             f"> • **Статик:** `{static}`\n"
             f"> • **Статус:** `Уволен со службы`\n"
+            f"> • **Дата увольнения:** {dismissal_date_text}\n"
             f"> • **Причина увольнения:** `{dismissal_reason}`{blacklist_text}\n\n"
             f" **Для восстановления на службу используйте:**\n"
             f"• **Принять во фракцию** - для повторного приёма\n"
@@ -3466,6 +3537,14 @@ class RecruitmentStaticConflictView(ui.View):
             from datetime import datetime, timezone
             
             with get_db_cursor() as cursor:
+                # Check if dismissal_reason column exists
+                cursor.execute("""
+                    SELECT COUNT(*) as cnt
+                    FROM information_schema.columns
+                    WHERE table_name = 'personnel' AND column_name = 'dismissal_reason'
+                """)
+                has_reason_col = cursor.fetchone().get('cnt', 0) > 0
+
                 # Update the personnel record: change discord_id and reset dismissal status
                 cursor.execute("""
                     UPDATE personnel
@@ -3475,6 +3554,13 @@ class RecruitmentStaticConflictView(ui.View):
                         last_updated = %s
                     WHERE discord_id = %s;
                 """, (self.target_user.id, datetime.now(timezone.utc), self.old_discord_id))
+
+                if has_reason_col:
+                    cursor.execute("""
+                        UPDATE personnel
+                        SET dismissal_reason = NULL
+                        WHERE discord_id = %s;
+                    """, (self.target_user.id,))
                 
                 logger.info(
                     "RECRUITMENT STATIC CONFLICT: Replaced discord_id %s with %s for static %s",

@@ -42,7 +42,7 @@ class LeaveRequestButton(ui.View):
                         role_mentions.append(role.mention)
                 
                 embed = discord.Embed(
-                    title=get_leave_requests_message(interaction.guild.id, "templates.permissions.insufficient").format(action="для подачи заявок на отгул"),
+                    title=get_message(interaction.guild.id, "templates.permissions.insufficient").format(action="для подачи заявок на отгул"),
                     description=f"Подавать заявки могут только пользователи с ролями:\n{', '.join(role_mentions) if role_mentions else 'Настроенные роли'}",
                     color=discord.Color.red(),
                     timestamp=discord.utils.utcnow()
@@ -56,7 +56,7 @@ class LeaveRequestButton(ui.View):
         daily_check = LeaveRequestValidator.check_daily_limit(interaction.user.id)
         if not daily_check["can_request"]:
             embed = discord.Embed(
-                title=get_leave_requests_message(interaction.guild.id, "templates.errors.already_exists"),
+                title=get_message(interaction.guild.id, "templates.errors.already_exists"),
                 description=daily_check["reason"],
                 color=discord.Color.red(),
                 timestamp=discord.utils.utcnow()
@@ -87,7 +87,7 @@ class LeaveRequestApprovalView(ui.View):
             config = load_config()
             if not is_moderator_or_admin(interaction.user, config):
                 embed = discord.Embed(
-                    title=get_leave_requests_message(interaction.guild.id, "templates.permissions.insufficient").format(action="для рассмотрения заявок на отгул"),
+                    title=get_message(interaction.guild.id, "templates.permissions.insufficient").format(action="для рассмотрения заявок на отгул"),
                     description="У вас нет прав для рассмотрения заявок.",
                     color=discord.Color.red()
                 )
@@ -98,7 +98,7 @@ class LeaveRequestApprovalView(ui.View):
             request = LeaveRequestStorage.get_request_by_id(self.request_id)
             if not request:
                 embed = discord.Embed(
-                    title=get_leave_requests_message(interaction.guild.id, "templates.errors.not_found").format(entity="Заявка", details=""),
+                    title=get_message(interaction.guild.id, "templates.errors.not_found").format(entity="Заявка", details=""),
                     description="Заявка не существует или уже была обработана.",
                     color=discord.Color.red()
                 )
@@ -107,7 +107,7 @@ class LeaveRequestApprovalView(ui.View):
             
             if request["status"] != "pending":
                 embed = discord.Embed(
-                    title=get_leave_requests_message(interaction.guild.id, "templates.errors.already_processed").format(object="Заявка"),
+                    title=get_message(interaction.guild.id, "templates.errors.already_processed").format(object="Заявка"),
                     description="Заявка уже была обработана.",
                     color=discord.Color.red()
                 )
@@ -147,14 +147,14 @@ class LeaveRequestApprovalView(ui.View):
                     )
                 
                 embed = discord.Embed(
-                    title=f"{get_leave_requests_message(interaction.guild.id, 'templates.status.completed')} Заявка на отгул одобрена",
+                    title=f"{get_message(interaction.guild.id, 'templates.status.completed')} Заявка на отгул одобрена",
                     description=f"Заявка пользователя {request['name']} была одобрена.",
                     color=discord.Color.green()
                 )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
             else:
                 embed = discord.Embed(
-                    title=get_leave_requests_message(interaction.guild.id, "templates.errors.general").format(context="при одобрении заявки"),
+                    title=get_message(interaction.guild.id, "templates.errors.general").format(context="при одобрении заявки"),
                     description="Не удалось одобрить заявку.",
                     color=discord.Color.red()
                 )
@@ -162,7 +162,7 @@ class LeaveRequestApprovalView(ui.View):
                 
         except Exception as e:
             embed = discord.Embed(
-                title=get_leave_requests_message(interaction.guild.id, "templates.errors.processing").format(object="заявки на отгул"),
+                title=get_message(interaction.guild.id, "templates.errors.processing").format(object="заявки на отгул"),
                 description=f"Ошибка при одобрении заявки: {str(e)}",
                 color=discord.Color.red()
             )
@@ -179,7 +179,7 @@ class LeaveRequestApprovalView(ui.View):
             config = load_config()
             if not is_moderator_or_admin(interaction.user, config):
                 embed = discord.Embed(
-                    title=get_leave_requests_message(interaction.guild.id, "templates.permissions.insufficient").format(action="для отклонения заявок на отгул"),
+                    title=get_message(interaction.guild.id, "templates.permissions.insufficient").format(action="для отклонения заявок на отгул"),
                     description="У вас нет прав для отклонения заявок.",
                     color=discord.Color.red()
                 )
@@ -190,7 +190,7 @@ class LeaveRequestApprovalView(ui.View):
             request = LeaveRequestStorage.get_request_by_id(self.request_id)
             if not request:
                 embed = discord.Embed(
-                    title=get_leave_requests_message(interaction.guild.id, "templates.errors.not_found").format(entity="Заявка", details=""),
+                    title=get_message(interaction.guild.id, "templates.errors.not_found").format(entity="Заявка", details=""),
                     description="Заявка не существует или уже была обработана.",
                     color=discord.Color.red()
                 )
@@ -199,7 +199,7 @@ class LeaveRequestApprovalView(ui.View):
             
             if request["status"] != "pending":
                 embed = discord.Embed(
-                    title=get_leave_requests_message(interaction.guild.id, "templates.errors.already_processed").format(object="Заявка"),
+                    title=get_message(interaction.guild.id, "templates.errors.already_processed").format(object="Заявка"),
                     description="Заявка уже была обработана.",
                     color=discord.Color.red()
                 )
@@ -224,7 +224,7 @@ class LeaveRequestApprovalView(ui.View):
             
         except Exception as e:
             embed = discord.Embed(
-                title=get_leave_requests_message(interaction.guild.id, "templates.errors.processing").format(object="отклонения заявки"),
+                title=get_message(interaction.guild.id, "templates.errors.processing").format(object="отклонения заявки"),
                 description=f"Ошибка при отклонении заявки: {str(e)}",
                 color=discord.Color.red()
             )
@@ -241,7 +241,7 @@ class LeaveRequestApprovalView(ui.View):
             request = LeaveRequestStorage.get_request_by_id(self.request_id)
             if not request:
                 embed = discord.Embed(
-                    title=get_leave_requests_message(interaction.guild.id, "templates.errors.not_found").format(entity="Заявка", details=""),
+                    title=get_message(interaction.guild.id, "templates.errors.not_found").format(entity="Заявка", details=""),
                     description="Заявка не существует или уже была обработана.",
                     color=discord.Color.red()
                 )
@@ -256,7 +256,7 @@ class LeaveRequestApprovalView(ui.View):
             # Moderators cannot delete requests (only admins and request owners)
             if not (is_admin or is_request_owner):
                 embed = discord.Embed(
-                    title=get_leave_requests_message(interaction.guild.id, "templates.permissions.insufficient").format(action="для удаления заявок на отгул"),
+                    title=get_message(interaction.guild.id, "templates.permissions.insufficient").format(action="для удаления заявок на отгул"),
                     description="Удалять заявки могут только администраторы или владелец заявки.",
                     color=discord.Color.red()
                 )
@@ -290,7 +290,7 @@ class LeaveRequestApprovalView(ui.View):
                 await interaction.delete_original_response()
             else:
                 embed = discord.Embed(
-                    title=get_leave_requests_message(interaction.guild.id, "templates.errors.processing").format(object="заявки"),
+                    title=get_message(interaction.guild.id, "templates.errors.processing").format(object="заявки"),
                     description="Не удалось удалить заявку. Возможно, она уже была обработана.",
                     color=discord.Color.red()
                 )
@@ -298,7 +298,7 @@ class LeaveRequestApprovalView(ui.View):
                 
         except Exception as e:
             embed = discord.Embed(
-                title=get_leave_requests_message(interaction.guild.id, "templates.errors.processing").format(object="удаления заявки"),
+                title=get_message(interaction.guild.id, "templates.errors.processing").format(object="удаления заявки"),
                 description=f"Ошибка при удалении заявки: {str(e)}",
                 color=discord.Color.red()
             )

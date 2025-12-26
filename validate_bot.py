@@ -110,7 +110,7 @@ def test_complete_setup():
             logger.info(f"✓ Guild messages loading works")
         
         # Test message retrieval
-        test_message = get_message(test_guild_id, 'systems.dismissal.ui_labels.processing')
+        test_message = get_message(test_guild_id, 'ui.buttons.processing')
         if test_message:
             logger.info(f"✓ Message retrieval works: '%s'", test_message)
         

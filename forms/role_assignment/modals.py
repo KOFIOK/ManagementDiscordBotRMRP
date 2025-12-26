@@ -193,7 +193,8 @@ class MilitaryApplicationModal(ui.Modal):
     """Modal for military service role applications"""
     
     def __init__(self):
-        super().__init__(title=get_role_assignment_message(0, 'application.military_modal_title', 'Заявка на получение роли военнослужащего'))
+        from utils.message_manager import get_ui_element, get_ui_label, get_message
+        super().__init__(title=get_ui_element(0, 'modals', 'personnel_recruitment', 'Заявка на получение роли военнослужащего'))
 
         self.recruitment_cfg = get_recruitment_config()
         self.allow_rank_selection = self.recruitment_cfg.get('allow_user_rank_selection', False)
@@ -205,8 +206,8 @@ class MilitaryApplicationModal(ui.Modal):
         self.default_rank_id = self.recruitment_cfg.get('default_rank_id')
         
         self.first_name_input = ui.TextInput(
-            label=get_role_assignment_message(0, 'application.first_name_label', 'Имя'),
-            placeholder=get_role_assignment_message(0, 'application.first_name_placeholder', 'Например: Олег'),
+            label=get_ui_label(0, 'first_name', 'Имя'),
+            placeholder=get_message(0, 'ui.placeholders.first_name', 'Например: Олег'),
             min_length=2,
             max_length=25,
             required=True
@@ -214,8 +215,8 @@ class MilitaryApplicationModal(ui.Modal):
         self.add_item(self.first_name_input)
         
         self.last_name_input = ui.TextInput(
-            label=get_role_assignment_message(0, 'application.last_name_label', 'Фамилия'),
-            placeholder=get_role_assignment_message(0, 'application.last_name_placeholder', 'Например: Дубов'),
+            label=get_ui_label(0, 'last_name', 'Фамилия'),
+            placeholder=get_message(0, 'ui.placeholders.last_name', 'Например: Дубов'),
             min_length=2,
             max_length=25,
             required=True
@@ -223,8 +224,8 @@ class MilitaryApplicationModal(ui.Modal):
         self.add_item(self.last_name_input)
         
         self.static_input = ui.TextInput(
-            label=get_role_assignment_message(0, 'application.static_label', 'Статик'),
-            placeholder=get_role_assignment_message(0, 'application.static_placeholder', '123-456 (допускается 1-6 цифр)'),
+            label=get_ui_label(0, 'static', 'Статик'),
+            placeholder=get_message(0, 'ui.placeholders.static', '123-456 (допускается 1-6 цифр)'),
             min_length=1,
             max_length=7,
             required=True
@@ -258,9 +259,7 @@ class MilitaryApplicationModal(ui.Modal):
             has_pending = await has_pending_role_application(interaction.client, interaction.user.id, role_assignment_channel_id)
             if has_pending:
                 await interaction.response.send_message(
-                    f"{get_message_with_params(interaction.guild.id, 'application.error_pending_application', '❌ **У вас уже есть заявка на получение роли, которая находится на рассмотрении.**', context='заявка уже существует')}\n\n"
-                    "Пожалуйста, дождитесь решения по текущей заявке, прежде чем подавать новую.\n"
-                    "Это поможет избежать путаницы и ускорить обработку вашего запроса.",
+                    get_message_with_params(interaction.guild.id, 'systems.role_assignment.errors.pending_application_detailed', '❌ У вас уже есть заявка на получение роли, которая находится на рассмотрении.'),
                     ephemeral=True
                 )
                 return
@@ -292,14 +291,14 @@ class MilitaryApplicationModal(ui.Modal):
         
         if ' ' in first_name or '\t' in first_name:
             await interaction.response.send_message(
-                get_role_assignment_message(interaction.guild.id, 'application.error_first_name_spaces', "❌ **Имя должно содержать только одно слово.**\nПожалуйста, введите только имя без пробелов."),
+                get_message_with_params(interaction.guild.id, 'templates.errors.validation', '❌ Ошибка валидации: Имя должно содержать одно слово', details='Имя должно содержать одно слово'),
                 ephemeral=True
             )
             return
         
         if ' ' in last_name or '\t' in last_name:
             await interaction.response.send_message(
-                get_role_assignment_message(interaction.guild.id, 'application.error_last_name_spaces', "❌ **Фамилия должна содержать только одно слово.**\nПожалуйста, введите только фамилию без пробелов."),
+                get_message_with_params(interaction.guild.id, 'templates.errors.validation', '❌ Ошибка валидации: Фамилия должна содержать одно слово', details='Фамилия должна содержать одно слово'),
                 ephemeral=True
             )
             return
@@ -451,7 +450,7 @@ class MilitaryApplicationModal(ui.Modal):
             
             if not moderation_channel_id:
                 await interaction.response.send_message(
-                    " Канал модерации не настроен. Обратитесь к администратору.",
+                    get_role_assignment_message(interaction.guild.id, 'moderation_channel_not_configured', 'Канал модерации не настроен. Обратитесь к администратору.'),
                     ephemeral=True
                 )
                 return
@@ -459,7 +458,7 @@ class MilitaryApplicationModal(ui.Modal):
             moderation_channel = interaction.guild.get_channel(moderation_channel_id)
             if not moderation_channel:
                 await interaction.response.send_message(
-                    " Канал модерации не найден. Обратитесь к администратору.",
+                    get_role_assignment_message(interaction.guild.id, 'moderation_channel_not_found', 'Канал модерации не найден. Обратитесь к администратору.'),
                     ephemeral=True
                 )
                 return
@@ -512,7 +511,7 @@ class MilitaryApplicationModal(ui.Modal):
         except Exception as e:
             logger.error("Error sending military application: %s", e)
             await interaction.response.send_message(
-                get_role_assignment_message(interaction.guild.id, "application.error_submission_failed", "❌ Произошла ошибка при отправке заявки. Попробуйте позже."),
+                get_role_assignment_message(interaction.guild.id, "submission_failed", "❌ Произошла ошибка при отправке заявки. Попробуйте позже."),
                 ephemeral=True
             )
 
@@ -578,9 +577,7 @@ class CivilianApplicationModal(ui.Modal):
             has_pending = await has_pending_role_application(interaction.client, interaction.user.id, role_assignment_channel_id)
             if has_pending:
                 await interaction.response.send_message(
-                    f"{get_message_with_params(interaction.guild.id, 'application.error_pending_application', ' **У вас уже есть заявка на получение роли, которая находится на рассмотрении.**', context='заявка уже существует')}\n\n"
-                    "Пожалуйста, дождитесь решения по текущей заявке, прежде чем подавать новую.\n"
-                    "Это поможет избежать путаницы и ускорить обработку вашего запроса.",
+                    get_message_with_params(interaction.guild.id, 'systems.role_assignment.errors.pending_application_detailed', 'У вас уже есть заявка на получение роли, которая находится на рассмотрении.'),
                     ephemeral=True
                 )
                 return
@@ -600,7 +597,7 @@ class CivilianApplicationModal(ui.Modal):
         proof = self.proof_input.value.strip()
         if not self._validate_url(proof):
             await interaction.response.send_message(
-                get_role_assignment_message(interaction.guild.id, "application.error_invalid_proof_link", "❌ Пожалуйста, укажите корректную ссылку в поле доказательств."),
+                get_message_with_params(interaction.guild.id, 'templates.errors.validation', 'Пожалуйста, укажите корректную ссылку в поле доказательств.', details='Некорректная ссылка в поле доказательств'),
                 ephemeral=True
             )
             return
@@ -643,7 +640,7 @@ class CivilianApplicationModal(ui.Modal):
             
             if not moderation_channel_id:
                 await interaction.response.send_message(
-                    " Канал модерации не настроен. Обратитесь к администратору.",
+                    get_role_assignment_message(interaction.guild.id, 'moderation_channel_not_configured', 'Канал модерации не настроен. Обратитесь к администратору.'),
                     ephemeral=True
                 )
                 return
@@ -651,7 +648,7 @@ class CivilianApplicationModal(ui.Modal):
             moderation_channel = interaction.guild.get_channel(moderation_channel_id)
             if not moderation_channel:
                 await interaction.response.send_message(
-                    " Канал модерации не найден. Обратитесь к администратору.",
+                    get_role_assignment_message(interaction.guild.id, 'moderation_channel_not_found', 'Канал модерации не найден. Обратитесь к администратору.'),
                     ephemeral=True
                 )
                 return
@@ -690,14 +687,14 @@ class CivilianApplicationModal(ui.Modal):
             await moderation_channel.send(content=ping_content, embed=embed, view=approval_view)
             
             await interaction.response.send_message(
-                "✅ Ваша заявка отправлена на рассмотрение военнослужащим. Ожидайте решения.",
+                get_role_assignment_message(interaction.guild.id, 'application_submitted', '✅ Ваша заявка отправлена на рассмотрение военнослужащим. Ожидайте решения'),
                 ephemeral=True
             )
             
         except Exception as e:
             logger.error("Error sending civilian application: %s", e)
             await interaction.response.send_message(
-                "❌ Произошла ошибка при отправке заявки. Попробуйте позже.",
+                get_role_assignment_message(interaction.guild.id, 'submission_failed', '❌ Произошла ошибка при отправке заявки. Попробуйте позже.'),
                 ephemeral=True
             )
 
@@ -754,9 +751,7 @@ class SupplierApplicationModal(ui.Modal):
             has_pending = await has_pending_role_application(interaction.client, interaction.user.id, role_assignment_channel_id)
             if has_pending:
                 await interaction.response.send_message(
-                    f"{get_message_with_params(interaction.guild.id, 'application.error_pending_application', '❌ **У вас уже есть заявка на получение роли, которая находится на рассмотрении.**', context='заявка уже существует')}\n\n"
-                    "Пожалуйста, дождитесь решения по текущей заявке, прежде чем подавать новую.\n"
-                    "Это поможет избежать путаницы и ускорить обработку вашего запроса.",
+                    get_message_with_params(interaction.guild.id, 'systems.role_assignment.errors.pending_application_detailed', 'У вас уже есть заявка на получение роли, которая находится на рассмотрении.'),
                     ephemeral=True
                 )
                 return
@@ -775,7 +770,7 @@ class SupplierApplicationModal(ui.Modal):
         proof = self.proof_input.value.strip()
         if not self._validate_url(proof):
             await interaction.response.send_message(
-                get_role_assignment_message(interaction.guild.id, "application.error_invalid_proof_link", " Пожалуйста, укажите корректную ссылку в поле доказательств."),
+                get_message_with_params(interaction.guild.id, 'templates.errors.validation', 'Пожалуйста, укажите корректную ссылку в поле доказательств.', details='Некорректная ссылка в поле доказательств'),
                 ephemeral=True
             )
             return
@@ -816,7 +811,7 @@ class SupplierApplicationModal(ui.Modal):
             
             if not moderation_channel_id:
                 await interaction.response.send_message(
-                    " Канал модерации не настроен. Обратитесь к администратору.",
+                    get_role_assignment_message(interaction.guild.id, 'moderation_channel_not_configured', 'Канал модерации не настроен. Обратитесь к администратору.'),
                     ephemeral=True
                 )
                 return
@@ -824,7 +819,7 @@ class SupplierApplicationModal(ui.Modal):
             moderation_channel = interaction.guild.get_channel(moderation_channel_id)
             if not moderation_channel:
                 await interaction.response.send_message(
-                    " Канал модерации не найден. Обратитесь к администратору.",
+                    get_role_assignment_message(interaction.guild.id, 'moderation_channel_not_found', 'Канал модерации не найден. Обратитесь к администратору.'),
                     ephemeral=True
                 )
                 return
@@ -862,14 +857,14 @@ class SupplierApplicationModal(ui.Modal):
             await moderation_channel.send(content=ping_content, embed=embed, view=approval_view)
             
             await interaction.response.send_message(
-                " Ваша заявка отправлена на рассмотрение военнослужащим. Ожидайте решения.",
+                get_role_assignment_message(interaction.guild.id, 'application_submitted', 'Ваша заявка отправлена на рассмотрение военнослужащим. Ожидайте решения.'),
                 ephemeral=True
             )
             
         except Exception as e:
             logger.error("Error sending supplier application: %s", e)
             await interaction.response.send_message(
-                " Произошла ошибка при отправке заявки. Попробуйте позже.",
+                get_role_assignment_message(interaction.guild.id, 'submission_failed', 'Произошла ошибка при отправке заявки. Попробуйте позже.'),
                 ephemeral=True
             )
 

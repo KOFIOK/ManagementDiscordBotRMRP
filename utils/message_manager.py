@@ -529,18 +529,35 @@ def get_supplies_message(guild_id: int, key_path: str, default: str = None) -> s
 
 def get_supplies_color(guild_id: int, key_path: str, default_color: str = "#3498DB") -> discord.Color:
     """
-    Get supplies color by dot-separated key path (e.g., 'main_embed')
-    Returns default color if key not found
+    Получить цвет для системы поставок.
+    Сначала пытается systems.supplies.colors.<key>, затем использует глобальные colors.<alias>.
+    Поддерживаемые алиасы:
+      - main_embed -> colors.supplies_main
+      - timer_embed -> colors.supplies_timer
+      - supplies_notification -> colors.supplies_notification
+    Возвращает синий цвет по умолчанию при ошибке.
     """
     try:
+        # 1) Пытаемся получить из системного раздела поставок
         color_hex = get_message(guild_id, f"systems.supplies.colors.{key_path}")
         if isinstance(color_hex, str) and color_hex.startswith('#'):
-            # Convert hex to discord.Color
             color_hex = color_hex.lstrip('#')
             return discord.Color(int(color_hex, 16))
-        else:
-            # Fallback to default
-            return discord.Color.blue()
+
+        # 2) Алиасы к глобальным цветам
+        alias_map = {
+            'main_embed': 'supplies_main',
+            'timer_embed': 'supplies_timer',
+            'supplies_notification': 'supplies_notification',
+        }
+        alias = alias_map.get(key_path, key_path)
+        global_hex = get_message(guild_id, f"colors.{alias}", default_color)
+        if isinstance(global_hex, str) and global_hex.startswith('#'):
+            global_hex = global_hex.lstrip('#')
+            return discord.Color(int(global_hex, 16))
+
+        # 3) Fallback — стандартный синий
+        return discord.Color.blue()
     except (ValueError, TypeError):
         return discord.Color.blue()
 

@@ -448,7 +448,7 @@ private_messages:
         > • Дата: {date}
         > • Время: {time}
         > • Причина: {reason}
-      approved_by: "{templates.moderator.approved_by}"
+      approved_by: "👤 Одобрил"
     rejection:
       title: "🚫 Заявка на отгул отклонена"
       description: |

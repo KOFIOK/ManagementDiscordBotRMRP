@@ -188,8 +188,8 @@ class SuppliesControlView(discord.ui.View):
             
             # Создаем embed с информацией о таймерах
             timer_embed = discord.Embed(
-                title="📊 Активные поставки",
-                color=discord.Color.blue(),
+                title=get_supplies_message(message.guild.id, "timer_embed_title"),
+                color=get_supplies_color(message.guild.id, "timer_embed"),
                 timestamp=datetime.now()
             )
             
@@ -222,9 +222,9 @@ class SuppliesControlView(discord.ui.View):
             else:
                 # Если нет embeds, создаем основной и добавляем таймеры
                 main_embed = discord.Embed(
-                    title="🚚 Управление поставками",
-                    description="Выберите военный объект для начала поставки материалов",
-                    color=discord.Color.green()
+                    title=get_supplies_message(message.guild.id, "main_embed_title"),
+                    description=get_supplies_message(message.guild.id, "main_embed_description"),
+                    color=get_supplies_color(message.guild.id, "main_embed")
                 )
                 embeds = [main_embed, timer_embed]
             
@@ -290,7 +290,7 @@ class SuppliesControlView(discord.ui.View):
                 inline=True
             )
             
-            embed.set_footer(text=get_supplies_message(user.guild.id, "subscription.subscription_footer"))
+            embed.set_footer(text=get_supplies_message(user.guild.id, "subscription_footer"))
             
             # Отправляем сообщение БЕЗ пинга роли
             message = await channel.send(embed=embed)
@@ -319,11 +319,11 @@ async def send_supplies_control_message(channel: discord.TextChannel):
     try:
         # Основной embed
         main_embed = discord.Embed(
-            title=get_supplies_message(channel.guild.id, "control.main_embed_title"),
-            description=get_supplies_message(channel.guild.id, "control.main_embed_description"),
-            color=get_supplies_color(channel.guild.id, "colors.main_embed")
+            title=get_supplies_message(channel.guild.id, "main_embed_title"),
+            description=get_supplies_message(channel.guild.id, "main_embed_description"),
+            color=get_supplies_color(channel.guild.id, "main_embed")
         )
-        main_embed.set_footer(text=get_supplies_message(channel.guild.id, "control.main_embed_footer"))
+        main_embed.set_footer(text=get_supplies_message(channel.guild.id, "main_embed_footer"))
         
         # Embed с информацией о таймерах
         from .supplies_manager import SuppliesManager
@@ -331,8 +331,8 @@ async def send_supplies_control_message(channel: discord.TextChannel):
         active_timers = supplies_manager.get_active_timers()
         
         timer_embed = discord.Embed(
-            title=get_supplies_message(channel.guild.id, "control.timer_embed_title"),
-            color=get_supplies_color(channel.guild.id, "colors.timer_embed"),
+            title=get_supplies_message(channel.guild.id, "timer_embed_title"),
+            color=get_supplies_color(channel.guild.id, "timer_embed"),
             timestamp=datetime.now()
         )
         

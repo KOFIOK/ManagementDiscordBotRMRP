@@ -103,7 +103,6 @@ data/supplies_timers.json
 
 # Other
 tests/
-.github/copilot-instructions.md
 test_selectmenu.py
 backups/
 scripts/

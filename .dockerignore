@@ -1,0 +1,48 @@
+# Виртуальное окружение
+.venv
+venv
+env
+ENV
+
+# Git
+.git
+.gitignore
+.github/
+
+# VS Code
+.vscode
+
+# Логи и временные файлы
+logs/
+log/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.coverage
+htmlcov/
+
+# Кэш Python и другие артефакты
+*.egg-info
+dist
+build
+*.egg
+
+# База данных (если есть локальная)
+*.db
+*.sqlite3
+
+# IDE и редакторы
+.idea
+*.sublime-*
+
+# ОС файлы
+.DS_Store
+Thumbs.db
+
+# Другое
+tests/
+test_selectmenu.py
+backups/
+scripts/

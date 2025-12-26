@@ -188,9 +188,9 @@ class RoleUtils:
             try:
                 reason = get_role_reason(
                     user.guild.id,
-                    "role_assignment.position",
-                    "Назначение роли должности"
-                ).format(moderator=moderator_display)
+                    "position_assignment.assigned",
+                    "Назначение должности"
+                ).format(moderator=moderator_display, position=role.name)
 
                 await user.add_roles(role, reason=reason)
                 assigned_roles.append(role.name)
@@ -331,8 +331,8 @@ class RoleUtils:
             try:
                 reason = get_role_reason(
                     user.guild.id,
-                    "role_assignment.military",
-                    "Заявка на роль военнослужащего: одобрена"
+                    "role_assignment.approved",
+                    "Заявка на роль: одобрена"
                 ).format(moderator=moderator_display)
 
                 await user.add_roles(role, reason=reason)
@@ -393,8 +393,8 @@ class RoleUtils:
                             try:
                                 reason = get_role_reason(
                                     user.guild.id,
-                                    "role_assignment.military",
-                                    "Заявка на роль военнослужащего: одобрена"
+                                    "role_assignment.approved",
+                                    "Заявка на роль: одобрена"
                                 ).format(moderator=moderator_display)
                                 
                                 await user.add_roles(subdivision_role, reason=reason)
@@ -450,8 +450,8 @@ class RoleUtils:
             try:
                 reason = get_role_reason(
                     user.guild.id,
-                    "role_assignment.civilian",
-                    "Заявка на роль госслужащего: одобрена"
+                    "role_assignment.approved",
+                    "Заявка на роль: одобрена"
                 ).format(moderator=moderator_display)
 
                 await user.add_roles(role, reason=reason)
@@ -654,8 +654,8 @@ class RoleUtils:
             # Назначить новую роль ранга
             audit_reason = get_role_reason(
                 user.guild.id,
-                "role_assignment.rank",
-                f"Назначение ранга: {rank_name}"
+                "role_assignment.approved",
+                f"Заявка на роль: одобрена"
             ).format(moderator=moderator.display_name)
 
             await user.add_roles(role, reason=audit_reason)

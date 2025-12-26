@@ -207,12 +207,12 @@ class SimplifiedDismissalApprovalView(ui.View):
                 if not getattr(target_user, '_is_mock', False):  # Only if user is still on server
                     try:
                         dm_embed = discord.Embed(
-                            title=get_private_messages(interaction.guild.id, 'private_messages.dismissal.title'),
-                            description=get_private_messages(interaction.guild.id, 'private_messages.dismissal.description'),
+                            title=get_private_messages(interaction.guild.id, 'dismissal.title'),
+                            description=get_private_messages(interaction.guild.id, 'dismissal.description'),
                             color=discord.Color.orange()
                         )
-                        dm_embed.add_field(name=get_private_messages(interaction.guild.id, 'private_messages.dismissal.fields.reason'), value=form_data.get('reason', 'Не указана'), inline=False)
-                        dm_embed.add_field(name=get_private_messages(interaction.guild.id, 'private_messages.dismissal.fields.dismissed_by'), value=interaction.user.display_name, inline=False)
+                        dm_embed.add_field(name=get_private_messages(interaction.guild.id, 'dismissal.fields.reason'), value=form_data.get('reason', 'Не указана'), inline=False)
+                        dm_embed.add_field(name=get_private_messages(interaction.guild.id, 'dismissal.fields.dismissed_by'), value=interaction.user.display_name, inline=False)
                         
                         await target_user.send(embed=dm_embed)
                         logger.info(f"DISMISSAL: DM sent to {target_user.display_name}")
@@ -327,17 +327,17 @@ class SimplifiedDismissalApprovalView(ui.View):
                 if target_user_member:
                     try:
                         dm_embed = discord.Embed(
-                            title=get_private_messages(interaction.guild.id, 'systems.dismissal.rejection.title'),
-                            description=get_private_messages(interaction.guild.id, 'systems.dismissal.rejection.description'),
+                            title=get_private_messages(interaction.guild.id, 'dismissal.rejection.title'),
+                            description=get_private_messages(interaction.guild.id, 'dismissal.rejection.description'),
                             color=discord.Color.red()
                         )
                         dm_embed.add_field(
-                            name=get_private_messages(interaction.guild.id, 'private_messages.dismissal.fields.dismissed_by'),
+                            name=get_private_messages(interaction.guild.id, 'dismissal.fields.dismissed_by'),
                             value=interaction.user.display_name,
                             inline=False
                         )
                         dm_embed.add_field(
-                            name=get_private_messages(interaction.guild.id, 'private_messages.dismissal.fields.reason'),
+                            name=get_private_messages(interaction.guild.id, 'dismissal.fields.reason'),
                             value=reason,
                             inline=False
                         )
@@ -505,7 +505,7 @@ class SimplifiedDismissalApprovalView(ui.View):
             # 5. Send DM to user (if still on server)
             if not user_has_left_server:
                 try:
-                    approval_content = get_private_messages(interaction.guild.id, 'systems.dismissal.approval.description').format(moderator_name=interaction.user.display_name)
+                    approval_content = get_private_messages(interaction.guild.id, 'dismissal.approval.description').format(moderator_name=interaction.user.display_name)
                 except:
                     pass  # User has DMs disabled
             
@@ -1361,7 +1361,7 @@ class AutomaticDismissalApprovalView(ui.View):
             
             # Create new view with only "Rejected" button (disabled)
             rejected_view = ui.View(timeout=None)
-            rejected_button = ui.Button(label=get_ui_button(interaction.guild.id, 'rejected'), style=discord.ButtonStyle.red, disabled=True)
+            rejected_button = ui.Button(label=get_ui_button(interaction.guild.id, 'reject'), style=discord.ButtonStyle.red, disabled=True)
             rejected_view.add_item(rejected_button)
             
             # Update message with rejected state

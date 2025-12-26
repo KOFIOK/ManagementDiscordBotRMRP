@@ -333,7 +333,7 @@ class DepartmentApplicationModerationView(discord.ui.View):
             
             # Check if permission already given
             if current_state['permission_given']:
-                error_msg = get_department_applications_message(interaction.guild.id, "transfer.error_already_permitted", "❌ Разрешение уже было дано для этого перевода.")
+                error_msg = get_department_applications_message(interaction.guild.id, "transfer_already_permitted", "❌ Разрешение уже было дано для этого перевода.")
                 await interaction.response.send_message(
                     error_msg,
                     ephemeral=True
@@ -367,8 +367,9 @@ class DepartmentApplicationModerationView(discord.ui.View):
             
         except Exception as e:
             logger.error(f"Error giving permission for department transfer: {e}")
+            from utils.message_manager import get_system_message
             await interaction.followup.send(
-                get_department_applications_message(interaction.guild.id, "transfer.error_general", "❌ Произошла ошибка при выдаче разрешения."),
+                get_system_message(interaction.guild.id, "general.processing_failed", "❌ Ошибка обработки запроса"),
                 ephemeral=True
             )
     
@@ -407,8 +408,9 @@ class DepartmentApplicationModerationView(discord.ui.View):
                 # Restore state view if user not found
                 restored_view = self._create_transfer_buttons_view(state)
                 await interaction.edit_original_response(embed=embed, view=restored_view)
+                from utils.message_manager import get_message_with_params
                 await interaction.followup.send(
-                    get_department_applications_message(interaction.guild.id, "transfer.error_user_not_found", "❌ Пользователь не найден на сервере."),
+                    get_message_with_params(interaction.guild.id, "templates.errors.not_found", "❌ Пользователь не найден", entity="Пользователь", details="на сервере"),
                     ephemeral=True
                 )
                 return
@@ -501,8 +503,9 @@ class DepartmentApplicationModerationView(discord.ui.View):
                 
         except Exception as e:
             logger.error(f"Error processing final transfer approval: {e}")
+            from utils.message_manager import get_system_message
             await interaction.followup.send(
-                get_department_applications_message(interaction.guild.id, "transfer.error_transfer_failed", "❌ Произошла ошибка при выполнении перевода."),
+                get_system_message(interaction.guild.id, "general.processing_failed", "❌ Ошибка обработки запроса"),
                 ephemeral=True
             )
     
@@ -621,7 +624,7 @@ class DepartmentApplicationModerationView(discord.ui.View):
                 
                 # Send success message
                 await interaction.followup.send(
-                    get_department_applications_message(interaction.guild.id, "success.approved", "✅ Заявление пользователя {user} одобрено! Роли подразделения и должности назначены автоматически.").format(user=target_user.mention),
+                    f"✅ Заявление пользователя {target_user.mention} одобрено! Роли подразделения и должности назначены автоматически.",
                     ephemeral=True
                 )
                 

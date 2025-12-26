@@ -63,27 +63,27 @@ class SuppliesSubscriptionView(discord.ui.View):
                 # Включаем уведомления
                 if subscription_role in user.roles:
                     await interaction.response.send_message(
-                        get_supplies_message(interaction.guild.id, "subscription.info_already_subscribed"),
+                        get_supplies_message(interaction.guild.id, "already_subscribed"),
                         ephemeral=True
                     )
                 else:
                     reason = get_role_reason(interaction.guild.id, "supplies_subscription.enabled", "Подписка на поставки: включена").format(user=user_display)
                     await user.add_roles(subscription_role, reason=reason)
                     await interaction.response.send_message(
-                        get_supplies_message(interaction.guild.id, "subscription.success_subscribed"),
+                        get_supplies_message(interaction.guild.id, "subscribed"),
                         ephemeral=True
                     )
             else:
                 # Выключаем уведомления
                 if subscription_role not in user.roles:
                     await interaction.response.send_message(
-                        get_supplies_message(interaction.guild.id, "subscription.info_already_unsubscribed"),
+                        get_supplies_message(interaction.guild.id, "already_unsubscribed"),
                         ephemeral=True
                     )
                 else:
                     await user.remove_roles(subscription_role, reason=get_role_reason(interaction.guild.id, "supplies_subscription.disabled", "Подписка на поставки: отключена").format(user=user_display))
                     await interaction.response.send_message(
-                        get_supplies_message(interaction.guild.id, "subscription.success_unsubscribed"),
+                        get_supplies_message(interaction.guild.id, "unsubscribed"),
                         ephemeral=True
                     )
                     
@@ -106,11 +106,11 @@ async def send_supplies_subscription_message(channel: discord.TextChannel):
     """Отправляет сообщение с кнопками подписки на уведомления"""
     try:
         embed = discord.Embed(
-            title=get_supplies_message(channel.guild.id, "subscription.embed_title"),
-            description=get_supplies_message(channel.guild.id, "subscription.embed_description"),
-            color=get_supplies_color(channel.guild.id, "colors.timer_embed")
+            title=get_supplies_message(channel.guild.id, "subscription_title"),
+            description=get_supplies_message(channel.guild.id, "subscription_description"),
+            color=get_supplies_color(channel.guild.id, "timer_embed")
         )
-        embed.set_footer(text=get_supplies_message(channel.guild.id, "subscription.embed_footer"))
+        embed.set_footer(text=get_supplies_message(channel.guild.id, "subscription_footer"))
         
         view = SuppliesSubscriptionView()
         message = await channel.send(embed=embed, view=view)

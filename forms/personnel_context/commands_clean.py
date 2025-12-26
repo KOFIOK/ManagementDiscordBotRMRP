@@ -963,9 +963,9 @@ class DismissalModal(ui.Modal, title="Увольнение"):
                 try:
                     from utils.user_cache import invalidate_user_cache
                     invalidate_user_cache(self.target_user.id)
-                    logger.info("DISMISSAL: Cache invalidated for user %s", self.target_user.id)
+                    logger.info("DISMISSAL: Инвалидация кэша для пользователя %s", self.target_user.id)
                 except Exception as cache_error:
-                    logger.error("DISMISSAL: Failed to invalidate cache: %s", cache_error)
+                    logger.error("DISMISSAL: Ошибка при попытке инвалидации кэша: %s", cache_error)
                 try:
                     from utils.audit_logger import audit_logger, AuditAction
                     from utils.postgresql_pool import get_db_cursor
@@ -1409,6 +1409,7 @@ class PositionSelect(ui.Select):
         try:
             from utils.postgresql_pool import get_db_cursor
             from datetime import datetime, timezone, timedelta
+            from utils.user_cache import invalidate_user_cache
             
             # Get old position ID and name for role updates and history
             old_position_id = None
@@ -1533,6 +1534,12 @@ class PositionSelect(ui.Select):
                         )
                     except Exception as e:
                         logger.error("Error updating position roles: %s", e)
+
+                try:
+                    invalidate_user_cache(user_discord_id)
+                    logger.info("POSITION ASSIGN: Инвалидация кэша для пользователя %s", user_discord_id)
+                except Exception as cache_error:
+                    logger.error("POSITION ASSIGN: Ошибка при попытке инвалидации кэша: %s", cache_error)
                 
                 return True
                 
@@ -1555,6 +1562,7 @@ class PositionSelect(ui.Select):
             from utils.audit_logger import audit_logger, AuditAction
             from utils.config_manager import load_config
             from utils.postgresql_pool import get_db_cursor
+            from utils.user_cache import invalidate_user_cache
             from datetime import datetime, timezone, timedelta
             import json
             
@@ -1902,6 +1910,11 @@ class PositionSelect(ui.Select):
             success_message = f"Пользователь **{self.target_user.display_name}** успешно {action_text} в **{self.dept_name}**{position_text}!"
             
             logger.info(f"DEPARTMENT CHANGE: Successfully completed for user {self.target_user.id}")
+            try:
+                invalidate_user_cache(self.target_user.id)
+                logger.info("DEPARTMENT CHANGE: Инвалидация кэша для пользователя %s", self.target_user.id)
+            except Exception as cache_error:
+                logger.error("DEPARTMENT CHANGE: Ошибка при попытке инвалидации кэша: %s", cache_error)
             return True, success_message
             
         except Exception as e:
@@ -2220,6 +2233,7 @@ class PositionOnlySelect(ui.Select):
         try:
             from utils.postgresql_pool import get_db_cursor
             from datetime import datetime, timezone, timedelta
+            from utils.user_cache import invalidate_user_cache
             import json
             
             # Get old position ID for role updates
@@ -2316,6 +2330,12 @@ class PositionOnlySelect(ui.Select):
                         logger.info(f"Position roles removed for {user_member.display_name}")
                     except Exception as role_error:
                         logger.error("Warning: Failed to remove position role: %s", role_error)
+
+                try:
+                    invalidate_user_cache(user_discord_id)
+                    logger.info("POSITION REMOVE: Инвалидация кэша для пользователя %s", user_discord_id)
+                except Exception as cache_error:
+                    logger.error("POSITION REMOVE: Ошибка при попытке инвалидации кэша: %s", cache_error)
                 
                 return True
                 
@@ -2485,6 +2505,7 @@ async def assign_position_in_db(user_member: discord.Member, position_id: str, p
     try:
         from utils.postgresql_pool import get_db_cursor
         from datetime import datetime, timezone, timedelta
+        from utils.user_cache import invalidate_user_cache
         import json
 
         user_discord_id = user_member.id
@@ -2614,6 +2635,12 @@ async def assign_position_in_db(user_member: discord.Member, position_id: str, p
             logger.error("POSITION ROLES ERROR: %s", role_err)
             import traceback
             traceback.print_exc()
+
+        try:
+            invalidate_user_cache(user_discord_id)
+            logger.info("POSITION ASSIGN (global): Инвалидация кэша для пользователя %s", user_discord_id)
+        except Exception as cache_error:
+            logger.error("POSITION ASSIGN (global): Ошибка при попытке инвалидации кэша: %s", cache_error)
 
         return True
 

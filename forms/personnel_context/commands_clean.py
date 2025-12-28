@@ -7,6 +7,7 @@ from discord import app_commands
 from discord.ext import commands
 import functools
 import traceback
+import json
 
 from utils.config_manager import load_config, is_moderator_or_admin, is_administrator, can_moderate_user, get_recruitment_config
 from utils.database_manager import PersonnelManager
@@ -3100,7 +3101,7 @@ class GeneralEditView(ui.View):
         super().__init__(timeout=300)
         self.target_user = target_user
     
-    @ui.button(label="Изменить ранг", style=discord.ButtonStyle.success, emoji="🎖️")
+    @ui.button(label="Изменить ранг", style=discord.ButtonStyle.success, emoji="🎖️", row=1)
     async def edit_rank(self, interaction: discord.Interaction, button: ui.Button):
         """Handle rank editing"""
         try:
@@ -3180,7 +3181,7 @@ class GeneralEditView(ui.View):
             logger.error("Error in rank editing: %s", e)
             await interaction.response.send_message(f"❌ **Ошибка:** {str(e)}", ephemeral=True)
     
-    @ui.button(label="Изменить подразделение", style=discord.ButtonStyle.primary, emoji="🏢")
+    @ui.button(label="Изменить подразделение", style=discord.ButtonStyle.primary, emoji="🏢", row=1)
     async def edit_department(self, interaction: discord.Interaction, button: ui.Button):
         """Handle department editing"""
         # Send action selection view (same as before)
@@ -3192,7 +3193,7 @@ class GeneralEditView(ui.View):
             ephemeral=True
         )
     
-    @ui.button(label="Изменить должность", style=discord.ButtonStyle.red, emoji="📋")
+    @ui.button(label="Изменить должность", style=discord.ButtonStyle.red, emoji="📋", row=1)
     async def edit_position(self, interaction: discord.Interaction, button: ui.Button):
         """Handle position editing"""
         # Send position selection view (same as before)
@@ -3205,7 +3206,7 @@ class GeneralEditView(ui.View):
             ephemeral=True
         )
     
-    @ui.button(label="Изменить личные данные", style=discord.ButtonStyle.secondary, emoji="👤")
+    @ui.button(label="Изменить личные данные", style=discord.ButtonStyle.secondary, emoji="👤", row=0)
     async def edit_personal_data(self, interaction: discord.Interaction, button: ui.Button):
         """Handle personal data editing"""
         try:
@@ -3219,6 +3220,27 @@ class GeneralEditView(ui.View):
         except Exception as e:
             logger.error("Error in personal data editing: %s", e)
             await interaction.response.send_message(f" **Ошибка:** {str(e)}", ephemeral=True)
+    
+    @ui.button(label="Изменить Discord", style=discord.ButtonStyle.secondary, emoji="🆔", row=0)
+    async def edit_discord_id(self, interaction: discord.Interaction, button: ui.Button):
+        """Обработка редактирования Discord ID"""
+        try:
+            config = load_config()
+            if not is_administrator(interaction.user, config):
+                await interaction.response.send_message(
+                    "❌ Эту кнопку могут использовать только администраторы.",
+                    ephemeral=True
+                )
+                return
+
+            from .modals import ChangeDiscordIDModal
+            
+            modal = ChangeDiscordIDModal(self.target_user)
+            await interaction.response.send_modal(modal)
+            
+        except Exception as e:
+            logger.error("Ошибка при редактировании Discord ID: %s", e)
+            await interaction.response.send_message(f"❌ **Ошибка:** {str(e)}", ephemeral=True)
 
 
 @app_commands.context_menu(name='Быстро повысить (+1 ранг)')

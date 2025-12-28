@@ -8,7 +8,7 @@ from datetime import datetime, timezone, timedelta
 import re
 
 from .rank_utils import RankHierarchy
-from utils.config_manager import load_config, is_moderator_or_admin
+from utils.config_manager import load_config, is_moderator_or_admin, is_administrator
 from utils.message_manager import get_role_reason
 from utils.role_utils import role_utils
 from utils.logging_setup import get_logger
@@ -1052,8 +1052,336 @@ class PersonalDataModal(ui.Modal, title="Изменить личные данн�
                 )
 
         except Exception as e:
-            logger.error("Error in personal data modal: %s", e)
+            logger.error("Ошибка в модале личных данных: %s", e)
             await interaction.response.send_message(
                 " Произошла ошибка при обработке запроса.",
                 ephemeral=True
             )
+
+
+class ChangeDiscordIDModal(ui.Modal, title="Изменение Discord ID"):
+    """Модал для смены Discord ID персонала с полной поддержкой аудита"""
+    
+    def __init__(self, target_user: discord.Member):
+        super().__init__()
+        self.target_user = target_user
+        
+        self.new_discord_id_input = ui.TextInput(
+            label="Новый Discord ID",
+            placeholder=f"Текущий: {target_user.id}",
+            min_length=17,
+            max_length=20,
+            required=True
+        )
+        self.add_item(self.new_discord_id_input)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        """Обработка формы смены Discord ID"""
+        try:
+            # Проверка прав доступа
+            config = load_config()
+            if not is_administrator(interaction.user, config):
+                await interaction.response.send_message(
+                    "❌ У вас нет прав для выполнения этой команды.",
+                    ephemeral=True
+                )
+                return
+            
+            # Парсинг нового Discord ID
+            try:
+                new_discord_id = int(self.new_discord_id_input.value.strip())
+            except ValueError:
+                await interaction.response.send_message(
+                    "❌ **Ошибка:** Discord ID должен быть числом из 17-20 цифр.",
+                    ephemeral=True
+                )
+                return
+            
+            # Проверка что новый ID не совпадает со старым
+            if new_discord_id == self.target_user.id:
+                await interaction.response.send_message(
+                    "❌ **Ошибка:** Новый Discord ID совпадает с текущим.",
+                    ephemeral=True
+                )
+                return
+            
+            # Откладываем ответ для обработки
+            await interaction.response.defer(ephemeral=True)
+            
+            # Обработка смены Discord ID через сервис
+            success, message, details = await self._process_discord_id_change(
+                interaction,
+                self.target_user.id,
+                new_discord_id
+            )
+            
+            await interaction.followup.send(message, ephemeral=True)
+                
+        except Exception as e:
+            logger.error("ОШИБКА_СМЕНА_DISCORD_ID: %s", e)
+            import traceback
+            traceback.print_exc()
+            try:
+                await interaction.followup.send(
+                    f"❌ **Критическая ошибка:** {str(e)}",
+                    ephemeral=True
+                )
+            except:
+                pass
+    
+    async def _process_discord_id_change(
+        self,
+        interaction: discord.Interaction,
+        old_discord_id: int,
+        new_discord_id: int
+    ) -> tuple[bool, str, dict]:
+        """
+        Обработка смены Discord ID с полной поддержкой транзакций и аудита
+        
+        Args:
+            interaction: Discord взаимодействие
+            old_discord_id: Старый Discord ID
+            new_discord_id: Новый Discord ID
+            
+        Returns:
+            tuple[bool, str, dict]: (успех, сообщение, детали)
+        """
+        from utils.postgresql_pool import get_db_cursor
+        from datetime import datetime, timezone
+        from utils.user_cache import invalidate_user_cache
+        from utils.audit_logger import audit_logger, AuditAction
+        import json
+        
+        details = {
+            'roles_copied': 0,
+            'roles_failed_copy': 0,
+            'roles_removed': 0,
+            'roles_failed_remove': 0,
+            'failed_roles': [],
+            'new_member_found': False,
+            'old_member_found': False
+        }
+        
+        try:
+            logger.info(f"СМЕНА_DISCORD_ID: Начало смены {old_discord_id} → {new_discord_id}")
+            
+            # Проверка наличия нового члена на сервере
+            new_member = interaction.guild.get_member(new_discord_id)
+            new_member_exists = new_member is not None
+            
+            if not new_member_exists:
+                logger.warning(f"СМЕНА_DISCORD_ID: Новый Discord ID {new_discord_id} не найден на сервере")
+            
+            with get_db_cursor() as cursor:
+                try:
+                    # Шаг 1: Проверка UNIQUE constraint
+                    cursor.execute(
+                        "SELECT id, first_name, last_name, static FROM personnel WHERE discord_id = %s",
+                        (new_discord_id,)
+                    )
+                    
+                    existing_record = cursor.fetchone()
+                    if existing_record:
+                        logger.error(f"СМЕНА_DISCORD_ID: Discord ID {new_discord_id} уже используется")
+
+                        first_name = existing_record.get('first_name') if isinstance(existing_record, dict) else existing_record[1]
+                        last_name = existing_record.get('last_name') if isinstance(existing_record, dict) else existing_record[2]
+                        static_val = existing_record.get('static') if isinstance(existing_record, dict) else existing_record[3]
+
+                        return (False, f"❌ **Ошибка:** Discord ID `{new_discord_id}` уже используется другим пользователем:\n\n"
+                                f"**Имя:** {first_name} {last_name}\n"
+                                f"**Статик:** {static_val}", details)
+                    
+                    # Шаг 2: Получить старую запись персонала
+                    cursor.execute(
+                        "SELECT id, first_name, last_name, static FROM personnel WHERE discord_id = %s",
+                        (old_discord_id,)
+                    )
+                    
+                    old_personnel = cursor.fetchone()
+                    if not old_personnel:
+                        logger.error(f"СМЕНА_DISCORD_ID: Запись персонала для {old_discord_id} не найдена")
+                        return (False, "❌ **Ошибка:** Запись пользователя не найдена в базе данных.", details)
+
+                    if isinstance(old_personnel, dict):
+                        personnel_id = old_personnel.get('id')
+                        old_first = old_personnel.get('first_name')
+                        old_last = old_personnel.get('last_name')
+                        static_id = old_personnel.get('static')
+                    else:
+                        personnel_id = old_personnel[0]
+                        old_first = old_personnel[1]
+                        old_last = old_personnel[2]
+                        static_id = old_personnel[3]
+
+                    old_full_name = f"{old_first} {old_last}".strip()
+                    
+                    # Шаг 3: Получить Discord члены и их роли
+                    old_member = interaction.guild.get_member(old_discord_id)
+                    if not old_member:
+                        logger.warning(f"СМЕНА_DISCORD_ID: Старый участник {old_discord_id} не найден на сервере")
+                        details['old_member_found'] = False
+                    else:
+                        details['old_member_found'] = True
+                    
+                    # Шаг 4: Получить все роли
+                    old_roles = []
+                    if old_member:
+                        old_roles = [role for role in old_member.roles if role != interaction.guild.default_role]
+                        logger.info(f"СМЕНА_DISCORD_ID: Найдено {len(old_roles)} ролей для копирования")
+                    
+                    if new_member:
+                        details['new_member_found'] = True
+                    
+                    # Шаг 5: Обновить Discord ID в БД (в транзакции)
+                    current_time = datetime.now(timezone.utc)
+                    cursor.execute(
+                        "UPDATE personnel SET discord_id = %s WHERE id = %s",
+                        (new_discord_id, personnel_id)
+                    )
+                    logger.info(f"СМЕНА_DISCORD_ID: Обновлён discord_id для персонала {personnel_id}")
+                    
+                    # Шаг 6: Копировать роли на новый аккаунт
+                    if new_member and old_roles:
+                        for role in old_roles:
+                            try:
+                                await new_member.add_roles(role)
+                                details['roles_copied'] += 1
+                                logger.info(f"СМЕНА_DISCORD_ID: Скопирована роль {role.name} на {new_discord_id}")
+                            except discord.Forbidden:
+                                details['roles_failed_copy'] += 1
+                                details['failed_roles'].append(role.name)
+                                logger.warning(f"СМЕНА_DISCORD_ID: Нет прав для копирования роли {role.name}")
+                            except Exception as e:
+                                details['roles_failed_copy'] += 1
+                                details['failed_roles'].append(role.name)
+                                logger.error(f"СМЕНА_DISCORD_ID: Ошибка при копировании роли {role.name}: {e}")
+                    
+                    # Шаг 7: Удалить роли со старого аккаунта
+                    if old_member and old_roles:
+                        for role in old_roles:
+                            try:
+                                await old_member.remove_roles(role)
+                                details['roles_removed'] += 1
+                                logger.info(f"СМЕНА_DISCORD_ID: Удалена роль {role.name} со старого аккаунта")
+                            except discord.Forbidden:
+                                details['roles_failed_remove'] += 1
+                                logger.warning(f"СМЕНА_DISCORD_ID: Нет прав для удаления роли {role.name}")
+                            except Exception as e:
+                                details['roles_failed_remove'] += 1
+                                logger.error(f"СМЕНА_DISCORD_ID: Ошибка при удалении роли {role.name}: {e}")
+                    
+                    # Шаг 8: Создать запись в истории с JSON деталями
+                    history_details = {
+                        'action_type': 'discord_id_change',
+                        'old_discord_id': old_discord_id,
+                        'new_discord_id': new_discord_id,
+                        'roles_copied': details['roles_copied'],
+                        'roles_failed_copy': details['roles_failed_copy'],
+                        'roles_removed': details['roles_removed'],
+                        'roles_failed_remove': details['roles_failed_remove'],
+                        'failed_roles': details['failed_roles'],
+                        'timestamp': datetime.now(timezone.utc).isoformat()
+                    }
+
+                    # Получить personnel.id модератора для внешнего ключа performed_by
+                    cursor.execute(
+                        "SELECT id FROM personnel WHERE discord_id = %s",
+                        (interaction.user.id,)
+                    )
+                    moderator_personnel = cursor.fetchone()
+                    moderator_personnel_id = None
+                    if moderator_personnel:
+                        moderator_personnel_id = moderator_personnel['id'] if isinstance(moderator_personnel, dict) else moderator_personnel[0]
+
+                    cursor.execute(
+                        "INSERT INTO history (personnel_id, action_id, performed_by, details, changes, action_date) VALUES (%s, %s, %s, %s, %s, %s)",
+                        (
+                            personnel_id,
+                            9,  # Изменение личных данных
+                            moderator_personnel_id,
+                            f"{old_discord_id} -> {new_discord_id}",
+                            json.dumps(history_details, ensure_ascii=False),
+                            current_time
+                        )
+                    )
+                    logger.info(f"СМЕНА_DISCORD_ID: Создана запись в истории для персонала {personnel_id}")
+                    
+                    # Шаг 9: Инвалидировать кэш
+                    try:
+                        invalidate_user_cache(old_discord_id)
+                        invalidate_user_cache(new_discord_id)
+                        logger.info(f"СМЕНА_DISCORD_ID: Кэш инвалидирован для обоих ID")
+                    except Exception as cache_error:
+                        logger.warning(f"СМЕНА_DISCORD_ID: Ошибка инвалидации кэша: {cache_error}")
+                    
+                    # Шаг 10: Отправить кадровый аудит
+                    try:
+                        from utils.database_manager import personnel_manager
+                        
+                        personnel_data = await personnel_manager.get_personnel_data_for_audit(old_discord_id)
+                        
+                        if personnel_data:
+                            # В БД действие называется "Изменения личных данных"
+                            audit_action = await AuditAction.get("Изменения личных данных")
+                            
+                            old_id_str = f"<@{old_discord_id}>"
+                            new_id_str = f"<@{new_discord_id}>"
+                            
+                            audit_data = {
+                                'name': old_full_name,
+                                'static': static_id,
+                                'rank': personnel_data.get('rank_name', 'Не указано'),
+                                'department': personnel_data.get('subdivision_name', 'Не указано'),
+                                'reason': f"Смена Discord ID: {old_id_str} → {new_id_str}"
+                            }
+                            
+                            await audit_logger.send_personnel_audit(
+                                guild=interaction.guild,
+                                action=audit_action,
+                                target_user=self.target_user,
+                                moderator=interaction.user,
+                                personnel_data=audit_data
+                            )
+                            logger.info(f"СМЕНА_DISCORD_ID: Отправлен кадровый аудит")
+                        else:
+                            logger.warning(f"СМЕНА_DISCORD_ID: Не удалось получить данные персонала для аудита")
+                    except Exception as audit_error:
+                        logger.error(f"СМЕНА_DISCORD_ID: Ошибка отправки аудита: {audit_error}")
+                    
+                    # Шаг 11: Построить сообщение об успехе
+                    success_message = (
+                        f"✅ **Discord ID успешно изменён!**\n\n"
+                        f"**Персонал:** {old_full_name} ({static_id})\n"
+                        f"**Старый ID:** {old_discord_id}\n"
+                        f"**Новый ID:** {new_discord_id}\n\n"
+                        f"**Информация о ролях:**\n"
+                        f"• Скопировано ролей: {details['roles_copied']}\n"
+                        f"• Ошибок при копировании: {details['roles_failed_copy']}\n"
+                        f"• Удалено ролей: {details['roles_removed']}\n"
+                        f"• Ошибок при удалении: {details['roles_failed_remove']}"
+                    )
+                    
+                    if details['failed_roles']:
+                        success_message += f"\n• Проблемные роли: {', '.join(details['failed_roles'])}"
+                    
+                    if not details['new_member_found']:
+                        success_message += (
+                            f"\n\n⚠️ **Внимание:** Новый аккаунт {new_discord_id} не найден на сервере. "
+                            f"Пожалуйста, проверьте, что пользователь присоединился к серверу."
+                        )
+                    
+                    logger.info(f"СМЕНА_DISCORD_ID: Успешно завершена для {old_discord_id} → {new_discord_id}")
+                    return (True, success_message, details)
+                    
+                except Exception as e:
+                    logger.error(f"СМЕНА_DISCORD_ID: Ошибка транзакции, откат: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    return (False, f"❌ **Критическая ошибка при изменении Discord ID:**\n{str(e)}", details)
+                    
+        except Exception as e:
+            logger.error(f"СМЕНА_DISCORD_ID: Внешняя ошибка: {e}")
+            import traceback
+            traceback.print_exc()
+            return (False, f"❌ **Ошибка:** {str(e)}", details)
